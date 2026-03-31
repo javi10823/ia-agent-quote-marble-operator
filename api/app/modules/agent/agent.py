@@ -494,6 +494,7 @@ class AgentService:
         yield {"type": "done", "content": ""}
 
     async def _execute_tool(self, name: str, inputs: dict, quote_id: str, db: AsyncSession) -> dict:
+        logging.info(f"Tool call: {name} | quote: {quote_id}")
         if name == "catalog_lookup":
             return catalog_lookup(inputs["catalog"], inputs["sku"])
         elif name == "check_stock":
