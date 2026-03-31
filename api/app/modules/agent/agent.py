@@ -18,10 +18,17 @@ BASE_DIR = Path(__file__).parent.parent.parent.parent
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
 
 def build_system_prompt() -> str:
+    import logging
+
     context = (BASE_DIR / "CONTEXT.md").read_text(encoding="utf-8")
     rules = []
     rules_dir = BASE_DIR / "rules"
-    for f in sorted(rules_dir.glob("*.md")):
+    rule_files = sorted(rules_dir.glob("*.md"))
+
+    logging.info(f"BASE_DIR: {BASE_DIR}")
+    logging.info(f"Rules found: {[f.name for f in rule_files]}")
+
+    for f in rule_files:
         rules.append(f"## {f.stem}\n\n{f.read_text(encoding='utf-8')}")
 
     # Load a selection of key examples
@@ -32,7 +39,11 @@ def build_system_prompt() -> str:
         for f in examples_dir.glob(f"{name}*.md"):
             examples.append(f.read_text(encoding="utf-8"))
 
-    return "\n\n---\n\n".join([context] + rules + examples)
+    logging.info(f"Examples loaded: {len(examples)}")
+
+    full_prompt = "\n\n---\n\n".join([context] + rules + examples)
+    logging.info(f"System prompt total chars: {len(full_prompt)}")
+    return full_prompt
 
 
 # ── TOOL DEFINITIONS ──────────────────────────────────────────────────────────
