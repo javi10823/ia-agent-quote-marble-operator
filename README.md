@@ -1,21 +1,20 @@
 # Marble AI Quoting Agent — Operator Panel
 
-
-Agente de presupuestos **Valentina** para D'Angelo Marmolería.  
-Herramienta interna para el operador — FastAPI + Next.js 14 + Claude API.
+AI-powered quoting agent **Valentina** for D'Angelo Marble Workshop.
+Internal tool for the operator — FastAPI + Next.js 14 + Claude API.
 
 ---
 
 ## Stack
 
-| Capa | Tecnología |
-|------|-----------|
+| Layer | Technology |
+|-------|-----------|
 | Backend | FastAPI + Python 3.12 |
 | ORM | SQLAlchemy 2.0 async |
 | DB | PostgreSQL |
 | PDF | WeasyPrint |
 | Excel | openpyxl |
-| Planos | Pillow + pdf2image |
+| Blueprints | Pillow + pdf2image |
 | Streaming | SSE (Server-Sent Events) |
 | Frontend | Next.js 14 + TypeScript |
 | Drive | Google Drive API (Service Account) |
@@ -24,80 +23,80 @@ Herramienta interna para el operador — FastAPI + Next.js 14 + Claude API.
 
 ---
 
-## Deploy en producción (Railway + Vercel)
+## Production Deploy (Railway + Vercel)
 
-### 1. Subir a GitHub
+### 1. Push to GitHub
 
 ```bash
 git init
 git add .
 git commit -m "init"
-git remote add origin https://github.com/TU_USUARIO/ia-agent-quote-marble-operator.git
+git remote add origin https://github.com/YOUR_USER/ia-agent-quote-marble-operator.git
 git push -u origin main
 ```
 
-### 2. Google Service Account (para Drive)
+### 2. Google Service Account (for Drive)
 
-1. console.cloud.google.com → nuevo proyecto `dangelo-marble`
+1. console.cloud.google.com → new project `dangelo-marble`
 2. APIs & Services → Enable → **Google Drive API**
-3. Credentials → Create Credentials → **Service Account** → nombre: `marble-drive-bot`
-4. En el service account → Keys → Add Key → JSON → descargar → guardar como `service-account.json`
-5. En Google Drive: compartir la carpeta `Presupuestos` con el email del service account (editor)
+3. Credentials → Create Credentials → **Service Account** → name: `marble-drive-bot`
+4. In the service account → Keys → Add Key → JSON → download → save as `service-account.json`
+5. In Google Drive: share the `Presupuestos` folder with the service account email (editor)
 
 ### 3. Railway — PostgreSQL
 
 1. railway.app → New Project → Empty Project
 2. Add Service → Database → **PostgreSQL**
-3. Copiar `DATABASE_URL` de la pestaña Variables
+3. Copy `DATABASE_URL` from the Variables tab
 
 ### 4. Railway — API
 
-1. Add Service → **GitHub Repo** → seleccionar este repo
+1. Add Service → **GitHub Repo** → select this repo
 2. Settings → Root Directory → `api`
-3. Railway detecta el `Dockerfile` automáticamente
-4. Variables → agregar:
+3. Railway auto-detects the `Dockerfile`
+4. Variables → add:
 
 ```
-DATABASE_URL=<el de PostgreSQL>
+DATABASE_URL=<from PostgreSQL>
 ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_MODEL=claude-sonnet-4-5-20251001
-GOOGLE_DRIVE_FOLDER_ID=<ID de la carpeta raíz en Drive>
+GOOGLE_DRIVE_FOLDER_ID=<root folder ID in Drive>
 APP_ENV=production
-CORS_ORIGINS=https://TU-APP.vercel.app
-SECRET_KEY=<string aleatorio largo>
+CORS_ORIGINS=https://YOUR-APP.vercel.app
+SECRET_KEY=<long random string>
 ```
 
-5. Variables → **Secret Files** → subir `service-account.json` en path `/app/service-account.json`
-6. Deploy → copiar la URL pública generada
+5. Variables → **Secret Files** → upload `service-account.json` at path `/app/service-account.json`
+6. Deploy → copy the generated public URL
 
 ### 5. Vercel — Web
 
-1. vercel.com → New Project → importar desde GitHub
+1. vercel.com → New Project → import from GitHub
 2. Root Directory → `web`
 3. Environment Variables:
 
 ```
-NEXT_PUBLIC_API_URL=https://TU-URL.railway.app
+NEXT_PUBLIC_API_URL=https://YOUR-URL.railway.app
 ```
 
-4. Deploy → copiar URL
+4. Deploy → copy URL
 
-### 6. Actualizar CORS en Railway
+### 6. Update CORS on Railway
 
-En el servicio API de Railway, actualizar:
+In the Railway API service, update:
 ```
-CORS_ORIGINS=https://TU-APP.vercel.app
+CORS_ORIGINS=https://YOUR-APP.vercel.app
 ```
-Redeploy automático.
+Automatic redeploy.
 
 ---
 
-## Desarrollo local
+## Local Development
 
-### Requisitos
+### Requirements
 - Python 3.12+
 - Node.js 18+
-- Docker (para PostgreSQL local)
+- Docker (for local PostgreSQL)
 
 ### API
 
@@ -106,8 +105,8 @@ cd api
 python -m venv venv
 source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env          # completar variables
-docker-compose up -d          # levanta PostgreSQL
+cp .env.example .env          # fill in variables
+docker-compose up -d          # starts PostgreSQL
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -117,62 +116,62 @@ uvicorn app.main:app --reload --port 8000
 cd web
 npm install
 cp .env.example .env.local    # NEXT_PUBLIC_API_URL=http://localhost:8000
-npm run dev                   # corre en localhost:3000
+npm run dev                   # runs on localhost:3000
 ```
 
-> ⚠️ Para desarrollo local WeasyPrint requiere dependencias del sistema.  
-> En Mac: `brew install pango libffi`  
-> En Ubuntu: `apt-get install libpango-1.0-0 libpangoft2-1.0-0 libffi-dev`
+> WeasyPrint requires system dependencies for local development.
+> Mac: `brew install pango libffi`
+> Ubuntu: `apt-get install libpango-1.0-0 libpangoft2-1.0-0 libffi-dev`
 
 ---
 
-## Variables de entorno
+## Environment Variables
 
 ### `api/.env`
 
-| Variable | Descripción |
+| Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string (asyncpg) |
-| `ANTHROPIC_API_KEY` | API key de Anthropic |
-| `ANTHROPIC_MODEL` | Modelo a usar (default: claude-sonnet-4-5-20251001) |
-| `GOOGLE_SERVICE_ACCOUNT_FILE` | Path al JSON de service account |
-| `GOOGLE_DRIVE_FOLDER_ID` | ID de la carpeta raíz en Google Drive |
-| `APP_ENV` | `development` o `production` |
-| `CORS_ORIGINS` | URL del frontend (ej: https://tu-app.vercel.app) |
-| `SECRET_KEY` | String aleatorio para seguridad interna |
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `ANTHROPIC_MODEL` | Model to use (default: claude-sonnet-4-5-20251001) |
+| `GOOGLE_SERVICE_ACCOUNT_FILE` | Path to service account JSON |
+| `GOOGLE_DRIVE_FOLDER_ID` | Root folder ID in Google Drive |
+| `APP_ENV` | `development` or `production` |
+| `CORS_ORIGINS` | Frontend URL (e.g., https://your-app.vercel.app) |
+| `SECRET_KEY` | Random string for internal security |
 
 ### `web/.env.local`
 
-| Variable | Descripción |
+| Variable | Description |
 |----------|-------------|
-| `NEXT_PUBLIC_API_URL` | URL base del backend (sin slash final) |
+| `NEXT_PUBLIC_API_URL` | Backend base URL (no trailing slash) |
 
 ---
 
-## Estructura del proyecto
+## Project Structure
 
 ```
 ia-agent-quote-marble-operator/
-├── CLAUDE.md                     → instrucciones para Claude Code
-├── README.md                     → este archivo
-├── docker-compose.yml            → PostgreSQL local
+├── CLAUDE.md                     → Claude Code instructions
+├── README.md                     → this file
+├── docker-compose.yml            → local PostgreSQL
 │
 ├── api/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── .env.example
-│   ├── CONTEXT.md                → system prompt del agente Valentina
+│   ├── CONTEXT.md                → Valentina agent system prompt
 │   ├── app/
 │   │   ├── main.py
 │   │   ├── core/                 → config, database, static files
-│   │   ├── models/quote.py       → modelo Quote + QuoteStatus enum
+│   │   ├── models/quote.py       → Quote model + QuoteStatus enum
 │   │   └── modules/
 │   │       ├── agent/            → AgentService + SSE router + tools
-│   │       └── catalog/          → CRUD de catálogos con validación IA
-│   ├── catalog/                  → 15 JSONs (materiales, MO, piletas, etc.)
-│   ├── rules/                    → 6 archivos de reglas de negocio
-│   ├── examples/                 → 34 ejemplos validados de presupuestos
-│   └── templates/                → HTML para PDF + Excel template validado
+│   │       └── catalog/          → catalog CRUD with AI validation
+│   ├── catalog/                  → 15 JSONs (materials, labor, sinks, etc.)
+│   ├── rules/                    → 6 business rules files
+│   ├── examples/                 → 34 validated quote examples
+│   └── templates/                → HTML for PDF + validated Excel template
 │
 └── web/
     ├── package.json
@@ -180,31 +179,31 @@ ia-agent-quote-marble-operator/
     ├── tailwind.config.ts
     └── src/
         ├── app/
-        │   ├── layout.tsx        → shell con sidebar
-        │   ├── globals.css       → design tokens dark premium
-        │   ├── page.tsx          → dashboard de presupuestos
-        │   ├── quote/[id]/       → chat con Valentina
-        │   └── config/           → panel de catálogos
+        │   ├── layout.tsx        → shell with sidebar
+        │   ├── globals.css       → dark premium design tokens
+        │   ├── page.tsx          → quotes dashboard
+        │   ├── quote/[id]/       → chat with Valentina
+        │   └── config/           → catalog settings panel
         ├── components/
         │   ├── ui/Sidebar.tsx
         │   └── chat/MessageBubble.tsx
-        └── lib/api.ts            → cliente HTTP + SSE helpers
+        └── lib/api.ts            → HTTP client + SSE helpers
 ```
 
 ---
 
-## Endpoints de la API
+## API Endpoints
 
-| Método | Path | Descripción |
+| Method | Path | Description |
 |--------|------|-------------|
 | GET | `/health` | Health check |
-| GET | `/api/quotes` | Lista de presupuestos |
-| POST | `/api/quotes` | Crear nuevo presupuesto |
-| GET | `/api/quotes/:id` | Detalle con historial |
-| PATCH | `/api/quotes/:id/status` | Cambiar estado (draft/validated/sent) |
-| POST | `/api/quotes/:id/chat` | Enviar mensaje (SSE streaming) |
-| GET | `/api/catalog` | Lista de catálogos |
-| GET | `/api/catalog/:name` | Contenido de un catálogo |
-| POST | `/api/catalog/:name/validate` | Validar cambios con IA |
-| PUT | `/api/catalog/:name` | Guardar catálogo |
-| GET | `/files/:path` | Descarga de PDF/Excel generados |
+| GET | `/api/quotes` | List quotes |
+| POST | `/api/quotes` | Create new quote |
+| GET | `/api/quotes/:id` | Quote detail with history |
+| PATCH | `/api/quotes/:id/status` | Update status (draft/validated/sent) |
+| POST | `/api/quotes/:id/chat` | Send message (SSE streaming) |
+| GET | `/api/catalog` | List catalogs |
+| GET | `/api/catalog/:name` | Get catalog contents |
+| POST | `/api/catalog/:name/validate` | Validate changes with AI |
+| PUT | `/api/catalog/:name` | Save catalog |
+| GET | `/files/:path` | Download generated PDF/Excel files |
