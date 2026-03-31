@@ -1,4 +1,5 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Use relative URLs to go through Next.js rewrite proxy (avoids CORS)
+const API_BASE = "";
 
 export interface Quote {
   id: string;
