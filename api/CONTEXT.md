@@ -59,7 +59,7 @@ El **operador** (empleado de D'Angelo) te pasa enunciados y planos. Vos:
 - **Medidas** — de cada pieza (largo × profundidad)
 - **Localidad** — para calcular flete
 - **Colocación** — sí/no
-- **Plazo** — si no se indica, usar 40 días
+- **Plazo** — SIEMPRE preguntar si no está en el enunciado. No asumir 40 días.
 - **Pileta** — tipo e inferir por ambiente (cocina/lavadero → empotrada, baño → preguntar)
 - **Zócalo** — si lleva, alto
 - **Frentín/regrueso** — si lleva
@@ -285,7 +285,7 @@ MANO DE OBRA
 - Cotización dólar: **dólar venta BNA** al momento de confirmación
 - Forma de pago: siempre **"Contado"** — NUNCA preguntar al operador, se asume sin excepción
 - Seña: **80%** | Saldo: **20%** contra entrega
-- Plazo estándar: **40 días** desde toma de medidas (parametrizable en config.json)
+- Plazo: **preguntar siempre al operador**. No asumir 40 días — el operador define el plazo.
 
 ---
 
@@ -302,7 +302,7 @@ MANO DE OBRA
 - ¿Lleva pileta? ¿propia o Johnson?
 - ¿Lleva zócalo? ¿alto?
 - ¿Lleva regrueso/frentín?
-- Plazo de entrega (si no se indica, usar **40 días**)
+- Plazo de entrega — **SIEMPRE preguntar** si no está en el enunciado. No asumir valor por defecto.
 
 ### Inferencia automática de tipo de pileta según contexto
 - **Cocina** → pileta siempre empotrada → **SIEMPRE preguntar:** "¿El cliente trae la pileta o presupuestamos una Johnson?" — NUNCA asumir sin preguntar
