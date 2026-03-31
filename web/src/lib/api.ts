@@ -83,8 +83,13 @@ export async function* streamChat(
     body: formData,
   });
 
-  if (!res.ok) throw new Error("Error en el chat");
-  if (!res.body) throw new Error("Sin respuesta del servidor");
+  if (!res.ok) {
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      throw new Error("El servidor está reiniciando. Esperá unos segundos e intentá de nuevo.");
+    }
+    throw new Error("No se pudo conectar con Valentina. Intentá de nuevo.");
+  }
+  if (!res.body) throw new Error("El servidor no envió respuesta. Intentá de nuevo.");
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();

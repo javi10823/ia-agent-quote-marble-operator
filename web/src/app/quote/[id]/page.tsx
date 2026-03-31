@@ -81,6 +81,7 @@ export default function QuotePage() {
 
     try {
       let acc = "";
+      let gotDone = false;
       for await (const chunk of streamChat(quoteId, text, file || undefined)) {
         if (chunk.type === "text") {
           acc += chunk.content;
@@ -89,14 +90,24 @@ export default function QuotePage() {
         } else if (chunk.type === "action") {
           setActionText(chunk.content);
         } else if (chunk.type === "done") {
+          gotDone = true;
           setActionText("");
           setMessages(p => p.map(m => m.id === aid ? { ...m, isStreaming: false } : m));
           const updated = await fetchQuote(quoteId);
           setQuote(updated);
         }
       }
+      // Stream ended without a done event — connection dropped
+      if (!gotDone) {
+        setActionText("");
+        const errorMsg = acc
+          ? acc + "\n\n⚠️ _La conexión se interrumpió. El texto anterior puede estar incompleto._"
+          : "⚠️ La conexión se interrumpió antes de recibir una respuesta. Por favor intentá de nuevo.";
+        setMessages(p => p.map(m => m.id === aid ? { ...m, content: errorMsg, isStreaming: false } : m));
+      }
     } catch {
-      setMessages(p => p.map(m => m.id === aid ? { ...m, content: "Error de conexión. Intentá de nuevo.", isStreaming: false } : m));
+      setActionText("");
+      setMessages(p => p.map(m => m.id === aid ? { ...m, content: "⚠️ Hubo un error de conexión. Verificá tu internet e intentá de nuevo.", isStreaming: false } : m));
     } finally {
       setSending(false);
     }
