@@ -149,7 +149,7 @@ MANO DE OBRA
 - Generado con WeasyPrint
 - Footer obligatorio: `"No se suben mesadas que no entren en ascensor"`
 - Naming: `"Cliente - Material - DD.MM.YYYY.pdf"`
-- **Forma de pago:** siempre **"Contado"**
+- **Forma de pago:** siempre **"Contado"** — NUNCA preguntar al operador, se asume sin excepción
 
 ### Excel
 - Basado en template validado (`templates/excel/quote-template-excel.xlsx`)
@@ -234,7 +234,7 @@ MANO DE OBRA
 8. "Total PESOS piletas" separado → va en Total PESOS final
 9. TOTAL USD en fila propia → va en misma fila que primera pieza
 10. Formato $ en material USD → usar `"USD "#,##0`
-11. Forma de pago "A convenir" → siempre "Contado"
+11. Forma de pago "A convenir" → siempre "Contado" — NUNCA preguntar
 
 ---
 
@@ -244,13 +244,21 @@ MANO DE OBRA
 - Tel: 341-3082996 | marmoleriadangelo@gmail.com
 - Sistema de gestión interno: **DUX**
 - Cotización dólar: **dólar venta BNA** al momento de confirmación
-- Forma de pago: siempre **"Contado"**
+- Forma de pago: siempre **"Contado"** — NUNCA preguntar al operador, se asume sin excepción
 - Seña: **80%** | Saldo: **20%** contra entrega
 - Plazo estándar: **40 días** desde toma de medidas (parametrizable en config.json)
 
 ---
 
 ## 10. Reglas adicionales críticas
+
+### Proyecto (campo interno)
+- **NUNCA pedirlo al operador.** Es opcional e interno.
+- Si no se menciona, usar el tipo de trabajo como descripción (ej: "Cocina", "Baño + Cocina", "Isla", etc.)
+
+### Forma de pago
+- **NUNCA preguntar.** Siempre es **"Contado"** sin excepción.
+- No incluirlo en la lista de preguntas al operador.
 
 ### Pata lateral de isla (cocinas)
 - Es material adicional → sumar m² al total (`prof_mesada × alto_pata`)
