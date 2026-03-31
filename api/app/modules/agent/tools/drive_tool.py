@@ -84,6 +84,12 @@ async def upload_to_drive(
         pdf_path = quote_dir / f"{filename_base}.pdf"
         excel_path = quote_dir / f"{filename_base}.xlsx"
 
+        # Empty Service Account trash to free quota
+        try:
+            service.files().emptyTrash().execute()
+        except Exception:
+            pass  # Non-critical — continue even if this fails
+
         uploaded_urls = []
 
         for file_path, mime in [
