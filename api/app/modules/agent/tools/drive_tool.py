@@ -136,7 +136,8 @@ async def upload_to_drive(
             logging.info(f"Uploaded to Drive: {file_path.name} → {uploaded.get('webViewLink')}")
             uploaded_urls.append(uploaded.get("webViewLink"))
 
-        drive_url = uploaded_urls[0] if uploaded_urls else None
+        # Use last URL (Excel) as the main drive link — operator prefers Excel
+        drive_url = uploaded_urls[-1] if uploaded_urls else None
 
         return {
             "ok": True,
