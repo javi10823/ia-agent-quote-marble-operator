@@ -264,6 +264,12 @@ MANO DE OBRA
 - ¿Lleva regrueso/frentín?
 - Plazo de entrega (si no se indica, usar **40 días**)
 
+### Inferencia automática de tipo de pileta según contexto
+- **Cocina** → pileta siempre empotrada → solo preguntar si el cliente la trae o si presupuestamos Johnson
+- **Baño / Vanitory** → no se puede inferir → preguntar: ¿de apoyo, empotrada, o integrada en el material (AGUJEROAPOYO)?
+- **Lavadero** → pileta siempre empotrada → igual que cocina
+- Si el contexto es ambiguo (no se menciona qué ambiente es) → **preguntar**
+
 ### Pata lateral de isla (cocinas)
 - Es material adicional → sumar m² al total (`prof_mesada × alto_pata`)
 - MO: CORTE45 × ml × 2 (ml = profundidad de la mesada donde va la pata)
