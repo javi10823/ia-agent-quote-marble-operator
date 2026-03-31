@@ -27,14 +27,19 @@ def _get_drive_service():
 
 
 def _get_or_create_folder(service, name: str, parent_id: str) -> str:
-    """Get folder by name under parent, or create it."""
+    """Get folder by name under parent, or create it. Supports Shared Drives."""
     query = (
         f"name='{name}' and "
         f"'{parent_id}' in parents and "
         f"mimeType='application/vnd.google-apps.folder' and "
         f"trashed=false"
     )
-    results = service.files().list(q=query, fields="files(id)").execute()
+    results = service.files().list(
+        q=query,
+        fields="files(id)",
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+    ).execute()
     files = results.get("files", [])
     if files:
         return files[0]["id"]
@@ -46,6 +51,7 @@ def _get_or_create_folder(service, name: str, parent_id: str) -> str:
             "parents": [parent_id],
         },
         fields="id",
+        supportsAllDrives=True,
     ).execute()
     return folder["id"]
 
@@ -57,7 +63,7 @@ async def upload_to_drive(
     date_str: str,
 ) -> dict:
     """
-    Upload PDF and Excel to Google Drive.
+    Upload PDF and Excel to Google Drive (Shared Drive).
     Folder structure: Presupuestos/YYYY/MM-Mes/
     """
     try:
@@ -91,12 +97,6 @@ async def upload_to_drive(
         logging.info(f"  PDF exists: {pdf_path.exists()} → {pdf_path}")
         logging.info(f"  Excel exists: {excel_path.exists()} → {excel_path}")
 
-        # Empty Service Account trash to free quota
-        try:
-            service.files().emptyTrash().execute()
-        except Exception:
-            pass  # Non-critical — continue even if this fails
-
         uploaded_urls = []
 
         for file_path, mime in [
@@ -104,6 +104,7 @@ async def upload_to_drive(
             (excel_path, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
         ]:
             if not file_path.exists():
+                logging.warning(f"File not found, skipping: {file_path}")
                 continue
 
             # Delete existing file with same name if present
@@ -112,9 +113,17 @@ async def upload_to_drive(
                 f"'{month_id}' in parents and "
                 f"trashed=false"
             )
-            existing = service.files().list(q=query, fields="files(id)").execute()
+            existing = service.files().list(
+                q=query,
+                fields="files(id)",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            ).execute()
             for f in existing.get("files", []):
-                service.files().delete(fileId=f["id"]).execute()
+                service.files().delete(
+                    fileId=f["id"],
+                    supportsAllDrives=True,
+                ).execute()
 
             file_metadata = {"name": file_path.name, "parents": [month_id]}
             media = MediaFileUpload(str(file_path), mimetype=mime, resumable=True)
@@ -122,7 +131,9 @@ async def upload_to_drive(
                 body=file_metadata,
                 media_body=media,
                 fields="id, webViewLink",
+                supportsAllDrives=True,
             ).execute()
+            logging.info(f"Uploaded to Drive: {file_path.name} → {uploaded.get('webViewLink')}")
             uploaded_urls.append(uploaded.get("webViewLink"))
 
         drive_url = uploaded_urls[0] if uploaded_urls else None
@@ -135,4 +146,5 @@ async def upload_to_drive(
         }
 
     except Exception as e:
+        logging.error(f"Drive upload error: {e}")
         return {"ok": False, "error": str(e)}
