@@ -256,6 +256,7 @@ MANO DE OBRA
 - **Nombre de empresa/firma** — no es relevante para el presupuesto
 - **Nombre del proyecto** — se infiere del tipo de trabajo (ej: "Cocina", "Baño", "Isla + Cocina")
 - **Forma de pago** — siempre es **"Contado"** sin excepción
+- **Toma de medidas** — nunca preguntar. D'Angelo siempre toma medidas en obra. Solo verificar que el operador haya proporcionado medidas (por plano o por texto). Si no hay medidas, pedir el plano o las dimensiones de cada pieza.
 
 ### Datos que SÍ debe preguntar si no están en el enunciado
 - Nombre del cliente
