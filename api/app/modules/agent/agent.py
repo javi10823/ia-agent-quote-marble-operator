@@ -10,7 +10,6 @@ from app.core.config import settings
 from app.models.quote import Quote
 from app.modules.agent.tools.catalog_tool import catalog_lookup, check_stock
 from app.modules.agent.tools.plan_tool import read_plan
-from app.modules.agent.tools.calculate_tool import calculate_quote
 from app.modules.agent.tools.document_tool import generate_documents
 from app.modules.agent.tools.drive_tool import upload_to_drive
 
