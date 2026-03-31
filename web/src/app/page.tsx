@@ -37,8 +37,6 @@ export default function DashboardPage() {
     return days > 5;
   });
 
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-
   async function toggleStatus(e: React.MouseEvent, id: string, current: Quote["status"]) {
     e.stopPropagation();
     const next = STATUS_NEXT[current];
@@ -46,20 +44,17 @@ export default function DashboardPage() {
     setQuotes(prev => prev.map(q => q.id === id ? { ...q, status: next } : q));
   }
 
-  async function handleDelete(e: React.MouseEvent, id: string) {
+  async function handleDelete(e: React.MouseEvent, id: string, clientName: string) {
     e.stopPropagation();
-    if (confirmDeleteId === id) {
-      try {
-        await deleteQuote(id);
-        setQuotes(prev => prev.filter(q => q.id !== id));
-      } catch (err) {
-        console.error("Error deleting quote:", err);
-        alert("Error al eliminar el presupuesto. Intentá de nuevo.");
-      }
-      setConfirmDeleteId(null);
-    } else {
-      setConfirmDeleteId(id);
-      setTimeout(() => setConfirmDeleteId(null), 3000);
+    e.preventDefault();
+    const name = clientName || "Sin nombre";
+    if (!window.confirm(`¿Eliminar el presupuesto de ${name}?`)) return;
+    try {
+      await deleteQuote(id);
+      setQuotes(prev => prev.filter(q => q.id !== id));
+    } catch (err) {
+      console.error("Error deleting quote:", err);
+      alert("Error al eliminar el presupuesto. Intentá de nuevo.");
     }
   }
 
@@ -207,18 +202,20 @@ export default function DashboardPage() {
                       </td>
                       <td style={{ padding: "13px 10px", width: 40 }}>
                         <button
-                          onClick={(e) => handleDelete(e, q.id)}
-                          title={confirmDeleteId === q.id ? "Click de nuevo para confirmar" : "Eliminar presupuesto"}
+                          onClick={(e) => handleDelete(e, q.id, q.client_name)}
+                          title="Eliminar presupuesto"
                           style={{
                             width: 28, height: 28, borderRadius: 6,
-                            border: confirmDeleteId === q.id ? "1px solid rgba(255,69,58,.5)" : "1px solid var(--b1)",
-                            background: confirmDeleteId === q.id ? "rgba(255,69,58,.12)" : "transparent",
-                            color: confirmDeleteId === q.id ? "#ff453a" : "var(--t3)",
+                            border: "1px solid var(--b1)",
+                            background: "transparent",
+                            color: "var(--t3)",
                             cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
                             fontSize: 12, transition: "all .15s",
                           }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,69,58,.5)"; e.currentTarget.style.color = "#ff453a"; }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.color = "var(--t3)"; }}
                         >
-                          {confirmDeleteId === q.id ? "✓" : "✕"}
+                          ✕
                         </button>
                       </td>
                     </tr>
