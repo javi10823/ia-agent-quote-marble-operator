@@ -210,6 +210,48 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     # Footer note
     ws.cell(r, 1).value = "No se suben mesadas que no entren en ascensor"
     ws.cell(r, 1).font = bold_italic
+    r += 2
+
+    # Conditions footer (same as PDF)
+    conditions_font = Font(name="Calibri", size=8)
+    conditions_bold = Font(name="Calibri", size=8, bold=True)
+
+    ws.cell(r, 1).value = "*COTIZACION OFICIAL: dolar venta banco nacion. Los materiales expresados en dólares se pagan en pesos según la cotizacion del dia."
+    ws.cell(r, 1).font = conditions_font
+    r += 2
+
+    ws.cell(r, 1).value = "CONDICIONES"
+    ws.cell(r, 1).font = conditions_bold
+    r += 1
+
+    for line in [
+        "*PRESUPUESTO SUJETO A VARIACIÓN DE PRECIO",
+        "*MATERIALES IMPORTADOS SEGÚN COTIZACION DOLAR VENTA BANCO NACIÓN AL MOMENTO DE LA CONFIRMACION",
+        "*LA TOMA DE MEDIDAS NO PODRÁ SUPERAR LOS 30 DÍAS DESDE LA CONFIRMACIÓN, CASO CONTRARIO EL 20% RESTANTE SE ACTUALIZARA SEGÚN INDICE LA CONSTRUCCIÓN",
+        "*PRESUPUESTO DEFINITIVO SEGÚN MEDIDAS TOMADAS EN OBRA",
+        "*LOS PRECIOS INCLUYEN IVA",
+    ]:
+        ws.cell(r, 1).value = line
+        ws.cell(r, 1).font = conditions_font
+        r += 1
+
+    r += 1
+    ws.cell(r, 1).value = "FORMAS DE PAGO"
+    ws.cell(r, 1).font = conditions_bold
+    r += 1
+
+    for line in [
+        "*Materiales Importados: 80% seña, 20% restante contra entrega (cotización dolar venta BCO NACIÓN).",
+        "*Materiales Nacionales: 80% seña, 20% restante contra entrega.",
+        "Pago contado / transferencia / débito / crédito / cheques 15 días para importados y 30 días para nacionales",
+    ]:
+        ws.cell(r, 1).value = line
+        ws.cell(r, 1).font = conditions_font
+        r += 1
+
+    r += 1
+    ws.cell(r, 1).value = "TARJETAS DE CREDITO CONSULTAR PLANES"
+    ws.cell(r, 1).font = conditions_font
 
     # Column widths
     ws.column_dimensions["A"].width = 52
