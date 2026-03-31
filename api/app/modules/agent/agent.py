@@ -264,8 +264,8 @@ def _serialize_content(content) -> list:
 
 # ── RETRY CONFIG ─────────────────────────────────────────────────────────────
 
-MAX_RETRIES = 5
-RETRY_DELAYS = [20, 30, 40, 50, 60]
+MAX_RETRIES = 3
+RETRY_DELAYS = [5, 10, 15]
 
 
 # ── AGENT SERVICE ─────────────────────────────────────────────────────────────
@@ -429,10 +429,9 @@ class AgentService:
             assistant_messages.append({"role": "assistant", "content": _serialize_content(final_message.content)})
             assistant_messages.append({"role": "user", "content": tool_results})
 
-            # Cooldown between loop iterations to stay within 10K tokens/min
-            # Even with cache, each call uses ~2K new tokens
+            # Brief pause between loop iterations
             yield {"type": "action", "content": "Procesando resultados..."}
-            await asyncio.sleep(15)
+            await asyncio.sleep(1)
 
         # Save updated messages to DB
         updated_messages = new_messages + assistant_messages
