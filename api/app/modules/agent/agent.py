@@ -244,6 +244,29 @@ TOOLS = [
             "required": ["quote_id", "client_name", "material", "date"],
         },
     },
+    {
+        "name": "update_quote",
+        "description": "Actualiza datos del presupuesto en la base de datos. Usar cuando el operador pide corregir nombre del cliente, proyecto, material u otros datos.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "quote_id": {"type": "string"},
+                "updates": {
+                    "type": "object",
+                    "description": "Campos a actualizar. Solo incluir los que cambian.",
+                    "properties": {
+                        "client_name": {"type": "string", "description": "Nombre del cliente"},
+                        "project": {"type": "string", "description": "Nombre del proyecto"},
+                        "material": {"type": "string", "description": "Material del presupuesto"},
+                        "total_ars": {"type": "number", "description": "Total en pesos"},
+                        "total_usd": {"type": "number", "description": "Total en dólares"},
+                        "status": {"type": "string", "enum": ["draft", "validated", "sent"], "description": "Estado del presupuesto"},
+                    },
+                },
+            },
+            "required": ["quote_id", "updates"],
+        },
+    },
 ]
 
 
@@ -555,5 +578,20 @@ class AgentService:
             else:
                 logging.error(f"upload_to_drive FAILED: {result.get('error')}")
             return result
+        elif name == "update_quote":
+            updates = inputs.get("updates", {})
+            # Only allow known fields
+            allowed = {"client_name", "project", "material", "total_ars", "total_usd", "status"}
+            clean = {k: v for k, v in updates.items() if k in allowed and v is not None}
+            if not clean:
+                return {"ok": False, "error": "No hay campos válidos para actualizar"}
+            logging.info(f"update_quote {quote_id}: {clean}")
+            await db.execute(
+                update(Quote)
+                .where(Quote.id == quote_id)
+                .values(**clean)
+            )
+            await db.commit()
+            return {"ok": True, "updated_fields": list(clean.keys())}
         else:
             return {"error": f"Tool desconocida: {name}"}
