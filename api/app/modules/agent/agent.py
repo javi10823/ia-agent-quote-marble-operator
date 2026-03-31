@@ -249,8 +249,8 @@ TOOLS = [
 
 # ── RETRY CONFIG ─────────────────────────────────────────────────────────────
 
-MAX_RETRIES = 3
-RETRY_DELAYS = [30, 45, 60]
+MAX_RETRIES = 5
+RETRY_DELAYS = [30, 40, 50, 60, 60]
 
 
 # ── AGENT SERVICE ─────────────────────────────────────────────────────────────
@@ -259,6 +259,7 @@ class AgentService:
     def __init__(self):
         self.client = anthropic.AsyncAnthropic(
             api_key=settings.ANTHROPIC_API_KEY,
+            max_retries=0,  # Disable SDK internal retry — we handle it ourselves
             default_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
         )
 
@@ -411,6 +412,11 @@ class AgentService:
 
             assistant_messages.append({"role": "assistant", "content": final_message.content})
             assistant_messages.append({"role": "user", "content": tool_results})
+
+            # Cooldown between loop iterations to avoid hitting rate limit
+            # on the next API call (cached tokens help, but need time window)
+            yield {"type": "action", "content": "Procesando resultados..."}
+            await asyncio.sleep(2)
 
         # Save updated messages to DB
         updated_messages = new_messages + assistant_messages
