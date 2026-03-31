@@ -138,6 +138,14 @@ Todos los catálogos tienen precios SIN IVA. Aplicar ×1.21 al presupuestar sin 
 - **Granito Negro Brasil** → NUNCA cobrar merma, sin excepción
 - **Merma** → solo sintéticos (Silestone, Dekton, Neolith, Puraprima, Purastone, Laminatto)
 - Piedra natural (granito, mármol) → sin merma nunca
+- **REGLA DE MERMA SILESTONE — CRÍTICO:**
+  - Silestone se vende en **media placa (2.10 m²)** o **placa entera (3.00 × 1.40 = 4.20 m²)**
+  - Calcular cuántas medias placas se necesitan: `ceil(m2_trabajo / 2.10)`
+  - Desperdicio = `(medias_placas × 2.10) - m2_trabajo`
+  - **Si desperdicio < 1.0 m² → NO cobrar sobrante. Solo cobrar m² reales del trabajo.**
+  - **Si desperdicio ≥ 1.0 m² → ofrecer sobrante al cliente a mitad de precio:** `sobrante_m2 = desperdicio / 2` al mismo precio unitario
+  - **NUNCA ofrecer "sobrante opcional" si el desperdicio es menor a 1 m²**
+  - El material a cobrar es SIEMPRE los m² reales de las piezas, NUNCA los m² de la placa entera
 
 ### Piletas — CRÍTICO
 - **Piletas Johnson → SIEMPRE PEGADOPILETA** — todas son empotradas, sin excepción
@@ -204,9 +212,11 @@ Ejemplo isla 1.70×0.64×0.95:
 ### Mesada >3m
 Agregar `(SE REALIZA EN 2 TRAMOS)` en la descripción
 
-### Sobrante
-- Desperdicio ≥ 1m² → ofrecer sobrante = desperdicio / 2
-- Mismo precio unitario, bloque separado en el presupuesto
+### Sobrante — REGLA ESTRICTA
+- **Desperdicio < 1.0 m²** → NO cobrar sobrante. NO ofrecer sobrante. NO mencionarlo.
+- **Desperdicio ≥ 1.0 m²** → ofrecer sobrante al cliente: `sobrante_m2 = desperdicio / 2` al mismo precio unitario. Bloque separado en el presupuesto, claramente marcado como "SOBRANTE (opcional)".
+- **El material del presupuesto SIEMPRE son los m² reales de las piezas.** Nunca cobrar la placa entera.
+- **El título "MATERIAL — X m²" debe coincidir con la suma de las piezas.** No poner los m² de la placa.
 
 ---
 
