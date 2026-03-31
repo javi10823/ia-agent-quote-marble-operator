@@ -13,7 +13,7 @@ export default function MessageBubble({ message, actionText }: Props) {
           maxWidth: "52%", padding: "12px 16px",
           background: "var(--acc2)", border: "1px solid var(--acc3)",
           borderRadius: "12px 2px 12px 12px",
-          fontSize: 13, lineHeight: 1.65, color: "rgba(255,255,255,.78)",
+          fontSize: 15, lineHeight: 1.65, color: "rgba(255,255,255,.78)",
         }}>
           {message.attachmentName && (
             <div style={{
@@ -110,7 +110,7 @@ function Block({ block, isLast, isStreaming, actionText }: { block: BlockType; i
   }
 
   return (
-    <div style={{ padding: "14px 18px", background: "var(--s2)", borderBottom, fontSize: 13, lineHeight: 1.7, color: "var(--t2)" }}>
+    <div style={{ padding: "14px 18px", background: "var(--s2)", borderBottom, fontSize: 15, lineHeight: 1.7, color: "var(--t2)" }}>
       <FormattedText text={block.content} isStreaming={isStreaming} />
     </div>
   );
