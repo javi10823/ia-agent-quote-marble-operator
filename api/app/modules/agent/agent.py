@@ -254,16 +254,12 @@ def _extract_quote_info(user_message: str) -> dict:
     import re
     info = {}
 
-    # Try to find client name patterns like "cliente Juan Carlos" or "para María López"
-    name_patterns = [
-        r"(?:cliente|client[ea]?)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*)",
-        r"(?:para|de)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*)",
-    ]
-    for pattern in name_patterns:
-        match = re.search(pattern, user_message)
-        if match:
-            info["client_name"] = match.group(1).strip()
-            break
+    # Try to find client name after "cliente" keyword (case insensitive)
+    match = re.search(r"(?:cliente|clienta)\s+(.+?)(?:\s*,|\s+con\s|\s+en\s|\s+lleva|\s+sin\s|$)", user_message, re.IGNORECASE)
+    if match:
+        name = match.group(1).strip()
+        # Title case the name
+        info["client_name"] = name.title()
 
     # Try to find material name
     material_keywords = [
