@@ -125,12 +125,43 @@ function FormattedText({ text, isStreaming }: { text: string; isStreaming?: bool
 
   while (i < lines.length) {
     const line = lines[i];
+
+    // Markdown table: collect all consecutive | lines
+    if (line.trim().startsWith("|") && line.trim().endsWith("|")) {
+      const tableLines: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      elements.push(<MarkdownTable key={`table-${i}`} lines={tableLines} />);
+      continue;
+    }
+
     if (line.trim() === "") {
       elements.push(<div key={i} style={{ height: 6 }} />);
+    } else if (line.startsWith("### ")) {
+      elements.push(
+        <p key={i} style={{ fontWeight: 600, color: "var(--t1)", fontSize: 14, marginTop: 10, marginBottom: 4 }}>
+          {line.slice(4)}
+        </p>
+      );
+    } else if (line.startsWith("## ")) {
+      elements.push(
+        <p key={i} style={{ fontWeight: 600, color: "var(--acc)", fontSize: 15, marginTop: 12, marginBottom: 6 }}>
+          {line.slice(3)}
+        </p>
+      );
     } else if (line.startsWith("**") && line.endsWith("**")) {
       elements.push(<p key={i} style={{ fontWeight: 500, color: "var(--t1)" }}>{line.slice(2, -2)}</p>);
     } else if (line.startsWith("✅") || line.startsWith("⚠") || line.startsWith("❌")) {
       elements.push(<p key={i} style={{ color: "var(--t1)" }}>{line}</p>);
+    } else if (line.startsWith("- ")) {
+      elements.push(
+        <p key={i} style={{ marginBottom: 2, paddingLeft: 12 }}>
+          <span style={{ color: "var(--t3)", marginRight: 6 }}>•</span>
+          <InlineFormat text={line.slice(2)} />
+        </p>
+      );
     } else {
       elements.push(<p key={i} style={{ marginBottom: 2 }}><InlineFormat text={line} /></p>);
     }
@@ -140,6 +171,60 @@ function FormattedText({ text, isStreaming }: { text: string; isStreaming?: bool
   return (
     <div className={isStreaming ? "streaming-cursor" : ""}>
       {elements}
+    </div>
+  );
+}
+
+function MarkdownTable({ lines }: { lines: string[] }) {
+  // Filter out separator lines (|---|---|)
+  const dataLines = lines.filter(l => !l.match(/^\|[\s\-:|]+\|$/));
+  if (dataLines.length === 0) return null;
+
+  const parseRow = (line: string) =>
+    line.split("|").slice(1, -1).map(c => c.trim());
+
+  const header = parseRow(dataLines[0]);
+  const rows = dataLines.slice(1).map(parseRow);
+
+  const cellStyle: React.CSSProperties = {
+    padding: "5px 10px",
+    fontSize: 13,
+    borderBottom: "1px solid var(--b1)",
+    color: "var(--t2)",
+  };
+
+  const headerStyle: React.CSSProperties = {
+    ...cellStyle,
+    fontWeight: 600,
+    color: "var(--t1)",
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    background: "rgba(255,255,255,.03)",
+  };
+
+  return (
+    <div style={{ margin: "8px 0", borderRadius: 8, overflow: "hidden", border: "1px solid var(--b1)" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            {header.map((h, j) => (
+              <th key={j} style={{ ...headerStyle, textAlign: j >= 2 ? "right" : "left" }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, ri) => (
+            <tr key={ri} style={{ background: ri % 2 === 1 ? "rgba(255,255,255,.02)" : "transparent" }}>
+              {row.map((cell, ci) => (
+                <td key={ci} style={{ ...cellStyle, textAlign: ci >= 2 ? "right" : "left" }}>
+                  <InlineFormat text={cell} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
