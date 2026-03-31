@@ -52,18 +52,51 @@ def catalog_lookup(catalog: str, sku: str) -> dict:
 
             return result
 
-    # Not found — try partial match
-    matches = []
+    # Not found by exact SKU — try matching by name
+    name_matches = []
     for item in items:
-        if sku_upper in item.get("sku", "").upper() or sku_upper in item.get("name", "").upper():
-            matches.append({"sku": item.get("sku"), "name": item.get("name", "")})
+        item_name = item.get("name", "").upper()
+        item_sku = item.get("sku", "").upper()
+        # Match if search term appears in name or SKU
+        if sku_upper in item_name or sku_upper in item_sku:
+            name_matches.append(item)
+
+    # If exactly one match by name, return it as found
+    if len(name_matches) == 1:
+        item = name_matches[0]
+        result = {"found": True, "sku": item.get("sku"), "name": item.get("name", ""), "matched_by": "name"}
+
+        if "price_usd" in item:
+            price_base = item["price_usd"]
+            price_with_iva = math.floor(price_base * 1.21)
+            result["price_usd"] = price_with_iva
+            result["price_usd_base"] = price_base
+            result["currency"] = "USD"
+        elif "price_ars" in item:
+            price_base = item["price_ars"]
+            price_with_iva = round(price_base * 1.21)
+            result["price_ars"] = price_with_iva
+            result["price_ars_base"] = price_base
+            result["currency"] = "ARS"
+
+        if "unit" in item:
+            result["unit"] = item["unit"]
+        if "material_type" in item:
+            result["material_type"] = item["material_type"]
+        if "origin" in item:
+            result["origin"] = item["origin"]
+
+        return result
+
+    # Multiple or no matches — return suggestions
+    suggestions = [{"sku": m.get("sku"), "name": m.get("name", "")} for m in name_matches[:5]]
 
     return {
         "found": False,
         "sku": sku,
         "catalog": catalog,
-        "partial_matches": matches[:5],
-        "message": f"SKU '{sku}' no encontrado en {catalog}",
+        "partial_matches": suggestions,
+        "message": f"SKU '{sku}' no encontrado en {catalog}" + (f". Opciones similares: {', '.join(s['name'] for s in suggestions)}" if suggestions else ""),
     }
 
 
