@@ -528,10 +528,11 @@ class AgentService:
                     .values(
                         pdf_url=result.get("pdf_url"),
                         excel_url=result.get("excel_url"),
+                        status="validated",
                     )
                 )
                 await db.commit()
-                logging.info(f"Quote {quote_id} files updated: pdf={result.get('pdf_url')}, excel={result.get('excel_url')}")
+                logging.info(f"Quote {quote_id} files updated + status=validated")
             return result
         elif name == "upload_to_drive":
             result = await upload_to_drive(
