@@ -298,10 +298,16 @@ MANO DE OBRA
 - Plazo de entrega (si no se indica, usar **40 días**)
 
 ### Inferencia automática de tipo de pileta según contexto
-- **Cocina** → pileta siempre empotrada → solo preguntar si el cliente la trae o si presupuestamos Johnson
+- **Cocina** → pileta siempre empotrada → **SIEMPRE preguntar:** "¿El cliente trae la pileta o presupuestamos una Johnson?" — NUNCA asumir sin preguntar
 - **Baño / Vanitory** → no se puede inferir → preguntar: ¿de apoyo, empotrada, o integrada en el material (AGUJEROAPOYO)?
-- **Lavadero** → pileta siempre empotrada → igual que cocina
+- **Lavadero** → pileta siempre empotrada → **SIEMPRE preguntar:** "¿El cliente trae la pileta o presupuestamos una Johnson?"
 - Si el contexto es ambiguo (no se menciona qué ambiente es) → **preguntar**
+- **NUNCA asumir que el cliente trae la pileta sin que lo diga explícitamente.** Si no se menciona → preguntar.
+
+### Datos que SIEMPRE deben preguntarse antes de calcular (si no están en el enunciado)
+- **Pileta:** ¿la trae el cliente o presupuestamos Johnson? — OBLIGATORIO preguntar, no inferir
+- **Frentín/regrueso:** ¿lleva? — OBLIGATORIO preguntar para cocina y baño
+- **NUNCA generar el cálculo completo ni el resumen sin tener TODAS las respuestas.** Primero preguntar lo que falta, después calcular.
 
 ### Pata lateral de isla (cocinas)
 - Es material adicional → sumar m² al total (`prof_mesada × alto_pata`)
