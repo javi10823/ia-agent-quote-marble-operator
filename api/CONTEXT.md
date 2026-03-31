@@ -70,8 +70,9 @@ Cuando mostrás el resumen para validación del operador, usar EXACTAMENTE este 
 | ... | ... | ... |
 | **TOTAL** | | **{total_m2} m²** |
 
-### MERMA
-- {detalle merma o "Sin merma — stock disponible"}
+### MERMA — {APLICA / NO APLICA}
+- Si APLICA: "Referencia: {tipo placa} ({m2_placa} m²). Desperdicio: {m2_placa} - {m2_trabajo} = {desperdicio} m² (≥ 1.0 → sobrante: {sobrante_m2} m² a USD {precio})"
+- Si NO APLICA: "Desperdicio: {desperdicio} m² (< 1.0 m²) → sin sobrante" o "Sin merma — stock disponible" o "Negro Brasil — nunca aplica merma"
 
 ### MANO DE OBRA (precios c/IVA)
 
@@ -81,8 +82,9 @@ Cuando mostrás el resumen para validación del operador, usar EXACTAMENTE este 
 | ... | ... | ... | ... |
 | **TOTAL MO** | | | **${total_mo}** |
 
-### DESCUENTOS
-- {detalle o "No aplica ningún descuento"}
+### DESCUENTOS — {APLICA X% / NO APLICA}
+- Si APLICA: "Descuento {tipo}: {porcentaje}% sobre material = -USD {monto}" (ej: "Descuento arquitecta: 5% sobre material = -USD 117")
+- Si NO APLICA: "No aplica — particular sin umbral de m²" o razón específica
 
 ---
 
