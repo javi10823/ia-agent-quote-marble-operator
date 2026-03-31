@@ -506,26 +506,36 @@ class AgentService:
             return await read_plan(inputs["filename"], inputs.get("crop_instructions", []))
         elif name == "generate_documents":
             logging.info(f"generate_documents called with quote_data keys: {list(inputs['quote_data'].keys())}")
+
+            # Always save quote data to DB (even if PDF generation fails)
+            update_values = {
+                "client_name": inputs["quote_data"]["client_name"],
+                "project": inputs["quote_data"].get("project", ""),
+                "material": inputs["quote_data"].get("material_name"),
+                "total_ars": inputs["quote_data"].get("total_ars"),
+                "total_usd": inputs["quote_data"].get("total_usd"),
+            }
+            logging.info(f"Saving quote data {quote_id}: {update_values}")
+            await db.execute(
+                update(Quote)
+                .where(Quote.id == quote_id)
+                .values(**update_values)
+            )
+            await db.commit()
+
             result = await generate_documents(quote_id, inputs["quote_data"])
             logging.info(f"generate_documents result: ok={result.get('ok')}, error={result.get('error')}")
             if result.get("ok"):
-                update_values = {
-                    "client_name": inputs["quote_data"]["client_name"],
-                    "project": inputs["quote_data"].get("project", ""),
-                    "material": inputs["quote_data"].get("material_name"),
-                    "total_ars": inputs["quote_data"].get("total_ars"),
-                    "total_usd": inputs["quote_data"].get("total_usd"),
-                    "pdf_url": result.get("pdf_url"),
-                    "excel_url": result.get("excel_url"),
-                }
-                logging.info(f"Updating quote {quote_id} with: {update_values}")
                 await db.execute(
                     update(Quote)
                     .where(Quote.id == quote_id)
-                    .values(**update_values)
+                    .values(
+                        pdf_url=result.get("pdf_url"),
+                        excel_url=result.get("excel_url"),
+                    )
                 )
                 await db.commit()
-                logging.info(f"Quote {quote_id} updated successfully")
+                logging.info(f"Quote {quote_id} files updated: pdf={result.get('pdf_url')}, excel={result.get('excel_url')}")
             return result
         elif name == "upload_to_drive":
             result = await upload_to_drive(
