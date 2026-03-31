@@ -1,10 +1,16 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
 export default function Sidebar() {
   const router = useRouter();
   const path = usePathname();
+  const [quoteCount, setQuoteCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch("/api/quotes").then(r => r.json()).then(data => setQuoteCount(data.length)).catch(() => {});
+  }, [path]);
 
   async function handleNew() {
     const res = await fetch("/api/quotes", { method: "POST" });
@@ -41,7 +47,7 @@ export default function Sidebar() {
       <NavItem
         icon={<GridIcon />}
         label="Presupuestos"
-        badge="34"
+        badge={quoteCount !== null ? String(quoteCount) : "—"}
         active={path === "/"}
         onClick={() => router.push("/")}
       />
