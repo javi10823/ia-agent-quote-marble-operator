@@ -7,7 +7,7 @@ import json
 class Settings(BaseSettings):
     DATABASE_URL: str
     ANTHROPIC_API_KEY: str
-    ANTHROPIC_MODEL: str = "claude-sonnet-4-5-20251001"
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-5-20250514"
     GOOGLE_SERVICE_ACCOUNT_FILE: str = "service-account.json"
     GOOGLE_DRIVE_FOLDER_ID: str
     APP_ENV: str = "development"
