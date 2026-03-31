@@ -58,6 +58,19 @@ async def update_status(
     return {"ok": True}
 
 
+# ── DELETE QUOTE ──────────────────────────────────────────────────────────────
+
+@router.delete("/quotes/{quote_id}")
+async def delete_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+    await db.delete(quote)
+    await db.commit()
+    return {"ok": True}
+
+
 # ── CREATE QUOTE (new chat) ───────────────────────────────────────────────────
 
 @router.post("/quotes")
