@@ -488,9 +488,8 @@ class AgentService:
             assistant_messages.append({"role": "assistant", "content": _serialize_content(final_message.content)})
             assistant_messages.append({"role": "user", "content": tool_results})
 
-            # Brief pause between loop iterations
-            yield {"type": "action", "content": "Procesando resultados..."}
-            await asyncio.sleep(1)
+            # Brief pause between loop iterations (minimal with Tier 1)
+            await asyncio.sleep(0.1)
 
         # Save updated messages to DB
         updated_messages = new_messages + assistant_messages
