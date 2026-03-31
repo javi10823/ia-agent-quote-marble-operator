@@ -17,24 +17,36 @@ BASE_DIR = Path(__file__).parent.parent.parent.parent
 
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
 
-def build_system_prompt() -> str:
+def build_system_prompt(has_plan: bool = False) -> str:
     import logging
 
     context = (BASE_DIR / "CONTEXT.md").read_text(encoding="utf-8")
     rules = []
     rules_dir = BASE_DIR / "rules"
-    rule_files = sorted(rules_dir.glob("*.md"))
+
+    # Core rules always loaded; plan-reading only when there's a plan
+    core_rules = [
+        "calculation-formulas.md",
+        "commercial-conditions.md",
+        "materials-guide.md",
+        "pricing-variables.md",
+        "quote-process.md",
+    ]
+    if has_plan:
+        core_rules.append("plan-reading.md")
+
+    rule_files = [rules_dir / name for name in core_rules if (rules_dir / name).exists()]
 
     logging.info(f"BASE_DIR: {BASE_DIR}")
-    logging.info(f"Rules found: {[f.name for f in rule_files]}")
+    logging.info(f"Rules loaded: {[f.name for f in rule_files]}")
 
     for f in rule_files:
         rules.append(f"## {f.stem}\n\n{f.read_text(encoding='utf-8')}")
 
-    # Load a selection of key examples
+    # Load only 2 key examples to stay within token limits
     examples = []
     examples_dir = BASE_DIR / "examples"
-    key_examples = ["quote-028", "quote-030", "quote-032", "quote-033", "quote-034"]
+    key_examples = ["quote-030", "quote-034"]
     for name in key_examples:
         for f in examples_dir.glob(f"{name}*.md"):
             examples.append(f.read_text(encoding="utf-8"))
@@ -189,7 +201,6 @@ TOOLS = [
 class AgentService:
     def __init__(self):
         self.client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self.system_prompt = build_system_prompt()
 
     async def stream_chat(
         self,
@@ -200,6 +211,10 @@ class AgentService:
         plan_filename: Optional[str],
         db: AsyncSession,
     ) -> AsyncGenerator[dict, None]:
+
+        # Build system prompt per request (conditionally load plan rules)
+        has_plan = plan_bytes is not None and plan_filename is not None
+        system_prompt = build_system_prompt(has_plan=has_plan)
 
         # Build user message content
         content = []
@@ -241,7 +256,7 @@ class AgentService:
             async with self.client.messages.stream(
                 model=settings.ANTHROPIC_MODEL,
                 max_tokens=8096,
-                system=self.system_prompt,
+                system=system_prompt,
                 messages=new_messages + assistant_messages,
                 tools=TOOLS,
             ) as stream:
