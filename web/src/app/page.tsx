@@ -25,6 +25,8 @@ export default function DashboardPage() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetchQuotes().then(setQuotes).finally(() => setLoading(false));
@@ -44,18 +46,23 @@ export default function DashboardPage() {
     setQuotes(prev => prev.map(q => q.id === id ? { ...q, status: next } : q));
   }
 
-  async function handleDelete(e: React.MouseEvent, id: string, clientName: string) {
+  function askDelete(e: React.MouseEvent, id: string, clientName: string) {
     e.stopPropagation();
     e.preventDefault();
-    const name = clientName || "Sin nombre";
-    if (!window.confirm(`¿Eliminar el presupuesto de ${name}?`)) return;
+    setDeleteTarget({ id, name: clientName || "Sin nombre" });
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await deleteQuote(id);
-      setQuotes(prev => prev.filter(q => q.id !== id));
+      await deleteQuote(deleteTarget.id);
+      setQuotes(prev => prev.filter(q => q.id !== deleteTarget.id));
     } catch (err) {
       console.error("Error deleting quote:", err);
-      alert("Error al eliminar el presupuesto. Intentá de nuevo.");
     }
+    setDeleting(false);
+    setDeleteTarget(null);
   }
 
   return (
@@ -202,7 +209,7 @@ export default function DashboardPage() {
                       </td>
                       <td style={{ padding: "13px 10px", width: 40 }}>
                         <button
-                          onClick={(e) => handleDelete(e, q.id, q.client_name)}
+                          onClick={(e) => askDelete(e, q.id, q.client_name)}
                           title="Eliminar presupuesto"
                           style={{
                             width: 28, height: 28, borderRadius: 6,
@@ -226,6 +233,60 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Delete confirmation modal */}
+      {deleteTarget && (
+        <div
+          onClick={() => setDeleteTarget(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 999,
+            background: "rgba(0,0,0,.6)", backdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: "var(--s2)", border: "1px solid var(--b2)",
+              borderRadius: 14, padding: "28px 32px", width: 380,
+              boxShadow: "0 20px 60px rgba(0,0,0,.5)",
+            }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 500, color: "var(--t1)", marginBottom: 8 }}>
+              Eliminar presupuesto
+            </div>
+            <div style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.6, marginBottom: 24 }}>
+              ¿Eliminar el presupuesto de <strong style={{ color: "var(--t1)" }}>{deleteTarget.name}</strong>? Esta acción no se puede deshacer.
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                style={{
+                  padding: "8px 18px", borderRadius: 8,
+                  fontSize: 13, fontWeight: 500, fontFamily: "inherit",
+                  cursor: "pointer", border: "1px solid var(--b2)",
+                  background: "transparent", color: "var(--t2)",
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleting}
+                style={{
+                  padding: "8px 18px", borderRadius: 8,
+                  fontSize: 13, fontWeight: 500, fontFamily: "inherit",
+                  cursor: deleting ? "wait" : "pointer", border: "none",
+                  background: "var(--red)", color: "#fff",
+                  opacity: deleting ? 0.6 : 1,
+                }}
+              >
+                {deleting ? "Eliminando..." : "Eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
