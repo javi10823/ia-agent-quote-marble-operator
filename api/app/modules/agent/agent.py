@@ -221,6 +221,8 @@ class AgentService:
 
         # Agentic loop with tool use
         assistant_messages = []
+        yield {"type": "action", "content": "Leyendo catálogos y calculando..."}
+
         while True:
             full_text = ""
             tool_uses = []

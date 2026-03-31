@@ -1,8 +1,8 @@
 import type { UIMessage } from "@/app/quote/[id]/page";
 
-interface Props { message: UIMessage; }
+interface Props { message: UIMessage; actionText?: string; }
 
-export default function MessageBubble({ message }: Props) {
+export default function MessageBubble({ message, actionText }: Props) {
   const isV = message.role === "assistant";
 
   if (!isV) {
@@ -30,7 +30,7 @@ export default function MessageBubble({ message }: Props) {
   }
 
   // Parse content into blocks
-  const blocks = parseBlocks(message.content, message.isStreaming);
+  const blocks = parseBlocks(message.content, message.isStreaming, actionText);
 
   return (
     <div className="msg-anim" style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
@@ -42,7 +42,7 @@ export default function MessageBubble({ message }: Props) {
         overflow: "hidden",
       }}>
         {blocks.map((block, i) => (
-          <Block key={i} block={block} isLast={i === blocks.length - 1} isStreaming={!!message.isStreaming && i === blocks.length - 1} />
+          <Block key={i} block={block} isLast={i === blocks.length - 1} isStreaming={!!message.isStreaming && i === blocks.length - 1} actionText={actionText} />
         ))}
       </div>
     </div>
@@ -53,8 +53,8 @@ export default function MessageBubble({ message }: Props) {
 
 type BlockType = { type: "thinking" | "text" | "raw"; content: string };
 
-function parseBlocks(content: string, isStreaming?: boolean): BlockType[] {
-  if (!content) return [{ type: "thinking", content: "" }];
+function parseBlocks(content: string, isStreaming?: boolean, actionText?: string): BlockType[] {
+  if (!content) return [{ type: "thinking", content: actionText || "" }];
 
   const blocks: BlockType[] = [];
   const lines = content.split("\n");
@@ -88,7 +88,7 @@ function parseBlocks(content: string, isStreaming?: boolean): BlockType[] {
   return blocks;
 }
 
-function Block({ block, isLast, isStreaming }: { block: BlockType; isLast: boolean; isStreaming: boolean }) {
+function Block({ block, isLast, isStreaming, actionText }: { block: BlockType; isLast: boolean; isStreaming: boolean; actionText?: string }) {
   const borderBottom = !isLast ? "1px solid var(--b1)" : undefined;
 
   if (block.type === "thinking") {
@@ -102,7 +102,7 @@ function Block({ block, isLast, isStreaming }: { block: BlockType; isLast: boole
               animation: "pulse 1.4s ease-in-out infinite",
               animationDelay: `${i * 0.3}s`,
             }} />
-            {line || (isStreaming ? "Procesando..." : "")}
+            {line || (isStreaming ? (actionText || "Procesando...") : "")}
           </div>
         ))}
       </div>

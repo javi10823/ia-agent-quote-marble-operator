@@ -24,6 +24,7 @@ export default function QuotePage() {
   const [planFile, setPlanFile] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [actionText, setActionText] = useState("");
 
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -76,17 +77,19 @@ export default function QuotePage() {
       { id: uid, role: "user", content: text, attachmentName: file?.name },
       { id: aid, role: "assistant", content: "", isStreaming: true },
     ]);
-    setInput(""); setPlanFile(null); setSending(true);
+    setInput(""); setPlanFile(null); setSending(true); setActionText("");
 
     try {
       let acc = "";
       for await (const chunk of streamChat(quoteId, text, file || undefined)) {
         if (chunk.type === "text") {
           acc += chunk.content;
+          setActionText("");
           setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc } : m));
         } else if (chunk.type === "action") {
-          setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc + `\n\n_${chunk.content}_` } : m));
+          setActionText(chunk.content);
         } else if (chunk.type === "done") {
+          setActionText("");
           setMessages(p => p.map(m => m.id === aid ? { ...m, isStreaming: false } : m));
           const updated = await fetchQuote(quoteId);
           setQuote(updated);
@@ -143,7 +146,7 @@ export default function QuotePage() {
 
       {/* Messages */}
       <div style={{ flex: 1, overflowY: "auto", padding: "28px 28px 16px", display: "flex", flexDirection: "column", gap: 20 }}>
-        {messages.map(msg => <MessageBubble key={msg.id} message={msg} />)}
+        {messages.map(msg => <MessageBubble key={msg.id} message={msg} actionText={msg.isStreaming ? actionText : undefined} />)}
         <div ref={endRef} />
       </div>
 
