@@ -139,25 +139,42 @@ function FormattedText({ text, isStreaming }: { text: string; isStreaming?: bool
 
     if (line.trim() === "") {
       elements.push(<div key={i} style={{ height: 6 }} />);
+    } else if (line.trim() === "---") {
+      elements.push(
+        <hr key={i} style={{ border: "none", borderTop: "1px solid var(--b2)", margin: "14px 0" }} />
+      );
     } else if (line.startsWith("### ")) {
       elements.push(
-        <p key={i} style={{ fontWeight: 600, color: "var(--t1)", fontSize: 14, marginTop: 10, marginBottom: 4 }}>
-          {line.slice(4)}
-        </p>
+        <div key={i} style={{
+          fontWeight: 600, color: "var(--t1)", fontSize: 15,
+          marginTop: 18, marginBottom: 8,
+          paddingBottom: 6, borderBottom: "1px solid var(--b1)",
+          letterSpacing: "-0.01em",
+        }}>
+          <InlineFormat text={line.slice(4)} />
+        </div>
       );
     } else if (line.startsWith("## ")) {
       elements.push(
-        <p key={i} style={{ fontWeight: 600, color: "var(--acc)", fontSize: 15, marginTop: 12, marginBottom: 6 }}>
-          {line.slice(3)}
-        </p>
+        <div key={i} style={{
+          fontWeight: 600, color: "var(--t1)", fontSize: 20,
+          marginTop: 4, marginBottom: 4,
+          letterSpacing: "-0.02em", lineHeight: 1.3,
+        }}>
+          <InlineFormat text={line.slice(3)} />
+        </div>
       );
     } else if (line.startsWith("**") && line.endsWith("**")) {
-      elements.push(<p key={i} style={{ fontWeight: 500, color: "var(--t1)" }}>{line.slice(2, -2)}</p>);
+      elements.push(
+        <p key={i} style={{ fontWeight: 500, color: "var(--t2)", fontSize: 13 }}>
+          <InlineFormat text={line} />
+        </p>
+      );
     } else if (line.startsWith("✅") || line.startsWith("⚠") || line.startsWith("❌")) {
       elements.push(<p key={i} style={{ color: "var(--t1)" }}>{line}</p>);
     } else if (line.startsWith("- ")) {
       elements.push(
-        <p key={i} style={{ marginBottom: 2, paddingLeft: 12 }}>
+        <p key={i} style={{ marginBottom: 3, paddingLeft: 12 }}>
           <span style={{ color: "var(--t3)", marginRight: 6 }}>•</span>
           <InlineFormat text={line.slice(2)} />
         </p>
@@ -186,43 +203,57 @@ function MarkdownTable({ lines }: { lines: string[] }) {
   const header = parseRow(dataLines[0]);
   const rows = dataLines.slice(1).map(parseRow);
 
+  // Check if last row is a TOTAL row
+  const isTotal = (row: string[]) => row.some(c => c.toLowerCase().includes("total"));
+
   const cellStyle: React.CSSProperties = {
-    padding: "5px 10px",
-    fontSize: 13,
-    borderBottom: "1px solid var(--b1)",
+    padding: "10px 14px",
+    fontSize: 14,
+    borderBottom: "1px solid rgba(255,255,255,.06)",
     color: "var(--t2)",
+    lineHeight: 1.4,
   };
 
   const headerStyle: React.CSSProperties = {
-    ...cellStyle,
+    padding: "8px 14px",
     fontWeight: 600,
     color: "var(--t1)",
-    fontSize: 11,
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
-    background: "rgba(255,255,255,.03)",
+    fontSize: 13,
+    letterSpacing: "0.02em",
+    borderBottom: "2px solid rgba(255,255,255,.1)",
   };
 
   return (
-    <div style={{ margin: "8px 0", borderRadius: 8, overflow: "hidden", border: "1px solid var(--b1)" }}>
+    <div style={{ margin: "8px 0", borderRadius: 10, overflow: "hidden", border: "1px solid var(--b1)", background: "rgba(255,255,255,.02)" }}>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
             {header.map((h, j) => (
-              <th key={j} style={{ ...headerStyle, textAlign: j >= 2 ? "right" : "left" }}>{h}</th>
+              <th key={j} style={{ ...headerStyle, textAlign: j >= 1 ? "right" : "left" }}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, ri) => (
-            <tr key={ri} style={{ background: ri % 2 === 1 ? "rgba(255,255,255,.02)" : "transparent" }}>
-              {row.map((cell, ci) => (
-                <td key={ci} style={{ ...cellStyle, textAlign: ci >= 2 ? "right" : "left" }}>
-                  <InlineFormat text={cell} />
-                </td>
-              ))}
-            </tr>
-          ))}
+          {rows.map((row, ri) => {
+            const isTotalRow = isTotal(row);
+            return (
+              <tr key={ri} style={{
+                background: isTotalRow ? "rgba(255,255,255,.04)" : "transparent",
+              }}>
+                {row.map((cell, ci) => (
+                  <td key={ci} style={{
+                    ...cellStyle,
+                    textAlign: ci >= 1 ? "right" : "left",
+                    fontWeight: isTotalRow ? 600 : 400,
+                    color: isTotalRow ? "var(--t1)" : "var(--t2)",
+                    borderBottom: isTotalRow ? "none" : cellStyle.borderBottom,
+                  }}>
+                    <InlineFormat text={cell} />
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
