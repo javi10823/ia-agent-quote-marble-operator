@@ -18,7 +18,11 @@ async def generate_documents(quote_id: str, quote_data: dict) -> dict:
         client_name = quote_data["client_name"]
         material = quote_data.get("material_name", "")
         date_str = quote_data.get("date", datetime.now().strftime("%d.%m.%Y"))
+        # Sanitize date: replace / with . to avoid path issues
+        date_str = date_str.replace("/", ".")
+        # Sanitize filename: remove any remaining invalid characters
         filename_base = f"{client_name} - {material} - {date_str}"
+        filename_base = filename_base.replace("/", "-").replace("\\", "-")
 
         quote_dir = OUTPUT_DIR / quote_id
         quote_dir.mkdir(exist_ok=True)
