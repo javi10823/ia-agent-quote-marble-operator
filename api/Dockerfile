@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \
     libffi-dev \
     libjpeg-dev \
     libpng-dev \
-    libgdk-pixbuf2.0-0 \
+    libgdk-pixbuf-xlib-2.0-0 \
     libcairo2 \
     libgirepository1.0-dev \
     gir1.2-pango-1.0 \
