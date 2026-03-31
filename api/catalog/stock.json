@@ -1,0 +1,1998 @@
+{
+  "_metadata": {
+    "descripcion": "Inventario de stock de retazos en taller D'Angelo",
+    "uso": "Consultar antes de cotizar para: 1) ofrecer materiales disponibles primero, 2) verificar si el trabajo entra en algún retazo (sin merma). Si en_stock=true y el trabajo entra en m2_total → no aplica merma.",
+    "fuente": "Excel taller D'Angelo — actualizar manualmente cuando cambia el stock",
+    "nota": "Las piezas son retazos de chapas anteriores. Verificar disponibilidad antes de confirmar al cliente."
+  },
+  "stock": [
+    {
+      "nombre": "DEKTON AURA 12MM",
+      "piezas": [
+        {
+          "largo": "1,07",
+          "ancho": "0,73",
+          "m2": 0.78
+        },
+        {
+          "largo": "1,94",
+          "ancho": "0,65",
+          "m2": 1.26
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.04
+    },
+    {
+      "nombre": "DEKTON HALO 8MM",
+      "piezas": [
+        {
+          "largo": "0,84",
+          "ancho": "0,72",
+          "m2": 0.6
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.6
+    },
+    {
+      "nombre": "DEKTON HALO 12MM",
+      "piezas": [
+        {
+          "largo": "1,43",
+          "ancho": "0,80",
+          "m2": 1.14
+        },
+        {
+          "largo": "2,15",
+          "ancho": "0,38",
+          "m2": 0.82
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.96
+    },
+    {
+      "nombre": "DEKTON BERGEN 8MM",
+      "piezas": [
+        {
+          "largo": "1,03",
+          "ancho": "0,40",
+          "m2": 0.41
+        },
+        {
+          "largo": "1,46",
+          "ancho": "0,63",
+          "m2": 0.92
+        },
+        {
+          "largo": "1,46",
+          "ancho": "0,65",
+          "m2": 0.95
+        },
+        {
+          "largo": "1,46",
+          "ancho": "0,73",
+          "m2": 1.07
+        },
+        {
+          "largo": "0,94",
+          "ancho": "0,63",
+          "m2": 0.59
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 3.94
+    },
+    {
+      "nombre": "DEKTON BERGEN 12MM",
+      "piezas": [],
+      "en_stock": true,
+      "m2_total": 0
+    },
+    {
+      "nombre": "DEKTOBN BERGEN 12MM",
+      "piezas": [
+        {
+          "largo": "0,94",
+          "ancho": "0,75",
+          "m2": 0.7
+        },
+        {
+          "largo": "1,64",
+          "ancho": "0,62",
+          "m2": 1.02
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.72
+    },
+    {
+      "nombre": "DEKTON SIRIUS 8MM",
+      "piezas": [
+        {
+          "largo": "0,88",
+          "ancho": "0,57",
+          "m2": 0.5
+        },
+        {
+          "largo": "1,49",
+          "ancho": "0,36",
+          "m2": 0.54
+        },
+        {
+          "largo": "0,77",
+          "ancho": "0,69",
+          "m2": 0.53
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.57
+    },
+    {
+      "nombre": "DEKTON DOOMOS 8MM",
+      "piezas": [],
+      "en_stock": true,
+      "m2_total": 0
+    },
+    {
+      "nombre": "DEKTON OPERA 8MM",
+      "piezas": [
+        {
+          "largo": "1,35",
+          "ancho": "0,77",
+          "m2": 1.04
+        },
+        {
+          "largo": "1,75",
+          "ancho": "0,72",
+          "m2": 1.26
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.3
+    },
+    {
+      "nombre": "DEKTON DANAE 8MM",
+      "piezas": [],
+      "en_stock": true,
+      "m2_total": 0
+    },
+    {
+      "nombre": "DEKTON DANAE 12MM",
+      "piezas": [],
+      "en_stock": true,
+      "m2_total": 0
+    },
+    {
+      "nombre": "DEKTON ZENITH 8MM",
+      "piezas": [
+        {
+          "largo": "1,10",
+          "ancho": "0,42",
+          "m2": 0.46
+        },
+        {
+          "largo": "3,24",
+          "ancho": "0,54",
+          "m2": 1.75
+        },
+        {
+          "largo": "1,50",
+          "ancho": "0,54",
+          "m2": 0.81
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 3.02
+    },
+    {
+      "nombre": "DEKTON ZENITH 12MM",
+      "piezas": [],
+      "en_stock": true,
+      "m2_total": 0
+    },
+    {
+      "nombre": "DEKTON NATURA 8MM",
+      "piezas": [
+        {
+          "largo": "1,46",
+          "ancho": "0,63",
+          "m2": 0.92
+        },
+        {
+          "largo": "1,46",
+          "ancho": "0,50",
+          "m2": 0.73
+        },
+        {
+          "largo": "1,30",
+          "ancho": "0,70",
+          "m2": 0.91
+        },
+        {
+          "largo": "0,82",
+          "ancho": "0,62",
+          "m2": 0.51
+        },
+        {
+          "largo": "0,72",
+          "ancho": "0,75",
+          "m2": 0.54
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 3.61
+    },
+    {
+      "nombre": "DEKTON NATURA 12MM",
+      "piezas": [
+        {
+          "largo": "3,24",
+          "ancho": "0,36",
+          "m2": 1.17
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.17
+    },
+    {
+      "nombre": "DEKTON KELYA 8MM",
+      "piezas": [
+        {
+          "largo": "0,98",
+          "ancho": "0,61",
+          "m2": 0.6
+        },
+        {
+          "largo": "1,85",
+          "ancho": "0,98",
+          "m2": 1.81
+        },
+        {
+          "largo": "0,98",
+          "ancho": "0,67",
+          "m2": 0.66,
+          "nota": "(35% DESCUENTO)"
+        },
+        {
+          "largo": "1,00",
+          "ancho": "0,39",
+          "m2": 0.39
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 3.46
+    },
+    {
+      "nombre": "DEKTON SOKE - 12MM",
+      "piezas": [],
+      "en_stock": true,
+      "m2_total": 0
+    },
+    {
+      "nombre": "DEKTON VERA 12MM",
+      "piezas": [
+        {
+          "largo": "1,19",
+          "ancho": "0,88",
+          "m2": 1.05
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.05
+    },
+    {
+      "nombre": "NEOLITH IROON COOPER 12MM",
+      "piezas": [
+        {
+          "largo": "3,24",
+          "ancho": "0,90",
+          "m2": 2.92
+        },
+        {
+          "largo": "0,90",
+          "ancho": "0,70",
+          "m2": 0.63
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 3.55
+    },
+    {
+      "nombre": "NEOLITH IROON GREY 12MM",
+      "piezas": [
+        {
+          "largo": "2,00",
+          "ancho": "1,00",
+          "m2": 2.0
+        },
+        {
+          "largo": "1,17",
+          "ancho": "0,62",
+          "m2": 0.73
+        },
+        {
+          "largo": "3,23",
+          "ancho": "0,88",
+          "m2": 2.84
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 5.57
+    },
+    {
+      "nombre": "NEOLITH GRIS 8MM",
+      "piezas": [
+        {
+          "largo": "1,63",
+          "ancho": "0,48",
+          "m2": 0.78
+        },
+        {
+          "largo": "2,46",
+          "ancho": "0,40",
+          "m2": 0.98
+        },
+        {
+          "largo": "0,70",
+          "ancho": "0,79",
+          "m2": 0.55
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.31
+    },
+    {
+      "nombre": "NEOLITH CALACATTA LUX",
+      "piezas": [
+        {
+          "largo": "0,68",
+          "ancho": "0,45",
+          "m2": 0.31
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.31
+    },
+    {
+      "nombre": "NEOLITH PIETRA DI PIOMBO 12MM",
+      "piezas": [
+        {
+          "largo": "2,90",
+          "ancho": "0,72",
+          "m2": 2.09
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.09
+    },
+    {
+      "nombre": "SILESTONE TEBAS",
+      "piezas": [
+        {
+          "largo": "1,00",
+          "ancho": "0,73",
+          "m2": 0.73
+        },
+        {
+          "largo": "1,00",
+          "ancho": "0,60",
+          "m2": 0.6,
+          "nota": "X 2"
+        },
+        {
+          "largo": "0,73",
+          "ancho": "0,60",
+          "m2": 0.44,
+          "nota": "X 2"
+        },
+        {
+          "largo": "1,47",
+          "ancho": "0,47",
+          "m2": 0.69
+        },
+        {
+          "largo": "1,55",
+          "ancho": "0,73",
+          "m2": 1.13
+        },
+        {
+          "largo": "3,05",
+          "ancho": "0,58",
+          "m2": 1.77
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 5.36
+    },
+    {
+      "nombre": "SILESTONE CALACATTA CLASIC",
+      "piezas": [
+        {
+          "largo": "1,00",
+          "ancho": "0,85",
+          "m2": 0.85
+        },
+        {
+          "largo": "1,47",
+          "ancho": "0,80",
+          "m2": 1.18
+        },
+        {
+          "largo": "2,45",
+          "ancho": "0,86",
+          "m2": 2.11
+        },
+        {
+          "largo": "0,85",
+          "ancho": "0,62",
+          "m2": 0.53
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 4.67
+    },
+    {
+      "nombre": "SILESTONE CALACATTA GOLD",
+      "piezas": [
+        {
+          "largo": "0,81",
+          "ancho": "0,65",
+          "m2": 0.53
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.53
+    },
+    {
+      "nombre": "SILESTONE NORTE",
+      "piezas": [
+        {
+          "largo": "1,33",
+          "ancho": "0,60",
+          "m2": 0.8
+        },
+        {
+          "largo": "0,79",
+          "ancho": "0,60",
+          "m2": 0.47
+        },
+        {
+          "largo": "1,23",
+          "ancho": "0,64",
+          "m2": 0.79
+        },
+        {
+          "largo": "1,02",
+          "ancho": "0,97",
+          "m2": 0.99
+        },
+        {
+          "largo": "1,40",
+          "ancho": "1,30",
+          "m2": 1.82,
+          "nota": "(DESC SIMILAR AL PALOMA)"
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 4.87
+    },
+    {
+      "nombre": "SILESTONE MONT BLANC",
+      "piezas": [
+        {
+          "largo": "2,30",
+          "ancho": "0,55",
+          "m2": 1.26
+        },
+        {
+          "largo": "1,30",
+          "ancho": "0,60",
+          "m2": 0.78
+        },
+        {
+          "largo": "1,40",
+          "ancho": "0,64",
+          "m2": 0.9
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.94
+    },
+    {
+      "nombre": "SILESTONE TEBAS SUEDE",
+      "piezas": [
+        {
+          "largo": "1,28",
+          "ancho": "0,78",
+          "m2": 1.0
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.0
+    },
+    {
+      "nombre": "SILESTONE ROJO EROS",
+      "piezas": [
+        {
+          "largo": "1,00",
+          "ancho": "0,49",
+          "m2": 0.49
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.49
+    },
+    {
+      "nombre": "SILESTONE NORTE SUEDE",
+      "piezas": [
+        {
+          "largo": "1,20",
+          "ancho": "0,65",
+          "m2": 0.78
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.78
+    },
+    {
+      "nombre": "SILESTONE MARENGO",
+      "piezas": [
+        {
+          "largo": "1,80",
+          "ancho": "0,48",
+          "m2": 0.86
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.86
+    },
+    {
+      "nombre": "SILESTONE NIEBLA",
+      "piezas": [],
+      "en_stock": true,
+      "m2_total": 0
+    },
+    {
+      "nombre": "SILESTONE MIAMI WHITE",
+      "piezas": [
+        {
+          "largo": "1,40",
+          "ancho": "0,40",
+          "m2": 0.56
+        },
+        {
+          "largo": "0,88",
+          "ancho": "0,73",
+          "m2": 0.64
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.2
+    },
+    {
+      "nombre": "SILESTONE LYRA",
+      "piezas": [
+        {
+          "largo": "0,97",
+          "ancho": "0,47",
+          "m2": 0.46
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.46
+    },
+    {
+      "nombre": "SILESTONE ROOGUI LENA",
+      "piezas": [],
+      "en_stock": true,
+      "m2_total": 0
+    },
+    {
+      "nombre": "SILESTONE ZEUS",
+      "piezas": [
+        {
+          "largo": "0,90",
+          "ancho": "0,69",
+          "m2": 0.62
+        },
+        {
+          "largo": "0,69",
+          "ancho": "0,69",
+          "m2": 0.48
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.1
+    },
+    {
+      "nombre": "SILESTONE BCO STELLAR",
+      "piezas": [
+        {
+          "largo": "1,06",
+          "ancho": "0,68",
+          "m2": 0.72
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.72
+    },
+    {
+      "nombre": "SILESTONE WHITE STORM",
+      "piezas": [
+        {
+          "largo": "1,40",
+          "ancho": "0,80",
+          "m2": 1.12,
+          "nota": "VENDIDO",
+          "vendido": true
+        },
+        {
+          "largo": "0,80",
+          "ancho": "0,73",
+          "m2": 0.58
+        },
+        {
+          "largo": "0,83",
+          "ancho": "0,60",
+          "m2": 0.5,
+          "nota": "+ PEDAZOS CHICOS"
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.08
+    },
+    {
+      "nombre": "SILESTONE ETHER GLOW",
+      "piezas": [
+        {
+          "largo": "1,35",
+          "ancho": "0,85",
+          "m2": 1.15
+        },
+        {
+          "largo": "1,64",
+          "ancho": "0,80",
+          "m2": 1.31
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.46
+    },
+    {
+      "nombre": "SILESTONE YUKON",
+      "piezas": [
+        {
+          "largo": "1,28",
+          "ancho": "0,70",
+          "m2": 0.9
+        },
+        {
+          "largo": "1,43",
+          "ancho": "0,95",
+          "m2": 1.36
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.26
+    },
+    {
+      "nombre": "PURASTONE PALOMA",
+      "piezas": [
+        {
+          "largo": "1,41",
+          "ancho": "0,60",
+          "m2": 0.85
+        },
+        {
+          "largo": "1,41",
+          "ancho": "0,60",
+          "m2": 0.85
+        },
+        {
+          "largo": "1,60",
+          "ancho": "1,18",
+          "m2": 1.89
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 3.59
+    },
+    {
+      "nombre": "PURASTONE GREYGE",
+      "piezas": [
+        {
+          "largo": "1,43",
+          "ancho": "0,89",
+          "m2": 1.27
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.27
+    },
+    {
+      "nombre": "PURASTONE BASALTINA",
+      "piezas": [
+        {
+          "largo": "1,60",
+          "ancho": "0,44",
+          "m2": 0.7
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.7
+    },
+    {
+      "nombre": "PURASTONE VENATINO",
+      "piezas": [
+        {
+          "largo": "2,10",
+          "ancho": "0,59",
+          "m2": 1.24
+        },
+        {
+          "largo": "0,43",
+          "ancho": "0,90",
+          "m2": 0.39
+        },
+        {
+          "largo": "3,00",
+          "ancho": "0,45",
+          "m2": 1.35
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.98
+    },
+    {
+      "nombre": "PURASTONE TERRAZO WHITE",
+      "piezas": [
+        {
+          "largo": "0,88",
+          "ancho": "0,48",
+          "m2": 0.42
+        },
+        {
+          "largo": "2,00",
+          "ancho": "0,34",
+          "m2": 0.68
+        },
+        {
+          "largo": "1,66",
+          "ancho": "0,61",
+          "m2": 1.01
+        },
+        {
+          "largo": "1,06",
+          "ancho": "0,50",
+          "m2": 0.53
+        },
+        {
+          "largo": "0,90",
+          "ancho": "0,50",
+          "m2": 0.45
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 3.09
+    },
+    {
+      "nombre": "PURASTONE NUBE",
+      "piezas": [
+        {
+          "largo": "0,90",
+          "ancho": "0,50",
+          "m2": 0.45
+        },
+        {
+          "largo": "1,10",
+          "ancho": "0,40",
+          "m2": 0.44
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.89
+    },
+    {
+      "nombre": "PURASTONE ICON",
+      "piezas": [
+        {
+          "largo": "0,50",
+          "ancho": "0,64",
+          "m2": 0.32
+        },
+        {
+          "largo": "1,40",
+          "ancho": "0,52",
+          "m2": 0.73
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.05
+    },
+    {
+      "nombre": "PURASTONE STATUARIETTO",
+      "piezas": [
+        {
+          "largo": "1,12",
+          "ancho": "0,80",
+          "m2": 0.9
+        },
+        {
+          "largo": "2,23",
+          "ancho": "0,35",
+          "m2": 0.78
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.68
+    },
+    {
+      "nombre": "PURASTONE BCO GLITTER",
+      "piezas": [
+        {
+          "largo": "1,70",
+          "ancho": "0,55",
+          "m2": 0.94
+        },
+        {
+          "largo": "1,42",
+          "ancho": "0,43",
+          "m2": 0.61
+        },
+        {
+          "largo": "0,60",
+          "ancho": "0,56",
+          "m2": 0.34
+        },
+        {
+          "largo": "1,07",
+          "ancho": "1,00",
+          "m2": 1.07
+        },
+        {
+          "largo": "0,55",
+          "ancho": "0,60",
+          "m2": 0.33,
+          "nota": "x 2 unid"
+        },
+        {
+          "largo": "1,10",
+          "ancho": "0,78",
+          "m2": 0.86
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 4.15
+    },
+    {
+      "nombre": "PURASTONE CREMA PISA",
+      "piezas": [
+        {
+          "largo": "1,43",
+          "ancho": "0,83",
+          "m2": 1.19
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.19
+    },
+    {
+      "nombre": "PURASTONE CANA",
+      "piezas": [
+        {
+          "largo": "1,20",
+          "ancho": "0,62",
+          "m2": 0.74
+        },
+        {
+          "largo": "0,72",
+          "ancho": "0,54",
+          "m2": 0.39
+        },
+        {
+          "largo": "0,67",
+          "ancho": "0,92",
+          "m2": 0.62
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.75
+    },
+    {
+      "nombre": "PURASTONE STATUARIO PULIDO",
+      "piezas": [
+        {
+          "largo": "1,37",
+          "ancho": "0,45",
+          "m2": 0.62
+        },
+        {
+          "largo": "0,87",
+          "ancho": "0,70",
+          "m2": 0.61
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.23
+    },
+    {
+      "nombre": "MARMOL MARQUINA",
+      "piezas": [],
+      "en_stock": true,
+      "m2_total": 0
+    },
+    {
+      "nombre": "MARMOL CARRARA",
+      "piezas": [
+        {
+          "largo": "1,90",
+          "ancho": "1,05",
+          "m2": 1.99
+        },
+        {
+          "largo": "1,40",
+          "ancho": "0,90",
+          "m2": 1.26
+        },
+        {
+          "largo": "1,20",
+          "ancho": "0,85",
+          "m2": 1.02
+        },
+        {
+          "largo": "1,30",
+          "ancho": "0,69",
+          "m2": 0.9,
+          "nota": "- PEDAZOS CHICOS"
+        },
+        {
+          "largo": "2,17",
+          "ancho": "1,05",
+          "m2": 2.28,
+          "nota": "- PEDAZOS CHICOS"
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 7.45
+    },
+    {
+      "nombre": "MARMOL BCO TURCO",
+      "piezas": [
+        {
+          "largo": "0,90",
+          "ancho": "0,75",
+          "m2": 0.68
+        },
+        {
+          "largo": "0,85",
+          "ancho": "0,55",
+          "m2": 0.47
+        },
+        {
+          "largo": "0,80",
+          "ancho": "0,70",
+          "m2": 0.56
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.71
+    },
+    {
+      "nombre": "MARMOL PALOMINO",
+      "piezas": [
+        {
+          "largo": "1,90",
+          "ancho": "1,60",
+          "m2": 3.04
+        },
+        {
+          "largo": "1,90",
+          "ancho": "0,58",
+          "m2": 1.1
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 4.14
+    },
+    {
+      "nombre": "MARMOL MARRON EMPERADOR",
+      "piezas": [
+        {
+          "largo": "1,15",
+          "ancho": "1,40",
+          "m2": 1.61
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.61
+    },
+    {
+      "nombre": "MARMOL PERLADO ESPAÑOL",
+      "piezas": [
+        {
+          "largo": "1,40",
+          "ancho": "0,60",
+          "m2": 0.84
+        },
+        {
+          "largo": "1,60",
+          "ancho": "0,65",
+          "m2": 1.04
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.88
+    },
+    {
+      "nombre": "MARMOL VERDE GUATEMALA",
+      "piezas": [
+        {
+          "largo": "2,10",
+          "ancho": "1,10",
+          "m2": 2.31
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.31
+    },
+    {
+      "nombre": "MARMOL DESERT CREAM",
+      "piezas": [
+        {
+          "largo": "1,18",
+          "ancho": "0,70",
+          "m2": 0.83
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.83
+    },
+    {
+      "nombre": "MARMOL BOTICCINO",
+      "piezas": [
+        {
+          "largo": "1,23",
+          "ancho": "0,73",
+          "m2": 0.9
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.9
+    },
+    {
+      "nombre": "MARMOL SAHARA",
+      "piezas": [
+        {
+          "largo": "0,83",
+          "ancho": "1,10",
+          "m2": 0.91,
+          "nota": "(1,5 CM ESPESOR)"
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.91
+    },
+    {
+      "nombre": "MARMOL ROSA VERONA",
+      "piezas": [
+        {
+          "largo": "1,00",
+          "ancho": "1,49",
+          "m2": 1.49
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.49
+    },
+    {
+      "nombre": "MARMOL MILAS LILAS",
+      "piezas": [
+        {
+          "largo": "2,00",
+          "ancho": "0,75",
+          "m2": 1.5
+        },
+        {
+          "largo": "0,85",
+          "ancho": "0,90",
+          "m2": 0.77
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.27
+    },
+    {
+      "nombre": "MARMOL TRAVERTINO AL AGUA",
+      "piezas": [
+        {
+          "largo": "2,90",
+          "ancho": "0,69",
+          "m2": 2.0
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.0
+    },
+    {
+      "nombre": "MARMOL MARRON BOSQUE",
+      "piezas": [
+        {
+          "largo": "1,94",
+          "ancho": "0,93",
+          "m2": 1.8,
+          "nota": "(15% DESCUENTO)"
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.8
+    },
+    {
+      "nombre": "MARMOL ANTRACITE DARK",
+      "piezas": [
+        {
+          "largo": "2,10",
+          "ancho": "1,80",
+          "m2": 3.78
+        },
+        {
+          "largo": "1,98",
+          "ancho": "0,56",
+          "m2": 1.11
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 4.89
+    },
+    {
+      "nombre": "MARMOL EMPERADOR GREY",
+      "piezas": [
+        {
+          "largo": "1,25",
+          "ancho": "0,60",
+          "m2": 0.75
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.75
+    },
+    {
+      "nombre": "GRANITO BLANCO DALLAS",
+      "piezas": [
+        {
+          "largo": "1,00",
+          "ancho": "1,00",
+          "m2": 1.0
+        },
+        {
+          "largo": "1,43",
+          "ancho": "0,63",
+          "m2": 0.9
+        },
+        {
+          "largo": "1,50",
+          "ancho": "0,60",
+          "m2": 0.9
+        },
+        {
+          "largo": "1,40",
+          "ancho": "0,63",
+          "m2": 0.88
+        },
+        {
+          "largo": "0,80",
+          "ancho": "0,93",
+          "m2": 0.74
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 4.42
+    },
+    {
+      "nombre": "GRANITO GRIS PERLA",
+      "piezas": [
+        {
+          "largo": "0,97",
+          "ancho": "0,60",
+          "m2": 0.58
+        },
+        {
+          "largo": "1,00",
+          "ancho": "1,151",
+          "m2": 1.15
+        },
+        {
+          "largo": "1,13",
+          "ancho": "0,57",
+          "m2": 0.64
+        },
+        {
+          "largo": "1,80",
+          "ancho": "0,47",
+          "m2": 0.85
+        },
+        {
+          "largo": "2,07",
+          "ancho": "0,62",
+          "m2": 1.28
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 4.5
+    },
+    {
+      "nombre": "GRANITO ROSA DEL SALTO",
+      "piezas": [
+        {
+          "largo": "3,00",
+          "ancho": "1,00",
+          "m2": 3.0
+        },
+        {
+          "nota": "PEDAZOS CHICOS"
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 3.0
+    },
+    {
+      "nombre": "GRANITO LABRADORITA",
+      "piezas": [
+        {
+          "largo": "1,10",
+          "ancho": "1,80",
+          "m2": 1.98
+        },
+        {
+          "largo": "0,90",
+          "ancho": "0,60",
+          "m2": 0.54
+        },
+        {
+          "largo": "2,50",
+          "ancho": "0,70",
+          "m2": 1.75
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 4.27
+    },
+    {
+      "nombre": "GRANITO AMARILLO",
+      "piezas": [
+        {
+          "largo": "1,00",
+          "ancho": "0,78",
+          "m2": 0.78
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.78
+    },
+    {
+      "nombre": "GRANITO MARRON CRISTAL",
+      "piezas": [
+        {
+          "nota": "CASI CHAPA ENTERA"
+        },
+        {
+          "largo": "1,50",
+          "ancho": "1,20",
+          "m2": 1.8
+        },
+        {
+          "largo": "1,40",
+          "ancho": "1,16",
+          "m2": 1.62
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 3.42
+    },
+    {
+      "nombre": "GRANITO ORNAMENTAL",
+      "piezas": [
+        {
+          "largo": "0,69",
+          "ancho": "0,63",
+          "m2": 0.43
+        },
+        {
+          "largo": "1,20",
+          "ancho": "0,60",
+          "m2": 0.72
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.15
+    },
+    {
+      "nombre": "GRANITO BOREAL LEATHER",
+      "piezas": [
+        {
+          "largo": "1,40",
+          "ancho": "0,90",
+          "m2": 1.26
+        },
+        {
+          "largo": "2,40",
+          "ancho": "0,68",
+          "m2": 1.63
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.89
+    },
+    {
+      "nombre": "GRANITO BLACK COSMIC",
+      "piezas": [
+        {
+          "nota": "MEDIA CHAPA"
+        },
+        {
+          "largo": "1,60",
+          "ancho": "0,88",
+          "m2": 1.41
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.41
+    },
+    {
+      "nombre": "GRANITO COSMIK LEATHER",
+      "piezas": [
+        {
+          "largo": "3,00",
+          "ancho": "0,28",
+          "m2": 0.84
+        },
+        {
+          "largo": "1,50",
+          "ancho": "1,20",
+          "m2": 1.8
+        },
+        {
+          "largo": "2,43",
+          "ancho": "0,70",
+          "m2": 1.7
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 4.34
+    },
+    {
+      "nombre": "GRANITO GRIS GRAPHITO",
+      "piezas": [
+        {
+          "largo": "3,00",
+          "ancho": "0,90",
+          "m2": 2.7
+        },
+        {
+          "largo": "2,50",
+          "ancho": "1,20",
+          "m2": 3.0
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 5.7
+    },
+    {
+      "nombre": "GRANITO MARRON GRAPHITO",
+      "piezas": [
+        {
+          "largo": "1,70",
+          "ancho": "0,90",
+          "m2": 1.53
+        },
+        {
+          "largo": "2,24",
+          "ancho": "0,95",
+          "m2": 2.13
+        },
+        {
+          "largo": "1,08",
+          "ancho": "1,80",
+          "m2": 1.94
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 5.6
+    },
+    {
+      "nombre": "GRANITO MARRON ANTIQUE",
+      "piezas": [
+        {
+          "largo": "1,70",
+          "ancho": "0,90",
+          "m2": 1.53
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.53
+    },
+    {
+      "nombre": "GRANITO BRASIL FIAMATADO",
+      "piezas": [
+        {
+          "largo": "2,10",
+          "ancho": "0,85",
+          "m2": 1.78
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.78
+    },
+    {
+      "nombre": "GRANITO NEGRO BRASIL LEATHER",
+      "piezas": [
+        {
+          "largo": "1,97",
+          "ancho": "0,69",
+          "m2": 1.36
+        },
+        {
+          "largo": "1,30",
+          "ancho": "0,86",
+          "m2": 1.12
+        },
+        {
+          "largo": "1,24",
+          "ancho": "0,62",
+          "m2": 0.77
+        },
+        {
+          "largo": "1,45",
+          "ancho": "0,63",
+          "m2": 0.91
+        },
+        {
+          "largo": "1,70",
+          "ancho": "0,90",
+          "m2": 1.53
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 5.69
+    },
+    {
+      "nombre": "GRANITO NEGRO BRASIL",
+      "piezas": [],
+      "en_stock": true,
+      "m2_total": 0
+    },
+    {
+      "nombre": "GRANITO NEGRO ABSOLUTO",
+      "piezas": [
+        {
+          "largo": "0,96",
+          "ancho": "0,52",
+          "m2": 0.5
+        },
+        {
+          "largo": "1,23",
+          "ancho": "0,62",
+          "m2": 0.76
+        },
+        {
+          "largo": "1,15",
+          "ancho": "0,70",
+          "m2": 0.8
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.06
+    },
+    {
+      "nombre": "GRANITO ORCOLLANO",
+      "piezas": [
+        {
+          "largo": "2,00",
+          "ancho": "1,20",
+          "m2": 2.4,
+          "nota": "(EN 1.5 ESP , HACER 15% DESC)"
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.4
+    },
+    {
+      "nombre": "GRANITO EBONY CRISTAL",
+      "piezas": [],
+      "en_stock": true,
+      "m2_total": 0
+    },
+    {
+      "nombre": "GRANITO EBONY LEATHER",
+      "piezas": [
+        {
+          "largo": "1,50",
+          "ancho": "0,65",
+          "m2": 0.98
+        },
+        {
+          "largo": "1,97",
+          "ancho": "0,45",
+          "m2": 0.89
+        },
+        {
+          "largo": "2,75",
+          "ancho": "0,70",
+          "m2": 1.92
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 3.79
+    },
+    {
+      "nombre": "GRANITO GIALLO ANTICO",
+      "piezas": [
+        {
+          "largo": "1,30",
+          "ancho": "1,50",
+          "m2": 1.95
+        },
+        {
+          "largo": "1,43",
+          "ancho": "0,75",
+          "m2": 1.07
+        },
+        {
+          "largo": "1,30",
+          "ancho": "1,20",
+          "m2": 1.56
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 4.58
+    },
+    {
+      "nombre": "GRANITO BLANCO FORTALEZA",
+      "piezas": [
+        {
+          "largo": "1,00",
+          "ancho": "0,58",
+          "m2": 0.58
+        },
+        {
+          "largo": "1,15",
+          "ancho": "1,50",
+          "m2": 1.72
+        },
+        {
+          "largo": "2,00",
+          "ancho": "1,00",
+          "m2": 2.0
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 4.3
+    },
+    {
+      "nombre": "GRANITO BCO DALLAS",
+      "piezas": [
+        {
+          "largo": "1,50",
+          "ancho": "0,60",
+          "m2": 0.9
+        },
+        {
+          "largo": "0,97",
+          "ancho": "0,80",
+          "m2": 0.78
+        },
+        {
+          "largo": "1,45",
+          "ancho": "0,63",
+          "m2": 0.91
+        },
+        {
+          "largo": "1,08",
+          "ancho": "0,75",
+          "m2": 0.81
+        },
+        {
+          "largo": "1,00",
+          "ancho": "0,57",
+          "m2": 0.57
+        },
+        {
+          "largo": "1,00",
+          "ancho": "0,95",
+          "m2": 0.95
+        },
+        {
+          "largo": "1,10",
+          "ancho": "0,59",
+          "m2": 0.65
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 5.57
+    },
+    {
+      "nombre": "GRANITO VDE UBATUBA",
+      "piezas": [
+        {
+          "largo": "1,37",
+          "ancho": "0,80",
+          "m2": 1.1
+        },
+        {
+          "nota": "DOS MEDIA CHAPA (UNA CON ROTURA)"
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.1
+    },
+    {
+      "nombre": "GRANITO COOFE BROWN",
+      "piezas": [
+        {
+          "largo": "1,25",
+          "ancho": "0,65",
+          "m2": 0.81
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.81
+    },
+    {
+      "nombre": "GRANITO PEACOOK",
+      "piezas": [
+        {
+          "largo": "1,90",
+          "ancho": "0,98",
+          "m2": 1.86
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.86
+    },
+    {
+      "nombre": "GRANITO CREMA",
+      "piezas": [
+        {
+          "largo": "1,40",
+          "ancho": "1,15",
+          "m2": 1.61
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.61
+    },
+    {
+      "nombre": "GRANITO BUTERFLY",
+      "piezas": [
+        {
+          "largo": "2,00",
+          "ancho": "0,63",
+          "m2": 1.26
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.26
+    },
+    {
+      "nombre": "GRANITO MARRON COCO",
+      "piezas": [
+        {
+          "largo": "1,50",
+          "ancho": "0,90",
+          "m2": 1.35
+        },
+        {
+          "largo": "1,28",
+          "ancho": "1,08",
+          "m2": 1.38
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.73
+    },
+    {
+      "nombre": "GRANITO COCO LEATHER",
+      "piezas": [
+        {
+          "largo": "1,60",
+          "ancho": "0,55",
+          "m2": 0.88
+        },
+        {
+          "largo": "1,36",
+          "ancho": "1,24",
+          "m2": 1.69
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.57
+    },
+    {
+      "nombre": "GRANITO MARRON ANTICO",
+      "piezas": [
+        {
+          "nota": "MEDIA CHAPA"
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0
+    },
+    {
+      "nombre": "GRANITO BLACK COSMIK",
+      "piezas": [
+        {
+          "largo": "1,65",
+          "ancho": "0,68",
+          "m2": 1.12
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.12
+    },
+    {
+      "nombre": "GRANITO NEGRO BOREAL LEATHER",
+      "piezas": [
+        {
+          "largo": "1,43",
+          "ancho": "0,91",
+          "m2": 1.3
+        },
+        {
+          "largo": "3,20",
+          "ancho": "0,70",
+          "m2": 2.24
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 3.54
+    },
+    {
+      "nombre": "GRANITO ROSA DEL SALTO LEATHER",
+      "piezas": [
+        {
+          "largo": "1,20",
+          "ancho": "0,90",
+          "m2": 1.08
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.08
+    },
+    {
+      "nombre": "GRANITO GRIS MARA LEATHER",
+      "piezas": [
+        {
+          "largo": "1,45",
+          "ancho": "0,63",
+          "m2": 0.91
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.91
+    },
+    {
+      "nombre": "GRANITO PRETO INDIANO",
+      "piezas": [
+        {
+          "nota": "CHAPA ENTERA"
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0
+    },
+    {
+      "nombre": "MARMOTECH STATUARIO",
+      "piezas": [
+        {
+          "largo": "2,45",
+          "ancho": "0,60",
+          "m2": 1.47,
+          "nota": "MEDIA CHAPA ( APROX.)"
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.47
+    },
+    {
+      "nombre": "MARMOTECH CALACATTA MILANO",
+      "piezas": [
+        {
+          "largo": "1,40",
+          "ancho": "0,60",
+          "m2": 0.84
+        },
+        {
+          "largo": "0,80",
+          "ancho": "0,80",
+          "m2": 0.64
+        },
+        {
+          "largo": "1,23",
+          "ancho": "1,15",
+          "m2": 1.41
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.89
+    },
+    {
+      "nombre": "MARMOTECH GREY",
+      "piezas": [
+        {
+          "largo": "0,95",
+          "ancho": "0,90",
+          "m2": 0.85
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.85
+    },
+    {
+      "nombre": "MARMOTECH NEVE",
+      "piezas": [
+        {
+          "largo": "0,67",
+          "ancho": "0,67",
+          "m2": 0.45
+        },
+        {
+          "largo": "0,50",
+          "ancho": "0,60",
+          "m2": 0.3
+        },
+        {
+          "largo": "1,34",
+          "ancho": "0,70",
+          "m2": 0.94
+        },
+        {
+          "largo": "0,87",
+          "ancho": "0,40",
+          "m2": 0.35
+        },
+        {
+          "largo": "1,19",
+          "ancho": "0,65",
+          "m2": 0.77
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.81
+    },
+    {
+      "nombre": "PURAPRIMA MACCHIA VECCHIA",
+      "piezas": [],
+      "en_stock": true,
+      "m2_total": 0
+    },
+    {
+      "nombre": "PURAPRIMA METRO GREY",
+      "piezas": [],
+      "en_stock": true,
+      "m2_total": 0
+    },
+    {
+      "nombre": "PURAPRIMA ZEN PULIDO",
+      "piezas": [
+        {
+          "largo": "0,97",
+          "ancho": "0,72",
+          "m2": 0.7
+        },
+        {
+          "largo": "1,60",
+          "ancho": "0,65",
+          "m2": 1.04
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.74
+    },
+    {
+      "nombre": "PURAPRIMA ARIA PULIDO",
+      "piezas": [
+        {
+          "largo": "1,00",
+          "ancho": "0,43",
+          "m2": 0.43
+        },
+        {
+          "largo": "1,23",
+          "ancho": "0,38",
+          "m2": 0.47
+        },
+        {
+          "largo": "0,60",
+          "ancho": "0,46",
+          "m2": 0.28
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.18
+    },
+    {
+      "nombre": "PURAPRIMA BIANCO LASA",
+      "piezas": [],
+      "en_stock": true,
+      "m2_total": 0
+    },
+    {
+      "nombre": "PURAPRIMA DESERT BLACK",
+      "piezas": [
+        {
+          "largo": "0,68",
+          "ancho": "0,83",
+          "m2": 0.56
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.56
+    },
+    {
+      "nombre": "PURAPRIMA LIMESTONE",
+      "piezas": [
+        {
+          "largo": "0,80",
+          "ancho": "0,84",
+          "m2": 0.67
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.67
+    },
+    {
+      "nombre": "PURAPRIMA ORAGOLD",
+      "piezas": [
+        {
+          "largo": "3,20",
+          "ancho": "0,88",
+          "m2": 2.82
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.82
+    },
+    {
+      "nombre": "SUPRASTONE TAJ MAJAL",
+      "piezas": [
+        {
+          "largo": "1,60",
+          "ancho": "0,78",
+          "m2": 1.25
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.25
+    },
+    {
+      "nombre": "PURAPRIMA METRO CREAM",
+      "piezas": [
+        {
+          "largo": "1,50",
+          "ancho": "0,80",
+          "m2": 1.2
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.2
+    },
+    {
+      "nombre": "PURAPRIMA ONIX WHITE MATE",
+      "piezas": [
+        {
+          "largo": "0,90",
+          "ancho": "0,90",
+          "m2": 0.81
+        },
+        {
+          "largo": "3,20",
+          "ancho": "0,69",
+          "m2": 2.21
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 3.02
+    }
+  ]
+}

@@ -1,0 +1,304 @@
+[
+  {
+    "sku": "ANAFE",
+    "task": "AGUJERO ANAFE",
+    "price_ars": 35617.36,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "AGUJERO ANAFE"
+  },
+  {
+    "sku": "ANAFEDEKTON/NEOLITH",
+    "task": "AGUJERO ANAFE DEKTON/NEOLITH/PRIMA",
+    "price_ars": 53840.17,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "AGUJERO ANAFE DEKTON/NEOLITH/PRIMA"
+  },
+  {
+    "sku": "TOMASDEKTON/NEO",
+    "task": "AGUJERO DE TOMAS DEKTON/NEOLITH/PRIMA",
+    "price_ars": 7703.34,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "AGUJERO DE TOMAS DEKTON/NEOLITH/PRIMA"
+  },
+  {
+    "sku": "AGUJEROAPOYO",
+    "task": "AGUJERO PILETA APOYO",
+    "price_ars": 35617.36,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "AGUJERO PILETA APOYO"
+  },
+  {
+    "sku": "PILETAAPOYODEKTON/NEO",
+    "task": "AGUJERO PILETA APOYO DEKTON/NEOLITH/PRIMA",
+    "price_ars": 53840.17,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "AGUJERO PILETA APOYO DEKTON/NEOLITH/PRIMA"
+  },
+  {
+    "sku": "TOMAS",
+    "task": "AGUJERO TOMAS",
+    "price_ars": 6460.84,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "AGUJERO TOMAS"
+  },
+  {
+    "sku": "PEGADOPILETA",
+    "task": "AGUJERO Y PEGADO DE PILETA",
+    "price_ars": 53840.17,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "AGUJERO Y PEGADO DE PILETA"
+  },
+  {
+    "sku": "PILETADEKTON/NEOLITH",
+    "task": "AGUJERO Y PEGADO DE PILETA DEKTON/NEOLITH/PRIMA",
+    "price_ars": 71234.72,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "AGUJERO Y PEGADO DE PILETA DEKTON/NEOLITH/PRIMA"
+  },
+  {
+    "sku": "MOLANTIDESLIZANTE",
+    "task": "ANTIDESLIZANTE/REBAJE",
+    "price_ars": 8720.0,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "ANTIDESLIZANTE/REBAJE"
+  },
+  {
+    "sku": "PILETAINTEGRADA A 45",
+    "task": "ARMADO PILETA INTEGRADA A 45",
+    "price_ars": 381896.19,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "ARMADO PILETA INTEGRADA A 45"
+  },
+  {
+    "sku": "PILETADESAGUEOCULTO",
+    "task": "ARMADO PILETA INTEGRADA DESAGUE OCULTO",
+    "price_ars": 452617.7,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "ARMADO PILETA INTEGRADA DESAGUE OCULTO"
+  },
+  {
+    "sku": "PILETAINTEGRADARECTA",
+    "task": "ARMADO PILETA INTEGRADA RECTA",
+    "price_ars": 325318.97,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "ARMADO PILETA INTEGRADA RECTA"
+  },
+  {
+    "sku": "MOLBUÑA",
+    "name": "BUÑA",
+    "price_ars": 4969.89,
+    "last_updated": "25/03/2026",
+    "price_includes_vat": false
+  },
+  {
+    "sku": "COLOCACION",
+    "task": "COLOCACION",
+    "price_ars": 49698.65,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "COLOCACION"
+  },
+  {
+    "sku": "COLOCACIONDEKTON/NEOLITH",
+    "task": "COLOCACION DEKTON/NEOLITH/PRIMA",
+    "price_ars": 74547.98,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "COLOCACION DEKTON/NEOLITH/PRIMA"
+  },
+  {
+    "sku": "CORTE45DEKTON/NEOLITH",
+    "task": "CORTE 45 DEKTON/NEOLITH",
+    "price_ars": 7668.42,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "CORTE 45 DEKTON/NEOLITH"
+  },
+  {
+    "sku": "CORTE45",
+    "task": "CORTE A 45",
+    "price_ars": 6134.74,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "CORTE A 45"
+  },
+  {
+    "sku": "FALDONDEKTON/NEOLITH",
+    "task": "FALDON DEKTON/NEOLITH",
+    "price_ars": 21471.58,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "FALDON DEKTON/NEOLITH"
+  },
+  {
+    "sku": "MOLBOMBECOMPLETO",
+    "task": "MANO DE OBRA BOMBE COMPLETO",
+    "price_ars": 28990.85,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "MANO DE OBRA BOMBE COMPLETO"
+  },
+  {
+    "sku": "TOALLERO",
+    "task": "MANO DE OBRA CALADO TOALLERO",
+    "price_ars": 54668.54,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "MANO DE OBRA CALADO TOALLERO"
+  },
+  {
+    "sku": "FALDON",
+    "task": "MANO DE OBRA FALDON RECTO",
+    "price_ars": 15336.84,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "MANO DE OBRA FALDON RECTO"
+  },
+  {
+    "sku": "SERVICEPEGAPILE",
+    "task": "MANO DE OBRA PEGADO DE PILETA",
+    "price_ars": 65146.62,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "MANO DE OBRA PEGADO DE PILETA"
+  },
+  {
+    "sku": "PILETA45 DEKTON/NEOLITH",
+    "task": "MANO DE OBRA PILETA INTEGRADA A 45 DEKTON/NEOLITH",
+    "price_ars": 466762.01,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "MANO DE OBRA PILETA INTEGRADA A 45 DEKTON/NEOLITH"
+  },
+  {
+    "sku": "PILDESAOCULTODEKTON/NEO",
+    "task": "MANO DE OBRA PILETA INTEGRADA DESAGUE OCULTO DEKTON/NEOLITH",
+    "price_ars": 551627.83,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "MANO DE OBRA PILETA INTEGRADA DESAGUE OCULTO DEKTON/NEOLITH"
+  },
+  {
+    "sku": "PILRECTA DEKTON/NEOLITH",
+    "task": "MANO DE OBRA PILETA INTEGRADA RECTA DEKTON/NEOLITH",
+    "price_ars": 381896.19,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "MANO DE OBRA PILETA INTEGRADA RECTA DEKTON/NEOLITH"
+  },
+  {
+    "sku": "RAN",
+    "task": "MANO DE OBRA RANURADO",
+    "price_ars": 25823.09,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "MANO DE OBRA RANURADO"
+  },
+  {
+    "sku": "RANDEK",
+    "task": "MANO DE OBRA RANURADO DEKTON",
+    "price_ars": 33572.0,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "MANO DE OBRA RANURADO DEKTON"
+  },
+  {
+    "sku": "REGRUESO",
+    "task": "MANO DE OBRA REGRUESO",
+    "price_ars": 13810.06,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "MANO DE OBRA REGRUESO"
+  },
+  {
+    "sku": "MOLMEDIACAÑA",
+    "name": "MOLDURA MEDIA CAÑA",
+    "price_ars": 28990.85,
+    "last_updated": "25/03/2026",
+    "price_includes_vat": false
+  },
+  {
+    "sku": "MOLMEDIOBOMBE",
+    "task": "MOLDURA MEDIO BOMBE",
+    "price_ars": 17394.55,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "MOLDURA MEDIO BOMBE"
+  },
+  {
+    "sku": "MOLPALOMA",
+    "task": "MOLDURA PECHO PALOMA",
+    "price_ars": 28990.85,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "MOLDURA PECHO PALOMA"
+  },
+  {
+    "sku": "PUL",
+    "task": "PULIDO CANTOS",
+    "price_ars": 5384.03,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "PULIDO CANTOS"
+  },
+  {
+    "sku": "PUL2",
+    "task": "PULIDO DEKTON/NEOLITH",
+    "price_ars": 9111.42,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "PULIDO DEKTON/NEOLITH"
+  },
+  {
+    "sku": "MDF",
+    "task": "REFUERZO-SUPLEMENTO",
+    "price_ars": 167627.94,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "25/03/2026",
+    "name": "REFUERZO-SUPLEMENTO"
+  }
+]

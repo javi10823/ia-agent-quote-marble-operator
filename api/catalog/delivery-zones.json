@@ -1,0 +1,258 @@
+[
+  {
+    "sku": "ENVALDAO",
+    "location": "ALDAO",
+    "price_ars": 74380.17,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "15/12/2025"
+  },
+  {
+    "sku": "ENVALV",
+    "location": "ALVAREZ",
+    "price_ars": 30000.0,
+    "currency": "ARS",
+    "price_includes_vat": true,
+    "last_updated": "19/12/2023"
+  },
+  {
+    "sku": "ENVALVEAR",
+    "location": "ALVEAR",
+    "price_ars": 68181.82,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "26/11/2025"
+  },
+  {
+    "sku": "FLETEAND",
+    "location": "ANDINO",
+    "price_ars": 123966.94,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "03/09/2025"
+  },
+  {
+    "sku": "ENVARROYO",
+    "location": "ARROYO SECO",
+    "price_ars": 99173.55,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "27/05/2025"
+  },
+  {
+    "sku": "ENVBAI",
+    "location": "BAIGORRIA",
+    "price_ars": 61983.47,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "20/01/2026"
+  },
+  {
+    "sku": "ENVBER",
+    "location": "CAP BERMUDEZ",
+    "price_ars": 68181.82,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "26/11/2025"
+  },
+  {
+    "sku": "ENVCARMEN",
+    "location": "CARMEN DEL SAUCE",
+    "price_ars": 99173.55,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "26/03/2025"
+  },
+  {
+    "sku": "FLETE CAÃADA",
+    "location": "CAÃADA DE GOMEZ",
+    "price_ars": 225000.0,
+    "currency": "ARS",
+    "price_includes_vat": true,
+    "last_updated": "07/01/2026"
+  },
+  {
+    "sku": "ENVRICARDONE",
+    "location": "FLETE RICARDONE + TOMA DE MEDIDAS",
+    "price_ars": 86776.86,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "26/11/2025"
+  },
+  {
+    "sku": "ENVIOROS",
+    "location": "FLETE ROSARIO + TOMA DE MEDIDAS",
+    "price_ars": 42975.21,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "09/03/2026"
+  },
+  {
+    "sku": "ENVVILLA",
+    "location": "FLETE+ TOMA DE MEDIDAS VILLA CONSTITUCION",
+    "price_ars": 165289.25,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "12/12/2025"
+  },
+  {
+    "sku": "ENVFUNES",
+    "location": "FUNES",
+    "price_ars": 61983.47,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "16/01/2026"
+  },
+  {
+    "sku": "FLEGALVEZ",
+    "location": "GALVEZ",
+    "price_ars": 61983.47,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "26/11/2025"
+  },
+  {
+    "sku": "ENVGRAL",
+    "location": "GRAL LAGOS - LA CAROLINA",
+    "price_ars": 90909.09,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "07/08/2025"
+  },
+  {
+    "sku": "ENVHUD",
+    "location": "HUDHES-SANTA FE",
+    "price_ars": 400000.0,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "11/09/2024"
+  },
+  {
+    "sku": "ENVIBAR",
+    "location": "IBARLUCEA",
+    "price_ars": 74380.17,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "18/03/2026"
+  },
+  {
+    "sku": "ENVLASPAREJAS",
+    "location": "LAS PAREJAS",
+    "price_ars": 49586.78,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "08/03/2024"
+  },
+  {
+    "sku": "ENVMACIEL",
+    "location": "MACIEL",
+    "price_ars": 85950.41,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "08/03/2024"
+  },
+  {
+    "sku": "ENVPEREZ",
+    "location": "PEREZ",
+    "price_ars": 68181.82,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "16/01/2026"
+  },
+  {
+    "sku": "ENVPIÃERO",
+    "location": "PIÃERO",
+    "price_ars": 90000.0,
+    "currency": "ARS",
+    "price_includes_vat": true,
+    "last_updated": "04/08/2025"
+  },
+  {
+    "sku": "FLECARRERAS",
+    "location": "PUEBLO CARRERAS",
+    "price_ars": 247933.88,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "01/07/2025"
+  },
+  {
+    "sku": "ENVESTHER",
+    "location": "PUEBLO ESTHER",
+    "price_ars": 92975.21,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "12/03/2026"
+  },
+  {
+    "sku": "ENVSANMARTIN",
+    "location": "PUERTO GRAL SAN MARTIN",
+    "price_ars": 120000.0,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "07/01/2026"
+  },
+  {
+    "sku": "FLETEROLD",
+    "location": "ROLDAN",
+    "price_ars": 80578.51,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "16/01/2026"
+  },
+  {
+    "sku": "ENVSALTOGDE",
+    "location": "SALTO GRANDE",
+    "price_ars": 140495.87,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "13/03/2025"
+  },
+  {
+    "sku": "ENVSANLORENZO",
+    "location": "SAN LORENZO",
+    "price_ars": 120000.0,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "04/12/2025"
+  },
+  {
+    "sku": "ENVSANNICO",
+    "location": "SAN NICOLAS",
+    "price_ars": 165289.26,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "06/09/2025"
+  },
+  {
+    "sku": "ENVSOLDINI",
+    "location": "SOLDINI",
+    "price_ars": 90000.0,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "30/10/2025"
+  },
+  {
+    "sku": "ENVVICTORIA",
+    "location": "VICTORIA",
+    "price_ars": 27768.6,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "16/08/2023"
+  },
+  {
+    "sku": "ENVMUGUETA",
+    "location": "VILLAS MUGUETA",
+    "price_ars": 49586.78,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "08/03/2024"
+  },
+  {
+    "sku": "ENVZAB",
+    "location": "ZAVALLA",
+    "price_ars": 61983.47,
+    "currency": "ARS",
+    "price_includes_vat": false,
+    "last_updated": "24/07/2025"
+  }
+]

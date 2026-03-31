@@ -1,0 +1,35 @@
+# FastAPI
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+python-multipart==0.0.12
+
+# Database
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# Anthropic
+anthropic==0.40.0
+
+# PDF
+weasyprint==62.3
+
+# Excel
+openpyxl==3.1.5
+
+# Image processing (plan rasterization)
+Pillow==11.0.0
+pdf2image==1.17.0
+
+# Google APIs
+google-api-python-client==2.154.0
+google-auth==2.36.0
+google-auth-httplib2==0.2.0
+
+# Utils
+python-dotenv==1.0.1
+pydantic==2.10.3
+pydantic-settings==2.6.1
+httpx==0.28.0
+aiofiles==24.1.0
+python-jose[cryptography]==3.3.0

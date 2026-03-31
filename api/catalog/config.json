@@ -1,0 +1,45 @@
+{
+  "delivery_days": {
+    "_comment": "Plazo de entrega desde toma de medidas. Puede ser un número fijo o un rango.",
+    "default": 40,
+    "range_enabled": false,
+    "range_min": 20,
+    "range_max": 30,
+    "display": "40 dias desde la toma de medidas"
+  },
+  "discount": {
+    "imported_percentage": 5,
+    "national_percentage": 8,
+    "min_m2_threshold": 6,
+    "applies_to": "material_only",
+    "building_percentage": 18,
+    "building_min_m2_threshold": 15,
+    "building_applies_to": "material_only"
+  },
+  "merma": {
+    "small_piece_threshold_m2": 0.5
+  },
+  "plate_sizes": {
+    "estandar": {
+      "largo": 3.0,
+      "ancho": 1.4,
+      "m2": 4.2
+    },
+    "especial": {
+      "largo": 3.2,
+      "ancho": 1.6,
+      "m2": 5.12
+    }
+  },
+  "stock": {
+    "_comment": "Si el material está en stock, NO aplica merma. true = en stock, false = no en stock.",
+    "default": false
+  },
+  "building": {
+    "_comment": "Reglas para obras de edificio",
+    "colocacion": false,
+    "flete_mesadas_per_trip": 6,
+    "discount_percentage": 18,
+    "discount_min_m2": 15
+  }
+}

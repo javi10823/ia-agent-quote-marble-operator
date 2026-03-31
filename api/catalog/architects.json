@@ -1,0 +1,51 @@
+[
+  {
+    "name": "ARQ. NADIA",
+    "firm": null,
+    "discount": true,
+    "discount_percentage": null,
+    "notes": "Cliente frecuente — usar porcentaje de config.json"
+  },
+  {
+    "name": "ARQ. PAMELA FURIGO",
+    "firm": "Furigo Arquitectura",
+    "discount": true,
+    "discount_percentage": null,
+    "notes": "Proyecto Sole-Mosqui, Juan XXIII 964 Pérez — usar porcentaje de config.json"
+  },
+  {
+    "name": "ALMA ESTUDIO",
+    "firm": "Alma Estudio",
+    "discount": true,
+    "discount_percentage": null,
+    "notes": "Estudio de arquitectura conocido — usar porcentaje de config.json. Confirmado en presupuesto 00005494 fecha 09/03/2026."
+  },
+  {
+    "name": "ARQ. RAFAEL ARAYA",
+    "firm": null,
+    "discount": true,
+    "discount_percentage": null,
+    "notes": "Arquitecto conocido — usar porcentaje de config.json"
+  },
+  {
+    "name": "LUCIANA PACOR",
+    "firm": null,
+    "discount": true,
+    "discount_percentage": null,
+    "notes": "Arquitecta — usar porcentaje de config.json"
+  },
+  {
+    "name": "SCALONA ARQUITECTURA",
+    "firm": "Scalona Arquitectura",
+    "discount": true,
+    "discount_percentage": null,
+    "notes": "Arquitecta — usar porcentaje de config.json (5% importado)"
+  },
+  {
+    "name": "CUETO-HEREDIA ARQUITECTAS",
+    "firm": "Cueto-Heredia Arquitectas",
+    "discount": true,
+    "discount_percentage": null,
+    "notes": "Arquitectas — usar porcentaje de config.json (5% importado)"
+  }
+]

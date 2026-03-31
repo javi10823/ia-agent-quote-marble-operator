@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Presupuesto — D'Angelo Marmolería</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Barlow', sans-serif;
+      font-size: 9pt;
+      color: #1a1a1a;
+      background: #ffffff;
+      padding: 0;
+      max-width: 210mm;
+      margin: 0 auto;
+    }
+
+    /* ── BARRA SUPERIOR AZUL ── */
+    .top-bar {
+      background-color: #1a2f5e;
+      height: 8px;
+      width: 100%;
+    }
+
+    /* ── CONTENIDO ── */
+    .content {
+      padding: 12mm 18mm 15mm 18mm;
+    }
+
+    /* ── HEADER: LOGO + CONTACTO ── */
+    .header {
+      margin-bottom: 8mm;
+    }
+
+    .logo-img {
+      height: 28px;
+      display: block;
+      margin-bottom: 3mm;
+    }
+
+    /* Fallback logo si no hay imagen */
+    .logo-text {
+      font-size: 22pt;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: #1a1a1a;
+      line-height: 1;
+    }
+    .logo-text .sub {
+      font-size: 7pt;
+      font-weight: 500;
+      letter-spacing: 0.3em;
+      color: #555;
+      display: block;
+      margin-top: 1px;
+    }
+
+    .contact {
+      margin-top: 3mm;
+      font-size: 8pt;
+      color: #1a1a1a;
+      line-height: 1.7;
+    }
+
+    /* ── TÍTULO PRESUPUESTO ── */
+    .title-section {
+      margin-bottom: 3mm;
+    }
+    .title-section h1 {
+      font-size: 18pt;
+      font-weight: 700;
+      color: #1a1a1a;
+      line-height: 1;
+      margin-bottom: 1mm;
+    }
+    .title-section .fecha {
+      font-size: 8.5pt;
+      color: #1a1a1a;
+    }
+
+    /* ── INFO CLIENTE — grid 2 columnas ── */
+    .client-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+      margin: 4mm 0 4mm 0;
+    }
+    .client-cell {
+      padding: 1mm 0;
+    }
+    .client-label {
+      font-size: 8.5pt;
+      font-weight: 700;
+      color: #1a1a1a;
+    }
+    .client-value {
+      font-size: 8.5pt;
+      font-weight: 400;
+      color: #1a1a1a;
+    }
+
+    /* ── LÍNEA DIVISORIA ── */
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      margin: 3mm 0;
+    }
+
+    /* ── TABLA DE ÍTEMS ── */
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1mm;
+    }
+
+    /* Header de tabla */
+    .items-table thead tr th {
+      font-size: 8.5pt;
+      font-weight: 700;
+      color: #1a1a1a;
+      text-align: left;
+      padding: 2mm 0 2mm 0;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    .items-table thead tr th.right { text-align: right; }
+
+    /* Anchos de columna */
+    .col-desc   { width: 54%; }
+    .col-cant   { width: 12%; }
+    .col-precio { width: 20%; }
+    .col-total  { width: 14%; }
+
+    /* ── FRANJAS ALTERNADAS automáticas — 1 gris, 1 blanco ── */
+    .items-table tbody tr:nth-child(odd) td {
+      background-color: #f2f2f2;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .items-table tbody tr:nth-child(even) td {
+      background-color: #ffffff;
+    }
+
+    /* padding horizontal uniforme */
+    .items-table td { padding-left: 0; padding-right: 2mm; }
+
+    .right { text-align: right; }
+
+    /* ── FILA MATERIAL PRINCIPAL ── */
+    /* Solo la primera celda (nombre) va en bold; cantidad/precio/total = normal */
+    .row-material td {
+      padding-top: 1.5mm;
+      padding-bottom: 0.5mm;
+      font-size: 8.5pt;
+      font-weight: 400;   /* normal por defecto */
+      color: #1a1a1a;
+      vertical-align: top;
+    }
+    .row-material td:first-child {
+      font-weight: 700;   /* solo el nombre en bold */
+    }
+
+    /* ── SUB-FILAS DE PIEZAS ── */
+    .row-piece td {
+      padding-top: 0.2mm;
+      padding-bottom: 0.2mm;
+      font-size: 8pt;
+      color: #1a1a1a;
+      font-weight: 400;
+    }
+    .row-piece:last-of-type td { padding-bottom: 1.5mm; }
+
+    /* ── FILA DESC ── */
+    .row-desc td {
+      padding-top: 0.3mm;
+      padding-bottom: 0.3mm;
+      font-size: 8pt;
+      color: #1a1a1a;
+    }
+    .row-desc em { font-style: italic; }
+
+    /* ── SUBTOTAL (Total USD / Total ARS) ── */
+    /* En el original: "Total USD" normal, valor en bold */
+    .row-subtotal td {
+      padding-top: 1.5mm;
+      padding-bottom: 1.5mm;
+      font-size: 8.5pt;
+      font-weight: 400;
+      color: #1a1a1a;
+      text-align: right;
+    }
+    .row-subtotal td:last-child { font-weight: 700; }
+
+    /* ── SPACER ── */
+    .row-spacer td { padding-top: 1.5mm; padding-bottom: 1.5mm; }
+
+    /* ── FILA PILETA ── */
+    /* Solo nombre en bold, resto normal — igual al material */
+    .row-pileta td {
+      padding-top: 1.5mm;
+      padding-bottom: 1.5mm;
+      font-size: 8.5pt;
+      font-weight: 400;
+      color: #1a1a1a;
+      vertical-align: top;
+    }
+    .row-pileta td:first-child { font-weight: 700; }
+
+    /* ── SECCIÓN MANO DE OBRA ── */
+    .row-mo-header td {
+      padding-top: 1.5mm;
+      padding-bottom: 0.5mm;
+      font-size: 8.5pt;
+      font-weight: 700;
+      color: #1a1a1a;
+    }
+
+    /* ── FILA MO ── */
+    .row-labor td {
+      padding-top: 1mm;
+      padding-bottom: 1mm;
+      font-size: 8.5pt;
+      font-weight: 400;
+      color: #1a1a1a;
+      vertical-align: top;
+    }
+
+    /* ── TOTAL PESOS ── */
+    /* "Total PESOS" normal, valor en bold — igual al original */
+    .row-total-pesos td {
+      padding-top: 1.5mm;
+      padding-bottom: 1.5mm;
+      font-size: 8.5pt;
+      font-weight: 400;
+      color: #1a1a1a;
+      text-align: right;
+    }
+    .row-total-pesos td:last-child { font-weight: 700; }
+
+    /* ── CAJA GRAND TOTAL ── */
+    .grand-total {
+      border: 1.5px solid #1a1a1a;
+      text-align: center;
+      padding: 3.5mm 4mm;
+      font-size: 9pt;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin: 4mm 0 5mm 0;
+    }
+
+    /* ── FOOTER ── */
+    .footer {
+      font-size: 7.5pt;
+      color: #1a1a1a;
+      line-height: 1.6;
+    }
+    .footer p { margin-bottom: 0.5mm; }
+    .footer .bold { font-weight: 700; }
+    .footer .section { margin-top: 2.5mm; }
+
+    /* ── PRINT ── */
+    @media print {
+      .top-bar, .bg-gray td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .content { padding: 10mm 15mm 12mm 15mm; }
+      @page { size: A4; margin: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- BARRA AZUL SUPERIOR -->
+  <div class="top-bar"></div>
+
+  <div class="content">
+
+    <!-- HEADER -->
+    <div class="header">
+      <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="160" zoomAndPan="magnify" viewBox="0 0 120 44.999999" height="60" preserveAspectRatio="xMidYMid meet" version="1.0" style="display:block;margin-bottom:3mm;"><defs><g/><clipPath id="f931f582b5"><path d="M 0.078125 6 L 16 6 L 16 23 L 0.078125 23 Z M 0.078125 6 " clip-rule="nonzero"/></clipPath><clipPath id="8412a02da6"><rect x="0" width="95" y="0" height="28"/></clipPath><clipPath id="f3f8e44a7f"><rect x="0" width="19" y="0" height="31"/></clipPath><clipPath id="ac8bbf0d48"><rect x="0" width="15" y="0" height="26"/></clipPath><clipPath id="6482a6c1a5"><rect x="0" width="15" y="0" height="25"/></clipPath><clipPath id="c99b914d54"><rect x="0" width="16" y="0" height="25"/></clipPath><clipPath id="2576b03e41"><path d="M 36 0.238281 L 39 0.238281 L 39 6 L 36 6 Z M 36 0.238281 " clip-rule="nonzero"/></clipPath><clipPath id="826491c9f2"><path d="M 38 1 L 42.761719 1 L 42.761719 6 L 38 6 Z M 38 1 " clip-rule="nonzero"/></clipPath><clipPath id="62ea4a96a9"><rect x="0" width="43" y="0" height="8"/></clipPath></defs><rect x="-12" width="144" fill="#ffffff" y="-4.5" height="53.999999" fill-opacity="1"/><rect x="-12" width="144" fill="#ffffff" y="-4.5" height="53.999999" fill-opacity="1"/><g transform="matrix(1, 0, 0, 1, 22, 6)"><g clip-path="url(#8412a02da6)"><g clip-path="url(#f931f582b5)"><g fill="#000000" fill-opacity="1"><g transform="translate(0.182076, 21.855423)"><g><path d="M 15.28125 -1.203125 C 15.40625 -0.984375 15.46875 -0.796875 15.46875 -0.640625 C 15.476562 -0.484375 15.429688 -0.335938 15.328125 -0.203125 C 15.222656 -0.078125 15.054688 0.0351562 14.828125 0.140625 C 14.472656 0.296875 14.191406 0.328125 13.984375 0.234375 C 13.785156 0.148438 13.609375 -0.0625 13.453125 -0.40625 L 7.859375 -12.3125 L 2.296875 -0.421875 C 2.140625 -0.078125 1.957031 0.132812 1.75 0.21875 C 1.550781 0.3125 1.265625 0.273438 0.890625 0.109375 C 0.671875 0.0234375 0.507812 -0.0820312 0.40625 -0.21875 C 0.3125 -0.351562 0.273438 -0.515625 0.296875 -0.703125 C 0.316406 -0.898438 0.390625 -1.128906 0.515625 -1.390625 L 6.9375 -14.796875 C 7.03125 -14.972656 7.160156 -15.113281 7.328125 -15.21875 C 7.492188 -15.332031 7.675781 -15.390625 7.875 -15.390625 C 8.007812 -15.390625 8.132812 -15.367188 8.25 -15.328125 C 8.375 -15.285156 8.476562 -15.21875 8.5625 -15.125 C 8.65625 -15.03125 8.734375 -14.910156 8.796875 -14.765625 Z M 3.640625 -4.234375 L 4.40625 -5.953125 L 11.34375 -5.953125 L 12.078125 -4.234375 Z M 3.640625 -4.234375 "/></g></g></g></g><g fill="#000000" fill-opacity="1"><g transform="translate(16.492988, 21.855423)"><g><path d="M 2.421875 0.21875 C 2.160156 0.21875 1.957031 0.171875 1.8125 0.078125 C 1.675781 -0.00390625 1.582031 -0.125 1.53125 -0.28125 C 1.476562 -0.4375 1.453125 -0.617188 1.453125 -0.828125 L 1.453125 -14.453125 C 1.453125 -14.648438 1.484375 -14.8125 1.546875 -14.9375 C 1.609375 -15.070312 1.71875 -15.179688 1.875 -15.265625 C 2.03125 -15.347656 2.25 -15.390625 2.53125 -15.390625 C 2.851562 -15.390625 3.082031 -15.359375 3.21875 -15.296875 C 3.351562 -15.242188 3.488281 -15.140625 3.625 -14.984375 L 12.03125 -3.09375 L 12.03125 -14.453125 C 12.03125 -14.648438 12.054688 -14.8125 12.109375 -14.9375 C 12.160156 -15.070312 12.257812 -15.179688 12.40625 -15.265625 C 12.5625 -15.347656 12.78125 -15.390625 13.0625 -15.390625 C 13.332031 -15.390625 13.535156 -15.34375 13.671875 -15.25 C 13.816406 -15.164062 13.914062 -15.046875 13.96875 -14.890625 C 14.019531 -14.734375 14.046875 -14.554688 14.046875 -14.359375 L 14.046875 -0.8125 C 14.046875 -0.613281 14.007812 -0.4375 13.9375 -0.28125 C 13.875 -0.125 13.765625 -0.00390625 13.609375 0.078125 C 13.453125 0.171875 13.234375 0.21875 12.953125 0.21875 C 12.710938 0.21875 12.515625 0.1875 12.359375 0.125 C 12.203125 0.0703125 12.054688 -0.0351562 11.921875 -0.203125 L 3.46875 -12.015625 L 3.46875 -0.8125 C 3.46875 -0.613281 3.4375 -0.4375 3.375 -0.28125 C 3.320312 -0.125 3.21875 -0.00390625 3.0625 0.078125 C 2.914062 0.171875 2.703125 0.21875 2.421875 0.21875 Z M 2.421875 0.21875 "/></g></g></g><g fill="#000000" fill-opacity="1"><g transform="translate(32.893395, 21.855423)"><g><path d="M 8.84375 0.265625 C 7.675781 0.265625 6.628906 0.078125 5.703125 -0.296875 C 4.773438 -0.679688 3.976562 -1.226562 3.3125 -1.9375 C 2.65625 -2.644531 2.144531 -3.5 1.78125 -4.5 C 1.425781 -5.5 1.25 -6.609375 1.25 -7.828125 C 1.25 -8.992188 1.429688 -10.046875 1.796875 -10.984375 C 2.160156 -11.921875 2.6875 -12.722656 3.375 -13.390625 C 4.0625 -14.066406 4.878906 -14.59375 5.828125 -14.96875 C 6.785156 -15.351562 7.863281 -15.554688 9.0625 -15.578125 C 9.519531 -15.578125 9.988281 -15.53125 10.46875 -15.4375 C 10.957031 -15.34375 11.425781 -15.210938 11.875 -15.046875 C 12.320312 -14.890625 12.726562 -14.703125 13.09375 -14.484375 C 13.34375 -14.316406 13.554688 -14.144531 13.734375 -13.96875 C 13.910156 -13.800781 14.007812 -13.628906 14.03125 -13.453125 C 14.039062 -13.359375 14.023438 -13.242188 13.984375 -13.109375 C 13.941406 -12.972656 13.882812 -12.847656 13.8125 -12.734375 C 13.6875 -12.554688 13.550781 -12.425781 13.40625 -12.34375 C 13.269531 -12.257812 13.132812 -12.21875 13 -12.21875 C 12.9375 -12.21875 12.832031 -12.253906 12.6875 -12.328125 C 12.539062 -12.398438 12.351562 -12.515625 12.125 -12.671875 C 11.875 -12.816406 11.578125 -12.957031 11.234375 -13.09375 C 10.898438 -13.226562 10.539062 -13.332031 10.15625 -13.40625 C 9.769531 -13.476562 9.367188 -13.515625 8.953125 -13.515625 C 7.804688 -13.515625 6.804688 -13.28125 5.953125 -12.8125 C 5.097656 -12.351562 4.441406 -11.691406 3.984375 -10.828125 C 3.535156 -9.960938 3.304688 -8.941406 3.296875 -7.765625 C 3.304688 -6.535156 3.539062 -5.472656 4 -4.578125 C 4.46875 -3.691406 5.125 -3 5.96875 -2.5 C 6.8125 -2.007812 7.796875 -1.765625 8.921875 -1.765625 C 9.296875 -1.765625 9.675781 -1.796875 10.0625 -1.859375 C 10.457031 -1.921875 10.84375 -2.003906 11.21875 -2.109375 C 11.601562 -2.222656 11.957031 -2.363281 12.28125 -2.53125 L 12.28125 -6.84375 L 8.375 -6.84375 C 8.175781 -6.84375 8.003906 -6.863281 7.859375 -6.90625 C 7.722656 -6.957031 7.617188 -7.050781 7.546875 -7.1875 C 7.484375 -7.320312 7.453125 -7.519531 7.453125 -7.78125 C 7.453125 -8.050781 7.488281 -8.253906 7.5625 -8.390625 C 7.632812 -8.523438 7.738281 -8.613281 7.875 -8.65625 C 8.007812 -8.695312 8.175781 -8.71875 8.375 -8.71875 L 13.21875 -8.71875 C 13.519531 -8.71875 13.742188 -8.664062 13.890625 -8.5625 C 14.046875 -8.457031 14.15625 -8.328125 14.21875 -8.171875 C 14.28125 -8.015625 14.3125 -7.828125 14.3125 -7.609375 L 14.3125 -2.109375 C 14.3125 -1.867188 14.179688 -1.617188 13.921875 -1.359375 C 13.660156 -1.097656 13.296875 -0.851562 12.828125 -0.625 C 12.484375 -0.445312 12.097656 -0.289062 11.671875 -0.15625 C 11.242188 -0.0195312 10.789062 0.0820312 10.3125 0.15625 C 9.832031 0.226562 9.34375 0.265625 8.84375 0.265625 Z M 8.84375 0.265625 "/></g></g></g><g fill="#000000" fill-opacity="1"><g transform="translate(49.293803, 21.855423)"><g><path d="M 2.703125 0.21875 C 2.410156 0.21875 2.191406 0.175781 2.046875 0.09375 C 1.898438 0.0195312 1.804688 -0.09375 1.765625 -0.25 C 1.722656 -0.414062 1.703125 -0.601562 1.703125 -0.8125 L 1.703125 -14.390625 C 1.703125 -14.773438 1.78125 -15.035156 1.9375 -15.171875 C 2.09375 -15.316406 2.375 -15.390625 2.78125 -15.390625 L 11.765625 -15.390625 C 11.972656 -15.390625 12.148438 -15.367188 12.296875 -15.328125 C 12.453125 -15.285156 12.566406 -15.1875 12.640625 -15.03125 C 12.710938 -14.882812 12.75 -14.660156 12.75 -14.359375 C 12.75 -14.066406 12.707031 -13.847656 12.625 -13.703125 C 12.539062 -13.566406 12.425781 -13.472656 12.28125 -13.421875 C 12.132812 -13.378906 11.957031 -13.359375 11.75 -13.359375 L 3.71875 -13.359375 L 3.71875 -8.71875 L 9.3125 -8.71875 C 9.519531 -8.71875 9.691406 -8.695312 9.828125 -8.65625 C 9.972656 -8.613281 10.082031 -8.523438 10.15625 -8.390625 C 10.226562 -8.253906 10.265625 -8.046875 10.265625 -7.765625 C 10.265625 -7.492188 10.226562 -7.289062 10.15625 -7.15625 C 10.082031 -7.019531 9.96875 -6.929688 9.8125 -6.890625 C 9.664062 -6.859375 9.484375 -6.84375 9.265625 -6.84375 L 3.71875 -6.84375 L 3.71875 -1.796875 L 11.765625 -1.796875 C 11.972656 -1.796875 12.148438 -1.769531 12.296875 -1.71875 C 12.453125 -1.675781 12.566406 -1.582031 12.640625 -1.4375 C 12.710938 -1.300781 12.75 -1.082031 12.75 -0.78125 C 12.75 -0.476562 12.707031 -0.253906 12.625 -0.109375 C 12.539062 0.0234375 12.425781 0.113281 12.28125 0.15625 C 12.132812 0.195312 11.957031 0.21875 11.75 0.21875 Z M 2.703125 0.21875 "/></g></g></g><g fill="#000000" fill-opacity="1"><g transform="translate(63.792398, 21.855423)"><g><path d="M 2.5 0.21875 C 2.207031 0.21875 1.984375 0.175781 1.828125 0.09375 C 1.679688 0.0195312 1.582031 -0.0859375 1.53125 -0.234375 C 1.476562 -0.390625 1.453125 -0.570312 1.453125 -0.78125 L 1.453125 -14.359375 C 1.453125 -14.585938 1.472656 -14.773438 1.515625 -14.921875 C 1.566406 -15.066406 1.660156 -15.179688 1.796875 -15.265625 C 1.941406 -15.347656 2.164062 -15.390625 2.46875 -15.390625 C 2.757812 -15.390625 2.972656 -15.347656 3.109375 -15.265625 C 3.253906 -15.179688 3.347656 -15.066406 3.390625 -14.921875 C 3.441406 -14.773438 3.46875 -14.597656 3.46875 -14.390625 L 3.46875 -1.65625 L 10.96875 -1.65625 C 11.15625 -1.65625 11.316406 -1.628906 11.453125 -1.578125 C 11.585938 -1.535156 11.695312 -1.445312 11.78125 -1.3125 C 11.863281 -1.1875 11.90625 -0.988281 11.90625 -0.71875 C 11.90625 -0.457031 11.867188 -0.253906 11.796875 -0.109375 C 11.722656 0.0234375 11.617188 0.113281 11.484375 0.15625 C 11.347656 0.195312 11.179688 0.21875 10.984375 0.21875 Z M 2.5 0.21875 "/></g></g></g><g fill="#000000" fill-opacity="1"><g transform="translate(76.83666, 21.855423)"><g><path d="M 8.296875 0.375 C 7.242188 0.375 6.25 0.175781 5.3125 -0.21875 C 4.382812 -0.625 3.566406 -1.1875 2.859375 -1.90625 C 2.148438 -2.632812 1.59375 -3.46875 1.1875 -4.40625 C 0.78125 -5.34375 0.578125 -6.359375 0.578125 -7.453125 C 0.578125 -8.554688 0.769531 -9.59375 1.15625 -10.5625 C 1.550781 -11.539062 2.09375 -12.394531 2.78125 -13.125 C 3.476562 -13.863281 4.28125 -14.441406 5.1875 -14.859375 C 6.101562 -15.273438 7.070312 -15.484375 8.09375 -15.484375 C 9.164062 -15.484375 10.164062 -15.28125 11.09375 -14.875 C 12.03125 -14.476562 12.847656 -13.914062 13.546875 -13.1875 C 14.242188 -12.46875 14.789062 -11.625 15.1875 -10.65625 C 15.59375 -9.6875 15.796875 -8.648438 15.796875 -7.546875 C 15.796875 -6.453125 15.597656 -5.429688 15.203125 -4.484375 C 14.804688 -3.535156 14.265625 -2.691406 13.578125 -1.953125 C 12.890625 -1.210938 12.09375 -0.640625 11.1875 -0.234375 C 10.289062 0.171875 9.328125 0.375 8.296875 0.375 Z M 8.171875 -1.65625 C 8.941406 -1.65625 9.664062 -1.800781 10.34375 -2.09375 C 11.019531 -2.394531 11.613281 -2.816406 12.125 -3.359375 C 12.632812 -3.910156 13.035156 -4.539062 13.328125 -5.25 C 13.617188 -5.957031 13.765625 -6.726562 13.765625 -7.5625 C 13.765625 -8.363281 13.617188 -9.117188 13.328125 -9.828125 C 13.035156 -10.535156 12.628906 -11.160156 12.109375 -11.703125 C 11.597656 -12.253906 11.003906 -12.6875 10.328125 -13 C 9.660156 -13.3125 8.945312 -13.46875 8.1875 -13.46875 C 7.425781 -13.46875 6.707031 -13.3125 6.03125 -13 C 5.363281 -12.6875 4.769531 -12.257812 4.25 -11.71875 C 3.738281 -11.1875 3.335938 -10.5625 3.046875 -9.84375 C 2.765625 -9.125 2.625 -8.359375 2.625 -7.546875 C 2.625 -6.734375 2.765625 -5.96875 3.046875 -5.25 C 3.335938 -4.539062 3.738281 -3.914062 4.25 -3.375 C 4.769531 -2.84375 5.363281 -2.421875 6.03125 -2.109375 C 6.695312 -1.804688 7.410156 -1.65625 8.171875 -1.65625 Z M 8.171875 -1.65625 "/></g></g></g></g></g><g transform="matrix(1, 0, 0, 1, 4, 4)"><g clip-path="url(#f3f8e44a7f)"><g fill="#000000" fill-opacity="1"><g transform="translate(0.694856, 24.583259)"><g><path d="M 2.703125 0.25 C 2.421875 0.25 2.203125 0.195312 2.046875 0.09375 C 1.890625 0 1.773438 -0.132812 1.703125 -0.3125 C 1.640625 -0.488281 1.609375 -0.679688 1.609375 -0.890625 L 1.609375 -16.015625 C 1.609375 -16.222656 1.640625 -16.410156 1.703125 -16.578125 C 1.765625 -16.742188 1.875 -16.875 2.03125 -16.96875 C 2.195312 -17.070312 2.429688 -17.125 2.734375 -17.125 L 7.625 -17.109375 C 8.851562 -17.109375 9.96875 -16.90625 10.96875 -16.5 C 11.976562 -16.09375 12.835938 -15.515625 13.546875 -14.765625 C 14.265625 -14.015625 14.8125 -13.109375 15.1875 -12.046875 C 15.570312 -10.992188 15.765625 -9.820312 15.765625 -8.53125 C 15.765625 -7.1875 15.570312 -5.972656 15.1875 -4.890625 C 14.8125 -3.816406 14.257812 -2.898438 13.53125 -2.140625 C 12.8125 -1.378906 11.945312 -0.789062 10.9375 -0.375 C 9.925781 0.0390625 8.800781 0.25 7.5625 0.25 Z M 3.859375 -2.015625 L 7.625 -2.015625 C 8.84375 -2.015625 9.890625 -2.273438 10.765625 -2.796875 C 11.640625 -3.316406 12.316406 -4.050781 12.796875 -5 C 13.285156 -5.957031 13.53125 -7.09375 13.53125 -8.40625 C 13.53125 -9.726562 13.285156 -10.867188 12.796875 -11.828125 C 12.316406 -12.796875 11.632812 -13.539062 10.75 -14.0625 C 9.863281 -14.582031 8.816406 -14.84375 7.609375 -14.84375 L 3.859375 -14.84375 Z M 3.859375 -2.015625 "/></g></g></g></g></g><g transform="matrix(1, 0, 0, 1, 0, 14)"><g clip-path="url(#ac8bbf0d48)"><g fill="#000000" fill-opacity="1"><g transform="translate(2.434032, 18.401573)"><g><path d="M 5.25 -9.078125 C 5.050781 -9.097656 4.90625 -9.160156 4.8125 -9.265625 C 4.726562 -9.367188 4.691406 -9.550781 4.703125 -9.8125 C 4.710938 -10.09375 4.757812 -10.289062 4.84375 -10.40625 C 4.9375 -10.519531 5.113281 -10.578125 5.375 -10.578125 L 8.5625 -10.578125 C 8.75 -10.554688 8.882812 -10.484375 8.96875 -10.359375 C 9.050781 -10.242188 9.09375 -10.066406 9.09375 -9.828125 C 9.09375 -9.546875 9.039062 -9.347656 8.9375 -9.234375 C 8.832031 -9.128906 8.648438 -9.082031 8.390625 -9.09375 Z M 5.25 -9.078125 "/></g></g></g></g></g><g transform="matrix(1, 0, 0, 1, 0, 17)"><g clip-path="url(#6482a6c1a5)"><g fill="#000000" fill-opacity="1"><g transform="translate(2.434032, 17.724333)"><g><path d="M 5.25 -9.078125 C 5.050781 -9.097656 4.90625 -9.160156 4.8125 -9.265625 C 4.726562 -9.367188 4.691406 -9.550781 4.703125 -9.8125 C 4.710938 -10.09375 4.757812 -10.289062 4.84375 -10.40625 C 4.9375 -10.519531 5.113281 -10.578125 5.375 -10.578125 L 8.5625 -10.578125 C 8.75 -10.554688 8.882812 -10.484375 8.96875 -10.359375 C 9.050781 -10.242188 9.09375 -10.066406 9.09375 -9.828125 C 9.09375 -9.546875 9.039062 -9.347656 8.9375 -9.234375 C 8.832031 -9.128906 8.648438 -9.082031 8.390625 -9.09375 Z M 5.25 -9.078125 "/></g></g></g></g></g><g transform="matrix(1, 0, 0, 1, 0, 19)"><g clip-path="url(#c99b914d54)"><g fill="#000000" fill-opacity="1"><g transform="translate(2.502061, 17.975195)"><g><path d="M 5.25 -9.078125 C 5.050781 -9.097656 4.90625 -9.160156 4.8125 -9.265625 C 4.726562 -9.367188 4.691406 -9.550781 4.703125 -9.8125 C 4.710938 -10.09375 4.757812 -10.289062 4.84375 -10.40625 C 4.9375 -10.519531 5.113281 -10.578125 5.375 -10.578125 L 8.5625 -10.578125 C 8.75 -10.554688 8.882812 -10.484375 8.96875 -10.359375 C 9.050781 -10.242188 9.09375 -10.066406 9.09375 -9.828125 C 9.09375 -9.546875 9.039062 -9.347656 8.9375 -9.234375 C 8.832031 -9.128906 8.648438 -9.082031 8.390625 -9.09375 Z M 5.25 -9.078125 "/></g></g></g></g></g><g transform="matrix(1, 0, 0, 1, 71, 30)"><g clip-path="url(#62ea4a96a9)"><g fill="#000000" fill-opacity="1"><g transform="translate(0.374714, 5.786099)"><g><path d="M 4.890625 -4.0625 L 4.890625 0 L 4.46875 0 L 4.46875 -3.25 L 2.875 -0.515625 L 2.671875 -0.515625 L 1.078125 -3.234375 L 1.078125 0 L 0.65625 0 L 0.65625 -4.0625 L 1.015625 -4.0625 L 2.78125 -1.046875 L 4.53125 -4.0625 Z M 4.890625 -4.0625 "/></g></g></g><g fill="#000000" fill-opacity="1"><g transform="translate(5.928757, 5.786099)"><g><path d="M 3.21875 -1.09375 L 0.953125 -1.09375 L 0.453125 0 L 0.015625 0 L 1.875 -4.0625 L 2.296875 -4.0625 L 4.15625 0 L 3.703125 0 Z M 3.0625 -1.4375 L 2.078125 -3.625 L 1.109375 -1.4375 Z M 3.0625 -1.4375 "/></g></g></g><g fill="#000000" fill-opacity="1"><g transform="translate(10.098654, 5.786099)"><g><path d="M 3.4375 0 L 2.515625 -1.3125 C 2.410156 -1.300781 2.300781 -1.296875 2.1875 -1.296875 L 1.09375 -1.296875 L 1.09375 0 L 0.65625 0 L 0.65625 -4.0625 L 2.1875 -4.0625 C 2.707031 -4.0625 3.113281 -3.9375 3.40625 -3.6875 C 3.695312 -3.445312 3.84375 -3.109375 3.84375 -2.671875 C 3.84375 -2.359375 3.757812 -2.09375 3.59375 -1.875 C 3.4375 -1.65625 3.210938 -1.492188 2.921875 -1.390625 L 3.90625 0 Z M 2.171875 -1.65625 C 2.578125 -1.65625 2.882812 -1.742188 3.09375 -1.921875 C 3.3125 -2.097656 3.421875 -2.347656 3.421875 -2.671875 C 3.421875 -3.003906 3.3125 -3.257812 3.09375 -3.4375 C 2.882812 -3.613281 2.578125 -3.703125 2.171875 -3.703125 L 1.09375 -3.703125 L 1.09375 -1.65625 Z M 2.171875 -1.65625 "/></g></g></g><g fill="#000000" fill-opacity="1"><g transform="translate(14.303444, 5.786099)"><g><path d="M 4.890625 -4.0625 L 4.890625 0 L 4.46875 0 L 4.46875 -3.25 L 2.875 -0.515625 L 2.671875 -0.515625 L 1.078125 -3.234375 L 1.078125 0 L 0.65625 0 L 0.65625 -4.0625 L 1.015625 -4.0625 L 2.78125 -1.046875 L 4.53125 -4.0625 Z M 4.890625 -4.0625 "/></g></g></g><g fill="#000000" fill-opacity="1"><g transform="translate(19.857487, 5.786099)"><g><path d="M 2.4375 0.03125 C 2.039062 0.03125 1.675781 -0.0546875 1.34375 -0.234375 C 1.019531 -0.410156 0.765625 -0.65625 0.578125 -0.96875 C 0.390625 -1.289062 0.296875 -1.644531 0.296875 -2.03125 C 0.296875 -2.425781 0.390625 -2.78125 0.578125 -3.09375 C 0.765625 -3.40625 1.019531 -3.648438 1.34375 -3.828125 C 1.675781 -4.015625 2.039062 -4.109375 2.4375 -4.109375 C 2.84375 -4.109375 3.207031 -4.015625 3.53125 -3.828125 C 3.851562 -3.648438 4.109375 -3.40625 4.296875 -3.09375 C 4.484375 -2.78125 4.578125 -2.425781 4.578125 -2.03125 C 4.578125 -1.644531 4.484375 -1.289062 4.296875 -0.96875 C 4.109375 -0.65625 3.851562 -0.410156 3.53125 -0.234375 C 3.207031 -0.0546875 2.84375 0.03125 2.4375 0.03125 Z M 2.4375 -0.34375 C 2.757812 -0.34375 3.050781 -0.414062 3.3125 -0.5625 C 3.570312 -0.707031 3.773438 -0.910156 3.921875 -1.171875 C 4.066406 -1.429688 4.140625 -1.71875 4.140625 -2.03125 C 4.140625 -2.351562 4.066406 -2.640625 3.921875 -2.890625 C 3.773438 -3.148438 3.570312 -3.351562 3.3125 -3.5 C 3.050781 -3.644531 2.757812 -3.71875 2.4375 -3.71875 C 2.113281 -3.71875 1.820312 -3.644531 1.5625 -3.5 C 1.300781 -3.351562 1.09375 -3.148438 0.9375 -2.890625 C 0.789062 -2.640625 0.71875 -2.351562 0.71875 -2.03125 C 0.71875 -1.71875 0.789062 -1.429688 0.9375 -1.171875 C 1.09375 -0.910156 1.300781 -0.707031 1.5625 -0.5625 C 1.820312 -0.414062 2.113281 -0.34375 2.4375 -0.34375 Z M 2.4375 -0.34375 "/></g></g></g><g fill="#000000" fill-opacity="1"><g transform="translate(24.736904, 5.786099)"><g><path d="M 0.65625 -4.0625 L 1.09375 -4.0625 L 1.09375 -0.375 L 3.375 -0.375 L 3.375 0 L 0.65625 0 Z M 0.65625 -4.0625 "/></g></g></g><g fill="#000000" fill-opacity="1"><g transform="translate(28.162385, 5.786099)"><g><path d="M 3.546875 -0.375 L 3.546875 0 L 0.65625 0 L 0.65625 -4.0625 L 3.453125 -4.0625 L 3.453125 -3.703125 L 1.09375 -3.703125 L 1.09375 -2.25 L 3.203125 -2.25 L 3.203125 -1.890625 L 1.09375 -1.890625 L 1.09375 -0.375 Z M 3.546875 -0.375 "/></g></g></g><g fill="#000000" fill-opacity="1"><g transform="translate(32.053125, 5.786099)"><g><path d="M 3.4375 0 L 2.515625 -1.3125 C 2.410156 -1.300781 2.300781 -1.296875 2.1875 -1.296875 L 1.09375 -1.296875 L 1.09375 0 L 0.65625 0 L 0.65625 -4.0625 L 2.1875 -4.0625 C 2.707031 -4.0625 3.113281 -3.9375 3.40625 -3.6875 C 3.695312 -3.445312 3.84375 -3.109375 3.84375 -2.671875 C 3.84375 -2.359375 3.757812 -2.09375 3.59375 -1.875 C 3.4375 -1.65625 3.210938 -1.492188 2.921875 -1.390625 L 3.90625 0 Z M 2.171875 -1.65625 C 2.578125 -1.65625 2.882812 -1.742188 3.09375 -1.921875 C 3.3125 -2.097656 3.421875 -2.347656 3.421875 -2.671875 C 3.421875 -3.003906 3.3125 -3.257812 3.09375 -3.4375 C 2.882812 -3.613281 2.578125 -3.703125 2.171875 -3.703125 L 1.09375 -3.703125 L 1.09375 -1.65625 Z M 2.171875 -1.65625 "/></g></g></g><g clip-path="url(#2576b03e41)"><g fill="#000000" fill-opacity="1"><g transform="translate(36.257914, 5.786099)"><g><path d="M 0.65625 -4.0625 L 1.09375 -4.0625 L 1.09375 0 L 0.65625 0 Z M 1.296875 -5.125 L 1.859375 -5.125 L 0.90625 -4.40625 L 0.5 -4.40625 Z M 1.296875 -5.125 "/></g></g></g></g><g clip-path="url(#826491c9f2)"><g fill="#000000" fill-opacity="1"><g transform="translate(38.014274, 5.786099)"><g><path d="M 3.21875 -1.09375 L 0.953125 -1.09375 L 0.453125 0 L 0.015625 0 L 1.875 -4.0625 L 2.296875 -4.0625 L 4.15625 0 L 3.703125 0 Z M 3.0625 -1.4375 L 2.078125 -3.625 L 1.109375 -1.4375 Z M 3.0625 -1.4375 "/></g></g></g></g></g></g></svg>
+      <div class="contact">
+        SAN NICOLAS 1160<br>
+        341-3082996<br>
+        marmoleriadangelo@gmail.com
+      </div>
+    </div>
+
+    <!-- TÍTULO + FECHA -->
+    <div class="title-section">
+      <h1>Presupuesto</h1>
+      <div class="fecha">Fecha: {{fecha}}</div>
+    </div>
+
+    <!-- CLIENTE -->
+    <div class="client-grid">
+      <div class="client-cell">
+        <span class="client-label">Cliente: </span><span class="client-value">{{cliente}}</span>
+      </div>
+      <div class="client-cell">
+        <span class="client-label">Forma de pago</span><br>
+        <span class="client-value">{{forma_pago}}</span>
+      </div>
+      <div class="client-cell" style="margin-top: 2mm;">
+        <span class="client-label">Proyecto </span><span class="client-value">{{proyecto}}</span>
+      </div>
+      <div class="client-cell" style="margin-top: 2mm;">
+        <span class="client-label">Fecha de entrega</span><br>
+        <span class="client-value">{{fecha_entrega}}</span>
+      </div>
+    </div>
+
+    <hr>
+
+    <!-- TABLA PRINCIPAL -->
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th class="col-desc">Descripción</th>
+          <th class="col-cant right">Cantidad</th>
+          <th class="col-precio right">Precio unitario</th>
+          <th class="col-total right">Precio total</th>
+        </tr>
+      </thead>
+      <tbody>
+
+        <!--
+        ══════════════════════════════════════════════════════
+        BLOQUE MATERIAL — repetir por cada material/variante
+        ══════════════════════════════════════════════════════
+        -->
+        <tr class="row-material">
+          <td>{{material_nombre}} - {{material_espesor}}</td>
+          <td class="right">{{material_m2}}</td>
+          <td class="right">{{material_precio_unitario}}</td>
+          <td class="right">{{material_total}}</td>
+        </tr>
+
+        <!-- Sub-filas con detalle de piezas (repetir por cada pieza) -->
+        <tr class="row-piece">
+          <td>{{pieza_descripcion}}</td>
+          <td></td><td></td><td></td>
+        </tr>
+        <!-- Si hay más piezas, la última lleva también row-piece-last:
+        <tr class="row-piece row-piece-last"> ... </tr> -->
+
+        <!--
+          DESCUENTO — incluir SOLO si hay descuento aplicable.
+          Omitir el bloque completo si no hay descuento.
+        -->
+        <!--
+        <tr class="row-desc">
+          <td></td>
+          <td></td>
+          <td class="right"><em>DESC</em></td>
+          <td class="right">{{descuento_monto}}</td>
+        </tr>
+        -->
+
+        <!-- Subtotal material (ya descontado si aplica) -->
+        <tr class="row-subtotal">
+          <td colspan="2"></td>
+          <td>Total USD</td><!-- o "Total ARS" para material nacional -->
+          <td>{{material_total_neto}}</td>
+        </tr>
+
+        <tr class="row-spacer"><td colspan="4"></td></tr>
+
+        <!--
+        ══════════════════════════════════════════════════════
+        SOBRANTE — incluir SOLO si hay sobrante de placa.
+        Omitir completamente si no aplica.
+        ══════════════════════════════════════════════════════
+        -->
+        <!--
+        <tr class="row-material">
+          <td>SOBRANTE</td>
+          <td class="right">{{sobrante_m2}}</td>
+          <td class="right">{{sobrante_precio_unitario}}</td>
+          <td class="right">{{sobrante_total}}</td>
+        </tr>
+        <tr class="row-subtotal">
+          <td colspan="2"></td>
+          <td>Total USD</td>
+          <td>{{sobrante_total}}</td>
+        </tr>
+        <tr class="row-spacer"><td colspan="4"></td></tr>
+        -->
+
+        <!--
+        ══════════════════════════════════════════════════════
+        PILETA (producto Johnson u otro) —
+        Incluir SOLO si D'Angelo provee la pileta.
+        Va ANTES de la sección MANO DE OBRA.
+        Omitir si el cliente trae su propia pileta.
+        ══════════════════════════════════════════════════════
+        -->
+        <!--
+        <tr class="row-pileta">
+          <td>{{pileta_nombre}}</td>
+          <td class="right">{{pileta_cantidad}}</td>
+          <td class="right">{{pileta_precio_unitario}}</td>
+          <td class="right">{{pileta_total}}</td>
+        </tr>
+        <tr class="row-spacer"><td colspan="4"></td></tr>
+        -->
+
+        <!--
+        ══════════════════════════════════════════════════════
+        MANO DE OBRA
+        ══════════════════════════════════════════════════════
+        -->
+        <tr class="row-mo-header">
+          <td colspan="4">MANO DE OBRA</td>
+        </tr>
+
+        <!-- Filas de MO — repetir por cada ítem, alternando -->
+        <tr class="row-labor">
+          <td>{{mo_descripcion}}</td>
+          <td class="right">{{mo_cantidad}}</td>
+          <td class="right">{{mo_precio_unitario}}</td>
+          <td class="right">{{mo_total}}</td>
+        </tr>
+
+        <!-- Total Pesos MO -->
+        <tr class="row-total-pesos">
+          <td colspan="2"></td>
+          <td>Total PESOS</td>
+          <td>{{total_pesos}}</td>
+        </tr>
+
+      </tbody>
+    </table>
+
+    <!-- GRAND TOTAL -->
+    <div class="grand-total">
+      <!--
+        Con material USD:  PRESUPUESTO TOTAL: $XXX.XXX mano de obra + USDXXX material
+        Solo ARS:          PRESUPUESTO TOTAL: $XXX.XXX
+      -->
+      PRESUPUESTO TOTAL: {{grand_total}}
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer">
+      <p><span class="bold">*COTIZACION OFICIAL:</span> dolar venta banco nacion. Los materiales expresados en dólares se pagan en pesos según la cotizacion del dia.</p>
+
+      <p class="section">NOTA: Por ser el granito y mármol un producto de la naturaleza, las tonalidades, vetas y manchas pueden diferir de las muestras exhibidas.</p>
+
+      <p class="section bold">CONDICIONES</p>
+      <p>*PRESUPUESTO SUJETO A VARIACIÓN DE PRECIO</p>
+      <p>*MATERIALES IMPORTADOS SEGÚN COTIZACION DOLAR VENTA BANCO NACIÓN AL MOMENTO DE LA CONFIRMACION</p>
+      <p>*LA TOMA DE MEDIDAS NO PODRÁ SUPERAR LOS 30 DÍAS DESDE LA CONFIRMACIÓN DEL TRABAJO, CASO CONTRARIO EL 20 % RESTANTE SE ACTUALIZARA AL MOMENTO DE LA CANCELACIÓN SEGÚN INDICE LA CONSTRUCCIÓN</p>
+      <p>*PRESUPUESTO DEFINITIVO SEGÚN MEDIDAS TOMADAS EN OBRA</p>
+      <p>*LOS PRECIOS INCLUYEN IVA</p>
+
+      <p class="section bold">FORMAS DE PAGO</p>
+      <p>*Materiales Importados: 80% seña , 20% restante contra entrega (cotización dolar venta BCO NACIÓN).</p>
+      <p>*Materiales Nacionales: 80% seña , 20% restante contra entrega.</p>
+      <p>Pago contado / transferencia / débito / crédito / cheques 15 días para importados y 30 días para nacionales</p>
+      <p class="section">TARJETAS DE CREDITO CONSULTAR PLANES</p>
+    </div>
+
+  </div><!-- /content -->
+
+</body>
+</html>
