@@ -247,6 +247,21 @@ TOOLS = [
 ]
 
 
+# ── HELPERS ───────────────────────────────────────────────────────────────────
+
+def _serialize_content(content) -> list:
+    """Convert Anthropic SDK content blocks to JSON-serializable dicts."""
+    result = []
+    for block in content:
+        if hasattr(block, "model_dump"):
+            result.append(block.model_dump())
+        elif isinstance(block, dict):
+            result.append(block)
+        else:
+            result.append({"type": "text", "text": str(block)})
+    return result
+
+
 # ── RETRY CONFIG ─────────────────────────────────────────────────────────────
 
 MAX_RETRIES = 5
@@ -389,7 +404,7 @@ class AgentService:
                 # No tool calls — conversation turn is done
                 assistant_messages.append({
                     "role": "assistant",
-                    "content": final_message.content,
+                    "content": _serialize_content(final_message.content),
                 })
                 break
 
@@ -410,7 +425,7 @@ class AgentService:
                     "content": json.dumps(result),
                 })
 
-            assistant_messages.append({"role": "assistant", "content": final_message.content})
+            assistant_messages.append({"role": "assistant", "content": _serialize_content(final_message.content)})
             assistant_messages.append({"role": "user", "content": tool_results})
 
             # Cooldown between loop iterations to avoid hitting rate limit
