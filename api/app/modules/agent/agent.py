@@ -382,18 +382,19 @@ class AgentService:
                     await asyncio.sleep(delay)
 
                 except anthropic.APIStatusError as e:
-                    if e.status_code == 529:  # Overloaded
+                    is_overloaded = e.status_code == 529 or "overloaded" in str(e).lower()
+                    if is_overloaded:
                         if attempt == MAX_RETRIES:
                             yield {"type": "action", "content": "⚠️ Servicio sobrecargado. Intentá de nuevo en unos minutos."}
                             yield {"type": "done", "content": ""}
                             return
                         delay = RETRY_DELAYS[attempt]
-                        logging.warning(f"API overloaded (529), retrying in {delay}s")
+                        logging.warning(f"API overloaded, retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
                         yield {"type": "action", "content": f"⏳ Servicio ocupado, reintentando... ({delay}s)"}
                         await asyncio.sleep(delay)
                     else:
                         logging.error(f"Anthropic API error: {e}")
-                        yield {"type": "action", "content": f"⚠️ Error del servicio: {e.message}"}
+                        yield {"type": "action", "content": f"⚠️ Error del servicio. Intentá de nuevo en unos segundos."}
                         yield {"type": "done", "content": ""}
                         return
 
