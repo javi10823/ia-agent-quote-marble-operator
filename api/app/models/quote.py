@@ -16,9 +16,9 @@ class Quote(Base):
     __tablename__ = "quotes"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    client_name: Mapped[str] = mapped_column(String(200))
-    project: Mapped[str] = mapped_column(String(200))
-    material: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    client_name: Mapped[str] = mapped_column(String(500))
+    project: Mapped[str] = mapped_column(String(500))
+    material: Mapped[str | None] = mapped_column(String(500), nullable=True)
     total_ars: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[QuoteStatus] = mapped_column(

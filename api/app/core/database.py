@@ -24,6 +24,16 @@ async def init_db():
         from app.models import quote  # noqa - ensures models are registered
         await conn.run_sync(Base.metadata.create_all)
 
+        # Migrate: expand varchar columns if they exist at smaller size
+        await conn.execute(
+            __import__("sqlalchemy").text(
+                "ALTER TABLE quotes "
+                "ALTER COLUMN client_name TYPE VARCHAR(500), "
+                "ALTER COLUMN project TYPE VARCHAR(500), "
+                "ALTER COLUMN material TYPE VARCHAR(500)"
+            )
+        )
+
 
 async def get_db():
     async with AsyncSessionLocal() as session:
