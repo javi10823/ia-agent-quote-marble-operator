@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update, select
 
 from app.core.config import settings
-from app.models.quote import Quote
+from app.models.quote import Quote, QuoteStatus
 from app.modules.agent.tools.catalog_tool import catalog_lookup, check_stock
 from app.modules.agent.tools.plan_tool import read_plan
 from app.modules.agent.tools.document_tool import generate_documents
@@ -242,6 +242,19 @@ TOOLS = [
                 "date": {"type": "string"},
             },
             "required": ["quote_id", "client_name", "material", "date"],
+        },
+    },
+    {
+        "name": "create_additional_quote",
+        "description": "Crea un presupuesto adicional para otro material del mismo cliente. Usar cuando el operador pide cotizar en 2+ materiales — cada material es un presupuesto separado. Devuelve el nuevo quote_id para usar en generate_documents y upload_to_drive.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_name": {"type": "string", "description": "Nombre del cliente"},
+                "project": {"type": "string", "description": "Proyecto o tipo de trabajo"},
+                "material": {"type": "string", "description": "Material de este presupuesto"},
+            },
+            "required": ["client_name"],
         },
     },
     {
@@ -577,6 +590,21 @@ class AgentService:
             else:
                 logging.error(f"upload_to_drive FAILED: {result.get('error')}")
             return result
+        elif name == "create_additional_quote":
+            import uuid
+            new_id = str(uuid.uuid4())
+            new_quote = Quote(
+                id=new_id,
+                client_name=inputs.get("client_name", ""),
+                project=inputs.get("project", ""),
+                material=inputs.get("material"),
+                messages=[],
+                status=QuoteStatus.DRAFT,
+            )
+            db.add(new_quote)
+            await db.commit()
+            logging.info(f"Created additional quote {new_id} for {inputs.get('client_name')} / {inputs.get('material')}")
+            return {"ok": True, "quote_id": new_id}
         elif name == "update_quote":
             updates = inputs.get("updates", {})
             # Only allow known fields
