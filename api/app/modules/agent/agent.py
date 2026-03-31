@@ -1,6 +1,8 @@
 import anthropic
+import asyncio
 import json
 import base64
+import logging
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,47 +17,96 @@ from app.modules.agent.tools.drive_tool import upload_to_drive
 
 BASE_DIR = Path(__file__).parent.parent.parent.parent
 
+# ── BUILDING DETECTION ───────────────────────────────────────────────────────
+
+BUILDING_KEYWORDS = [
+    "edificio", "edificios", "departamento", "departamentos",
+    "unidades", "torre", "torres", "constructora", "consorcio",
+    "cantidad:", "cantidad :", "pisos", "obra nueva",
+]
+
+
+def _detect_building(user_message: str) -> bool:
+    text = user_message.lower()
+    return any(kw in text for kw in BUILDING_KEYWORDS)
+
+
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
 
-def build_system_prompt(has_plan: bool = False) -> str:
-    import logging
-
+def build_system_prompt(has_plan: bool = False, is_building: bool = False) -> list:
+    """
+    Build system prompt as a list of content blocks with cache_control.
+    Stable core content is cached (5 min TTL). Conditional content is not cached.
+    Cached tokens don't count toward the rate limit on subsequent requests.
+    """
     context = (BASE_DIR / "CONTEXT.md").read_text(encoding="utf-8")
-    rules = []
     rules_dir = BASE_DIR / "rules"
 
-    # Core rules always loaded; plan-reading only when there's a plan
-    core_rules = [
+    # Stable core — always loaded, forms the cached block
+    core_files = [
         "calculation-formulas.md",
         "commercial-conditions.md",
         "materials-guide.md",
         "pricing-variables.md",
-        "quote-process.md",
+        "quote-process-general.md",
     ]
+
+    core_rules = []
+    for name in core_files:
+        path = rules_dir / name
+        if path.exists():
+            core_rules.append(f"## {path.stem}\n\n{path.read_text(encoding='utf-8')}")
+
+    stable_text = "\n\n---\n\n".join([context] + core_rules)
+
+    # Conditional content — loaded based on context
+    conditional_parts = []
+
+    if is_building:
+        bldg_path = rules_dir / "quote-process-buildings.md"
+        if bldg_path.exists():
+            conditional_parts.append(f"## {bldg_path.stem}\n\n{bldg_path.read_text(encoding='utf-8')}")
+
     if has_plan:
-        core_rules.append("plan-reading.md")
+        plan_path = rules_dir / "plan-reading.md"
+        if plan_path.exists():
+            conditional_parts.append(f"## {plan_path.stem}\n\n{plan_path.read_text(encoding='utf-8')}")
 
-    rule_files = [rules_dir / name for name in core_rules if (rules_dir / name).exists()]
-
-    logging.info(f"BASE_DIR: {BASE_DIR}")
-    logging.info(f"Rules loaded: {[f.name for f in rule_files]}")
-
-    for f in rule_files:
-        rules.append(f"## {f.stem}\n\n{f.read_text(encoding='utf-8')}")
-
-    # Load only 2 key examples to stay within token limits
-    examples = []
+    # Examples — 1 by default, add building example if needed
     examples_dir = BASE_DIR / "examples"
-    key_examples = ["quote-030", "quote-034"]
-    for name in key_examples:
+    example_names = ["quote-030"]
+    if is_building:
+        example_names.append("quote-019")
+
+    for name in example_names:
         for f in examples_dir.glob(f"{name}*.md"):
-            examples.append(f.read_text(encoding="utf-8"))
+            conditional_parts.append(f.read_text(encoding="utf-8"))
 
-    logging.info(f"Examples loaded: {len(examples)}")
+    # Build system content blocks with cache_control on stable block
+    blocks = [
+        {
+            "type": "text",
+            "text": stable_text,
+            "cache_control": {"type": "ephemeral"},
+        },
+    ]
 
-    full_prompt = "\n\n---\n\n".join([context] + rules + examples)
-    logging.info(f"System prompt total chars: {len(full_prompt)}")
-    return full_prompt
+    if conditional_parts:
+        conditional_text = "\n\n---\n\n".join(conditional_parts)
+        blocks.append({
+            "type": "text",
+            "text": conditional_text,
+        })
+
+    stable_chars = len(stable_text)
+    cond_chars = sum(len(p) for p in conditional_parts)
+    logging.info(
+        f"System prompt blocks: {len(blocks)}, "
+        f"stable chars: {stable_chars}, "
+        f"conditional chars: {cond_chars}, "
+        f"total chars: {stable_chars + cond_chars}"
+    )
+    return blocks
 
 
 # ── TOOL DEFINITIONS ──────────────────────────────────────────────────────────
@@ -196,11 +247,20 @@ TOOLS = [
 ]
 
 
+# ── RETRY CONFIG ─────────────────────────────────────────────────────────────
+
+MAX_RETRIES = 3
+RETRY_DELAYS = [30, 45, 60]
+
+
 # ── AGENT SERVICE ─────────────────────────────────────────────────────────────
 
 class AgentService:
     def __init__(self):
-        self.client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+        self.client = anthropic.AsyncAnthropic(
+            api_key=settings.ANTHROPIC_API_KEY,
+            default_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+        )
 
     async def stream_chat(
         self,
@@ -212,9 +272,10 @@ class AgentService:
         db: AsyncSession,
     ) -> AsyncGenerator[dict, None]:
 
-        # Build system prompt per request (conditionally load plan rules)
+        # Build system prompt per request with contextual loading
         has_plan = plan_bytes is not None and plan_filename is not None
-        system_prompt = build_system_prompt(has_plan=has_plan)
+        is_building = _detect_building(user_message)
+        system_prompt = build_system_prompt(has_plan=has_plan, is_building=is_building)
 
         # Build user message content
         content = []
@@ -253,32 +314,72 @@ class AgentService:
             full_text = ""
             tool_uses = []
 
-            async with self.client.messages.stream(
-                model=settings.ANTHROPIC_MODEL,
-                max_tokens=8096,
-                system=system_prompt,
-                messages=new_messages + assistant_messages,
-                tools=TOOLS,
-            ) as stream:
-                async for event in stream:
-                    if hasattr(event, "type"):
-                        if event.type == "content_block_delta":
-                            if hasattr(event.delta, "text"):
-                                full_text += event.delta.text
-                                yield {"type": "text", "content": event.delta.text}
-                        elif event.type == "content_block_start":
-                            if hasattr(event.content_block, "type") and event.content_block.type == "tool_use":
-                                tool_uses.append({
-                                    "id": event.content_block.id,
-                                    "name": event.content_block.name,
-                                    "input": {},
-                                })
-                        elif event.type == "content_block_delta":
-                            if hasattr(event.delta, "partial_json") and tool_uses:
-                                # Accumulate tool input JSON
-                                pass
+            # Retry loop for rate limit errors
+            for attempt in range(MAX_RETRIES + 1):
+                try:
+                    async with self.client.messages.stream(
+                        model=settings.ANTHROPIC_MODEL,
+                        max_tokens=8096,
+                        system=system_prompt,
+                        messages=new_messages + assistant_messages,
+                        tools=TOOLS,
+                    ) as stream:
+                        async for event in stream:
+                            if hasattr(event, "type"):
+                                if event.type == "content_block_delta":
+                                    if hasattr(event.delta, "text"):
+                                        full_text += event.delta.text
+                                        yield {"type": "text", "content": event.delta.text}
+                                elif event.type == "content_block_start":
+                                    if hasattr(event.content_block, "type") and event.content_block.type == "tool_use":
+                                        tool_uses.append({
+                                            "id": event.content_block.id,
+                                            "name": event.content_block.name,
+                                            "input": {},
+                                        })
 
-                final_message = await stream.get_final_message()
+                        final_message = await stream.get_final_message()
+
+                    # Log cache usage if available
+                    if hasattr(final_message, "usage"):
+                        usage = final_message.usage
+                        cache_read = getattr(usage, "cache_read_input_tokens", 0)
+                        cache_create = getattr(usage, "cache_creation_input_tokens", 0)
+                        logging.info(
+                            f"Token usage — input: {usage.input_tokens}, "
+                            f"cache_read: {cache_read}, "
+                            f"cache_create: {cache_create}, "
+                            f"output: {usage.output_tokens}"
+                        )
+
+                    break  # Success — exit retry loop
+
+                except anthropic.RateLimitError:
+                    if attempt == MAX_RETRIES:
+                        logging.error("Rate limit exceeded after all retries")
+                        yield {"type": "action", "content": "⚠️ Servicio temporalmente no disponible. Intentá de nuevo en un minuto."}
+                        yield {"type": "done", "content": ""}
+                        return
+                    delay = RETRY_DELAYS[attempt]
+                    logging.warning(f"Rate limit hit, retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                    yield {"type": "action", "content": f"⏳ Esperando disponibilidad... ({delay}s)"}
+                    await asyncio.sleep(delay)
+
+                except anthropic.APIStatusError as e:
+                    if e.status_code == 529:  # Overloaded
+                        if attempt == MAX_RETRIES:
+                            yield {"type": "action", "content": "⚠️ Servicio sobrecargado. Intentá de nuevo en unos minutos."}
+                            yield {"type": "done", "content": ""}
+                            return
+                        delay = RETRY_DELAYS[attempt]
+                        logging.warning(f"API overloaded (529), retrying in {delay}s")
+                        yield {"type": "action", "content": f"⏳ Servicio ocupado, reintentando... ({delay}s)"}
+                        await asyncio.sleep(delay)
+                    else:
+                        logging.error(f"Anthropic API error: {e}")
+                        yield {"type": "action", "content": f"⚠️ Error del servicio: {e.message}"}
+                        yield {"type": "done", "content": ""}
+                        return
 
             # Check if we need to handle tool calls
             tool_use_blocks = [b for b in final_message.content if b.type == "tool_use"]
