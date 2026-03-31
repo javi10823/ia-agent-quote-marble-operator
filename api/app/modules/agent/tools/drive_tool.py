@@ -93,6 +93,16 @@ async def upload_to_drive(
             if not file_path.exists():
                 continue
 
+            # Delete existing file with same name if present
+            query = (
+                f"name='{file_path.name}' and "
+                f"'{month_id}' in parents and "
+                f"trashed=false"
+            )
+            existing = service.files().list(q=query, fields="files(id)").execute()
+            for f in existing.get("files", []):
+                service.files().delete(fileId=f["id"]).execute()
+
             file_metadata = {"name": file_path.name, "parents": [month_id]}
             media = MediaFileUpload(str(file_path), mimetype=mime, resumable=True)
             uploaded = service.files().create(
