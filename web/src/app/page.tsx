@@ -49,13 +49,17 @@ export default function DashboardPage() {
   async function handleDelete(e: React.MouseEvent, id: string) {
     e.stopPropagation();
     if (confirmDeleteId === id) {
-      await deleteQuote(id);
-      setQuotes(prev => prev.filter(q => q.id !== id));
+      try {
+        await deleteQuote(id);
+        setQuotes(prev => prev.filter(q => q.id !== id));
+      } catch (err) {
+        console.error("Error deleting quote:", err);
+        alert("Error al eliminar el presupuesto. Intentá de nuevo.");
+      }
       setConfirmDeleteId(null);
     } else {
       setConfirmDeleteId(id);
-      // Auto-cancel after 3s
-      setTimeout(() => setConfirmDeleteId(prev => prev === id ? null : prev), 3000);
+      setTimeout(() => setConfirmDeleteId(null), 3000);
     }
   }
 
