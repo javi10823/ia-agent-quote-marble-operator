@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { fetchQuotes, updateQuoteStatus, type Quote } from "@/lib/api";
+import { fetchQuotes, updateQuoteStatus, deleteQuote, type Quote } from "@/lib/api";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -37,11 +37,26 @@ export default function DashboardPage() {
     return days > 5;
   });
 
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
   async function toggleStatus(e: React.MouseEvent, id: string, current: Quote["status"]) {
     e.stopPropagation();
     const next = STATUS_NEXT[current];
     await updateQuoteStatus(id, next);
     setQuotes(prev => prev.map(q => q.id === id ? { ...q, status: next } : q));
+  }
+
+  async function handleDelete(e: React.MouseEvent, id: string) {
+    e.stopPropagation();
+    if (confirmDeleteId === id) {
+      await deleteQuote(id);
+      setQuotes(prev => prev.filter(q => q.id !== id));
+      setConfirmDeleteId(null);
+    } else {
+      setConfirmDeleteId(id);
+      // Auto-cancel after 3s
+      setTimeout(() => setConfirmDeleteId(prev => prev === id ? null : prev), 3000);
+    }
   }
 
   return (
@@ -120,7 +135,7 @@ export default function DashboardPage() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead style={{ background: "var(--s2)", borderBottom: "1px solid var(--b1)" }}>
                 <tr>
-                  {["Cliente", "Material", "Importe", "Estado", "Fecha", "Archivos"].map((h, i) => (
+                  {["Cliente", "Material", "Importe", "Estado", "Fecha", "Archivos", ""].map((h, i) => (
                     <th key={h} style={{
                       textAlign: i >= 2 ? "right" : "left",
                       padding: "10px 18px",
@@ -185,6 +200,22 @@ export default function DashboardPage() {
                           {q.excel_url && <FileBtn href={q.excel_url} emoji="📊" />}
                           {q.drive_url && <FileBtn href={q.drive_url} emoji="☁" />}
                         </div>
+                      </td>
+                      <td style={{ padding: "13px 10px", width: 40 }}>
+                        <button
+                          onClick={(e) => handleDelete(e, q.id)}
+                          title={confirmDeleteId === q.id ? "Click de nuevo para confirmar" : "Eliminar presupuesto"}
+                          style={{
+                            width: 28, height: 28, borderRadius: 6,
+                            border: confirmDeleteId === q.id ? "1px solid rgba(255,69,58,.5)" : "1px solid var(--b1)",
+                            background: confirmDeleteId === q.id ? "rgba(255,69,58,.12)" : "transparent",
+                            color: confirmDeleteId === q.id ? "#ff453a" : "var(--t3)",
+                            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 12, transition: "all .15s",
+                          }}
+                        >
+                          {confirmDeleteId === q.id ? "✓" : "✕"}
+                        </button>
                       </td>
                     </tr>
                   );

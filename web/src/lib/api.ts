@@ -60,6 +60,11 @@ export async function updateQuoteStatus(
   if (!res.ok) throw new Error("Error al actualizar estado");
 }
 
+export async function deleteQuote(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/quotes/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Error al eliminar presupuesto");
+}
+
 // ── Chat SSE ──────────────────────────────────────────────────────────────────
 
 export interface ChatChunk {
