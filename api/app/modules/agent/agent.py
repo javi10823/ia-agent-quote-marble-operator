@@ -536,12 +536,14 @@ class AgentService:
                 logging.info(f"Quote {quote_id} files updated + status=validated")
             return result
         elif name == "upload_to_drive":
+            logging.info(f"upload_to_drive inputs: client={inputs.get('client_name')}, material={inputs.get('material')}, date={inputs.get('date')}")
             result = await upload_to_drive(
                 quote_id,
                 inputs["client_name"],
                 inputs["material"],
                 inputs["date"],
             )
+            logging.info(f"upload_to_drive result: {result}")
             if result.get("ok"):
                 await db.execute(
                     update(Quote)
@@ -549,6 +551,9 @@ class AgentService:
                     .values(drive_url=result.get("drive_url"))
                 )
                 await db.commit()
+                logging.info(f"Quote {quote_id} drive_url saved: {result.get('drive_url')}")
+            else:
+                logging.error(f"upload_to_drive FAILED: {result.get('error')}")
             return result
         else:
             return {"error": f"Tool desconocida: {name}"}

@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from datetime import datetime
 from googleapiclient.discovery import build
@@ -78,11 +79,17 @@ async def upload_to_drive(
         year_id = _get_or_create_folder(service, year, presupuestos_id)
         month_id = _get_or_create_folder(service, month_folder, year_id)
 
-        # Find generated files
+        # Find generated files (sanitize date same as document_tool)
         quote_dir = OUTPUT_DIR / quote_id
-        filename_base = f"{client_name} - {material} - {date_str}"
+        date_clean = date_str.replace("/", ".")
+        filename_base = f"{client_name} - {material} - {date_clean}"
+        filename_base = filename_base.replace("/", "-").replace("\\", "-")
         pdf_path = quote_dir / f"{filename_base}.pdf"
         excel_path = quote_dir / f"{filename_base}.xlsx"
+
+        logging.info(f"Drive upload — looking for files in: {quote_dir}")
+        logging.info(f"  PDF exists: {pdf_path.exists()} → {pdf_path}")
+        logging.info(f"  Excel exists: {excel_path.exists()} → {excel_path}")
 
         # Empty Service Account trash to free quota
         try:
