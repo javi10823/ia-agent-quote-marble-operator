@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import update
+from sqlalchemy import update, select
 
 from app.core.config import settings
 from app.models.quote import Quote
@@ -249,6 +249,46 @@ TOOLS = [
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 
+def _extract_quote_info(user_message: str) -> dict:
+    """Extract client name and material from user message for early DB update."""
+    import re
+    info = {}
+
+    # Try to find client name patterns like "cliente Juan Carlos" or "para María López"
+    name_patterns = [
+        r"(?:cliente|client[ea]?)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*)",
+        r"(?:para|de)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*)",
+    ]
+    for pattern in name_patterns:
+        match = re.search(pattern, user_message)
+        if match:
+            info["client_name"] = match.group(1).strip()
+            break
+
+    # Try to find material name
+    material_keywords = [
+        "silestone", "dekton", "neolith", "purastone", "puraprima",
+        "laminatto", "negro brasil", "blanco norte", "granito",
+        "mármol", "marmol",
+    ]
+    msg_lower = user_message.lower()
+    for kw in material_keywords:
+        if kw in msg_lower:
+            # Find the full material name around the keyword
+            idx = msg_lower.index(kw)
+            # Grab surrounding words for context
+            start = max(0, user_message.rfind(" ", 0, max(0, idx - 1)) + 1)
+            end = user_message.find(",", idx)
+            if end == -1:
+                end = user_message.find(" con ", idx)
+            if end == -1:
+                end = min(len(user_message), idx + 30)
+            info["material"] = user_message[start:end].strip()
+            break
+
+    return info
+
+
 def _serialize_content(content) -> list:
     """Convert Anthropic SDK content blocks to JSON-serializable dicts."""
     result = []
@@ -435,10 +475,23 @@ class AgentService:
 
         # Save updated messages to DB
         updated_messages = new_messages + assistant_messages
+        save_values = {"messages": updated_messages}
+
+        # Try to extract client_name and material from conversation if not yet set
+        # This ensures the dashboard shows useful info before PDF generation
+        result = await db.execute(select(Quote).where(Quote.id == quote_id))
+        current_quote = result.scalar_one_or_none()
+        if current_quote and not current_quote.client_name:
+            extracted = _extract_quote_info(user_message)
+            if extracted.get("client_name"):
+                save_values["client_name"] = extracted["client_name"]
+            if extracted.get("material"):
+                save_values["material"] = extracted["material"]
+
         await db.execute(
             update(Quote)
             .where(Quote.id == quote_id)
-            .values(messages=updated_messages)
+            .values(**save_values)
         )
         await db.commit()
 
@@ -452,22 +505,27 @@ class AgentService:
         elif name == "read_plan":
             return await read_plan(inputs["filename"], inputs.get("crop_instructions", []))
         elif name == "generate_documents":
+            logging.info(f"generate_documents called with quote_data keys: {list(inputs['quote_data'].keys())}")
             result = await generate_documents(quote_id, inputs["quote_data"])
+            logging.info(f"generate_documents result: ok={result.get('ok')}, error={result.get('error')}")
             if result.get("ok"):
+                update_values = {
+                    "client_name": inputs["quote_data"]["client_name"],
+                    "project": inputs["quote_data"].get("project", ""),
+                    "material": inputs["quote_data"].get("material_name"),
+                    "total_ars": inputs["quote_data"].get("total_ars"),
+                    "total_usd": inputs["quote_data"].get("total_usd"),
+                    "pdf_url": result.get("pdf_url"),
+                    "excel_url": result.get("excel_url"),
+                }
+                logging.info(f"Updating quote {quote_id} with: {update_values}")
                 await db.execute(
                     update(Quote)
                     .where(Quote.id == quote_id)
-                    .values(
-                        client_name=inputs["quote_data"]["client_name"],
-                        project=inputs["quote_data"]["project"],
-                        material=inputs["quote_data"].get("material_name"),
-                        total_ars=inputs["quote_data"].get("total_ars"),
-                        total_usd=inputs["quote_data"].get("total_usd"),
-                        pdf_url=result.get("pdf_url"),
-                        excel_url=result.get("excel_url"),
-                    )
+                    .values(**update_values)
                 )
                 await db.commit()
+                logging.info(f"Quote {quote_id} updated successfully")
             return result
         elif name == "upload_to_drive":
             result = await upload_to_drive(
