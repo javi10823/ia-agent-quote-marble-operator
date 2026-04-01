@@ -15,9 +15,12 @@ DELIVERY_SUFFIX = "días desde la toma de medidas"
 
 
 def _fmt_ars(value: float) -> str:
-    """Format ARS price: $65.147 (dot for thousands, no decimals)."""
-    n = round(value)
-    formatted = f"{abs(n):,}".replace(",", ".")
+    """Format ARS price: $65.147,34 (dot thousands, comma decimal, 2 decimals)."""
+    n = round(value, 2)
+    # Format with 2 decimals, then swap separators for Argentine locale
+    raw = f"{abs(n):,.2f}"  # "65,147.34"
+    # Swap: comma→temp, dot→comma, temp→dot
+    formatted = raw.replace(",", "X").replace(".", ",").replace("X", ".")
     return f"${formatted}" if n >= 0 else f"-${formatted}"
 
 
@@ -396,7 +399,7 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     # Number formats — use standard codes, Google Sheets interprets per locale
     # With es_AR locale: #,##0 shows as 65.147 (dot thousands)
     usd_fmt = '"USD "#,##0'
-    ars_fmt = '"$"#,##0'
+    ars_fmt = '"$"#,##0.00'
     qty_fmt = '#,##0.00'
     price_fmt = usd_fmt if currency == "USD" else ars_fmt
 
@@ -453,7 +456,7 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     r += 1  # spacer
 
     # Argentine locale format for ARS
-    ars_cell_fmt = '"$"#,##0'
+    ars_cell_fmt = '"$"#,##0.00'
 
     # Sinks
     for i, sink in enumerate(sinks):
