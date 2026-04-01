@@ -361,7 +361,7 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     left = Alignment(horizontal="left")
     center = Alignment(horizontal="center")
 
-    gray_fill = PatternFill(start_color="F3F3F3", end_color="F3F3F3", fill_type="solid")
+    # No gray_fill in openpyxl — banding handled by Google Sheets API after upload
 
     from openpyxl.styles import Border, Side
     thin = Side(style="thin")
@@ -431,7 +431,7 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     total_shown = False
     for idx, piece in enumerate(all_pieces):
         # Alternating fill
-        fill = gray_fill if idx % 2 == 0 else None
+        fill = None
         ws.cell(r, 1).value = piece
         ws.cell(r, 1).font = small
         if fill:
@@ -451,7 +451,7 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
                 # Next row for Total
                 ws.cell(r, 1).value = all_pieces[1] if len(all_pieces) > 1 else ""
                 ws.cell(r, 1).font = small
-                fill2 = gray_fill if (idx + 1) % 2 == 0 else None
+                fill2 = None
                 if fill2:
                     for c in range(1, 7):
                         ws.cell(r, c).fill = fill2
@@ -472,7 +472,7 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
 
     # Sinks
     for i, sink in enumerate(sinks):
-        fill = gray_fill if i % 2 == 1 else None
+        fill = None
         ws.cell(r, 1).value = sink["name"]; ws.cell(r, 1).font = bold
         ws.cell(r, 4).value = sink["quantity"]; ws.cell(r, 4).font = normal; ws.cell(r, 4).alignment = right
         ws.cell(r, 5).value = sink["unit_price"]; ws.cell(r, 5).font = normal
@@ -490,7 +490,7 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     r += 1
     mo_start = r
     for i, mo in enumerate(mo_items):
-        fill = gray_fill if i % 2 == 0 else None
+        fill = None
         ws.cell(r, 1).value = mo["description"]; ws.cell(r, 1).font = normal
         ws.cell(r, 4).value = mo["quantity"]; ws.cell(r, 4).font = normal; ws.cell(r, 4).alignment = right
         ws.cell(r, 4).number_format = qty_fmt
