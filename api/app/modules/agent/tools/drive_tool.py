@@ -154,77 +154,18 @@ async def upload_to_drive(
             ).execute()
             logging.info(f"Uploaded to Drive: {file_path.name} → {uploaded.get('webViewLink')}")
 
-            # Set Argentine locale + alternating row colors via Sheets API
+            # Set Argentine locale via Sheets API (fills come from template)
             file_id = uploaded.get("id")
             if file_id:
                 try:
                     sheets_service = _get_sheets_service()
 
-                    # Get sheet info to know row count
-                    sheet_meta = sheets_service.spreadsheets().get(
-                        spreadsheetId=file_id,
-                        fields="sheets.properties",
-                    ).execute()
-                    sheet_id = sheet_meta["sheets"][0]["properties"]["sheetId"]
-
-                    # Find "Total PESOS" row to know where content ends
-                    sheet_data = sheets_service.spreadsheets().values().get(
-                        spreadsheetId=file_id,
-                        range="E1:E60",
-                    ).execute()
-                    rows_e = sheet_data.get("values", [])
-                    end_row = 35  # default
-                    for i, row in enumerate(rows_e):
-                        if row and "Total PESOS" in str(row[0]):
-                            end_row = i + 1  # 0-indexed + 1 to include this row
-                            break
-
                     requests = [
-                        # Set locale
+                        # Set locale only — template handles all formatting
                         {
                             "updateSpreadsheetProperties": {
                                 "properties": {"locale": "es_AR"},
                                 "fields": "locale",
-                            }
-                        },
-                        # Clear all background colors first (xlsx fills conflict with banding)
-                        {
-                            "repeatCell": {
-                                "range": {
-                                    "sheetId": sheet_id,
-                                    "startRowIndex": 22,
-                                    "endRowIndex": end_row,
-                                    "startColumnIndex": 0,
-                                    "endColumnIndex": 6,
-                                },
-                                "cell": {
-                                    "userEnteredFormat": {
-                                        "backgroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
-                                    }
-                                },
-                                "fields": "userEnteredFormat.backgroundColor",
-                            }
-                        },
-                        # Alternating colors ONLY on content rows (23 to Total PESOS)
-                        {
-                            "addBanding": {
-                                "bandedRange": {
-                                    "range": {
-                                        "sheetId": sheet_id,
-                                        "startRowIndex": 22,  # Row 23 (0-indexed)
-                                        "endRowIndex": end_row,
-                                        "startColumnIndex": 0,
-                                        "endColumnIndex": 6,
-                                    },
-                                    "rowProperties": {
-                                        "firstBandColor": {
-                                            "red": 1.0, "green": 1.0, "blue": 1.0,
-                                        },
-                                        "secondBandColor": {
-                                            "red": 0.937, "green": 0.937, "blue": 0.937,
-                                        },
-                                    },
-                                }
                             }
                         },
                     ]
@@ -233,9 +174,9 @@ async def upload_to_drive(
                         spreadsheetId=file_id,
                         body={"requests": requests},
                     ).execute()
-                    logging.info(f"Set locale es_AR + banding on spreadsheet {file_id}")
+                    logging.info(f"Set locale es_AR on spreadsheet {file_id}")
                 except Exception as e:
-                    logging.warning(f"Could not set locale/banding on spreadsheet: {e}")
+                    logging.warning(f"Could not set locale on spreadsheet: {e}")
 
             uploaded_urls.append(uploaded.get("webViewLink"))
 
