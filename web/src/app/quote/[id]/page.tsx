@@ -37,7 +37,7 @@ export default function QuotePage() {
 
   const [quote, setQuote] = useState<QuoteDetail | null>(null);
   const [messages, setMessages] = useState<UIMessage[]>([]);
-  const [tab, setTab] = useState<"detail" | "chat">("detail");
+  const [tab, setTab] = useState<"detail" | "chat">("chat");
   const [input, setInput] = useState("");
   const [planFile, setPlanFile] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
@@ -61,6 +61,10 @@ export default function QuotePage() {
             : (m.content as any[]).filter(c => c.type === "text").map(c => c.text || "").join(""),
         }));
       setMessages(uiMsgs);
+      // Show detail tab only for validated/sent quotes
+      if (q.status === "validated" || q.status === "sent") {
+        setTab("detail");
+      }
     }).finally(() => setLoading(false));
   }, [quoteId]);
 
@@ -163,7 +167,7 @@ export default function QuotePage() {
         display: "flex", gap: 0, borderBottom: "1px solid var(--b1)",
         background: "var(--s1)", paddingLeft: 28,
       }}>
-        <TabBtn active={tab === "detail"} onClick={() => setTab("detail")}>Detalle</TabBtn>
+        <TabBtn active={tab === "detail"} onClick={() => setTab("detail")} disabled={!quote || quote.status === "draft"}>Detalle</TabBtn>
         <TabBtn active={tab === "chat"} onClick={() => setTab("chat")}>Chat</TabBtn>
       </div>
 
@@ -495,13 +499,16 @@ function InfoBar({ icon, label, status, detail }: { icon: string; label: string;
   );
 }
 
-function TabBtn({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) {
+function TabBtn({ active, children, onClick, disabled }: { active: boolean; children: React.ReactNode; onClick: () => void; disabled?: boolean }) {
   return (
-    <button onClick={onClick} style={{
+    <button onClick={disabled ? undefined : onClick} style={{
       padding: "10px 20px", fontSize: 13, fontWeight: 500,
       border: "none", borderBottom: active ? "2px solid var(--acc)" : "2px solid transparent",
-      background: "transparent", color: active ? "var(--acc)" : "var(--t3)",
-      cursor: "pointer", fontFamily: "inherit",
+      background: "transparent",
+      color: disabled ? "var(--t4)" : active ? "var(--acc)" : "var(--t3)",
+      cursor: disabled ? "default" : "pointer",
+      fontFamily: "inherit",
+      opacity: disabled ? 0.5 : 1,
     }}>
       {children}
     </button>
