@@ -120,10 +120,13 @@ async def upload_to_drive(
                 includeItemsFromAllDrives=True,
             ).execute()
             for f in existing.get("files", []):
-                service.files().delete(
-                    fileId=f["id"],
-                    supportsAllDrives=True,
-                ).execute()
+                try:
+                    service.files().delete(
+                        fileId=f["id"],
+                        supportsAllDrives=True,
+                    ).execute()
+                except Exception as e:
+                    logging.warning(f"Could not delete existing file {f['id']}: {e}")
 
             file_metadata = {"name": file_path.name, "parents": [month_id]}
             media = MediaFileUpload(str(file_path), mimetype=mime, resumable=True)
