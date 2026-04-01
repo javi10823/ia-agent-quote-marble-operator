@@ -84,6 +84,55 @@ class TestBug042TallZocaloTomas:
         assert any("toma corriente" in d for d in mo_descs)
 
 
+# ── BUG-044: Statuarietto — m2 incorrecto sin zócalo, total USD no coincide ──
+
+class TestBug044StatuariettoM2:
+    """BUG-044: Valentina calculó 3.88 m² omitiendo zócalo. Real: 4.00 m²."""
+
+    def test_plano_marmoleria_zocalo_included_in_total(self):
+        """Zócalo 2.01×0.06 must be included — total must be higher than without it."""
+        pieces_without_zocalo = [
+            {"description": "Mesada principal", "largo": 3.00, "prof": 0.62},
+            {"description": "Mesada pequeña", "largo": 1.16, "prof": 0.60},
+            {"description": "Revestimiento pared", "largo": 0.99, "prof": 1.16},
+        ]
+        pieces_with_zocalo = pieces_without_zocalo + [
+            {"description": "Zócalo", "largo": 2.01, "alto": 0.06},
+        ]
+
+        r_without = calculate_quote({
+            "client_name": "Test", "material": "Blanco Nube",
+            "pieces": pieces_without_zocalo, "localidad": "Rosario", "plazo": "30 días",
+        })
+        r_with = calculate_quote({
+            "client_name": "Test", "material": "Blanco Nube",
+            "pieces": pieces_with_zocalo, "localidad": "Rosario", "plazo": "30 días",
+        })
+        assert r_with["ok"] and r_without["ok"]
+        # With zócalo must have more m² and higher total
+        assert r_with["material_m2"] > r_without["material_m2"], "Zócalo not adding m²"
+        assert r_with["material_total"] > r_without["material_total"], "Zócalo not adding to total"
+
+    def test_total_usd_matches_m2_times_price(self):
+        """Total USD must equal round(m2 × price_unit). No invented adjustments."""
+        result = calculate_quote({
+            "client_name": "Test",
+            "material": "Blanco Nube",
+            "pieces": [
+                {"description": "Mesada", "largo": 3.00, "prof": 0.62},
+                {"description": "Mesada 2", "largo": 1.16, "prof": 0.60},
+                {"description": "Revestimiento pared", "largo": 0.99, "prof": 1.16},
+                {"description": "Zócalo", "largo": 2.01, "alto": 0.06},
+            ],
+            "localidad": "Rosario",
+            "plazo": "30 días",
+        })
+        assert result["ok"] is True
+        expected_total = round(result["material_m2"] * result["material_price_unit"])
+        assert result["material_total"] == expected_total, \
+            f"Total {result['material_total']} ≠ round({result['material_m2']} × {result['material_price_unit']}) = {expected_total}"
+
+
 # ── BUG-038: Negro Brasil nunca lleva merma ──────────────────────────────────
 
 class TestBug038NegroBrasilMerma:

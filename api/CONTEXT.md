@@ -209,6 +209,9 @@ Todos los catálogos tienen precios SIN IVA. Aplicar ×1.21 al presupuestar sin 
 ### Precios
 - **USD importado:** `floor(price_usd × 1.21)` — truncar al entero inferior
 - **ARS nacional:** `round(price_ars × 1.21)`
+- **Total material USD:** `round(m2_total × precio_unitario_usd)` — siempre entero
+- **Total material ARS:** `round(m2_total × precio_unitario_ars, 2)` — 2 decimales
+- **VERIFICACIÓN:** antes de mostrar, verificar que `total = round(m2 × precio)`. Si no coincide, hay un error.
 
 ### Materiales
 - Variante **LEATHER** → solo si el cliente lo pide explícitamente
@@ -258,6 +261,11 @@ Todos los catálogos tienen precios SIN IVA. Aplicar ×1.21 al presupuestar sin 
 - **"Tomas (X)"** en plano → cobrar X × TOMAS
 - **Frente revestido en isla** = pata frontal, NO alzada → no aplica TOMAS automático
 - **c/p** = centro de pileta → ignorar
+
+**⛔ NUNCA INVENTAR piezas, conceptos o extensiones que no estén explícitamente en el plano o enunciado.**
+- Si el m² no te cierra, revisá las piezas del plano de nuevo — probablemente hay un zócalo u otra pieza chica que no leíste.
+- NUNCA agregar "extensión adicional", "ajuste", "complemento" ni ningún concepto que no figure en el plano.
+- Si tenés dudas sobre una pieza, preguntá al operador. No inventes.
 
 ### CORTE45 en islas con patas
 Por cada junta entre piezas × 2ml:
