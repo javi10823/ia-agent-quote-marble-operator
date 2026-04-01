@@ -230,20 +230,6 @@ TOOLS = [
         },
     },
     {
-        "name": "upload_to_drive",
-        "description": "Sube el PDF y Excel generados a Google Drive en la carpeta correspondiente.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "quote_id": {"type": "string"},
-                "client_name": {"type": "string"},
-                "material": {"type": "string"},
-                "date": {"type": "string"},
-            },
-            "required": ["quote_id", "client_name", "material", "date"],
-        },
-    },
-    {
         "name": "update_quote",
         "description": "Actualiza datos del presupuesto en la base de datos. Usar cuando el operador pide corregir nombre del cliente, proyecto, material u otros datos.",
         "input_schema": {
@@ -605,22 +591,6 @@ class AgentService:
 
             return {"ok": True, "generated": len(all_results), "results": all_results}
 
-        elif name == "upload_to_drive":
-            # Standalone upload (if called separately)
-            logging.info(f"upload_to_drive: client={inputs.get('client_name')}, material={inputs.get('material')}")
-            result = await upload_to_drive(
-                quote_id,
-                inputs["client_name"],
-                inputs["material"],
-                inputs["date"],
-            )
-            logging.info(f"upload_to_drive result: {result}")
-            if result.get("ok"):
-                await db.execute(update(Quote).where(Quote.id == quote_id).values(drive_url=result.get("drive_url")))
-                await db.commit()
-            else:
-                logging.error(f"upload_to_drive FAILED: {result.get('error')}")
-            return result
         elif name == "update_quote":
             updates = inputs.get("updates", {})
             # Only allow known fields
