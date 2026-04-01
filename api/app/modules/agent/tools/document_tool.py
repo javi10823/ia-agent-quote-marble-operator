@@ -228,7 +228,14 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     # Footer note
     ws.cell(r, 1).value = "No se suben mesadas que no entren en ascensor"
     ws.cell(r, 1).font = bold_italic
-    r += 2
+    r += 1
+
+    # Clear any stale borders from template on spacer row
+    no_border = Border()
+    for col in range(1, 7):
+        ws.cell(r, col).border = no_border
+    ws.row_dimensions[r].height = 8
+    r += 1
 
     # Conditions footer (same as PDF) — fixed row heights to prevent giant rows
     conditions_font = Font(name="Calibri", size=8)
