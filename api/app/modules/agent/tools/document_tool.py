@@ -369,54 +369,71 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     ws["C18"].value = "Fecha de entrega"; ws["C18"].font = bold
     ws["C19"].value = delivery; ws["C19"].font = normal; ws["C19"].alignment = left
 
+    # Column titles row 22
+    for col, title in [(1, "Descripción"), (4, "Cantidad"), (5, "Precio unitario"), (6, "Precio total")]:
+        ws.cell(22, col).value = title
+        ws.cell(22, col).font = bold
+        ws.cell(22, col).alignment = right if col >= 4 else left
+
+    # USD/ARS format helpers
+    usd_fmt = '"USD"#.##0'
+    ars_fmt = '"$"#.##0,00'
+    price_fmt = usd_fmt if currency == "USD" else ars_fmt
+
     # Material row 23
-    ws["A23"].value = f"{mat_name} - 20mm"; ws["A23"].font = bold
+    total_mat_gross = round(mat_m2 * mat_price)
+    ws["A23"].value = mat_name; ws["A23"].font = bold
     ws["D23"].value = mat_m2; ws["D23"].font = normal
-    ws["D23"].number_format = "0.00"; ws["D23"].alignment = right
+    ws["D23"].number_format = "#.##0,00"; ws["D23"].alignment = right
     ws["E23"].value = mat_price; ws["E23"].font = normal; ws["E23"].alignment = right
-    ws["F23"].value = "=D23*E23"; ws["F23"].font = normal; ws["F23"].alignment = right
+    ws["E23"].number_format = price_fmt
+    ws["F23"].value = total_mat_gross; ws["F23"].font = normal; ws["F23"].alignment = right
+    ws["F23"].number_format = price_fmt
 
-    if currency == "USD":
-        ws["E23"].number_format = '"USD "#,##0'
-        ws["F23"].number_format = '"USD "#,##0'
-    else:
-        ws["E23"].number_format = "$#,##0"
-        ws["F23"].number_format = "$#,##0"
-
-    # Sectors + pieces starting row 24
+    # Pieces starting row 24 (no sector headers — just piece measurements)
     r = 24
-    first_piece_row = None
+    piece_idx = 0
     for s_idx, sector in enumerate(sectors):
-        ws.cell(r, 1).value = sector["label"]
-        ws.cell(r, 1).font = bold_small
-        r += 1
         for p_idx, piece in enumerate(sector.get("pieces", [])):
-            # First piece gets TOTAL in E/F
-            is_first = (s_idx == 0 and p_idx == 0)
+            # Alternating fill
+            fill = gray_fill if piece_idx % 2 == 0 else None
             ws.cell(r, 1).value = piece
             ws.cell(r, 1).font = small
-            if is_first:
-                first_piece_row = r
-                ws.cell(r, 5).value = f"TOTAL {currency}"
-                ws.cell(r, 5).font = bold; ws.cell(r, 5).alignment = right
-                total_mat = round(mat_m2 * mat_price)
-                if discount_pct:
-                    total_mat = round(total_mat * (1 - discount_pct / 100))
-                ws.cell(r, 6).value = total_mat
-                ws.cell(r, 6).font = bold; ws.cell(r, 6).alignment = right
-                if currency == "USD":
-                    ws.cell(r, 6).number_format = '"USD "#,##0'
-                else:
-                    ws.cell(r, 6).number_format = "$#,##0"
-            r += 1
+            if fill:
+                for c in range(1, 7):
+                    ws.cell(r, c).fill = fill
 
-    # Discount row if applicable
-    if discount_pct:
-        ws.cell(r, 1).value = f"Descuento {discount_pct}%"
-        ws.cell(r, 1).font = Font(name="Calibri", italic=True, size=9)
-        r += 1
+            # First piece row: DESCUENTO (if any) and TOTAL USD
+            if piece_idx == 0 and discount_pct:
+                ws.cell(r, 5).value = f"DESCUENTO {int(discount_pct)} %"
+                ws.cell(r, 5).font = Font(name="Calibri", italic=True, size=9)
+                ws.cell(r, 5).alignment = right
+                discount_amount = round(total_mat_gross * discount_pct / 100)
+                ws.cell(r, 6).value = discount_amount
+                ws.cell(r, 6).font = normal; ws.cell(r, 6).alignment = right
+                ws.cell(r, 6).number_format = price_fmt
+                r += 1
+                piece_idx += 1
+                # Next row: Total USD
+                ws.cell(r, 1).value = piece if p_idx == 0 else ""
+                ws.cell(r, 1).font = small
+
+            if piece_idx <= 1:
+                # Show Total on first or second piece row
+                total_mat_net = total_mat_gross - round(total_mat_gross * discount_pct / 100) if discount_pct else total_mat_gross
+                ws.cell(r, 5).value = f"Total {currency}"
+                ws.cell(r, 5).font = bold; ws.cell(r, 5).alignment = right
+                ws.cell(r, 6).value = total_mat_net
+                ws.cell(r, 6).font = bold; ws.cell(r, 6).alignment = right
+                ws.cell(r, 6).number_format = price_fmt
+
+            r += 1
+            piece_idx += 1
 
     r += 1  # spacer
+
+    # Argentine locale format for ARS
+    ars_cell_fmt = '"$"#.##0'
 
     # Sinks
     for i, sink in enumerate(sinks):
@@ -424,9 +441,9 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
         ws.cell(r, 1).value = sink["name"]; ws.cell(r, 1).font = bold
         ws.cell(r, 4).value = sink["quantity"]; ws.cell(r, 4).font = normal; ws.cell(r, 4).alignment = right
         ws.cell(r, 5).value = sink["unit_price"]; ws.cell(r, 5).font = normal
-        ws.cell(r, 5).number_format = "$#,##0"; ws.cell(r, 5).alignment = right
+        ws.cell(r, 5).number_format = ars_cell_fmt; ws.cell(r, 5).alignment = right
         ws.cell(r, 6).value = f"=D{r}*E{r}"; ws.cell(r, 6).font = normal
-        ws.cell(r, 6).number_format = "$#,##0"; ws.cell(r, 6).alignment = right
+        ws.cell(r, 6).number_format = ars_cell_fmt; ws.cell(r, 6).alignment = right
         if fill:
             for c in range(1, 7): ws.cell(r, c).fill = fill
         r += 1
@@ -441,10 +458,11 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
         fill = gray_fill if i % 2 == 0 else None
         ws.cell(r, 1).value = mo["description"]; ws.cell(r, 1).font = normal
         ws.cell(r, 4).value = mo["quantity"]; ws.cell(r, 4).font = normal; ws.cell(r, 4).alignment = right
+        ws.cell(r, 4).number_format = "#.##0,00"
         ws.cell(r, 5).value = mo["unit_price"]; ws.cell(r, 5).font = normal
-        ws.cell(r, 5).number_format = "$#,##0"; ws.cell(r, 5).alignment = right
+        ws.cell(r, 5).number_format = ars_cell_fmt; ws.cell(r, 5).alignment = right
         ws.cell(r, 6).value = f"=D{r}*E{r}"; ws.cell(r, 6).font = normal
-        ws.cell(r, 6).number_format = "$#,##0"; ws.cell(r, 6).alignment = right
+        ws.cell(r, 6).number_format = ars_cell_fmt; ws.cell(r, 6).alignment = right
         if fill:
             for c in range(1, 7): ws.cell(r, c).fill = fill
         r += 1
@@ -453,7 +471,7 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     ws.cell(r, 5).value = "Total PESOS"; ws.cell(r, 5).font = bold; ws.cell(r, 5).alignment = right
     sink_start = mo_start - len(sinks) - 2
     ws.cell(r, 6).value = f"=SUM(F{sink_start}:F{r-1})"
-    ws.cell(r, 6).font = bold; ws.cell(r, 6).number_format = "$#,##0"; ws.cell(r, 6).alignment = right
+    ws.cell(r, 6).font = bold; ws.cell(r, 6).number_format = ars_cell_fmt; ws.cell(r, 6).alignment = right
     r += 2
 
     # Grand total with border
