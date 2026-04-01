@@ -14,6 +14,27 @@ EXCEL_REFERENCE = TEMPLATES_DIR / "excel" / "quote-template-reference.xlsx"
 DELIVERY_SUFFIX = "días desde la toma de medidas"
 
 
+def _fmt_ars(value: float) -> str:
+    """Format ARS price: $65.147 (dot for thousands, no decimals)."""
+    n = round(value)
+    formatted = f"{abs(n):,}".replace(",", ".")
+    return f"${formatted}" if n >= 0 else f"-${formatted}"
+
+
+def _fmt_usd(value: float) -> str:
+    """Format USD price: USD 1.937 (dot for thousands, no decimals)."""
+    n = round(value)
+    formatted = f"{abs(n):,}".replace(",", ".")
+    return f"USD {formatted}" if n >= 0 else f"-USD {formatted}"
+
+
+def _fmt_qty(value: float) -> str:
+    """Format quantity Argentine style: 1,20 (comma for decimal)."""
+    if value == int(value):
+        return str(int(value))
+    return f"{value:.2f}".replace(".", ",")
+
+
 def _normalize_delivery(raw: str) -> str:
     """Ensure delivery text is complete, not just a number."""
     if not raw:
@@ -144,12 +165,13 @@ async def _generate_pdf(pdf_path: Path, data: dict) -> None:
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(2)
 
-    # Material row
-    price_fmt = f"USD {mat_price:,}" if currency == "USD" else f"${mat_price:,}"
+    # Material row — Argentine format
+    fmt_price = _fmt_usd if currency == "USD" else _fmt_ars
+    price_fmt = fmt_price(mat_price)
     total_mat = round(mat_m2 * mat_price)
     if discount_pct:
         total_mat = round(total_mat * (1 - discount_pct / 100))
-    total_mat_fmt = f"USD {total_mat:,}" if currency == "USD" else f"${total_mat:,}"
+    total_mat_fmt = fmt_price(total_mat)
 
     # Alternating row helper — continuous counter across ALL content rows
     row_n = [0]
@@ -170,7 +192,7 @@ async def _generate_pdf(pdf_path: Path, data: dict) -> None:
     f = row_fill()
     pdf.set_font("Helvetica", "B", 9)
     pdf.cell(w[0], rh, f"{mat_name} - 20mm", fill=f)
-    pdf.cell(w[1], rh, f"{mat_m2:.2f}", align="R", fill=f)
+    pdf.cell(w[1], rh, _fmt_qty(mat_m2), align="R", fill=f)
     pdf.set_font("Helvetica", "", 9)
     pdf.cell(w[2], rh, price_fmt, align="R", fill=f)
     pdf.cell(w[3], rh, total_mat_fmt, align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
@@ -202,7 +224,7 @@ async def _generate_pdf(pdf_path: Path, data: dict) -> None:
     if discount_pct:
         f = row_fill()
         desc_amount = round(round(mat_m2 * mat_price) * discount_pct / 100)
-        desc_fmt = f"USD {desc_amount:,}" if currency == "USD" else f"${desc_amount:,}"
+        desc_fmt = fmt_price(desc_amount)
         pdf.set_font("Helvetica", "I", 8)
         pdf.cell(w[0] + w[1], rh, "", fill=f)
         pdf.cell(w[2], rh, f"Descuento {discount_pct}%", align="R", fill=f)
@@ -216,13 +238,11 @@ async def _generate_pdf(pdf_path: Path, data: dict) -> None:
     for sink in sinks:
         f = row_fill()
         pdf.set_font("Helvetica", "B", 9)
-        sp = f"${sink['unit_price']:,}"
-        st = f"${sink['unit_price'] * sink['quantity']:,}"
         pdf.cell(w[0], rh, sink["name"], fill=f)
         pdf.set_font("Helvetica", "", 9)
         pdf.cell(w[1], rh, str(sink["quantity"]), align="R", fill=f)
-        pdf.cell(w[2], rh, sp, align="R", fill=f)
-        pdf.cell(w[3], rh, st, align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(w[2], rh, _fmt_ars(sink['unit_price']), align="R", fill=f)
+        pdf.cell(w[3], rh, _fmt_ars(sink['unit_price'] * sink['quantity']), align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
         row_done()
 
     # Spacer
@@ -238,20 +258,17 @@ async def _generate_pdf(pdf_path: Path, data: dict) -> None:
     for mo in mo_items:
         f = row_fill()
         pdf.set_font("Helvetica", "", 9)
-        mop = f"${mo['unit_price']:,}"
-        mot = f"${round(mo['unit_price'] * mo['quantity']):,}"
         pdf.cell(w[0], rh, mo["description"], fill=f)
-        pdf.cell(w[1], rh, str(mo["quantity"]), align="R", fill=f)
-        pdf.cell(w[2], rh, mop, align="R", fill=f)
-        pdf.cell(w[3], rh, mot, align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(w[1], rh, _fmt_qty(mo["quantity"]), align="R", fill=f)
+        pdf.cell(w[2], rh, _fmt_ars(mo['unit_price']), align="R", fill=f)
+        pdf.cell(w[3], rh, _fmt_ars(round(mo['unit_price'] * mo['quantity'])), align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
         row_done()
 
     # Total PESOS
-    ars_fmt = f"${total_ars:,.0f}".replace(",", ".")
     pdf.set_font("Helvetica", "B", 9)
     pdf.cell(w[0] + w[1], 5, "")
     pdf.cell(w[2], 5, "Total PESOS", align="R")
-    pdf.cell(w[3], 5, ars_fmt, align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(w[3], 5, _fmt_ars(total_ars), align="R", new_x="LMARGIN", new_y="NEXT")
 
     pdf.ln(5)
 
@@ -575,11 +592,9 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
 
 
 def _format_grand_total(total_ars: float, total_usd: float, currency: str) -> str:
-    ars_fmt = f"${total_ars:,.0f}".replace(",", ".")
     if currency == "USD" and total_usd:
-        usd_fmt = f"USD {total_usd:,.0f}".replace(",", ".")
-        return f"PRESUPUESTO TOTAL: {ars_fmt} mano de obra + {usd_fmt} material"
-    return f"PRESUPUESTO TOTAL: {ars_fmt} mano de obra + material"
+        return f"PRESUPUESTO TOTAL: {_fmt_ars(total_ars)} mano de obra + {_fmt_usd(total_usd)} material"
+    return f"PRESUPUESTO TOTAL: {_fmt_ars(total_ars)} mano de obra + material"
 
 
 def _build_html(data: dict) -> str:
@@ -619,7 +634,7 @@ def _build_html(data: dict) -> str:
 
     if discount_pct:
         desc_amount = round(round(mat_m2 * mat_price) * discount_pct / 100)
-        desc_fmt = f"USD {desc_amount:,}" if currency == "USD" else f"${desc_amount:,}"
+        desc_fmt = fmt_price(desc_amount)
         rows += f'<tr class="row-desc"><td></td><td></td><td class="right"><em>Descuento {discount_pct}%</em></td><td class="right">- {desc_fmt}</td></tr>\n'
 
     rows += '<tr class="row-spacer"><td colspan="4"></td></tr>\n'
