@@ -8,6 +8,7 @@ from app.core.database import init_db
 from app.core.static import mount_static_files
 from app.modules.agent.router import router as agent_router
 from app.modules.catalog.router import router as catalog_router
+from app.modules.quote_engine.router import router as quote_engine_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ app.add_middleware(
 
 app.include_router(agent_router, prefix="/api")
 app.include_router(catalog_router, prefix="/api")
+app.include_router(quote_engine_router, prefix="/api")
 mount_static_files(app)
 
 
