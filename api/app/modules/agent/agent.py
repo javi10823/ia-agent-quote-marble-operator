@@ -168,66 +168,65 @@ TOOLS = [
     },
     {
         "name": "generate_documents",
-        "description": "Genera el PDF y Excel del presupuesto una vez confirmado por el operador.",
+        "description": "Genera PDF y Excel para uno o varios materiales. Si hay varios materiales, el sistema crea automáticamente un presupuesto separado por cada material. Llamar UNA SOLA VEZ con todos los materiales en el array 'quotes'.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "quote_id": {"type": "string"},
-                "quote_data": {
-                    "type": "object",
-                    "description": "Datos completos del presupuesto estructurado",
-                    "properties": {
-                        "client_name": {"type": "string"},
-                        "project": {"type": "string"},
-                        "date": {"type": "string"},
-                        "delivery_days": {"type": "string"},
-                        "material_name": {"type": "string"},
-                        "material_m2": {"type": "number"},
-                        "material_price_unit": {"type": "number"},
-                        "material_currency": {"type": "string", "enum": ["USD", "ARS"]},
-                        "discount_pct": {"type": "number"},
-                        "sectors": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "label": {"type": "string"},
-                                    "pieces": {
-                                        "type": "array",
-                                        "items": {"type": "string"}
+                "quotes": {
+                    "type": "array",
+                    "description": "Array de presupuestos a generar. Uno por material. El primero usa el quote_id actual, los demás crean quotes nuevos automáticamente.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "client_name": {"type": "string"},
+                            "project": {"type": "string"},
+                            "date": {"type": "string"},
+                            "delivery_days": {"type": "string"},
+                            "material_name": {"type": "string"},
+                            "material_m2": {"type": "number"},
+                            "material_price_unit": {"type": "number"},
+                            "material_currency": {"type": "string", "enum": ["USD", "ARS"]},
+                            "discount_pct": {"type": "number"},
+                            "sectors": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "label": {"type": "string"},
+                                        "pieces": {"type": "array", "items": {"type": "string"}},
                                     },
                                 },
                             },
-                        },
-                        "sinks": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "name": {"type": "string"},
-                                    "quantity": {"type": "integer"},
-                                    "unit_price": {"type": "number"},
+                            "sinks": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {"type": "string"},
+                                        "quantity": {"type": "integer"},
+                                        "unit_price": {"type": "number"},
+                                    },
                                 },
                             },
-                        },
-                        "mo_items": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "description": {"type": "string"},
-                                    "quantity": {"type": "number"},
-                                    "unit_price": {"type": "number"},
+                            "mo_items": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "description": {"type": "string"},
+                                        "quantity": {"type": "number"},
+                                        "unit_price": {"type": "number"},
+                                    },
                                 },
                             },
+                            "total_ars": {"type": "number"},
+                            "total_usd": {"type": "number"},
                         },
-                        "total_ars": {"type": "number"},
-                        "total_usd": {"type": "number"},
+                        "required": ["client_name", "material_name"],
                     },
-                    "required": ["client_name", "project", "material_name"],
                 },
             },
-            "required": ["quote_id", "quote_data"],
+            "required": ["quotes"],
         },
     },
     {
@@ -242,19 +241,6 @@ TOOLS = [
                 "date": {"type": "string"},
             },
             "required": ["quote_id", "client_name", "material", "date"],
-        },
-    },
-    {
-        "name": "create_additional_quote",
-        "description": "Crea un presupuesto adicional para otro material del mismo cliente. Usar cuando el operador pide cotizar en 2+ materiales — cada material es un presupuesto separado. Devuelve el nuevo quote_id para usar en generate_documents y upload_to_drive.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "client_name": {"type": "string", "description": "Nombre del cliente"},
-                "project": {"type": "string", "description": "Proyecto o tipo de trabajo"},
-                "material": {"type": "string", "description": "Material de este presupuesto"},
-            },
-            "required": ["client_name"],
         },
     },
     {
@@ -537,78 +523,104 @@ class AgentService:
         elif name == "read_plan":
             return await read_plan(inputs["filename"], inputs.get("crop_instructions", []))
         elif name == "generate_documents":
-            # Use quote_id from tool input if provided (for multi-material quotes)
-            target_qid = inputs.get("quote_id", quote_id)
-            logging.info(f"generate_documents for quote {target_qid} (input keys: {list(inputs['quote_data'].keys())})")
+            import uuid as uuid_mod
+            quotes_data = inputs.get("quotes", [])
+            # Backward compat: if old format with quote_data, wrap it
+            if not quotes_data and "quote_data" in inputs:
+                quotes_data = [inputs["quote_data"]]
 
-            # Always save quote data to DB (even if PDF generation fails)
-            update_values = {
-                "client_name": inputs["quote_data"]["client_name"],
-                "project": inputs["quote_data"].get("project", ""),
-                "material": inputs["quote_data"].get("material_name"),
-                "total_ars": inputs["quote_data"].get("total_ars"),
-                "total_usd": inputs["quote_data"].get("total_usd"),
-            }
-            logging.info(f"Saving quote data {target_qid}: {update_values}")
-            await db.execute(
-                update(Quote)
-                .where(Quote.id == target_qid)
-                .values(**update_values)
-            )
-            await db.commit()
+            logging.info(f"generate_documents: {len(quotes_data)} material(s) to generate")
+            all_results = []
 
-            result = await generate_documents(target_qid, inputs["quote_data"])
-            logging.info(f"generate_documents result: ok={result.get('ok')}, error={result.get('error')}")
-            if result.get("ok"):
-                await db.execute(
-                    update(Quote)
-                    .where(Quote.id == target_qid)
-                    .values(
-                        pdf_url=result.get("pdf_url"),
-                        excel_url=result.get("excel_url"),
-                        status="validated",
+            for idx, qdata in enumerate(quotes_data):
+                # First material uses current quote_id, rest get new ones
+                if idx == 0:
+                    target_qid = quote_id
+                else:
+                    target_qid = str(uuid_mod.uuid4())
+                    new_quote = Quote(
+                        id=target_qid,
+                        client_name=qdata.get("client_name", ""),
+                        project=qdata.get("project", ""),
+                        material=qdata.get("material_name"),
+                        messages=[],
+                        status=QuoteStatus.DRAFT,
                     )
-                )
+                    db.add(new_quote)
+                    await db.commit()
+                    logging.info(f"Created additional quote {target_qid} for material: {qdata.get('material_name')}")
+
+                # Save quote data to DB
+                save_vals = {
+                    "client_name": qdata.get("client_name", ""),
+                    "project": qdata.get("project", ""),
+                    "material": qdata.get("material_name"),
+                    "total_ars": qdata.get("total_ars"),
+                    "total_usd": qdata.get("total_usd"),
+                }
+                logging.info(f"Saving quote data {target_qid}: {save_vals}")
+                await db.execute(update(Quote).where(Quote.id == target_qid).values(**save_vals))
                 await db.commit()
-                logging.info(f"Quote {target_qid} files updated + status=validated")
-            return result
+
+                # Generate PDF + Excel
+                result = await generate_documents(target_qid, qdata)
+                logging.info(f"generate_documents [{idx}] {qdata.get('material_name')}: ok={result.get('ok')}, error={result.get('error')}")
+
+                if result.get("ok"):
+                    await db.execute(
+                        update(Quote).where(Quote.id == target_qid).values(
+                            pdf_url=result.get("pdf_url"),
+                            excel_url=result.get("excel_url"),
+                            status="validated",
+                        )
+                    )
+                    await db.commit()
+
+                    # Upload to Drive
+                    date_str = qdata.get("date", "")
+                    drive_result = await upload_to_drive(
+                        target_qid,
+                        qdata.get("client_name", ""),
+                        qdata.get("material_name", ""),
+                        date_str,
+                    )
+                    logging.info(f"upload_to_drive [{idx}]: {drive_result.get('ok')}")
+                    if drive_result.get("ok"):
+                        await db.execute(
+                            update(Quote).where(Quote.id == target_qid).values(
+                                drive_url=drive_result.get("drive_url")
+                            )
+                        )
+                        await db.commit()
+
+                all_results.append({
+                    "quote_id": target_qid,
+                    "material": qdata.get("material_name"),
+                    "ok": result.get("ok", False),
+                    "pdf_url": result.get("pdf_url"),
+                    "excel_url": result.get("excel_url"),
+                    "drive_url": drive_result.get("drive_url") if result.get("ok") else None,
+                    "error": result.get("error"),
+                })
+
+            return {"ok": True, "generated": len(all_results), "results": all_results}
+
         elif name == "upload_to_drive":
-            # Use quote_id from tool input if provided (for multi-material quotes)
-            target_qid = inputs.get("quote_id", quote_id)
-            logging.info(f"upload_to_drive for {target_qid}: client={inputs.get('client_name')}, material={inputs.get('material')}, date={inputs.get('date')}")
+            # Standalone upload (if called separately)
+            logging.info(f"upload_to_drive: client={inputs.get('client_name')}, material={inputs.get('material')}")
             result = await upload_to_drive(
-                target_qid,
+                quote_id,
                 inputs["client_name"],
                 inputs["material"],
                 inputs["date"],
             )
             logging.info(f"upload_to_drive result: {result}")
             if result.get("ok"):
-                await db.execute(
-                    update(Quote)
-                    .where(Quote.id == target_qid)
-                    .values(drive_url=result.get("drive_url"))
-                )
+                await db.execute(update(Quote).where(Quote.id == quote_id).values(drive_url=result.get("drive_url")))
                 await db.commit()
-                logging.info(f"Quote {target_qid} drive_url saved: {result.get('drive_url')}")
             else:
                 logging.error(f"upload_to_drive FAILED: {result.get('error')}")
             return result
-        elif name == "create_additional_quote":
-            import uuid
-            new_id = str(uuid.uuid4())
-            new_quote = Quote(
-                id=new_id,
-                client_name=inputs.get("client_name", ""),
-                project=inputs.get("project", ""),
-                material=inputs.get("material"),
-                messages=[],
-                status=QuoteStatus.DRAFT,
-            )
-            db.add(new_quote)
-            await db.commit()
-            logging.info(f"Created additional quote {new_id} for {inputs.get('client_name')} / {inputs.get('material')}")
-            return {"ok": True, "quote_id": new_id}
         elif name == "update_quote":
             updates = inputs.get("updates", {})
             # Only allow known fields
