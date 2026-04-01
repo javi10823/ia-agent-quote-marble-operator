@@ -167,12 +167,17 @@ async def upload_to_drive(
                     ).execute()
                     sheet_id = sheet_meta["sheets"][0]["properties"]["sheetId"]
 
-                    # Get total rows with data
+                    # Find "Total PESOS" row to know where content ends
                     sheet_data = sheets_service.spreadsheets().values().get(
                         spreadsheetId=file_id,
-                        range="A1:A100",
+                        range="E1:E60",
                     ).execute()
-                    total_rows = len(sheet_data.get("values", []))
+                    rows_e = sheet_data.get("values", [])
+                    end_row = 35  # default
+                    for i, row in enumerate(rows_e):
+                        if row and "Total PESOS" in str(row[0]):
+                            end_row = i + 1  # 0-indexed + 1 to include this row
+                            break
 
                     requests = [
                         # Set locale
@@ -182,14 +187,14 @@ async def upload_to_drive(
                                 "fields": "locale",
                             }
                         },
-                        # Add alternating row colors from row 23 to last data row
+                        # Alternating colors ONLY on content rows (23 to Total PESOS)
                         {
                             "addBanding": {
                                 "bandedRange": {
                                     "range": {
                                         "sheetId": sheet_id,
                                         "startRowIndex": 22,  # Row 23 (0-indexed)
-                                        "endRowIndex": min(total_rows, 60),
+                                        "endRowIndex": end_row,
                                         "startColumnIndex": 0,
                                         "endColumnIndex": 6,
                                     },
