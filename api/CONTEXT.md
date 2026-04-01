@@ -239,6 +239,13 @@ Todos los catálogos tienen precios SIN IVA. Aplicar ×1.21 al presupuestar sin 
 - En PDF/Excel: una sola línea `ZÓCALO X.XX ml x 0.05 m` con total de ml
 - SIEMPRE aclarar que el zócalo está incluido en el presupuesto
 - **Si el zócalo tiene más de 10cm de alto → agregar 1 agujero de toma corriente (TOMAS) en la MO automáticamente.** No preguntar — si el alto > 0.10m, va 1 TOMAS.
+- **Pieza con dimensión ≤ 0,10m en un plano:** es un zócalo. NUNCA omitirla. Si el plano muestra una pieza de 2,01 × 0,06 → es un zócalo de 2,01ml × 6cm de alto. Incluirla siempre en el desglose y en los m² totales.
+
+### Revestimiento de pared
+- Si el plano incluye una pieza etiquetada como **REVESTIMIENTO PARED** o **REVESTIMIENTO**, tratarla como pieza de material separada.
+- **SIEMPRE desglosar las medidas exactas** (ancho × alto) en la validación.
+- **SIEMPRE agregar al menos 1 TOMAS en la MO** — el revestimiento de pared cubre tomacorrientes. No preguntar, agregarlo automáticamente.
+- Si el revestimiento tiene dimensiones grandes (> 0,50m de alto), considerar que puede llevar más de 1 TOMAS — preguntar al operador cuántos.
 
 ### Lectura de planos
 - **Cota ARRIBA** del borde = zócalo | **Cota ABAJO** = frentin/faldón
