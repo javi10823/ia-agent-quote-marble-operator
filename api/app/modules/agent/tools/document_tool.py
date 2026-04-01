@@ -73,15 +73,19 @@ async def _generate_pdf(pdf_path: Path, data: dict) -> None:
     pdf.set_fill_color(26, 47, 94)
     pdf.rect(0, 0, 210, 4, "F")
 
-    # Logo text
-    pdf.set_y(12)
-    pdf.set_font("Helvetica", "B", 28)
-    pdf.cell(0, 12, "D'ANGELO", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 8)
-    pdf.cell(0, 4, "MARMOLERIA", new_x="LMARGIN", new_y="NEXT")
+    # Logo image
+    logo_path = TEMPLATES_DIR / "logo-dangelo.png"
+    if logo_path.exists():
+        pdf.image(str(logo_path), x=10, y=10, w=55)
+        pdf.set_y(35)
+    else:
+        pdf.set_y(12)
+        pdf.set_font("Helvetica", "B", 28)
+        pdf.cell(0, 12, "D'ANGELO", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 8)
+        pdf.cell(0, 4, "MARMOLERIA", new_x="LMARGIN", new_y="NEXT")
 
     # Contact
-    pdf.ln(3)
     pdf.set_font("Helvetica", "", 8)
     pdf.cell(0, 4, "SAN NICOLAS 1160", new_x="LMARGIN", new_y="NEXT")
     pdf.cell(0, 4, "341-3082996", new_x="LMARGIN", new_y="NEXT")
@@ -140,20 +144,36 @@ async def _generate_pdf(pdf_path: Path, data: dict) -> None:
     pdf.cell(w[2], 5, price_fmt, align="R")
     pdf.cell(w[3], 5, price_fmt, align="R", new_x="LMARGIN", new_y="NEXT")
 
+    # Helper: alternating row background
+    row_idx = [0]
+    def alt_fill():
+        """Set fill for alternating rows (odd=gray, even=white)."""
+        if row_idx[0] % 2 == 1:
+            pdf.set_fill_color(243, 243, 243)
+            return True
+        return False
+
+    def next_row():
+        row_idx[0] += 1
+
     # Sectors + pieces
     is_first_piece = True
     for sector in sectors:
         pdf.set_font("Helvetica", "B", 8)
         pdf.cell(w[0], 5, sector.get("label", ""), new_x="LMARGIN", new_y="NEXT")
         for piece in sector.get("pieces", []):
+            fill = alt_fill()
             pdf.set_font("Helvetica", "", 8)
-            pdf.cell(w[0], 4, piece)
+            pdf.cell(w[0], 5, piece, fill=fill)
             if is_first_piece:
                 pdf.set_font("Helvetica", "B", 8)
-                pdf.cell(w[1], 4, "")
-                pdf.cell(w[2], 4, f"TOTAL {currency}", align="R")
-                pdf.cell(w[3], 4, total_mat_fmt, align="R")
+                pdf.cell(w[1], 5, "", fill=fill)
+                pdf.cell(w[2], 5, f"TOTAL {currency}", align="R", fill=fill)
+                pdf.cell(w[3], 5, total_mat_fmt, align="R", fill=fill)
                 is_first_piece = False
+            else:
+                pdf.cell(w[1] + w[2] + w[3], 5, "", fill=fill)
+            next_row()
             pdf.ln()
 
     # Discount
@@ -168,15 +188,18 @@ async def _generate_pdf(pdf_path: Path, data: dict) -> None:
     pdf.ln(3)
 
     # Sinks
+    row_idx[0] = 0  # reset alternation for sinks section
     for sink in sinks:
+        fill = alt_fill()
         pdf.set_font("Helvetica", "B", 9)
         sp = f"${sink['unit_price']:,}"
         st = f"${sink['unit_price'] * sink['quantity']:,}"
-        pdf.cell(w[0], 5, sink["name"])
+        pdf.cell(w[0], 5, sink["name"], fill=fill)
         pdf.set_font("Helvetica", "", 9)
-        pdf.cell(w[1], 5, str(sink["quantity"]), align="R")
-        pdf.cell(w[2], 5, sp, align="R")
-        pdf.cell(w[3], 5, st, align="R", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(w[1], 5, str(sink["quantity"]), align="R", fill=fill)
+        pdf.cell(w[2], 5, sp, align="R", fill=fill)
+        pdf.cell(w[3], 5, st, align="R", fill=fill, new_x="LMARGIN", new_y="NEXT")
+        next_row()
 
     pdf.ln(2)
 
@@ -185,14 +208,17 @@ async def _generate_pdf(pdf_path: Path, data: dict) -> None:
     pdf.cell(0, 5, "MANO DE OBRA", new_x="LMARGIN", new_y="NEXT")
 
     # MO items
+    row_idx[0] = 0  # reset alternation for MO section
     for mo in mo_items:
+        fill = alt_fill()
         pdf.set_font("Helvetica", "", 9)
         mop = f"${mo['unit_price']:,}"
         mot = f"${round(mo['unit_price'] * mo['quantity']):,}"
-        pdf.cell(w[0], 5, mo["description"])
-        pdf.cell(w[1], 5, str(mo["quantity"]), align="R")
-        pdf.cell(w[2], 5, mop, align="R")
-        pdf.cell(w[3], 5, mot, align="R", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(w[0], 5, mo["description"], fill=fill)
+        pdf.cell(w[1], 5, str(mo["quantity"]), align="R", fill=fill)
+        pdf.cell(w[2], 5, mop, align="R", fill=fill)
+        pdf.cell(w[3], 5, mot, align="R", fill=fill, new_x="LMARGIN", new_y="NEXT")
+        next_row()
 
     # Total PESOS
     ars_fmt = f"${total_ars:,.0f}".replace(",", ".")
