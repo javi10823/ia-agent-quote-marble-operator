@@ -126,7 +126,7 @@ export default function QuotePage() {
   );
 
   const st = STATUS[quote?.status || "draft"];
-  const bd = quote?.quote_breakdown;
+  const bd = quote?.quote_breakdown || null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
