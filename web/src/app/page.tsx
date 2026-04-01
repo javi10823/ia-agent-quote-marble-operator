@@ -41,9 +41,10 @@ export default function DashboardPage() {
     return days > 5;
   });
 
-  // Filter by status + search
+  // Filter by status/source + search
   const filteredQuotes = quotes.filter(q => {
-    if (statusFilter !== "todos" && q.status !== statusFilter) return false;
+    if (statusFilter === "web" && q.source !== "web") return false;
+    else if (statusFilter !== "todos" && statusFilter !== "web" && q.status !== statusFilter) return false;
     if (search) {
       const s = search.toLowerCase();
       return (
@@ -60,6 +61,7 @@ export default function DashboardPage() {
     draft: quotes.filter(q => q.status === "draft").length,
     validated: quotes.filter(q => q.status === "validated").length,
     sent: quotes.filter(q => q.status === "sent").length,
+    web: quotes.filter(q => q.source === "web").length,
   };
 
   async function toggleStatus(e: React.MouseEvent, id: string, current: Quote["status"]) {
@@ -146,6 +148,7 @@ export default function DashboardPage() {
                   { key: "draft", label: "Borrador" },
                   { key: "validated", label: "Validado" },
                   { key: "sent", label: "Enviado" },
+                  { key: "web", label: "Web" },
                 ] as const).map(f => (
                   <button key={f.key} onClick={() => setStatusFilter(f.key)} style={{
                     padding: "5px 12px", borderRadius: 6, fontSize: 12, fontWeight: 500,
@@ -222,6 +225,14 @@ export default function DashboardPage() {
                       <td style={{ padding: "13px 18px" }}>
                         <div style={{ fontSize: 13, fontWeight: 500, color: "var(--t1)", letterSpacing: "-0.01em" }}>
                           {q.client_name || <span style={{ color: "var(--t3)", fontStyle: "italic" }}>Sin nombre</span>}
+                          {q.source === "web" && (
+                            <span style={{
+                              marginLeft: 6, fontSize: 9, fontWeight: 600,
+                              padding: "1px 5px", borderRadius: 4,
+                              background: "rgba(138,43,226,.15)", color: "#a855f7",
+                              letterSpacing: "0.03em",
+                            }}>WEB</span>
+                          )}
                         </div>
                         <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 1 }}>{q.project}</div>
                       </td>

@@ -31,10 +31,11 @@ async def generate_documents(quote_id: str, quote_data: dict) -> dict:
     try:
         client_name = quote_data["client_name"]
         material = quote_data.get("material_name", "")
+        prefix = quote_data.get("filename_prefix", "")
         # Always use server date — never trust Claude's date
         date_str = datetime.now().strftime("%d.%m.%Y")
         # Sanitize filename: remove any remaining invalid characters
-        filename_base = f"{client_name} - {material} - {date_str}"
+        filename_base = f"{prefix}{client_name} - {material} - {date_str}"
         filename_base = filename_base.replace("/", "-").replace("\\", "-")
 
         quote_dir = OUTPUT_DIR / quote_id

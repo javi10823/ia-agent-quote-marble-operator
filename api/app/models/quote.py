@@ -28,6 +28,9 @@ class Quote(Base):
     # Parent quote (for multi-material — links to the quote with the chat history)
     parent_quote_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    # Source: "operator" (chat with Valentina) or "web" (external API)
+    source: Mapped[str | None] = mapped_column(String(20), nullable=True, default="operator")
+
     # File URLs
     pdf_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     excel_url: Mapped[str | None] = mapped_column(String(500), nullable=True)

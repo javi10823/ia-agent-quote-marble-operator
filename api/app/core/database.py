@@ -33,14 +33,14 @@ async def init_db():
                 "ALTER COLUMN material TYPE VARCHAR(500)"
             )
         )
-        try:
-            await conn.execute(
-                __import__("sqlalchemy").text(
-                    "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS parent_quote_id VARCHAR"
-                )
-            )
-        except Exception:
-            pass  # Column already exists
+        for col_sql in [
+            "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS parent_quote_id VARCHAR",
+            "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'operator'",
+        ]:
+            try:
+                await conn.execute(__import__("sqlalchemy").text(col_sql))
+            except Exception:
+                pass
 
 
 async def get_db():

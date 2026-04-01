@@ -16,6 +16,7 @@ class QuoteListResponse(BaseModel):
     excel_url: Optional[str]
     drive_url: Optional[str]
     parent_quote_id: Optional[str] = None
+    source: Optional[str] = "operator"
     created_at: datetime
 
     class Config:

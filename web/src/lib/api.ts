@@ -13,6 +13,7 @@ export interface Quote {
   excel_url: string | null;
   drive_url: string | null;
   parent_quote_id: string | null;
+  source: string | null;
   created_at: string;
 }
 

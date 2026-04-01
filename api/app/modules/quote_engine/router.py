@@ -60,17 +60,19 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
             total_usd=calc_result["total_usd"],
             messages=[],
             status=QuoteStatus.VALIDATED,
+            source="web",
         )
         db.add(quote)
         await db.commit()
 
-        # Generate PDF/Excel with WEB_ prefix
+        # Generate PDF/Excel — WEB_ prefix only in filename, not content
         doc_data = {
             "client_name": calc_result["client_name"],
             "project": calc_result["project"],
             "date": calc_result["date"],
             "delivery_days": calc_result["delivery_days"],
-            "material_name": f"WEB_{calc_result['material_name']}",
+            "material_name": calc_result["material_name"],
+            "filename_prefix": "WEB_",
             "material_m2": calc_result["material_m2"],
             "material_price_unit": calc_result["material_price_unit"],
             "material_currency": calc_result["material_currency"],
@@ -92,7 +94,7 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
             drive_result = await upload_to_drive(
                 quote_id,
                 calc_result["client_name"],
-                f"WEB_{calc_result['material_name']}",
+                calc_result["material_name"],
                 calc_result["date"],
             )
             if drive_result.get("ok"):
