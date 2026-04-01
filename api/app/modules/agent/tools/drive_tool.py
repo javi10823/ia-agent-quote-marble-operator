@@ -99,8 +99,8 @@ async def upload_to_drive(
 
         uploaded_urls = []
 
+        # Only upload Excel to Drive (PDF stays local only)
         for file_path, mime in [
-            (pdf_path, "application/pdf"),
             (excel_path, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
         ]:
             if not file_path.exists():
