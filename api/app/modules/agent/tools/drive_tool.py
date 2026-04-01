@@ -154,25 +154,57 @@ async def upload_to_drive(
             ).execute()
             logging.info(f"Uploaded to Drive: {file_path.name} → {uploaded.get('webViewLink')}")
 
-            # Set Argentine locale on the Google Sheets spreadsheet
+            # Set Argentine locale + alternating row colors via Sheets API
             file_id = uploaded.get("id")
             if file_id:
                 try:
                     sheets_service = _get_sheets_service()
+
+                    # Get sheet info to know row count
+                    sheet_meta = sheets_service.spreadsheets().get(
+                        spreadsheetId=file_id,
+                        fields="sheets.properties",
+                    ).execute()
+                    sheet_id = sheet_meta["sheets"][0]["properties"]["sheetId"]
+
+                    requests = [
+                        # Set locale
+                        {
+                            "updateSpreadsheetProperties": {
+                                "properties": {"locale": "es_AR"},
+                                "fields": "locale",
+                            }
+                        },
+                        # Add alternating row colors (banding)
+                        {
+                            "addBanding": {
+                                "bandedRange": {
+                                    "range": {
+                                        "sheetId": sheet_id,
+                                        "startRowIndex": 22,  # Row 23 (material header)
+                                        "startColumnIndex": 0,
+                                        "endColumnIndex": 6,
+                                    },
+                                    "rowProperties": {
+                                        "firstBandColor": {
+                                            "red": 1.0, "green": 1.0, "blue": 1.0,
+                                        },
+                                        "secondBandColor": {
+                                            "red": 0.953, "green": 0.953, "blue": 0.953,
+                                        },
+                                    },
+                                }
+                            }
+                        },
+                    ]
+
                     sheets_service.spreadsheets().batchUpdate(
                         spreadsheetId=file_id,
-                        body={
-                            "requests": [{
-                                "updateSpreadsheetProperties": {
-                                    "properties": {"locale": "es_AR"},
-                                    "fields": "locale",
-                                }
-                            }]
-                        },
+                        body={"requests": requests},
                     ).execute()
-                    logging.info(f"Set locale es_AR on spreadsheet {file_id}")
+                    logging.info(f"Set locale es_AR + banding on spreadsheet {file_id}")
                 except Exception as e:
-                    logging.warning(f"Could not set locale on spreadsheet: {e}")
+                    logging.warning(f"Could not set locale/banding on spreadsheet: {e}")
 
             uploaded_urls.append(uploaded.get("webViewLink"))
 
