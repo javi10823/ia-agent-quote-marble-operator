@@ -261,11 +261,13 @@ function MarkdownTable({ lines }: { lines: string[] }) {
 }
 
 function InlineFormat({ text }: { text: string }) {
-  // Parse markdown links [text](url) and bold **text**
+  // Parse markdown links [text](url), bold **text**, and bare URLs
   const elements: React.ReactNode[] = [];
-  const regex = /\[([^\]]+)\]\(([^)]+)\)|\*\*(.*?)\*\*/g;
+  const regex = /\[([^\]]+)\]\(([^)]+)\)|\*\*(.*?)\*\*|(https?:\/\/[^\s,)]+)/g;
   let lastIndex = 0;
   let match;
+
+  const linkStyle = { color: "var(--acc)", textDecoration: "none", borderBottom: "1px solid rgba(79,143,255,.3)" };
 
   while ((match = regex.exec(text)) !== null) {
     // Add text before match
@@ -276,15 +278,21 @@ function InlineFormat({ text }: { text: string }) {
     if (match[1] && match[2]) {
       // Markdown link [text](url)
       elements.push(
-        <a key={match.index} href={match[2]} target="_blank" rel="noopener noreferrer"
-          style={{ color: "var(--acc)", textDecoration: "none", borderBottom: "1px solid rgba(79,143,255,.3)" }}
-          onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "var(--acc)")}
-          onMouseLeave={e => (e.currentTarget.style.borderBottomColor = "rgba(79,143,255,.3)")}
-        >{match[1]}</a>
+        <a key={match.index} href={match[2]} target="_blank" rel="noopener noreferrer" style={linkStyle}>{match[1]}</a>
       );
     } else if (match[3]) {
       // Bold **text**
       elements.push(<strong key={match.index} style={{ fontWeight: 500, color: "var(--t1)" }}>{match[3]}</strong>);
+    } else if (match[4]) {
+      // Bare URL https://...
+      const url = match[4];
+      const label = url.includes("drive.google") ? "Abrir en Drive" :
+                    url.includes("/files/") && url.endsWith(".pdf") ? "Descargar PDF" :
+                    url.includes("/files/") && url.endsWith(".xlsx") ? "Descargar Excel" :
+                    "Abrir link";
+      elements.push(
+        <a key={match.index} href={url} target="_blank" rel="noopener noreferrer" style={linkStyle}>{label}</a>
+      );
     }
 
     lastIndex = match.index + match[0].length;
