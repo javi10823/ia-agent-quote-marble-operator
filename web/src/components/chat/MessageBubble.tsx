@@ -263,7 +263,7 @@ function MarkdownTable({ lines }: { lines: string[] }) {
 function InlineFormat({ text }: { text: string }) {
   // Parse markdown links [text](url), bold **text**, and bare URLs
   const elements: React.ReactNode[] = [];
-  const regex = /\[([^\]]+)\]\(([^)]+)\)|\*\*(.*?)\*\*|(https?:\/\/[^\s,)]+)/g;
+  const regex = /\[([^\]]+)\]\(([^)]+)\)|\*\*(.*?)\*\*|(https?:\/\/[^\s,)]+)|`(\/files\/[^`]+)`/g;
   let lastIndex = 0;
   let match;
 
@@ -292,6 +292,15 @@ function InlineFormat({ text }: { text: string }) {
                     "Abrir link";
       elements.push(
         <a key={match.index} href={url} target="_blank" rel="noopener noreferrer" style={linkStyle}>{label}</a>
+      );
+    } else if (match[5]) {
+      // Backtick-wrapped file path `/files/xxx/file.pdf`
+      const path = match[5];
+      const label = path.endsWith(".pdf") ? "Descargar PDF" :
+                    path.endsWith(".xlsx") ? "Descargar Excel" :
+                    "Descargar archivo";
+      elements.push(
+        <a key={match.index} href={path} target="_blank" rel="noopener noreferrer" style={linkStyle}>{label}</a>
       );
     }
 

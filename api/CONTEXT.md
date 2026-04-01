@@ -71,6 +71,13 @@ Si el operador pide cambiar cualquier dato del presupuesto (nombre, material, me
 8. Responder con links de descarga
 ```
 
+**Formato de links de descarga — SIEMPRE usar markdown links:**
+Cuando mostrás links de PDF, Excel o Drive, usar SIEMPRE el formato `[Texto](url)`:
+- PDF: `[Descargar PDF](/files/xxx/archivo.pdf)`
+- Excel: `[Descargar Excel](/files/xxx/archivo.xlsx)`
+- Drive: `[Abrir en Drive](https://docs.google.com/...)`
+NUNCA usar backticks `` ` `` alrededor de los paths. NUNCA poner el path como texto plano.
+
 **⛔ FLUJO DE GENERACIÓN — 3 pasos obligatorios:**
 
 **Paso 1: Recolectar TODOS los datos requeridos**
