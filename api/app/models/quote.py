@@ -40,6 +40,9 @@ class Quote(Base):
     # Structured quote breakdown (pieces, MO, merma, discount)
     quote_breakdown: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # Source files (plans, images uploaded by operator)
+    source_files: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
     # Full chat history as JSON array
     messages: Mapped[list] = mapped_column(JSON, default=list)
 

@@ -131,7 +131,7 @@ async def chat(
     if not quote:
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
 
-    # Read plan file if provided + save to temp for read_plan tool
+    # Read plan file if provided + save to temp for read_plan tool + persist as source file
     plan_bytes = None
     plan_filename = None
     if plan_file:
@@ -140,6 +140,30 @@ async def chat(
         # Save to temp so read_plan tool can access it from disk
         from app.modules.agent.tools.plan_tool import save_plan_to_temp
         save_plan_to_temp(plan_filename, plan_bytes)
+
+        # Persist source file for download from quote detail
+        from pathlib import Path
+        from datetime import datetime
+        sources_dir = Path(__file__).parent.parent.parent.parent / "output" / quote_id / "sources"
+        sources_dir.mkdir(parents=True, exist_ok=True)
+        source_path = sources_dir / plan_filename
+        source_path.write_bytes(plan_bytes)
+
+        # Update DB with source file metadata
+        existing_files = quote.source_files or []
+        # Avoid duplicates by filename
+        if not any(f["filename"] == plan_filename for f in existing_files):
+            existing_files.append({
+                "filename": plan_filename,
+                "type": plan_file.content_type or "application/octet-stream",
+                "size": len(plan_bytes),
+                "url": f"/files/{quote_id}/sources/{plan_filename}",
+                "uploaded_at": datetime.now().isoformat(),
+            })
+            await db.execute(
+                update(Quote).where(Quote.id == quote_id).values(source_files=existing_files)
+            )
+            await db.commit()
 
     async def event_stream():
         full_response = ""

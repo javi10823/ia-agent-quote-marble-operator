@@ -17,9 +17,18 @@ export interface Quote {
   created_at: string;
 }
 
+export interface SourceFile {
+  filename: string;
+  type: string;
+  size: number;
+  url: string;
+  uploaded_at: string;
+}
+
 export interface QuoteDetail extends Quote {
   messages: Message[];
   quote_breakdown: Record<string, any> | null;
+  source_files: SourceFile[] | null;
 }
 
 export interface Message {
