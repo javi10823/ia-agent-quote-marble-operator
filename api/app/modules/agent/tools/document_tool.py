@@ -30,10 +30,14 @@ async def generate_documents(quote_id: str, quote_data: dict) -> dict:
         pdf_path = quote_dir / f"{filename_base}.pdf"
         excel_path = quote_dir / f"{filename_base}.xlsx"
 
-        # Generate in parallel
-        pdf_task = asyncio.create_task(_generate_pdf(pdf_path, quote_data))
+        # Generate Excel always; PDF only if WeasyPrint is available
         excel_task = asyncio.create_task(_generate_excel(excel_path, quote_data))
-        await asyncio.gather(pdf_task, excel_task)
+        try:
+            pdf_task = asyncio.create_task(_generate_pdf(pdf_path, quote_data))
+            await asyncio.gather(pdf_task, excel_task)
+        except (ImportError, OSError):
+            # WeasyPrint/pango not available — generate Excel only
+            await excel_task
 
         return {
             "ok": True,

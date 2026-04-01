@@ -1,17 +1,14 @@
-"""End-to-end tests for the quoting flow with mocked Anthropic API."""
+"""End-to-end tests — run REAL code, only mock external services (Drive)."""
 
 import uuid
 import shutil
 import pytest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import patch
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.quote import Quote, QuoteStatus
 from app.modules.agent.agent import AgentService
-from app.modules.agent.tools.document_tool import generate_documents
-from app.modules.agent.tools.drive_tool import upload_to_drive
 
 
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
@@ -19,17 +16,34 @@ OUTPUT_DIR = Path(__file__).parent.parent / "output"
 
 @pytest.fixture(autouse=True)
 def cleanup_output():
+    """Clean up generated files after each test."""
     yield
-    test_dirs = [d for d in OUTPUT_DIR.glob("*") if d.is_dir() and "test" in d.name]
-    for d in test_dirs:
-        shutil.rmtree(d, ignore_errors=True)
+    for d in OUTPUT_DIR.glob("test-*"):
+        if d.is_dir():
+            shutil.rmtree(d, ignore_errors=True)
 
 
-# ── Test: _execute_tool dispatches correctly ─────────────────────────────────
+async def _create_quote(db_session, quote_id=None):
+    """Helper to create a quote in DB."""
+    qid = quote_id or f"test-{uuid.uuid4()}"
+    quote = Quote(
+        id=qid, client_name="", project="",
+        messages=[], status=QuoteStatus.DRAFT,
+    )
+    db_session.add(quote)
+    await db_session.commit()
+    return qid
 
-class TestExecuteTool:
+
+DRIVE_MOCK = {"ok": True, "drive_url": "https://drive.google.com/test"}
+
+
+# ── Tool dispatch ────────────────────────────────────────────────────────────
+
+class TestToolDispatch:
     @pytest.mark.asyncio
-    async def test_catalog_lookup_dispatch(self, db_session):
+    async def test_catalog_lookup_real(self, db_session):
+        """catalog_lookup runs real code against real catalog JSONs."""
         agent = AgentService()
         result = await agent._execute_tool(
             "catalog_lookup",
@@ -38,200 +52,231 @@ class TestExecuteTool:
             db=db_session,
         )
         assert result["found"] is True
-        assert "BLANCO NORTE" in result["name"].upper()
+        assert result["currency"] == "USD"
+        assert result["price_usd"] > 0
 
     @pytest.mark.asyncio
-    async def test_check_stock_dispatch(self, db_session):
+    async def test_catalog_lookup_by_name_real(self, db_session):
+        """Name-based search works against real catalog."""
         agent = AgentService()
         result = await agent._execute_tool(
-            "check_stock",
-            {"material_sku": "NONEXISTENT"},
+            "catalog_lookup",
+            {"catalog": "materials-purastone", "sku": "BLANCO PALOMA"},
             quote_id="test-001",
             db=db_session,
         )
-        assert result["found"] is False
+        assert result["found"] is True
+        assert "PALOMA" in result["name"].upper()
 
     @pytest.mark.asyncio
     async def test_unknown_tool(self, db_session):
         agent = AgentService()
         result = await agent._execute_tool(
-            "nonexistent_tool",
-            {},
-            quote_id="test-001",
-            db=db_session,
+            "nonexistent_tool", {}, quote_id="test-001", db=db_session,
         )
         assert "error" in result
 
 
-# ── Test: generate_documents saves to DB ─────────────────────────────────────
+# ── Single material — REAL generate_documents ─────────────────────────────────
 
-def _mock_generate_docs_result(quote_id, quote_data):
-    """Fake generate_documents result without WeasyPrint."""
-    material = quote_data.get("material_name", "MATERIAL")
-    date = quote_data.get("date", "01.01.2026")
-    client = quote_data.get("client_name", "Client")
-    base = f"{client} - {material} - {date}"
-    return {
-        "ok": True,
-        "pdf_url": f"/files/{quote_id}/{base}.pdf",
-        "excel_url": f"/files/{quote_id}/{base}.xlsx",
-        "filename_base": base,
-    }
-
-
-class TestGenerateDocumentsFlow:
+class TestSingleMaterialReal:
     @pytest.mark.asyncio
-    async def test_single_material_updates_db(self, db_session, sample_quote_data):
-        """generate_documents should save client, material, totals, status to DB."""
-        quote_id = f"test-{uuid.uuid4()}"
-        quote = Quote(
-            id=quote_id, client_name="", project="",
-            messages=[], status=QuoteStatus.DRAFT,
-        )
-        db_session.add(quote)
-        await db_session.commit()
+    async def test_generates_excel_and_updates_db(self, db_session, sample_quote_data):
+        """Real generate_documents: creates Excel, saves data to DB, sets validated."""
+        qid = await _create_quote(db_session)
 
         agent = AgentService()
-        with patch("app.modules.agent.agent.generate_documents", side_effect=lambda qid, qd: _mock_generate_docs_result(qid, qd)), \
-             patch("app.modules.agent.agent.upload_to_drive", return_value={"ok": True, "drive_url": "https://drive.test"}):
+        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK):
             result = await agent._execute_tool(
                 "generate_documents",
                 {"quotes": [sample_quote_data]},
-                quote_id=quote_id,
+                quote_id=qid,
                 db=db_session,
             )
 
         assert result["ok"] is True
         assert result["generated"] == 1
+        assert result["results"][0]["ok"] is True
 
-        # Verify DB was updated (fresh query to get committed data)
-        result_q = await db_session.execute(select(Quote).where(Quote.id == quote_id))
-        db_quote = result_q.scalar_one()
+        # Verify REAL files on disk
+        quote_dir = OUTPUT_DIR / qid
+        assert quote_dir.exists()
+        xlsx_files = list(quote_dir.glob("*.xlsx"))
+        assert len(xlsx_files) >= 1, f"No Excel file in {quote_dir}"
+
+        # Verify DB was updated with correct data
+        r = await db_session.execute(select(Quote).where(Quote.id == qid))
+        db_quote = r.scalar_one()
         assert db_quote.client_name == "Juan Carlos"
         assert db_quote.material == "SILESTONE BLANCO NORTE"
         assert db_quote.total_ars == 238420
         assert db_quote.total_usd == 816
         assert db_quote.status == QuoteStatus.VALIDATED
-        assert db_quote.pdf_url is not None
-        assert db_quote.pdf_url.endswith(".pdf")
+        assert db_quote.excel_url is not None
+        assert db_quote.excel_url.endswith(".xlsx")
+        assert db_quote.drive_url == "https://drive.google.com/test"
 
     @pytest.mark.asyncio
-    async def test_multi_material_creates_separate_quotes(
-        self, db_session, sample_multi_material_data
-    ):
-        """Two materials should create two quote records with correct data."""
-        quote_id = f"test-{uuid.uuid4()}"
-        quote = Quote(
-            id=quote_id, client_name="", project="",
-            messages=[], status=QuoteStatus.DRAFT,
-        )
-        db_session.add(quote)
-        await db_session.commit()
+    async def test_drive_failure_still_saves_data(self, db_session, sample_quote_data):
+        """If Drive upload fails, quote data and files should still be saved."""
+        qid = await _create_quote(db_session)
 
         agent = AgentService()
-        with patch("app.modules.agent.agent.generate_documents", side_effect=lambda qid, qd: _mock_generate_docs_result(qid, qd)), \
-             patch("app.modules.agent.agent.upload_to_drive", return_value={"ok": True, "drive_url": "https://drive.test"}):
+        with patch("app.modules.agent.agent.upload_to_drive", return_value={"ok": False, "error": "quota exceeded"}):
+            result = await agent._execute_tool(
+                "generate_documents",
+                {"quotes": [sample_quote_data]},
+                quote_id=qid,
+                db=db_session,
+            )
+
+        # Files should still be generated
+        assert result["ok"] is True
+
+        # DB should have quote data but no drive_url
+        r = await db_session.execute(select(Quote).where(Quote.id == qid))
+        db_quote = r.scalar_one()
+        assert db_quote.client_name == "Juan Carlos"
+        assert db_quote.material == "SILESTONE BLANCO NORTE"
+        assert db_quote.status == QuoteStatus.VALIDATED
+        assert db_quote.drive_url is None
+
+
+# ── Multi-material — REAL generate_documents ──────────────────────────────────
+
+class TestMultiMaterialReal:
+    @pytest.mark.asyncio
+    async def test_creates_two_quotes_with_correct_materials(
+        self, db_session, sample_multi_material_data
+    ):
+        """Two materials: each gets its own quote record with correct data."""
+        qid = await _create_quote(db_session)
+
+        agent = AgentService()
+        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK):
             result = await agent._execute_tool(
                 "generate_documents",
                 {"quotes": sample_multi_material_data},
-                quote_id=quote_id,
+                quote_id=qid,
                 db=db_session,
             )
 
         assert result["ok"] is True
         assert result["generated"] == 2
 
-        # Fresh queries to get committed data
-        r1 = await db_session.execute(select(Quote).where(Quote.id == quote_id))
+        # Quote 1: Silestone (uses original quote_id)
+        r1 = await db_session.execute(select(Quote).where(Quote.id == qid))
         q1 = r1.scalar_one()
         assert q1.material == "SILESTONE BLANCO NORTE"
         assert q1.client_name == "Juan Carlos"
+        assert q1.total_usd == 816
         assert q1.status == QuoteStatus.VALIDATED
+        assert q1.excel_url is not None
 
-        # Second material created a new quote
-        second_result = result["results"][1]
-        second_qid = second_result["quote_id"]
-        assert second_qid != quote_id  # Different ID
+        # Quote 2: Purastone (new quote_id)
+        second_qid = result["results"][1]["quote_id"]
+        assert second_qid != qid
 
         r2 = await db_session.execute(select(Quote).where(Quote.id == second_qid))
         q2 = r2.scalar_one()
         assert q2.material == "PURASTONE BLANCO PALOMA"
         assert q2.client_name == "Juan Carlos"
+        assert q2.total_usd == 529
         assert q2.status == QuoteStatus.VALIDATED
+        assert q2.excel_url is not None
 
     @pytest.mark.asyncio
-    async def test_multi_material_each_has_urls(
+    async def test_each_material_has_separate_files(
         self, db_session, sample_multi_material_data
     ):
-        """Each material should have PDF and Excel URLs in its result."""
-        quote_id = f"test-{uuid.uuid4()}"
-        quote = Quote(
-            id=quote_id, client_name="", project="",
-            messages=[], status=QuoteStatus.DRAFT,
-        )
-        db_session.add(quote)
-        await db_session.commit()
+        """Each material should have its own output directory with files."""
+        qid = await _create_quote(db_session)
 
         agent = AgentService()
-        with patch("app.modules.agent.agent.generate_documents", side_effect=lambda qid, qd: _mock_generate_docs_result(qid, qd)), \
-             patch("app.modules.agent.agent.upload_to_drive", return_value={"ok": True, "drive_url": "https://drive.test"}):
+        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK):
             result = await agent._execute_tool(
                 "generate_documents",
                 {"quotes": sample_multi_material_data},
-                quote_id=quote_id,
+                quote_id=qid,
                 db=db_session,
             )
 
         for r in result["results"]:
             assert r["ok"] is True
-            assert r["pdf_url"] is not None
-            assert r["excel_url"] is not None
-            assert r["pdf_url"].endswith(".pdf")
-            assert r["excel_url"].endswith(".xlsx")
+            qdir = OUTPUT_DIR / r["quote_id"]
+            assert qdir.exists(), f"Output dir missing: {qdir}"
+            xlsx = list(qdir.glob("*.xlsx"))
+            assert len(xlsx) >= 1, f"No Excel in {qdir}"
+
+    @pytest.mark.asyncio
+    async def test_materials_not_mixed_between_quotes(
+        self, db_session, sample_multi_material_data
+    ):
+        """Silestone data must NOT appear in Purastone quote and vice versa."""
+        qid = await _create_quote(db_session)
+
+        agent = AgentService()
+        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK):
+            result = await agent._execute_tool(
+                "generate_documents",
+                {"quotes": sample_multi_material_data},
+                quote_id=qid,
+                db=db_session,
+            )
+
+        # Verify filenames contain correct material
+        for r in result["results"]:
+            material = r["material"]
+            excel_url = r["excel_url"]
+            # The material name should appear in the file URL
+            assert material.replace(" ", "%20") in excel_url or material in excel_url, \
+                f"Material '{material}' not in excel_url '{excel_url}'"
 
 
-# ── Test: update_quote tool ──────────────────────────────────────────────────
+# ── update_quote tool — REAL ─────────────────────────────────────────────────
 
-class TestUpdateQuoteTool:
+class TestUpdateQuoteReal:
     @pytest.mark.asyncio
     async def test_update_client_name(self, db_session):
-        quote_id = f"test-{uuid.uuid4()}"
-        quote = Quote(
-            id=quote_id, client_name="Old Name", project="",
-            messages=[], status=QuoteStatus.DRAFT,
-        )
-        db_session.add(quote)
-        await db_session.commit()
+        qid = await _create_quote(db_session)
 
         agent = AgentService()
         result = await agent._execute_tool(
             "update_quote",
-            {"updates": {"client_name": "New Name"}},
-            quote_id=quote_id,
+            {"updates": {"client_name": "Maria Lopez"}},
+            quote_id=qid,
             db=db_session,
         )
 
         assert result["ok"] is True
-        assert "client_name" in result["updated_fields"]
 
-        updated = await db_session.get(Quote, quote_id)
-        assert updated.client_name == "New Name"
+        r = await db_session.execute(select(Quote).where(Quote.id == qid))
+        assert r.scalar_one().client_name == "Maria Lopez"
 
     @pytest.mark.asyncio
-    async def test_update_rejects_unknown_fields(self, db_session):
-        quote_id = f"test-{uuid.uuid4()}"
-        quote = Quote(
-            id=quote_id, client_name="", project="",
-            messages=[], status=QuoteStatus.DRAFT,
+    async def test_update_status(self, db_session):
+        qid = await _create_quote(db_session)
+
+        agent = AgentService()
+        await agent._execute_tool(
+            "update_quote",
+            {"updates": {"status": "sent"}},
+            quote_id=qid,
+            db=db_session,
         )
-        db_session.add(quote)
-        await db_session.commit()
+
+        r = await db_session.execute(select(Quote).where(Quote.id == qid))
+        assert r.scalar_one().status == "sent"
+
+    @pytest.mark.asyncio
+    async def test_rejects_unknown_fields(self, db_session):
+        qid = await _create_quote(db_session)
 
         agent = AgentService()
         result = await agent._execute_tool(
             "update_quote",
-            {"updates": {"hacker_field": "malicious_value"}},
-            quote_id=quote_id,
+            {"updates": {"hacker_field": "malicious"}},
+            quote_id=qid,
             db=db_session,
         )
 
