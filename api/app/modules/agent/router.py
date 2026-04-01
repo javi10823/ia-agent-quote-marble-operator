@@ -58,6 +58,23 @@ async def update_status(
     return {"ok": True}
 
 
+# ── PATCH QUOTE (admin) ──────────────────────────────────────────────────────
+
+@router.patch("/quotes/{quote_id}")
+async def patch_quote(
+    quote_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    allowed = {"client_name", "project", "material", "parent_quote_id"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+    await db.execute(update(Quote).where(Quote.id == quote_id).values(**updates))
+    await db.commit()
+    return {"ok": True, "updated": list(updates.keys())}
+
+
 # ── DELETE QUOTE ──────────────────────────────────────────────────────────────
 
 @router.delete("/quotes/{quote_id}")
