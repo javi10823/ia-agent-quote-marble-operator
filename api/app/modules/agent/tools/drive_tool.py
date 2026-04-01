@@ -85,13 +85,14 @@ async def upload_to_drive(
         year_id = _get_or_create_folder(service, year, presupuestos_id)
         month_id = _get_or_create_folder(service, month_folder, year_id)
 
-        # Find generated files (sanitize date same as document_tool)
+        # Find generated files — scan directory for actual files instead of guessing names
         quote_dir = OUTPUT_DIR / quote_id
-        date_clean = date_str.replace("/", ".")
-        filename_base = f"{client_name} - {material} - {date_clean}"
-        filename_base = filename_base.replace("/", "-").replace("\\", "-")
-        pdf_path = quote_dir / f"{filename_base}.pdf"
-        excel_path = quote_dir / f"{filename_base}.xlsx"
+
+        # Find files by extension (more reliable than reconstructing filename)
+        pdf_files = list(quote_dir.glob("*.pdf")) if quote_dir.exists() else []
+        excel_files = list(quote_dir.glob("*.xlsx")) if quote_dir.exists() else []
+        pdf_path = pdf_files[0] if pdf_files else quote_dir / "not_found.pdf"
+        excel_path = excel_files[0] if excel_files else quote_dir / "not_found.xlsx"
 
         logging.info(f"Drive upload — looking for files in: {quote_dir}")
         logging.info(f"  PDF exists: {pdf_path.exists()} → {pdf_path}")
