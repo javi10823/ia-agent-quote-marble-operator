@@ -1,18 +1,13 @@
 FROM python:3.12-slim
 
-# System dependencies for WeasyPrint, pdf2image, Pillow
-RUN apt-get update && apt-get install -y \
+# System dependencies for pdf2image, Pillow, and LibreOffice (Excel → PDF)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
-    libpango-1.0-0 \
-    libpangoft2-1.0-0 \
     libffi-dev \
     libjpeg-dev \
     libpng-dev \
-    libgdk-pixbuf-xlib-2.0-0 \
-    libcairo2 \
-    libgirepository1.0-dev \
-    gir1.2-pango-1.0 \
     fonts-liberation \
+    libreoffice-calc \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

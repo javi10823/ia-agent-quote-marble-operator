@@ -30,14 +30,9 @@ async def generate_documents(quote_id: str, quote_data: dict) -> dict:
         pdf_path = quote_dir / f"{filename_base}.pdf"
         excel_path = quote_dir / f"{filename_base}.xlsx"
 
-        # Generate Excel always; PDF only if WeasyPrint is available
-        excel_task = asyncio.create_task(_generate_excel(excel_path, quote_data))
-        try:
-            pdf_task = asyncio.create_task(_generate_pdf(pdf_path, quote_data))
-            await asyncio.gather(pdf_task, excel_task)
-        except (ImportError, OSError):
-            # WeasyPrint/pango not available — generate Excel only
-            await excel_task
+        # Generate Excel first, then convert to PDF via LibreOffice
+        await _generate_excel(excel_path, quote_data)
+        await _generate_pdf_from_excel(excel_path, pdf_path)
 
         return {
             "ok": True,
@@ -49,12 +44,31 @@ async def generate_documents(quote_id: str, quote_data: dict) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def _generate_pdf(output_path: Path, data: dict) -> None:
-    """Generate PDF using WeasyPrint."""
-    from weasyprint import HTML
+async def _generate_pdf_from_excel(excel_path: Path, pdf_path: Path) -> None:
+    """Convert Excel to PDF using LibreOffice headless. PDF is identical to Excel."""
+    import subprocess
+    import logging
 
-    html_content = _build_html(data)
-    HTML(string=html_content).write_pdf(str(output_path))
+    try:
+        result = subprocess.run(
+            [
+                "libreoffice", "--headless", "--calc",
+                "--convert-to", "pdf",
+                "--outdir", str(pdf_path.parent),
+                str(excel_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            logging.warning(f"LibreOffice PDF conversion failed: {result.stderr}")
+        else:
+            logging.info(f"PDF generated from Excel: {pdf_path}")
+    except FileNotFoundError:
+        logging.warning("LibreOffice not installed — PDF not generated (Excel only)")
+    except subprocess.TimeoutExpired:
+        logging.warning("LibreOffice PDF conversion timed out")
 
 
 async def _generate_excel(output_path: Path, data: dict) -> None:

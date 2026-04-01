@@ -2,6 +2,7 @@
 
 import os
 import shutil
+import subprocess
 import pytest
 from pathlib import Path
 from app.modules.agent.tools.document_tool import (
@@ -10,15 +11,15 @@ from app.modules.agent.tools.document_tool import (
     _format_grand_total,
 )
 
-# WeasyPrint requires pango system library — skip PDF tests if not available
+# LibreOffice needed for PDF generation — skip PDF tests if not available
 try:
-    from weasyprint import HTML
-    HAS_WEASYPRINT = True
-except (ImportError, OSError):
-    HAS_WEASYPRINT = False
+    subprocess.run(["libreoffice", "--version"], capture_output=True, timeout=5)
+    HAS_LIBREOFFICE = True
+except (FileNotFoundError, subprocess.TimeoutExpired):
+    HAS_LIBREOFFICE = False
 
-requires_weasyprint = pytest.mark.skipif(
-    not HAS_WEASYPRINT, reason="WeasyPrint/pango not available"
+requires_libreoffice = pytest.mark.skipif(
+    not HAS_LIBREOFFICE, reason="LibreOffice not installed"
 )
 
 
@@ -84,7 +85,7 @@ class TestBuildHTML:
 # ── generate_documents — file creation ───────────────────────────────────────
 
 class TestGenerateDocuments:
-    @requires_weasyprint
+    @requires_libreoffice
     @pytest.mark.asyncio
     async def test_creates_pdf_and_excel(self, sample_quote_data):
         quote_id = "test-gen-001"
@@ -102,7 +103,7 @@ class TestGenerateDocuments:
         assert len(pdf_files) == 1
         assert len(xlsx_files) == 1
 
-    @requires_weasyprint
+    @requires_libreoffice
     @pytest.mark.asyncio
     async def test_filename_sanitization(self, sample_quote_data):
         """Dates with / should be sanitized to . in filenames."""
