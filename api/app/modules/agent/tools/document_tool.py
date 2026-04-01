@@ -326,53 +326,21 @@ async def _generate_pdf(pdf_path: Path, data: dict) -> None:
 
 
 async def _generate_excel(output_path: Path, data: dict) -> None:
-    """Generate Excel based on validated reference template."""
+    """Generate Excel from template — only replace values, keep all formatting."""
     import openpyxl
-    from openpyxl.styles import Font, Alignment, PatternFill
+    from openpyxl.styles import Font, Alignment, Border, Side
 
-    if EXCEL_REFERENCE.exists():
-        wb = openpyxl.load_workbook(str(EXCEL_REFERENCE))
-    else:
-        wb = openpyxl.load_workbook(str(TEMPLATES_DIR / "excel" / "quote-template-excel.xlsx"))
-        # Unmerge all from row 22 for clean rebuild
-        ws = wb.active
-        for merged in list(ws.merged_cells.ranges):
-            ws.unmerge_cells(str(merged))
-        for row in ws.iter_rows(min_row=22, max_row=100):
-            for cell in row:
-                cell.value = None
-
+    TEMPLATE = TEMPLATES_DIR / "excel" / "quote-template.xlsx"
+    wb = openpyxl.load_workbook(str(TEMPLATE))
     ws = wb.active
 
-    # Clear ALL borders and fills from template for clean export
-    from openpyxl.styles import Border
-    from openpyxl.styles import PatternFill as PF
-    no_border = Border()
-    no_fill = PF(fill_type=None)
-    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=10):
-        for cell in row:
-            cell.border = no_border
-            cell.fill = no_fill
+    # Unmerge all cells first to avoid MergedCell write errors
+    for mc in list(ws.merged_cells.ranges):
+        ws.unmerge_cells(str(mc))
 
-    # Helper fonts
-    bold = Font(name="Calibri", bold=True, size=10)
-    normal = Font(name="Calibri", bold=False, size=10)
-    small = Font(name="Calibri", bold=False, size=9)
-    bold_small = Font(name="Calibri", bold=True, size=9)
-    bold_italic = Font(name="Calibri", bold=True, italic=True, size=9)
-    right = Alignment(horizontal="right")
-    left = Alignment(horizontal="left")
-    center = Alignment(horizontal="center")
-
-    # No gray_fill in openpyxl — banding handled by Google Sheets API after upload
-
-    from openpyxl.styles import Border, Side
-    thin = Side(style="thin")
-    box = Border(left=thin, right=thin, top=thin, bottom=thin)
-
-    client_name = data["client_name"]
+    client_name = data.get("client_name", "")
     project = data.get("project", "")
-    date_str = datetime.now().strftime("%d.%m.%Y")
+    date_str = datetime.now().strftime("%d/%m/%Y")
     delivery = _normalize_delivery(data.get("delivery_days", ""))
     mat_name = data.get("material_name", "")
     mat_m2 = data.get("material_m2", 0)
@@ -380,255 +348,130 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     currency = data.get("material_currency", "USD")
     discount_pct = data.get("discount_pct", 0)
     sectors = data.get("sectors", [])
-    sinks = data.get("sinks", [])
     mo_items = data.get("mo_items", [])
     total_ars = data.get("total_ars", 0)
     total_usd = data.get("total_usd", 0)
 
-    # Header
-    ws["A13"].value = f"Fecha: {date_str}"; ws["A13"].font = bold
-    ws["A16"].value = client_name; ws["A16"].font = normal
-    ws["C16"].value = "Contado"; ws["C16"].font = normal; ws["C16"].alignment = left
-    ws["A18"].value = project; ws["A18"].font = normal; ws["A18"].alignment = left
-    ws["C18"].value = "Fecha de entrega"; ws["C18"].font = bold
-    ws["C19"].value = delivery; ws["C19"].font = normal; ws["C19"].alignment = left
-
-    # Column titles row 22
-    for col, title in [(1, "Descripción"), (4, "Cantidad"), (5, "Precio unitario"), (6, "Precio total")]:
-        ws.cell(22, col).value = title
-        ws.cell(22, col).font = bold
-        ws.cell(22, col).alignment = right if col >= 4 else left
-
-    # Number formats — use standard codes, Google Sheets interprets per locale
-    # With es_AR locale: #,##0 shows as 65.147 (dot thousands)
-    usd_fmt = '"USD "#,##0'
+    bold = Font(name="Calibri", bold=True, size=10)
+    normal = Font(name="Calibri", bold=False, size=10)
+    small = Font(name="Calibri", bold=False, size=9)
+    right_align = Alignment(horizontal="right")
+    center_align = Alignment(horizontal="center")
+    thin = Side(style="thin")
+    box = Border(left=thin, right=thin, top=thin, bottom=thin)
     ars_fmt = '"$"#,##0.00'
     qty_fmt = '#,##0.00'
-    price_fmt = usd_fmt if currency == "USD" else ars_fmt
 
-    # Material row 23
-    total_mat_gross = round(mat_m2 * mat_price)
-    ws["A23"].value = mat_name; ws["A23"].font = bold
-    ws["D23"].value = mat_m2; ws["D23"].font = normal
-    ws["D23"].number_format = qty_fmt; ws["D23"].alignment = right
-    ws["E23"].value = mat_price; ws["E23"].font = normal; ws["E23"].alignment = right
-    ws["E23"].number_format = price_fmt
-    ws["F23"].value = total_mat_gross; ws["F23"].font = normal; ws["F23"].alignment = right
-    ws["F23"].number_format = price_fmt
+    # Header — replace values, keep template formatting
+    ws["A13"].value = f"Fecha: {date_str}"
+    ws["A16"].value = client_name
+    ws["A18"].value = project
+    ws["C19"].value = delivery
 
-    # Collect all pieces flat (skip sector labels — they go as piece descriptions)
+    # Material row 22
+    total_mat = round(mat_m2 * mat_price)
+    total_mat_net = total_mat
+    if discount_pct:
+        total_mat_net = total_mat - round(total_mat * discount_pct / 100)
+
+    ws["A22"].value = f"{mat_name} - 20mm"
+    ws["D22"].value = mat_m2
+    ws["D22"].number_format = qty_fmt
+    if currency == "USD":
+        ws["E22"].value = f"USD{mat_price}"
+        ws["F22"].value = f"USD{total_mat_net}"
+    else:
+        ws["E22"].value = mat_price
+        ws["E22"].number_format = ars_fmt
+        ws["F22"].value = total_mat_net
+        ws["F22"].number_format = ars_fmt
+
+    # Clear template sample data (rows 23-50)
+    for row in range(23, 51):
+        for col in range(1, 7):
+            ws.cell(row, col).value = None
+
+    # Pieces (row 23+)
     all_pieces = []
     for sector in sectors:
         for piece in sector.get("pieces", []):
             all_pieces.append(piece)
 
-    # Calculate net total
-    total_mat_net = total_mat_gross
-    discount_amount = 0
-    if discount_pct:
-        discount_amount = round(total_mat_gross * discount_pct / 100)
-        total_mat_net = total_mat_gross - discount_amount
-
-    # Pieces starting row 24 — alternating fill, Total on first piece only
-    r = 24
-    total_shown = False
+    r = 23
     for idx, piece in enumerate(all_pieces):
-        # Alternating fill
-        fill = None
         ws.cell(r, 1).value = piece
         ws.cell(r, 1).font = small
-        if fill:
-            for c in range(1, 7):
-                ws.cell(r, c).fill = fill
-
-        # First piece: show TOTAL (and DESCUENTO if applicable)
-        if not total_shown:
+        if idx == 0:
             if discount_pct:
                 ws.cell(r, 5).value = f"DESCUENTO {int(discount_pct)} %"
                 ws.cell(r, 5).font = Font(name="Calibri", italic=True, size=9)
-                ws.cell(r, 5).alignment = right
-                ws.cell(r, 6).value = discount_amount
-                ws.cell(r, 6).font = normal; ws.cell(r, 6).alignment = right
-                ws.cell(r, 6).number_format = price_fmt
+                ws.cell(r, 5).alignment = right_align
+                disc = round(total_mat * discount_pct / 100)
+                ws.cell(r, 6).value = f"USD{disc}" if currency == "USD" else disc
+                if currency != "USD":
+                    ws.cell(r, 6).number_format = ars_fmt
                 r += 1
-                # Next row for Total
-                ws.cell(r, 1).value = all_pieces[1] if len(all_pieces) > 1 else ""
-                ws.cell(r, 1).font = small
-                fill2 = None
-                if fill2:
-                    for c in range(1, 7):
-                        ws.cell(r, c).fill = fill2
-
-            ws.cell(r, 5).value = f"Total {currency}"
-            ws.cell(r, 5).font = bold; ws.cell(r, 5).alignment = right
-            ws.cell(r, 6).value = total_mat_net
-            ws.cell(r, 6).font = bold; ws.cell(r, 6).alignment = right
-            ws.cell(r, 6).number_format = price_fmt
-            total_shown = True
-
-        r += 1
-
-    r += 1  # spacer
-
-    # Argentine locale format for ARS
-    ars_cell_fmt = '"$"#,##0.00'
-
-    # Sinks
-    for i, sink in enumerate(sinks):
-        fill = None
-        ws.cell(r, 1).value = sink["name"]; ws.cell(r, 1).font = bold
-        ws.cell(r, 4).value = sink["quantity"]; ws.cell(r, 4).font = normal; ws.cell(r, 4).alignment = right
-        ws.cell(r, 5).value = sink["unit_price"]; ws.cell(r, 5).font = normal
-        ws.cell(r, 5).number_format = ars_cell_fmt; ws.cell(r, 5).alignment = right
-        ws.cell(r, 6).value = f"=D{r}*E{r}"; ws.cell(r, 6).font = normal
-        ws.cell(r, 6).number_format = ars_cell_fmt; ws.cell(r, 6).alignment = right
-        if fill:
-            for c in range(1, 7): ws.cell(r, c).fill = fill
+                if len(all_pieces) > 1:
+                    ws.cell(r, 1).value = all_pieces[1]
+                    ws.cell(r, 1).font = small
+            ws.cell(r, 5).value = f"TOTAL {currency}"
+            ws.cell(r, 5).font = bold
+            ws.cell(r, 5).alignment = right_align
+            if currency == "USD":
+                ws.cell(r, 6).value = f"USD{total_mat_net}"
+            else:
+                ws.cell(r, 6).value = total_mat_net
+                ws.cell(r, 6).number_format = ars_fmt
+            ws.cell(r, 6).font = bold
+            ws.cell(r, 6).alignment = right_align
         r += 1
 
     r += 1  # spacer
 
     # MO
-    ws.cell(r, 1).value = "MANO DE OBRA"; ws.cell(r, 1).font = bold; ws.cell(r, 1).alignment = left
+    ws.cell(r, 1).value = "MANO DE OBRA"
+    ws.cell(r, 1).font = bold
     r += 1
     mo_start = r
-    for i, mo in enumerate(mo_items):
-        fill = None
-        ws.cell(r, 1).value = mo["description"]; ws.cell(r, 1).font = normal
-        ws.cell(r, 4).value = mo["quantity"]; ws.cell(r, 4).font = normal; ws.cell(r, 4).alignment = right
+    for mo in mo_items:
+        ws.cell(r, 1).value = mo["description"]
+        ws.cell(r, 1).font = normal
+        ws.cell(r, 4).value = mo["quantity"]
         ws.cell(r, 4).number_format = qty_fmt
-        ws.cell(r, 5).value = mo["unit_price"]; ws.cell(r, 5).font = normal
-        ws.cell(r, 5).number_format = ars_cell_fmt; ws.cell(r, 5).alignment = right
-        ws.cell(r, 6).value = f"=D{r}*E{r}"; ws.cell(r, 6).font = normal
-        ws.cell(r, 6).number_format = ars_cell_fmt; ws.cell(r, 6).alignment = right
-        if fill:
-            for c in range(1, 7): ws.cell(r, c).fill = fill
+        ws.cell(r, 4).alignment = right_align
+        ws.cell(r, 5).value = mo["unit_price"]
+        ws.cell(r, 5).number_format = ars_fmt
+        ws.cell(r, 5).alignment = right_align
+        ws.cell(r, 6).value = f"=D{r}*E{r}"
+        ws.cell(r, 6).number_format = ars_fmt
+        ws.cell(r, 6).alignment = right_align
         r += 1
 
-    # Total PESOS (sinks + MO)
-    ws.cell(r, 5).value = "Total PESOS"; ws.cell(r, 5).font = bold; ws.cell(r, 5).alignment = right
-    sink_start = mo_start - len(sinks) - 2
-    ws.cell(r, 6).value = f"=SUM(F{sink_start}:F{r-1})"
-    ws.cell(r, 6).font = bold; ws.cell(r, 6).number_format = ars_cell_fmt; ws.cell(r, 6).alignment = right
+    # Total PESOS
+    ws.cell(r, 5).value = "Total PESOS"
+    ws.cell(r, 5).font = bold
+    ws.cell(r, 5).alignment = right_align
+    ws.cell(r, 6).value = f"=SUM(F{mo_start}:F{r-1})"
+    ws.cell(r, 6).font = bold
+    ws.cell(r, 6).number_format = ars_fmt
+    ws.cell(r, 6).alignment = right_align
     r += 2
 
-    # Grand total with border
+    # Grand total
     grand = _format_grand_total(total_ars, total_usd, currency)
     for col in range(1, 7):
         ws.cell(r, col).border = box
     ws.cell(r, 1).value = grand
-    ws.cell(r, 1).font = bold; ws.cell(r, 1).alignment = center
+    ws.cell(r, 1).font = bold
+    ws.cell(r, 1).alignment = center_align
     ws.merge_cells(f"A{r}:F{r}")
     r += 1
 
-    # Footer note
+    # Footer
     ws.cell(r, 1).value = "No se suben mesadas que no entren en ascensor"
-    ws.cell(r, 1).font = bold_italic
-    r += 1
-
-    # Clear any stale borders from template on spacer row
-    no_border = Border()
-    for col in range(1, 7):
-        ws.cell(r, col).border = no_border
-    ws.row_dimensions[r].height = 8
-    r += 1
-
-    # Conditions footer (same as PDF) — fixed row heights to prevent giant rows
-    conditions_font = Font(name="Calibri", size=8)
-    conditions_bold = Font(name="Calibri", size=8, bold=True)
-    footer_row_height = 14
-
-    ws.cell(r, 1).value = "*COTIZACION OFICIAL: dolar venta banco nacion. Los materiales expresados en dólares se pagan en pesos según la cotizacion del dia."
-    ws.cell(r, 1).font = conditions_font
-    ws.row_dimensions[r].height = footer_row_height
-    r += 1
-    ws.row_dimensions[r].height = 8  # small spacer
-    r += 1
-
-    ws.cell(r, 1).value = "CONDICIONES"
-    ws.cell(r, 1).font = conditions_bold
-    ws.row_dimensions[r].height = footer_row_height
-    r += 1
-
-    for line in [
-        "*PRESUPUESTO SUJETO A VARIACIÓN DE PRECIO",
-        "*MATERIALES IMPORTADOS SEGÚN COTIZACION DOLAR VENTA BANCO NACIÓN AL MOMENTO DE LA CONFIRMACION",
-        "*LA TOMA DE MEDIDAS NO PODRÁ SUPERAR LOS 30 DÍAS DESDE LA CONFIRMACIÓN, CASO CONTRARIO EL 20% RESTANTE SE ACTUALIZARA SEGÚN INDICE LA CONSTRUCCIÓN",
-        "*PRESUPUESTO DEFINITIVO SEGÚN MEDIDAS TOMADAS EN OBRA",
-        "*LOS PRECIOS INCLUYEN IVA",
-    ]:
-        ws.cell(r, 1).value = line
-        ws.cell(r, 1).font = conditions_font
-        ws.row_dimensions[r].height = footer_row_height
-        r += 1
-
-    ws.row_dimensions[r].height = 8  # small spacer
-    r += 1
-    ws.cell(r, 1).value = "FORMAS DE PAGO"
-    ws.cell(r, 1).font = conditions_bold
-    ws.row_dimensions[r].height = footer_row_height
-    r += 1
-
-    for line in [
-        "*Materiales Importados: 80% seña, 20% restante contra entrega (cotización dolar venta BCO NACIÓN).",
-        "*Materiales Nacionales: 80% seña, 20% restante contra entrega.",
-        "Pago contado / transferencia / débito / crédito / cheques 15 días para importados y 30 días para nacionales",
-    ]:
-        ws.cell(r, 1).value = line
-        ws.cell(r, 1).font = conditions_font
-        ws.row_dimensions[r].height = footer_row_height
-        r += 1
-
-    ws.row_dimensions[r].height = 8  # small spacer
-    r += 1
-    ws.cell(r, 1).value = "TARJETAS DE CREDITO CONSULTAR PLANES"
-    ws.cell(r, 1).font = conditions_font
-    ws.row_dimensions[r].height = footer_row_height
-
-    # Column widths
-    ws.column_dimensions["A"].width = 52
-    ws.column_dimensions["B"].width = 5
-    ws.column_dimensions["C"].width = 5
-    ws.column_dimensions["D"].width = 12
-    ws.column_dimensions["E"].width = 22
-    ws.column_dimensions["F"].width = 18
-
-    # Print settings — so PDF export looks clean (no gridlines, proper margins)
-    from openpyxl.worksheet.views import SheetView
-    from openpyxl.worksheet.page import PageMargins
-
-    ws.views.sheetView[0].showGridLines = False
-    ws.print_area = f"A1:F{r}"
-    ws.page_setup.orientation = "portrait"
-    ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 0
-    ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.page_margins = PageMargins(
-        left=0.5, right=0.5, top=0.4, bottom=0.4,
-        header=0.2, footer=0.2,
-    )
-
-    # Force Argentine locale in Excel/Google Sheets
-    # Custom XML property: SpreadsheetLocale = es_AR
-    from openpyxl.packaging.core import DocumentProperties
-    wb.properties = DocumentProperties()
-    wb.properties.language = "es-AR"
-
-    # Add custom doc property for Google Sheets locale detection
-    from openpyxl.xml.functions import Element, SubElement
-    import copy
-    try:
-        # Set calcPr to force locale interpretation
-        from openpyxl.workbook.properties import CalcProperties
-        wb.calculation = CalcProperties(calcId=191029)
-    except Exception:
-        pass
+    ws.cell(r, 1).font = Font(name="Calibri", bold=True, italic=True, size=9)
 
     wb.save(str(output_path))
-
-    # Post-process: inject SpreadsheetLocale into docProps/custom.xml
-    # This forces Google Sheets to use Argentine locale
-    import zipfile, io, shutil as shutil_mod
     _inject_locale(str(output_path))
 
 
