@@ -613,8 +613,13 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
 
 
 def _inject_locale(xlsx_path: str):
-    """Inject SpreadsheetLocale=es_AR into the xlsx for Google Sheets."""
-    import zipfile, os, tempfile
+    """Inject es_AR locale into xlsx for Google Sheets.
+
+    Modifies xl/workbook.xml to add spreadsheetLocale="es_AR" to <calcPr>,
+    and adds SpreadsheetLocale custom property to docProps/custom.xml.
+    Both methods together ensure Google Sheets picks up the locale.
+    """
+    import zipfile, os, re
 
     custom_xml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
@@ -624,33 +629,57 @@ def _inject_locale(xlsx_path: str):
   </property>
 </Properties>'''
 
-    content_types_addition = '<Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/>'
-
-    rels_addition = '<Relationship Id="rIdCustom" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="docProps/custom.xml"/>'
-
     try:
         tmp = xlsx_path + ".tmp"
         with zipfile.ZipFile(xlsx_path, 'r') as zin, zipfile.ZipFile(tmp, 'w') as zout:
             for item in zin.infolist():
                 data = zin.read(item.filename)
-                if item.filename == '[Content_Types].xml':
+
+                if item.filename == 'xl/workbook.xml':
+                    text = data.decode('utf-8')
+                    # Add spreadsheetLocale to calcPr if it exists
+                    if '<calcPr' in text and 'spreadsheetLocale' not in text:
+                        text = re.sub(
+                            r'<calcPr\b',
+                            '<calcPr spreadsheetLocale="es_AR"',
+                            text,
+                        )
+                    elif '<calcPr' not in text:
+                        # Add calcPr before </workbook>
+                        text = text.replace(
+                            '</workbook>',
+                            '<calcPr spreadsheetLocale="es_AR" calcId="191029"/></workbook>',
+                        )
+                    data = text.encode('utf-8')
+
+                elif item.filename == '[Content_Types].xml':
                     text = data.decode('utf-8')
                     if 'custom-properties' not in text:
-                        text = text.replace('</Types>', content_types_addition + '</Types>')
+                        text = text.replace(
+                            '</Types>',
+                            '<Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/></Types>',
+                        )
                     data = text.encode('utf-8')
+
                 elif item.filename == '_rels/.rels':
                     text = data.decode('utf-8')
                     if 'custom-properties' not in text:
-                        text = text.replace('</Relationships>', rels_addition + '</Relationships>')
+                        text = text.replace(
+                            '</Relationships>',
+                            '<Relationship Id="rIdCustom" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="docProps/custom.xml"/></Relationships>',
+                        )
                     data = text.encode('utf-8')
+
                 zout.writestr(item, data)
             zout.writestr('docProps/custom.xml', custom_xml)
         os.replace(tmp, xlsx_path)
     except Exception as e:
         import logging
         logging.warning(f"Could not inject locale into xlsx: {e}")
-        if os.path.exists(tmp):
+        try:
             os.remove(tmp)
+        except OSError:
+            pass
 
 
 def _format_grand_total(total_ars: float, total_usd: float, currency: str) -> str:

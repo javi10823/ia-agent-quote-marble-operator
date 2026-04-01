@@ -117,8 +117,8 @@ class TestGenerateDocuments:
 
     @pytest.mark.asyncio
     async def test_excel_has_content(self, sample_quote_data):
-        """Excel should have data in cells, not be empty."""
-        import openpyxl
+        """Excel should have data in cells and Argentine locale."""
+        import zipfile
 
         quote_id = "test-gen-003"
         await generate_documents(quote_id, sample_quote_data)
@@ -126,13 +126,12 @@ class TestGenerateDocuments:
         xlsx_files = list((OUTPUT_DIR / quote_id).glob("*.xlsx"))
         assert len(xlsx_files) == 1
 
-        wb = openpyxl.load_workbook(str(xlsx_files[0]))
-        ws = wb.active
-        # Should have client name somewhere in the sheet
-        found_client = False
-        for row in ws.iter_rows(min_row=1, max_row=20, values_only=True):
-            for cell in row:
-                if cell and "Juan Carlos" in str(cell):
-                    found_client = True
-                    break
-        assert found_client, "Client name not found in Excel"
+        # Read xlsx as zip to check content (avoids openpyxl choking on custom attrs)
+        with zipfile.ZipFile(str(xlsx_files[0]), 'r') as z:
+            # Check sheet contains client name
+            sheet = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
+            assert "Juan Carlos" in sheet, "Client name not found in Excel sheet"
+
+            # Check Argentine locale was injected
+            workbook_xml = z.read("xl/workbook.xml").decode("utf-8")
+            assert "es_AR" in workbook_xml, "Argentine locale not found in workbook.xml"
