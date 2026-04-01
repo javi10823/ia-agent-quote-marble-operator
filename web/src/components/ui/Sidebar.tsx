@@ -29,8 +29,8 @@ export default function Sidebar() {
       padding: "18px 10px 20px",
       height: "100vh",
     }}>
-      {/* Logo */}
-      <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "2px 8px 22px" }}>
+      {/* Logo — click goes to home */}
+      <div onClick={() => router.push("/")} style={{ display: "flex", alignItems: "center", gap: 9, padding: "2px 8px 22px", cursor: "pointer" }}>
         <div style={{
           width: 26, height: 26, borderRadius: 6,
           background: "var(--acc)",
