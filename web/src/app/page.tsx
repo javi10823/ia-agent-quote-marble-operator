@@ -125,35 +125,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* KPIs */}
-        <div style={{
-          display: "grid", gridTemplateColumns: "repeat(4,1fr)",
-          gap: 1, marginBottom: 24,
-          background: "var(--b1)", borderRadius: 10, overflow: "hidden",
-        }}>
-          {[
-            { label: "Total", value: quotes.length, sub: "presupuestos", main: true },
-            { label: "Borradores", value: quotes.filter(q => q.status === "draft").length, sub: "en proceso" },
-            { label: "Validados", value: quotes.filter(q => q.status === "validated").length, sub: "listos" },
-            { label: "Enviados", value: quotes.filter(q => q.status === "sent").length, sub: "este mes" },
-          ].map(k => (
-            <div key={k.label} style={{
-              background: k.main ? "var(--s3)" : "var(--s2)",
-              padding: "18px 20px",
-              borderLeft: k.main ? "2px solid var(--acc)" : undefined,
-            }}>
-              <div style={{ fontSize: 10, fontWeight: 500, color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.09em", marginBottom: 10 }}>{k.label}</div>
-              <div style={{
-                fontSize: k.main ? 34 : 26,
-                fontWeight: 300, letterSpacing: "-0.04em",
-                color: k.main ? "var(--acc)" : "var(--t1)",
-                lineHeight: 1,
-                fontFamily: "'Geist Mono', monospace",
-              }}>{k.value}</div>
-              <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 5 }}>{k.sub}</div>
-            </div>
-          ))}
-        </div>
+        {/* KPIs removed — info is now in the filter chips */}
 
         {/* Filter bar + Table */}
         {loading ? (
