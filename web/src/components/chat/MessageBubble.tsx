@@ -261,17 +261,42 @@ function MarkdownTable({ lines }: { lines: string[] }) {
 }
 
 function InlineFormat({ text }: { text: string }) {
-  const parts = text.split(/\*\*(.*?)\*\*/g);
-  if (parts.length === 1) return <>{text}</>;
-  return (
-    <>
-      {parts.map((p, i) =>
-        i % 2 === 1
-          ? <strong key={i} style={{ fontWeight: 500, color: "var(--t1)" }}>{p}</strong>
-          : p
-      )}
-    </>
-  );
+  // Parse markdown links [text](url) and bold **text**
+  const elements: React.ReactNode[] = [];
+  const regex = /\[([^\]]+)\]\(([^)]+)\)|\*\*(.*?)\*\*/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    // Add text before match
+    if (match.index > lastIndex) {
+      elements.push(text.slice(lastIndex, match.index));
+    }
+
+    if (match[1] && match[2]) {
+      // Markdown link [text](url)
+      elements.push(
+        <a key={match.index} href={match[2]} target="_blank" rel="noopener noreferrer"
+          style={{ color: "var(--acc)", textDecoration: "none", borderBottom: "1px solid rgba(79,143,255,.3)" }}
+          onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "var(--acc)")}
+          onMouseLeave={e => (e.currentTarget.style.borderBottomColor = "rgba(79,143,255,.3)")}
+        >{match[1]}</a>
+      );
+    } else if (match[3]) {
+      // Bold **text**
+      elements.push(<strong key={match.index} style={{ fontWeight: 500, color: "var(--t1)" }}>{match[3]}</strong>);
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining text
+  if (lastIndex < text.length) {
+    elements.push(text.slice(lastIndex));
+  }
+
+  if (elements.length === 0) return <>{text}</>;
+  return <>{elements}</>;
 }
 
 // ── AVATAR ─────────────────────────────────────────────────────────────────────

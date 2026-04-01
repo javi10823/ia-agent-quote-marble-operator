@@ -126,13 +126,15 @@ SIEMPRE respetar este formato — con ## para el título, ### para secciones, ta
 
 - **"Consumidor final"** es un nombre de cliente válido. Si el operador dice "cliente: consumidor final", el nombre es "Consumidor Final". NUNCA volver a preguntar el nombre si ya lo proporcionó.
 - **Zócalo trasero** — si el enunciado dice "zócalo trasero", los ml se calculan sumando los largos de los tramos de mesada donde va el zócalo. NO preguntar ml si ya tenés las medidas de los tramos.
-- **Varios materiales** — si el enunciado menciona 2+ materiales (ej: "hacerlo también en Blanco Paloma"), generar un presupuesto separado por cada material. NO preguntar si quiere varios — ya lo dijo.
-  - **Flujo ESTRICTO para 2 materiales — seguir paso a paso:**
-    1. **Material 1** → llamar `generate_documents` con el `quote_id` actual y los datos del primer material. Luego `upload_to_drive` con el mismo `quote_id`.
-    2. **Material 2** → llamar `create_additional_quote` con client_name, project y material del segundo material. Guardar el `quote_id` que devuelve.
-    3. Llamar `generate_documents` con el **nuevo quote_id** y los datos del segundo material. Luego `upload_to_drive` con el **nuevo quote_id**.
-  - **CRÍTICO:** cada `generate_documents` debe recibir el `quote_id` correcto y los datos del material correspondiente. NO mezclar quote_ids.
-  - En el dashboard van a aparecer como 2 filas: mismo cliente, distinto material, cada una con sus archivos.
+- **Varios materiales** — si el enunciado menciona 2+ materiales, generar un presupuesto separado por cada material.
+  - **Flujo ESTRICTO — EJEMPLO con Silestone Blanco Norte + Purastone Blanco Paloma:**
+    - Paso A: `generate_documents(quote_id="ACTUAL", quote_data={material_name: "SILESTONE BLANCO NORTE", ...})` → genera PDF 1
+    - Paso B: `upload_to_drive(quote_id="ACTUAL", ...)` → sube PDF 1 a Drive
+    - Paso C: `create_additional_quote(client_name="...", project="...", material="PURASTONE BLANCO PALOMA")` → devuelve `{"quote_id": "NUEVO_ID"}`
+    - Paso D: `generate_documents(quote_id="NUEVO_ID", quote_data={material_name: "PURASTONE BLANCO PALOMA", ...})` → genera PDF 2
+    - Paso E: `upload_to_drive(quote_id="NUEVO_ID", ...)` → sube PDF 2 a Drive
+  - **CADA `generate_documents` recibe UN SOLO material con SU quote_id. NUNCA generar 2 materiales en un solo `generate_documents`.**
+  - **NUNCA llamar `generate_documents` 2 veces con el mismo quote_id para materiales distintos.**
 - **Material no encontrado por nombre exacto** — probar variantes del SKU. Los SKUs en catálogo suelen ser el nombre del color SIN la marca. Ejemplos:
   - "Silestone Blanco Norte" → SKU: `SILESTONENORTE` en `materials-silestone`
   - "Purastone Blanco Paloma" o "Blanco Paloma" → SKU: `PALOMA` en `materials-purastone`
