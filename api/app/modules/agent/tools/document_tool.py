@@ -386,8 +386,8 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
         ws["F22"].value = total_mat_net
         ws["F22"].number_format = ars_fmt
 
-    # Clear template sample data (rows 23-50)
-    for row in range(23, 51):
+    # Clear ONLY dynamic data rows (23-34), NOT the footer/conditions (35+)
+    for row in range(23, 35):
         for col in range(1, 7):
             ws.cell(row, col).value = None
 
@@ -455,21 +455,11 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     ws.cell(r, 6).font = bold
     ws.cell(r, 6).number_format = ars_fmt
     ws.cell(r, 6).alignment = right_align
-    r += 2
 
-    # Grand total
+    # Grand total — fixed at row 35 (template position)
     grand = _format_grand_total(total_ars, total_usd, currency)
-    for col in range(1, 7):
-        ws.cell(r, col).border = box
-    ws.cell(r, 1).value = grand
-    ws.cell(r, 1).font = bold
-    ws.cell(r, 1).alignment = center_align
-    ws.merge_cells(f"A{r}:F{r}")
-    r += 1
-
-    # Footer
-    ws.cell(r, 1).value = "No se suben mesadas que no entren en ascensor"
-    ws.cell(r, 1).font = Font(name="Calibri", bold=True, italic=True, size=9)
+    ws.cell(35, 1).value = grand
+    ws.merge_cells("A35:F35")
 
     wb.save(str(output_path))
     _inject_locale(str(output_path))
