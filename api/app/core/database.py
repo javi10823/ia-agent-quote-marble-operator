@@ -36,6 +36,7 @@ async def init_db():
         for col_sql in [
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS parent_quote_id VARCHAR",
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'operator'",
+            "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS drive_file_id VARCHAR(200)",
         ]:
             try:
                 await conn.execute(__import__("sqlalchemy").text(col_sql))

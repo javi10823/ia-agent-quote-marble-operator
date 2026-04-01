@@ -100,13 +100,14 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
             if drive_result.get("ok"):
                 drive_url = drive_result.get("drive_url")
 
-            # Update DB with file URLs
+            # Update DB with file URLs + Drive file ID
             from sqlalchemy import update
             await db.execute(
                 update(Quote).where(Quote.id == quote_id).values(
                     pdf_url=pdf_url,
                     excel_url=excel_url,
                     drive_url=drive_url,
+                    drive_file_id=drive_result.get("drive_file_id") if drive_result.get("ok") else None,
                 )
             )
             await db.commit()

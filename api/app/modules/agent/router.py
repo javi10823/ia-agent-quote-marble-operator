@@ -83,6 +83,19 @@ async def delete_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
     quote = result.scalar_one_or_none()
     if not quote:
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+
+    # Delete Drive file if exists
+    if quote.drive_file_id:
+        from app.modules.agent.tools.drive_tool import delete_drive_file
+        delete_drive_file(quote.drive_file_id)
+
+    # Delete local files
+    import shutil
+    from pathlib import Path
+    output_dir = Path(__file__).parent.parent.parent.parent / "output" / quote_id
+    if output_dir.exists():
+        shutil.rmtree(output_dir, ignore_errors=True)
+
     await db.delete(quote)
     await db.commit()
     return {"ok": True}

@@ -35,6 +35,7 @@ class Quote(Base):
     pdf_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     excel_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     drive_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    drive_file_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     # Full chat history as JSON array
     messages: Mapped[list] = mapped_column(JSON, default=list)

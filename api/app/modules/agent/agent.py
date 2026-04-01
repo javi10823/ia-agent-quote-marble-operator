@@ -579,6 +579,14 @@ class AgentService:
                     )
                     await db.commit()
 
+                    # Delete old Drive file if exists (prevents duplicates)
+                    from app.modules.agent.tools.drive_tool import delete_drive_file
+                    old_quote = await db.execute(select(Quote).where(Quote.id == target_qid))
+                    old_q = old_quote.scalar_one_or_none()
+                    if old_q and old_q.drive_file_id:
+                        delete_drive_file(old_q.drive_file_id)
+                        logging.info(f"Deleted old Drive file {old_q.drive_file_id} for quote {target_qid}")
+
                     # Upload to Drive
                     date_str = qdata.get("date", "")
                     drive_result = await upload_to_drive(
@@ -591,7 +599,8 @@ class AgentService:
                     if drive_result.get("ok"):
                         await db.execute(
                             update(Quote).where(Quote.id == target_qid).values(
-                                drive_url=drive_result.get("drive_url")
+                                drive_url=drive_result.get("drive_url"),
+                                drive_file_id=drive_result.get("drive_file_id"),
                             )
                         )
                         await db.commit()

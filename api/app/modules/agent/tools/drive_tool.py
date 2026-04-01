@@ -66,6 +66,18 @@ def _get_or_create_folder(service, name: str, parent_id: str) -> str:
     return folder["id"]
 
 
+def delete_drive_file(file_id: str) -> bool:
+    """Delete a file from Google Drive by its file ID."""
+    try:
+        service = _get_drive_service()
+        service.files().delete(fileId=file_id, supportsAllDrives=True).execute()
+        logging.info(f"Deleted Drive file: {file_id}")
+        return True
+    except Exception as e:
+        logging.warning(f"Could not delete Drive file {file_id}: {e}")
+        return False
+
+
 async def upload_to_drive(
     quote_id: str,
     client_name: str,
@@ -179,6 +191,7 @@ async def upload_to_drive(
                     logging.warning(f"Could not set locale on spreadsheet: {e}")
 
             uploaded_urls.append(uploaded.get("webViewLink"))
+            last_file_id = uploaded.get("id")
 
         # Use last URL (Excel) as the main drive link — operator prefers Excel
         drive_url = uploaded_urls[-1] if uploaded_urls else None
@@ -186,6 +199,7 @@ async def upload_to_drive(
         return {
             "ok": True,
             "drive_url": drive_url,
+            "drive_file_id": last_file_id if uploaded_urls else None,
             "uploaded_files": len(uploaded_urls),
             "folder": f"Presupuestos/{year}/{month_folder}",
         }
