@@ -27,6 +27,8 @@ export default function DashboardPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("todos");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     fetchQuotes().then(setQuotes).finally(() => setLoading(false));
@@ -38,6 +40,27 @@ export default function DashboardPage() {
     const days = (Date.now() - new Date(q.created_at).getTime()) / 86400000;
     return days > 5;
   });
+
+  // Filter by status + search
+  const filteredQuotes = quotes.filter(q => {
+    if (statusFilter !== "todos" && q.status !== statusFilter) return false;
+    if (search) {
+      const s = search.toLowerCase();
+      return (
+        (q.client_name || "").toLowerCase().includes(s) ||
+        (q.material || "").toLowerCase().includes(s) ||
+        (q.project || "").toLowerCase().includes(s)
+      );
+    }
+    return true;
+  });
+
+  const statusCounts = {
+    todos: quotes.length,
+    draft: quotes.filter(q => q.status === "draft").length,
+    validated: quotes.filter(q => q.status === "validated").length,
+    sent: quotes.filter(q => q.status === "sent").length,
+  };
 
   async function toggleStatus(e: React.MouseEvent, id: string, current: Quote["status"]) {
     e.stopPropagation();
@@ -132,13 +155,67 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {/* Table */}
+        {/* Filter bar + Table */}
         {loading ? (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200, color: "var(--t3)", fontSize: 13 }}>
             Cargando...
           </div>
         ) : (
           <div style={{ background: "var(--s1)", border: "1px solid var(--b1)", borderRadius: 10, overflow: "hidden" }}>
+            {/* Filter bar */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "10px 16px", background: "var(--s2)",
+              borderBottom: "1px solid var(--b1)",
+            }}>
+              <div style={{ display: "flex", gap: 6 }}>
+                {([
+                  { key: "todos", label: "Todos" },
+                  { key: "draft", label: "Borrador" },
+                  { key: "validated", label: "Validado" },
+                  { key: "sent", label: "Enviado" },
+                ] as const).map(f => (
+                  <button key={f.key} onClick={() => setStatusFilter(f.key)} style={{
+                    padding: "5px 12px", borderRadius: 6, fontSize: 12, fontWeight: 500,
+                    border: statusFilter === f.key ? "1px solid var(--acc3)" : "1px solid var(--b1)",
+                    background: statusFilter === f.key ? "var(--acc2)" : "transparent",
+                    color: statusFilter === f.key ? "var(--acc)" : "var(--t3)",
+                    cursor: "pointer", fontFamily: "inherit",
+                    display: "flex", alignItems: "center", gap: 6,
+                  }}>
+                    {f.label}
+                    <span style={{
+                      fontSize: 10, padding: "1px 6px", borderRadius: 99,
+                      background: statusFilter === f.key ? "rgba(79,143,255,.2)" : "rgba(255,255,255,.06)",
+                    }}>{statusCounts[f.key]}</span>
+                  </button>
+                ))}
+              </div>
+              <div style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "6px 12px", borderRadius: 8,
+                border: "1px solid var(--b1)", background: "var(--s3)", width: 240,
+              }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: "var(--t3)", flexShrink: 0 }}>
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Buscar cliente, material..."
+                  style={{
+                    background: "transparent", border: "none", outline: "none",
+                    color: "var(--t1)", fontSize: 12, fontFamily: "inherit", width: "100%",
+                  }}
+                />
+                {search && (
+                  <button onClick={() => setSearch("")} style={{
+                    background: "none", border: "none", color: "var(--t3)",
+                    cursor: "pointer", fontSize: 11, padding: 0,
+                  }}>✕</button>
+                )}
+              </div>
+            </div>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead style={{ background: "var(--s2)", borderBottom: "1px solid var(--b1)" }}>
                 <tr>
@@ -154,7 +231,7 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {quotes.map(q => {
+                {filteredQuotes.map(q => {
                   const daysOld = (Date.now() - new Date(q.created_at).getTime()) / 86400000;
                   const isStale = q.status === "draft" && daysOld > 5;
                   return (
