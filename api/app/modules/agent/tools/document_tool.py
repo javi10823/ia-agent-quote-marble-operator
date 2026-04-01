@@ -137,88 +137,100 @@ async def _generate_pdf(pdf_path: Path, data: dict) -> None:
         total_mat = round(total_mat * (1 - discount_pct / 100))
     total_mat_fmt = f"USD {total_mat:,}" if currency == "USD" else f"${total_mat:,}"
 
-    pdf.set_font("Helvetica", "B", 9)
-    pdf.cell(w[0], 5, f"{mat_name} - 20mm")
-    pdf.cell(w[1], 5, f"{mat_m2:.2f}", align="R")
-    pdf.set_font("Helvetica", "", 9)
-    pdf.cell(w[2], 5, price_fmt, align="R")
-    pdf.cell(w[3], 5, price_fmt, align="R", new_x="LMARGIN", new_y="NEXT")
+    # Alternating row helper — continuous counter across ALL content rows
+    row_n = [0]
+    rh = 5  # row height
+    total_w = w[0] + w[1] + w[2] + w[3]
 
-    # Helper: alternating row background
-    row_idx = [0]
-    def alt_fill():
-        """Set fill for alternating rows (odd=gray, even=white)."""
-        if row_idx[0] % 2 == 1:
+    def row_fill():
+        """Returns True and sets gray fill for odd rows."""
+        fill = row_n[0] % 2 == 1
+        if fill:
             pdf.set_fill_color(243, 243, 243)
-            return True
-        return False
+        return fill
 
-    def next_row():
-        row_idx[0] += 1
+    def row_done():
+        row_n[0] += 1
+
+    # Material header row
+    f = row_fill()
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(w[0], rh, f"{mat_name} - 20mm", fill=f)
+    pdf.cell(w[1], rh, f"{mat_m2:.2f}", align="R", fill=f)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(w[2], rh, price_fmt, align="R", fill=f)
+    pdf.cell(w[3], rh, total_mat_fmt, align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
+    row_done()
 
     # Sectors + pieces
     is_first_piece = True
     for sector in sectors:
+        f = row_fill()
         pdf.set_font("Helvetica", "B", 8)
-        pdf.cell(w[0], 5, sector.get("label", ""), new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(total_w, rh, sector.get("label", ""), fill=f, new_x="LMARGIN", new_y="NEXT")
+        row_done()
         for piece in sector.get("pieces", []):
-            fill = alt_fill()
+            f = row_fill()
             pdf.set_font("Helvetica", "", 8)
-            pdf.cell(w[0], 5, piece, fill=fill)
+            pdf.cell(w[0], rh, piece, fill=f)
             if is_first_piece:
                 pdf.set_font("Helvetica", "B", 8)
-                pdf.cell(w[1], 5, "", fill=fill)
-                pdf.cell(w[2], 5, f"TOTAL {currency}", align="R", fill=fill)
-                pdf.cell(w[3], 5, total_mat_fmt, align="R", fill=fill)
+                pdf.cell(w[1], rh, "", fill=f)
+                pdf.cell(w[2], rh, f"TOTAL {currency}", align="R", fill=f)
+                pdf.cell(w[3], rh, total_mat_fmt, align="R", fill=f)
                 is_first_piece = False
             else:
-                pdf.cell(w[1] + w[2] + w[3], 5, "", fill=fill)
-            next_row()
+                pdf.cell(w[1] + w[2] + w[3], rh, "", fill=f)
             pdf.ln()
+            row_done()
 
     # Discount
     if discount_pct:
+        f = row_fill()
         desc_amount = round(round(mat_m2 * mat_price) * discount_pct / 100)
         desc_fmt = f"USD {desc_amount:,}" if currency == "USD" else f"${desc_amount:,}"
         pdf.set_font("Helvetica", "I", 8)
-        pdf.cell(w[0] + w[1], 4, "")
-        pdf.cell(w[2], 4, f"Descuento {discount_pct}%", align="R")
-        pdf.cell(w[3], 4, f"- {desc_fmt}", align="R", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(w[0] + w[1], rh, "", fill=f)
+        pdf.cell(w[2], rh, f"Descuento {discount_pct}%", align="R", fill=f)
+        pdf.cell(w[3], rh, f"- {desc_fmt}", align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
+        row_done()
 
+    # Spacer row
     pdf.ln(3)
 
     # Sinks
-    row_idx[0] = 0  # reset alternation for sinks section
     for sink in sinks:
-        fill = alt_fill()
+        f = row_fill()
         pdf.set_font("Helvetica", "B", 9)
         sp = f"${sink['unit_price']:,}"
         st = f"${sink['unit_price'] * sink['quantity']:,}"
-        pdf.cell(w[0], 5, sink["name"], fill=fill)
+        pdf.cell(w[0], rh, sink["name"], fill=f)
         pdf.set_font("Helvetica", "", 9)
-        pdf.cell(w[1], 5, str(sink["quantity"]), align="R", fill=fill)
-        pdf.cell(w[2], 5, sp, align="R", fill=fill)
-        pdf.cell(w[3], 5, st, align="R", fill=fill, new_x="LMARGIN", new_y="NEXT")
-        next_row()
+        pdf.cell(w[1], rh, str(sink["quantity"]), align="R", fill=f)
+        pdf.cell(w[2], rh, sp, align="R", fill=f)
+        pdf.cell(w[3], rh, st, align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
+        row_done()
 
+    # Spacer
     pdf.ln(2)
 
     # MO header
+    f = row_fill()
     pdf.set_font("Helvetica", "B", 9)
-    pdf.cell(0, 5, "MANO DE OBRA", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(total_w, rh, "MANO DE OBRA", fill=f, new_x="LMARGIN", new_y="NEXT")
+    row_done()
 
     # MO items
-    row_idx[0] = 0  # reset alternation for MO section
     for mo in mo_items:
-        fill = alt_fill()
+        f = row_fill()
         pdf.set_font("Helvetica", "", 9)
         mop = f"${mo['unit_price']:,}"
         mot = f"${round(mo['unit_price'] * mo['quantity']):,}"
-        pdf.cell(w[0], 5, mo["description"], fill=fill)
-        pdf.cell(w[1], 5, str(mo["quantity"]), align="R", fill=fill)
-        pdf.cell(w[2], 5, mop, align="R", fill=fill)
-        pdf.cell(w[3], 5, mot, align="R", fill=fill, new_x="LMARGIN", new_y="NEXT")
-        next_row()
+        pdf.cell(w[0], rh, mo["description"], fill=f)
+        pdf.cell(w[1], rh, str(mo["quantity"]), align="R", fill=f)
+        pdf.cell(w[2], rh, mop, align="R", fill=f)
+        pdf.cell(w[3], rh, mot, align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
+        row_done()
 
     # Total PESOS
     ars_fmt = f"${total_ars:,.0f}".replace(",", ".")
