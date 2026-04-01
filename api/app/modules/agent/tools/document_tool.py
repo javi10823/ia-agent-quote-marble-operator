@@ -393,16 +393,18 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
         ws.cell(22, col).font = bold
         ws.cell(22, col).alignment = right if col >= 4 else left
 
-    # USD/ARS format helpers
-    usd_fmt = '"USD"#.##0'
-    ars_fmt = '"$"#.##0,00'
+    # Number formats — use standard codes, Google Sheets interprets per locale
+    # With es_AR locale: #,##0 shows as 65.147 (dot thousands)
+    usd_fmt = '"USD "#,##0'
+    ars_fmt = '"$"#,##0'
+    qty_fmt = '#,##0.00'
     price_fmt = usd_fmt if currency == "USD" else ars_fmt
 
     # Material row 23
     total_mat_gross = round(mat_m2 * mat_price)
     ws["A23"].value = mat_name; ws["A23"].font = bold
     ws["D23"].value = mat_m2; ws["D23"].font = normal
-    ws["D23"].number_format = "#.##0,00"; ws["D23"].alignment = right
+    ws["D23"].number_format = qty_fmt; ws["D23"].alignment = right
     ws["E23"].value = mat_price; ws["E23"].font = normal; ws["E23"].alignment = right
     ws["E23"].number_format = price_fmt
     ws["F23"].value = total_mat_gross; ws["F23"].font = normal; ws["F23"].alignment = right
@@ -451,7 +453,7 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     r += 1  # spacer
 
     # Argentine locale format for ARS
-    ars_cell_fmt = '"$"#.##0'
+    ars_cell_fmt = '"$"#,##0'
 
     # Sinks
     for i, sink in enumerate(sinks):
@@ -476,7 +478,7 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
         fill = gray_fill if i % 2 == 0 else None
         ws.cell(r, 1).value = mo["description"]; ws.cell(r, 1).font = normal
         ws.cell(r, 4).value = mo["quantity"]; ws.cell(r, 4).font = normal; ws.cell(r, 4).alignment = right
-        ws.cell(r, 4).number_format = "#.##0,00"
+        ws.cell(r, 4).number_format = qty_fmt
         ws.cell(r, 5).value = mo["unit_price"]; ws.cell(r, 5).font = normal
         ws.cell(r, 5).number_format = ars_cell_fmt; ws.cell(r, 5).alignment = right
         ws.cell(r, 6).value = f"=D{r}*E{r}"; ws.cell(r, 6).font = normal
