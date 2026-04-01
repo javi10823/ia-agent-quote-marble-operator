@@ -17,9 +17,8 @@ async def generate_documents(quote_id: str, quote_data: dict) -> dict:
     try:
         client_name = quote_data["client_name"]
         material = quote_data.get("material_name", "")
-        date_str = quote_data.get("date", datetime.now().strftime("%d.%m.%Y"))
-        # Sanitize date: replace / with . to avoid path issues
-        date_str = date_str.replace("/", ".")
+        # Always use server date — never trust Claude's date
+        date_str = datetime.now().strftime("%d.%m.%Y")
         # Sanitize filename: remove any remaining invalid characters
         filename_base = f"{client_name} - {material} - {date_str}"
         filename_base = filename_base.replace("/", "-").replace("\\", "-")
@@ -52,7 +51,7 @@ async def _generate_pdf(pdf_path: Path, data: dict) -> None:
 
     client_name = data.get("client_name", "")
     project = data.get("project", "")
-    date_str = data.get("date", datetime.now().strftime("%d/%m/%Y"))
+    date_str = datetime.now().strftime("%d/%m/%Y")
     delivery = data.get("delivery_days", "")
     mat_name = data.get("material_name", "")
     mat_m2 = data.get("material_m2", 0)
@@ -335,7 +334,7 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
 
     client_name = data["client_name"]
     project = data.get("project", "")
-    date_str = data.get("date", datetime.now().strftime("%d.%m.%Y"))
+    date_str = datetime.now().strftime("%d.%m.%Y")
     delivery = data.get("delivery_days", "40 días desde la toma de medidas")
     mat_name = data.get("material_name", "")
     mat_m2 = data.get("material_m2", 0)
@@ -554,7 +553,7 @@ def _build_html(data: dict) -> str:
     """Build HTML for WeasyPrint PDF generation."""
     client_name = data["client_name"]
     project = data.get("project", "")
-    date_str = data.get("date", datetime.now().strftime("%d.%m.%Y"))
+    date_str = datetime.now().strftime("%d.%m.%Y")
     delivery = data.get("delivery_days", "40 días desde la toma de medidas")
     mat_name = data.get("material_name", "")
     mat_m2 = data.get("material_m2", 0)
