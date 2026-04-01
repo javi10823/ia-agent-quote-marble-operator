@@ -413,45 +413,57 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     ws["F23"].value = total_mat_gross; ws["F23"].font = normal; ws["F23"].alignment = right
     ws["F23"].number_format = price_fmt
 
-    # Pieces starting row 24 (no sector headers — just piece measurements)
-    r = 24
-    piece_idx = 0
-    for s_idx, sector in enumerate(sectors):
-        for p_idx, piece in enumerate(sector.get("pieces", [])):
-            # Alternating fill
-            fill = gray_fill if piece_idx % 2 == 0 else None
-            ws.cell(r, 1).value = piece
-            ws.cell(r, 1).font = small
-            if fill:
-                for c in range(1, 7):
-                    ws.cell(r, c).fill = fill
+    # Collect all pieces flat (skip sector labels — they go as piece descriptions)
+    all_pieces = []
+    for sector in sectors:
+        for piece in sector.get("pieces", []):
+            all_pieces.append(piece)
 
-            # First piece row: DESCUENTO (if any) and TOTAL USD
-            if piece_idx == 0 and discount_pct:
+    # Calculate net total
+    total_mat_net = total_mat_gross
+    discount_amount = 0
+    if discount_pct:
+        discount_amount = round(total_mat_gross * discount_pct / 100)
+        total_mat_net = total_mat_gross - discount_amount
+
+    # Pieces starting row 24 — alternating fill, Total on first piece only
+    r = 24
+    total_shown = False
+    for idx, piece in enumerate(all_pieces):
+        # Alternating fill
+        fill = gray_fill if idx % 2 == 0 else None
+        ws.cell(r, 1).value = piece
+        ws.cell(r, 1).font = small
+        if fill:
+            for c in range(1, 7):
+                ws.cell(r, c).fill = fill
+
+        # First piece: show TOTAL (and DESCUENTO if applicable)
+        if not total_shown:
+            if discount_pct:
                 ws.cell(r, 5).value = f"DESCUENTO {int(discount_pct)} %"
                 ws.cell(r, 5).font = Font(name="Calibri", italic=True, size=9)
                 ws.cell(r, 5).alignment = right
-                discount_amount = round(total_mat_gross * discount_pct / 100)
                 ws.cell(r, 6).value = discount_amount
                 ws.cell(r, 6).font = normal; ws.cell(r, 6).alignment = right
                 ws.cell(r, 6).number_format = price_fmt
                 r += 1
-                piece_idx += 1
-                # Next row: Total USD
-                ws.cell(r, 1).value = piece if p_idx == 0 else ""
+                # Next row for Total
+                ws.cell(r, 1).value = all_pieces[1] if len(all_pieces) > 1 else ""
                 ws.cell(r, 1).font = small
+                fill2 = gray_fill if (idx + 1) % 2 == 0 else None
+                if fill2:
+                    for c in range(1, 7):
+                        ws.cell(r, c).fill = fill2
 
-            if piece_idx <= 1:
-                # Show Total on first or second piece row
-                total_mat_net = total_mat_gross - round(total_mat_gross * discount_pct / 100) if discount_pct else total_mat_gross
-                ws.cell(r, 5).value = f"Total {currency}"
-                ws.cell(r, 5).font = bold; ws.cell(r, 5).alignment = right
-                ws.cell(r, 6).value = total_mat_net
-                ws.cell(r, 6).font = bold; ws.cell(r, 6).alignment = right
-                ws.cell(r, 6).number_format = price_fmt
+            ws.cell(r, 5).value = f"Total {currency}"
+            ws.cell(r, 5).font = bold; ws.cell(r, 5).alignment = right
+            ws.cell(r, 6).value = total_mat_net
+            ws.cell(r, 6).font = bold; ws.cell(r, 6).alignment = right
+            ws.cell(r, 6).number_format = price_fmt
+            total_shown = True
 
-            r += 1
-            piece_idx += 1
+        r += 1
 
     r += 1  # spacer
 
