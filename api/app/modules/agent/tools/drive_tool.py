@@ -167,6 +167,13 @@ async def upload_to_drive(
                     ).execute()
                     sheet_id = sheet_meta["sheets"][0]["properties"]["sheetId"]
 
+                    # Get total rows with data
+                    sheet_data = sheets_service.spreadsheets().values().get(
+                        spreadsheetId=file_id,
+                        range="A1:A100",
+                    ).execute()
+                    total_rows = len(sheet_data.get("values", []))
+
                     requests = [
                         # Set locale
                         {
@@ -175,13 +182,14 @@ async def upload_to_drive(
                                 "fields": "locale",
                             }
                         },
-                        # Add alternating row colors (banding)
+                        # Add alternating row colors from row 23 to last data row
                         {
                             "addBanding": {
                                 "bandedRange": {
                                     "range": {
                                         "sheetId": sheet_id,
-                                        "startRowIndex": 22,  # Row 23 (material header)
+                                        "startRowIndex": 22,  # Row 23 (0-indexed)
+                                        "endRowIndex": min(total_rows, 60),
                                         "startColumnIndex": 0,
                                         "endColumnIndex": 6,
                                     },
@@ -190,7 +198,7 @@ async def upload_to_drive(
                                             "red": 1.0, "green": 1.0, "blue": 1.0,
                                         },
                                         "secondBandColor": {
-                                            "red": 0.953, "green": 0.953, "blue": 0.953,
+                                            "red": 0.937, "green": 0.937, "blue": 0.937,
                                         },
                                     },
                                 }
