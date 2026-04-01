@@ -11,6 +11,20 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 EXCEL_REFERENCE = TEMPLATES_DIR / "excel" / "quote-template-reference.xlsx"
 
+DELIVERY_SUFFIX = "días desde la toma de medidas"
+
+
+def _normalize_delivery(raw: str) -> str:
+    """Ensure delivery text is complete, not just a number."""
+    if not raw:
+        return ""
+    raw = raw.strip()
+    # If it's just a number like "30", add the full text
+    if raw.isdigit():
+        return f"{raw} {DELIVERY_SUFFIX}"
+    # If it has "dias" or "días" but not the full phrase, leave as is
+    return raw
+
 
 async def generate_documents(quote_id: str, quote_data: dict) -> dict:
     """Generate PDF and Excel for a quote."""
@@ -52,7 +66,7 @@ async def _generate_pdf(pdf_path: Path, data: dict) -> None:
     client_name = data.get("client_name", "")
     project = data.get("project", "")
     date_str = datetime.now().strftime("%d/%m/%Y")
-    delivery = data.get("delivery_days", "")
+    delivery = _normalize_delivery(data.get("delivery_days", ""))
     mat_name = data.get("material_name", "")
     mat_m2 = data.get("material_m2", 0)
     mat_price = data.get("material_price_unit", 0)
@@ -335,7 +349,7 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     client_name = data["client_name"]
     project = data.get("project", "")
     date_str = datetime.now().strftime("%d.%m.%Y")
-    delivery = data.get("delivery_days", "40 días desde la toma de medidas")
+    delivery = _normalize_delivery(data.get("delivery_days", ""))
     mat_name = data.get("material_name", "")
     mat_m2 = data.get("material_m2", 0)
     mat_price = data.get("material_price_unit", 0)
@@ -554,7 +568,7 @@ def _build_html(data: dict) -> str:
     client_name = data["client_name"]
     project = data.get("project", "")
     date_str = datetime.now().strftime("%d.%m.%Y")
-    delivery = data.get("delivery_days", "40 días desde la toma de medidas")
+    delivery = _normalize_delivery(data.get("delivery_days", ""))
     mat_name = data.get("material_name", "")
     mat_m2 = data.get("material_m2", 0)
     mat_price = data.get("material_price_unit", 0)
