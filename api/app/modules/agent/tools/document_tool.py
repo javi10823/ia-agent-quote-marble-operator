@@ -386,77 +386,52 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
         ws["F22"].value = total_mat_net
         ws["F22"].number_format = ars_fmt
 
-    # Clear ONLY dynamic data rows (23-34), NOT the footer/conditions (35+)
+    # ── ONLY replace .value — NEVER touch .font, .fill, .alignment, .border ──
+    # The template has all formatting correct. We just swap the data.
+
+    # Clear only the values in dynamic rows (23-34)
     for row in range(23, 35):
         for col in range(1, 7):
             ws.cell(row, col).value = None
 
-    # Pieces (row 23+)
+    # Pieces
     all_pieces = []
     for sector in sectors:
         for piece in sector.get("pieces", []):
             all_pieces.append(piece)
 
-    r = 23
-    for idx, piece in enumerate(all_pieces):
-        ws.cell(r, 1).value = piece
-        ws.cell(r, 1).font = small
-        if idx == 0:
-            if discount_pct:
-                ws.cell(r, 5).value = f"DESCUENTO {int(discount_pct)} %"
-                ws.cell(r, 5).font = Font(name="Calibri", italic=True, size=9)
-                ws.cell(r, 5).alignment = right_align
-                disc = round(total_mat * discount_pct / 100)
-                ws.cell(r, 6).value = f"USD{disc}" if currency == "USD" else disc
-                if currency != "USD":
-                    ws.cell(r, 6).number_format = ars_fmt
-                r += 1
-                if len(all_pieces) > 1:
-                    ws.cell(r, 1).value = all_pieces[1]
-                    ws.cell(r, 1).font = small
-            ws.cell(r, 5).value = f"TOTAL {currency}"
-            ws.cell(r, 5).font = bold
-            ws.cell(r, 5).alignment = right_align
-            if currency == "USD":
-                ws.cell(r, 6).value = f"USD{total_mat_net}"
-            else:
-                ws.cell(r, 6).value = total_mat_net
-                ws.cell(r, 6).number_format = ars_fmt
-            ws.cell(r, 6).font = bold
-            ws.cell(r, 6).alignment = right_align
-        r += 1
+    # Row 23: first piece + TOTAL
+    if len(all_pieces) > 0:
+        ws.cell(23, 1).value = all_pieces[0]
+    # Row 24: second piece + TOTAL USD (template has TOTAL in E24)
+    if len(all_pieces) > 1:
+        ws.cell(24, 1).value = all_pieces[1]
+    ws.cell(24, 5).value = f"TOTAL {currency}"
+    if currency == "USD":
+        ws.cell(24, 6).value = f"USD{total_mat_net}"
+    else:
+        ws.cell(24, 6).value = total_mat_net
+    # Row 25+: remaining pieces
+    for i, piece in enumerate(all_pieces[2:], start=25):
+        ws.cell(i, 1).value = piece
 
-    r += 1  # spacer
+    # MO items — template rows 27 (header), 28-31 (items), 32 (total)
+    ws.cell(27, 1).value = "MANO DE OBRA"
+    for i, mo in enumerate(mo_items):
+        row = 28 + i
+        if row > 31:
+            break  # Template only has 4 MO rows
+        ws.cell(row, 1).value = mo["description"]
+        ws.cell(row, 4).value = mo["quantity"]
+        ws.cell(row, 5).value = mo["unit_price"]
+        ws.cell(row, 6).value = f"=D{row}*E{row}"
 
-    # MO
-    ws.cell(r, 1).value = "MANO DE OBRA"
-    ws.cell(r, 1).font = bold
-    r += 1
-    mo_start = r
-    for mo in mo_items:
-        ws.cell(r, 1).value = mo["description"]
-        ws.cell(r, 1).font = normal
-        ws.cell(r, 4).value = mo["quantity"]
-        ws.cell(r, 4).number_format = qty_fmt
-        ws.cell(r, 4).alignment = right_align
-        ws.cell(r, 5).value = mo["unit_price"]
-        ws.cell(r, 5).number_format = ars_fmt
-        ws.cell(r, 5).alignment = right_align
-        ws.cell(r, 6).value = f"=D{r}*E{r}"
-        ws.cell(r, 6).number_format = ars_fmt
-        ws.cell(r, 6).alignment = right_align
-        r += 1
+    # Total PESOS — row 32
+    mo_end = min(28 + len(mo_items) - 1, 31)
+    ws.cell(32, 5).value = "Total PESOS"
+    ws.cell(32, 6).value = f"=SUM(F28:F{mo_end})"
 
-    # Total PESOS
-    ws.cell(r, 5).value = "Total PESOS"
-    ws.cell(r, 5).font = bold
-    ws.cell(r, 5).alignment = right_align
-    ws.cell(r, 6).value = f"=SUM(F{mo_start}:F{r-1})"
-    ws.cell(r, 6).font = bold
-    ws.cell(r, 6).number_format = ars_fmt
-    ws.cell(r, 6).alignment = right_align
-
-    # Grand total — fixed at row 35 (template position)
+    # Grand total — row 35
     grand = _format_grand_total(total_ars, total_usd, currency)
     ws.cell(35, 1).value = grand
     ws.merge_cells("A35:F35")
