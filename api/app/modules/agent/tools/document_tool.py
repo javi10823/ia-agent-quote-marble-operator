@@ -30,9 +30,11 @@ async def generate_documents(quote_id: str, quote_data: dict) -> dict:
         pdf_path = quote_dir / f"{filename_base}.pdf"
         excel_path = quote_dir / f"{filename_base}.xlsx"
 
-        # Generate Excel first, then convert to PDF via LibreOffice
-        await _generate_excel(excel_path, quote_data)
-        await _generate_pdf_from_excel(excel_path, pdf_path)
+        # Generate both in parallel
+        await asyncio.gather(
+            _generate_excel(excel_path, quote_data),
+            _generate_pdf(pdf_path, quote_data),
+        )
 
         return {
             "ok": True,
@@ -44,31 +46,211 @@ async def generate_documents(quote_id: str, quote_data: dict) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def _generate_pdf_from_excel(excel_path: Path, pdf_path: Path) -> None:
-    """Convert Excel to PDF using LibreOffice headless. PDF is identical to Excel."""
-    import subprocess
-    import logging
+async def _generate_pdf(pdf_path: Path, data: dict) -> None:
+    """Generate clean PDF using fpdf2 — matches Excel content."""
+    from fpdf import FPDF
 
-    try:
-        result = subprocess.run(
-            [
-                "libreoffice", "--headless", "--calc",
-                "--convert-to", "pdf",
-                "--outdir", str(pdf_path.parent),
-                str(excel_path),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode != 0:
-            logging.warning(f"LibreOffice PDF conversion failed: {result.stderr}")
-        else:
-            logging.info(f"PDF generated from Excel: {pdf_path}")
-    except FileNotFoundError:
-        logging.warning("LibreOffice not installed — PDF not generated (Excel only)")
-    except subprocess.TimeoutExpired:
-        logging.warning("LibreOffice PDF conversion timed out")
+    client_name = data.get("client_name", "")
+    project = data.get("project", "")
+    date_str = data.get("date", datetime.now().strftime("%d/%m/%Y"))
+    delivery = data.get("delivery_days", "")
+    mat_name = data.get("material_name", "")
+    mat_m2 = data.get("material_m2", 0)
+    mat_price = data.get("material_price_unit", 0)
+    currency = data.get("material_currency", "USD")
+    discount_pct = data.get("discount_pct", 0)
+    sectors = data.get("sectors", [])
+    sinks = data.get("sinks", [])
+    mo_items = data.get("mo_items", [])
+    total_ars = data.get("total_ars", 0)
+    total_usd = data.get("total_usd", 0)
+
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    # Top bar
+    pdf.set_fill_color(26, 47, 94)
+    pdf.rect(0, 0, 210, 4, "F")
+
+    # Logo text
+    pdf.set_y(12)
+    pdf.set_font("Helvetica", "B", 28)
+    pdf.cell(0, 12, "D'ANGELO", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 8)
+    pdf.cell(0, 4, "MARMOLERIA", new_x="LMARGIN", new_y="NEXT")
+
+    # Contact
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.cell(0, 4, "SAN NICOLAS 1160", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 4, "341-3082996", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 4, "marmoleriadangelo@gmail.com", new_x="LMARGIN", new_y="NEXT")
+
+    # Title
+    pdf.ln(5)
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.cell(0, 10, "Presupuesto", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(0, 5, f"Fecha: {date_str}", new_x="LMARGIN", new_y="NEXT")
+
+    # Client grid
+    pdf.ln(3)
+    col_w = 95
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(col_w, 5, "Cliente:")
+    pdf.cell(col_w, 5, "Forma de pago", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(col_w, 5, client_name)
+    pdf.cell(col_w, 5, "Contado", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(col_w, 5, "Proyecto")
+    pdf.cell(col_w, 5, "Fecha de entrega", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(col_w, 5, project)
+    pdf.cell(col_w, 5, str(delivery), new_x="LMARGIN", new_y="NEXT")
+
+    # Separator
+    pdf.ln(2)
+    pdf.set_draw_color(26, 26, 26)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(3)
+
+    # Table header
+    w = [92, 22, 38, 38]
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(w[0], 6, "Descripcion")
+    pdf.cell(w[1], 6, "Cantidad", align="R")
+    pdf.cell(w[2], 6, "Precio unitario", align="R")
+    pdf.cell(w[3], 6, "Precio total", align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(2)
+
+    # Material row
+    price_fmt = f"USD {mat_price:,}" if currency == "USD" else f"${mat_price:,}"
+    total_mat = round(mat_m2 * mat_price)
+    if discount_pct:
+        total_mat = round(total_mat * (1 - discount_pct / 100))
+    total_mat_fmt = f"USD {total_mat:,}" if currency == "USD" else f"${total_mat:,}"
+
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(w[0], 5, f"{mat_name} - 20mm")
+    pdf.cell(w[1], 5, f"{mat_m2:.2f}", align="R")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(w[2], 5, price_fmt, align="R")
+    pdf.cell(w[3], 5, price_fmt, align="R", new_x="LMARGIN", new_y="NEXT")
+
+    # Sectors + pieces
+    is_first_piece = True
+    for sector in sectors:
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.cell(w[0], 5, sector.get("label", ""), new_x="LMARGIN", new_y="NEXT")
+        for piece in sector.get("pieces", []):
+            pdf.set_font("Helvetica", "", 8)
+            pdf.cell(w[0], 4, piece)
+            if is_first_piece:
+                pdf.set_font("Helvetica", "B", 8)
+                pdf.cell(w[1], 4, "")
+                pdf.cell(w[2], 4, f"TOTAL {currency}", align="R")
+                pdf.cell(w[3], 4, total_mat_fmt, align="R")
+                is_first_piece = False
+            pdf.ln()
+
+    # Discount
+    if discount_pct:
+        desc_amount = round(round(mat_m2 * mat_price) * discount_pct / 100)
+        desc_fmt = f"USD {desc_amount:,}" if currency == "USD" else f"${desc_amount:,}"
+        pdf.set_font("Helvetica", "I", 8)
+        pdf.cell(w[0] + w[1], 4, "")
+        pdf.cell(w[2], 4, f"Descuento {discount_pct}%", align="R")
+        pdf.cell(w[3], 4, f"- {desc_fmt}", align="R", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(3)
+
+    # Sinks
+    for sink in sinks:
+        pdf.set_font("Helvetica", "B", 9)
+        sp = f"${sink['unit_price']:,}"
+        st = f"${sink['unit_price'] * sink['quantity']:,}"
+        pdf.cell(w[0], 5, sink["name"])
+        pdf.set_font("Helvetica", "", 9)
+        pdf.cell(w[1], 5, str(sink["quantity"]), align="R")
+        pdf.cell(w[2], 5, sp, align="R")
+        pdf.cell(w[3], 5, st, align="R", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(2)
+
+    # MO header
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(0, 5, "MANO DE OBRA", new_x="LMARGIN", new_y="NEXT")
+
+    # MO items
+    for mo in mo_items:
+        pdf.set_font("Helvetica", "", 9)
+        mop = f"${mo['unit_price']:,}"
+        mot = f"${round(mo['unit_price'] * mo['quantity']):,}"
+        pdf.cell(w[0], 5, mo["description"])
+        pdf.cell(w[1], 5, str(mo["quantity"]), align="R")
+        pdf.cell(w[2], 5, mop, align="R")
+        pdf.cell(w[3], 5, mot, align="R", new_x="LMARGIN", new_y="NEXT")
+
+    # Total PESOS
+    ars_fmt = f"${total_ars:,.0f}".replace(",", ".")
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(w[0] + w[1], 5, "")
+    pdf.cell(w[2], 5, "Total PESOS", align="R")
+    pdf.cell(w[3], 5, ars_fmt, align="R", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(5)
+
+    # Grand total box
+    grand = _format_grand_total(total_ars, total_usd, currency)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_draw_color(26, 26, 26)
+    y_box = pdf.get_y()
+    pdf.rect(10, y_box, 190, 8)
+    pdf.set_xy(10, y_box + 1.5)
+    pdf.cell(190, 5, grand, align="C", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(3)
+
+    # Footer note
+    pdf.set_font("Helvetica", "BI", 8)
+    pdf.cell(0, 4, "No se suben mesadas que no entren en ascensor", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(3)
+
+    # Conditions
+    pdf.set_font("Helvetica", "", 7)
+    pdf.cell(0, 3, "*COTIZACION OFICIAL: dolar venta banco nacion. Los materiales expresados en dolares se pagan en pesos segun la cotizacion del dia.", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "B", 7)
+    pdf.cell(0, 3, "CONDICIONES", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 7)
+    for line in [
+        "*PRESUPUESTO SUJETO A VARIACION DE PRECIO",
+        "*MATERIALES IMPORTADOS SEGUN COTIZACION DOLAR VENTA BANCO NACION AL MOMENTO DE LA CONFIRMACION",
+        "*LA TOMA DE MEDIDAS NO PODRA SUPERAR LOS 30 DIAS DESDE LA CONFIRMACION, CASO CONTRARIO EL 20% RESTANTE SE ACTUALIZARA SEGUN INDICE LA CONSTRUCCION",
+        "*PRESUPUESTO DEFINITIVO SEGUN MEDIDAS TOMADAS EN OBRA",
+        "*LOS PRECIOS INCLUYEN IVA",
+    ]:
+        pdf.cell(0, 3, line, new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "B", 7)
+    pdf.cell(0, 3, "FORMAS DE PAGO", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 7)
+    for line in [
+        "*Materiales Importados: 80% sena, 20% restante contra entrega (cotizacion dolar venta BCO NACION).",
+        "*Materiales Nacionales: 80% sena, 20% restante contra entrega.",
+        "Pago contado / transferencia / debito / credito / cheques 15 dias para importados y 30 dias para nacionales",
+    ]:
+        pdf.cell(0, 3, line, new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(1)
+    pdf.cell(0, 3, "TARJETAS DE CREDITO CONSULTAR PLANES", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.output(str(pdf_path))
 
 
 async def _generate_excel(output_path: Path, data: dict) -> None:

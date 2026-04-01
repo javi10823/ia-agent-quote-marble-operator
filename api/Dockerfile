@@ -1,13 +1,12 @@
 FROM python:3.12-slim
 
-# System dependencies for pdf2image, Pillow, and LibreOffice (Excel → PDF)
+# System dependencies for pdf2image and Pillow
 RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     libffi-dev \
     libjpeg-dev \
     libpng-dev \
     fonts-liberation \
-    libreoffice-calc \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

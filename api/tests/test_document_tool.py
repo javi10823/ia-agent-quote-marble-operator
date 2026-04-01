@@ -11,15 +11,15 @@ from app.modules.agent.tools.document_tool import (
     _format_grand_total,
 )
 
-# LibreOffice needed for PDF generation — skip PDF tests if not available
+# fpdf2 is pure Python — PDF tests always run
 try:
-    subprocess.run(["libreoffice", "--version"], capture_output=True, timeout=5)
-    HAS_LIBREOFFICE = True
-except (FileNotFoundError, subprocess.TimeoutExpired):
-    HAS_LIBREOFFICE = False
+    from fpdf import FPDF
+    HAS_FPDF = True
+except ImportError:
+    HAS_FPDF = False
 
-requires_libreoffice = pytest.mark.skipif(
-    not HAS_LIBREOFFICE, reason="LibreOffice not installed"
+requires_pdf = pytest.mark.skipif(
+    not HAS_FPDF, reason="fpdf2 not installed"
 )
 
 
@@ -85,7 +85,7 @@ class TestBuildHTML:
 # ── generate_documents — file creation ───────────────────────────────────────
 
 class TestGenerateDocuments:
-    @requires_libreoffice
+    @requires_pdf
     @pytest.mark.asyncio
     async def test_creates_pdf_and_excel(self, sample_quote_data):
         quote_id = "test-gen-001"
@@ -103,7 +103,7 @@ class TestGenerateDocuments:
         assert len(pdf_files) == 1
         assert len(xlsx_files) == 1
 
-    @requires_libreoffice
+    @requires_pdf
     @pytest.mark.asyncio
     async def test_filename_sanitization(self, sample_quote_data):
         """Dates with / should be sanitized to . in filenames."""

@@ -11,7 +11,10 @@ alembic==1.14.0
 # Anthropic
 anthropic==0.40.0
 
-# Excel (PDF generated from Excel via LibreOffice headless)
+# PDF + Excel
+fpdf2==2.8.1
+
+# Excel
 openpyxl==3.1.5
 
 # Image processing (plan rasterization)
