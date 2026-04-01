@@ -2,7 +2,8 @@
 
 import uuid
 import logging
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, UploadFile, File
+from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -141,3 +142,67 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
         ))
 
     return QuoteResponse(ok=True, quotes=results)
+
+
+@router.post("/v1/quote/{quote_id}/files")
+async def upload_source_files(
+    quote_id: str,
+    files: List[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload source files (plans, images) to an existing quote."""
+    from sqlalchemy import select as sel
+    from pathlib import Path
+    from datetime import datetime
+
+    ALLOWED = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
+    MAX_SIZE = 10 * 1024 * 1024
+    MAX_COUNT = 5
+
+    result = await db.execute(sel(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        return {"ok": False, "error": "Quote not found"}
+
+    if len(files) > MAX_COUNT:
+        return {"ok": False, "error": f"Maximum {MAX_COUNT} files per request"}
+
+    saved = []
+    errors = []
+
+    for f in files:
+        if not f.filename:
+            continue
+        ct = f.content_type or ""
+        if ct not in ALLOWED:
+            errors.append(f"'{f.filename}' — unsupported type ({ct})")
+            continue
+        data = await f.read()
+        if len(data) > MAX_SIZE:
+            errors.append(f"'{f.filename}' — exceeds 10MB")
+            continue
+
+        # Save to disk
+        sources_dir = Path(__file__).parent.parent.parent.parent / "output" / quote_id / "sources"
+        sources_dir.mkdir(parents=True, exist_ok=True)
+        (sources_dir / f.filename).write_bytes(data)
+
+        saved.append({
+            "filename": f.filename,
+            "type": ct,
+            "size": len(data),
+            "url": f"/files/{quote_id}/sources/{f.filename}",
+            "uploaded_at": datetime.now().isoformat(),
+        })
+
+    # Update DB
+    existing = quote.source_files or []
+    for s in saved:
+        if not any(e["filename"] == s["filename"] for e in existing):
+            existing.append(s)
+
+    from sqlalchemy import update as upd
+    await db.execute(upd(Quote).where(Quote.id == quote_id).values(source_files=existing))
+    await db.commit()
+
+    return {"ok": True, "saved": len(saved), "errors": errors, "files": existing}

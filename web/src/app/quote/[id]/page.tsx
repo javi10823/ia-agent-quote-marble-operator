@@ -85,8 +85,8 @@ export default function QuotePage() {
   const send = useCallback(async () => {
     if ((!input.trim() && attachedFiles.length === 0) || sending) return;
     const text = input.trim();
-    const file = attachedFiles[0] || null; // Backend takes first file for now
-    const fileNames = attachedFiles.map(f => f.name).join(", ");
+    const filesToSend = [...attachedFiles];
+    const fileNames = filesToSend.map(f => f.name).join(", ");
     const uid = `u-${Date.now()}`;
     const aid = `a-${Date.now()}`;
 
@@ -100,7 +100,7 @@ export default function QuotePage() {
     try {
       let acc = "";
       let gotDone = false;
-      for await (const chunk of streamChat(quoteId, text, file || undefined)) {
+      for await (const chunk of streamChat(quoteId, text, filesToSend.length > 0 ? filesToSend : undefined)) {
         if (chunk.type === "text") {
           acc += chunk.content;
           setActionText("");

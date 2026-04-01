@@ -1,11 +1,16 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import json
 import uuid
+
+# File upload constants
+ALLOWED_MIME_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_FILES = 5
 
 from app.core.database import get_db
 from app.models.quote import Quote, QuoteStatus
@@ -123,7 +128,7 @@ async def create_quote(db: AsyncSession = Depends(get_db)):
 async def chat(
     quote_id: str,
     message: str = Form(...),
-    plan_file: Optional[UploadFile] = File(None),
+    plan_files: List[UploadFile] = File([]),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Quote).where(Quote.id == quote_id))
@@ -131,39 +136,61 @@ async def chat(
     if not quote:
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
 
-    # Read plan file if provided + save to temp for read_plan tool + persist as source file
-    plan_bytes = None
-    plan_filename = None
-    if plan_file:
-        plan_bytes = await plan_file.read()
-        plan_filename = plan_file.filename
-        # Save to temp so read_plan tool can access it from disk
-        from app.modules.agent.tools.plan_tool import save_plan_to_temp
-        save_plan_to_temp(plan_filename, plan_bytes)
+    # Validate and read uploaded files
+    from pathlib import Path
+    from datetime import datetime
+    from app.modules.agent.tools.plan_tool import save_plan_to_temp
 
-        # Persist source file for download from quote detail
-        from pathlib import Path
-        from datetime import datetime
+    validated_files: list[tuple[bytes, str]] = []  # (bytes, filename)
+    errors: list[str] = []
+
+    if len(plan_files) > MAX_FILES:
+        raise HTTPException(status_code=400, detail=f"Máximo {MAX_FILES} archivos por mensaje")
+
+    for pf in plan_files:
+        if not pf.filename:
+            continue
+        # Validate MIME type
+        content_type = pf.content_type or ""
+        if not any(content_type.startswith(t.split("/")[0]) and t.split("/")[1] in content_type for t in ALLOWED_MIME_TYPES) and content_type not in ALLOWED_MIME_TYPES:
+            errors.append(f"'{pf.filename}' — tipo no soportado ({content_type}). Solo PDF, JPG, PNG, WEBP.")
+            continue
+        # Read and validate size
+        file_bytes = await pf.read()
+        if len(file_bytes) > MAX_FILE_SIZE:
+            errors.append(f"'{pf.filename}' — excede 10MB ({len(file_bytes) / 1048576:.1f}MB)")
+            continue
+        validated_files.append((file_bytes, pf.filename))
+
+        # Save to temp for read_plan tool
+        save_plan_to_temp(pf.filename, file_bytes)
+
+        # Persist source file for download
         sources_dir = Path(__file__).parent.parent.parent.parent / "output" / quote_id / "sources"
         sources_dir.mkdir(parents=True, exist_ok=True)
-        source_path = sources_dir / plan_filename
-        source_path.write_bytes(plan_bytes)
+        (sources_dir / pf.filename).write_bytes(file_bytes)
 
         # Update DB with source file metadata
         existing_files = quote.source_files or []
-        # Avoid duplicates by filename
-        if not any(f["filename"] == plan_filename for f in existing_files):
+        if not any(f["filename"] == pf.filename for f in existing_files):
             existing_files.append({
-                "filename": plan_filename,
-                "type": plan_file.content_type or "application/octet-stream",
-                "size": len(plan_bytes),
-                "url": f"/files/{quote_id}/sources/{plan_filename}",
+                "filename": pf.filename,
+                "type": content_type,
+                "size": len(file_bytes),
+                "url": f"/files/{quote_id}/sources/{pf.filename}",
                 "uploaded_at": datetime.now().isoformat(),
             })
             await db.execute(
                 update(Quote).where(Quote.id == quote_id).values(source_files=existing_files)
             )
             await db.commit()
+
+    if errors:
+        raise HTTPException(status_code=400, detail=" | ".join(errors))
+
+    # Use first file for Claude (primary plan) — all saved as source_files
+    plan_bytes = validated_files[0][0] if validated_files else None
+    plan_filename = validated_files[0][1] if validated_files else None
 
     async def event_stream():
         full_response = ""

@@ -88,12 +88,14 @@ export interface ChatChunk {
 export async function* streamChat(
   quoteId: string,
   message: string,
-  planFile?: File
+  files?: File[]
 ): AsyncGenerator<ChatChunk> {
   const formData = new FormData();
   formData.append("message", message);
-  if (planFile) {
-    formData.append("plan_file", planFile);
+  if (files) {
+    for (const f of files) {
+      formData.append("plan_files", f);
+    }
   }
 
   const res = await fetch(`${API_BASE}/api/quotes/${quoteId}/chat`, {
@@ -102,6 +104,16 @@ export async function* streamChat(
   });
 
   if (!res.ok) {
+    if (res.status === 400) {
+      // Backend validation error — show the detail message
+      try {
+        const err = await res.json();
+        throw new Error(err.detail || "Error en los archivos adjuntos.");
+      } catch (e) {
+        if (e instanceof Error && e.message !== "Error en los archivos adjuntos.") throw e;
+        throw new Error("Error en los archivos adjuntos.");
+      }
+    }
     if (res.status === 502 || res.status === 503 || res.status === 504) {
       throw new Error("El servidor está reiniciando. Esperá unos segundos e intentá de nuevo.");
     }

@@ -352,7 +352,7 @@ class AgentService:
                     },
                 })
             else:
-                media_type = "image/jpeg" if ext in [".jpg", ".jpeg"] else "image/png"
+                media_type = "image/jpeg" if ext in [".jpg", ".jpeg"] else "image/webp" if ext == ".webp" else "image/png"
                 content.append({
                     "type": "image",
                     "source": {
