@@ -10,20 +10,30 @@ from app.core.config import settings
 BASE_DIR = Path(__file__).parent.parent.parent.parent.parent
 OUTPUT_DIR = BASE_DIR / "output"
 
-SCOPES = ["https://www.googleapis.com/auth/drive"]
+SCOPES = [
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/spreadsheets",
+]
 
 
-def _get_drive_service():
+def _get_credentials():
     import os, base64, json as json_mod
     b64 = os.environ.get("SERVICE_ACCOUNT_BASE64")
     if b64:
         info = json_mod.loads(base64.b64decode(b64).decode("utf-8"))
-        creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+        return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
     else:
-        creds = service_account.Credentials.from_service_account_file(
+        return service_account.Credentials.from_service_account_file(
             settings.GOOGLE_SERVICE_ACCOUNT_FILE, scopes=SCOPES,
         )
-    return build("drive", "v3", credentials=creds)
+
+
+def _get_drive_service():
+    return build("drive", "v3", credentials=_get_credentials())
+
+
+def _get_sheets_service():
+    return build("sheets", "v4", credentials=_get_credentials())
 
 
 def _get_or_create_folder(service, name: str, parent_id: str) -> str:
@@ -129,7 +139,12 @@ async def upload_to_drive(
                 except Exception as e:
                     logging.warning(f"Could not delete existing file {f['id']}: {e}")
 
-            file_metadata = {"name": file_path.name, "parents": [month_id]}
+            file_metadata = {
+                "name": file_path.name,
+                "parents": [month_id],
+                # Convert xlsx to Google Sheets native format
+                "mimeType": "application/vnd.google-apps.spreadsheet",
+            }
             media = MediaFileUpload(str(file_path), mimetype=mime, resumable=True)
             uploaded = service.files().create(
                 body=file_metadata,
@@ -138,6 +153,27 @@ async def upload_to_drive(
                 supportsAllDrives=True,
             ).execute()
             logging.info(f"Uploaded to Drive: {file_path.name} → {uploaded.get('webViewLink')}")
+
+            # Set Argentine locale on the Google Sheets spreadsheet
+            file_id = uploaded.get("id")
+            if file_id:
+                try:
+                    sheets_service = _get_sheets_service()
+                    sheets_service.spreadsheets().batchUpdate(
+                        spreadsheetId=file_id,
+                        body={
+                            "requests": [{
+                                "updateSpreadsheetProperties": {
+                                    "properties": {"locale": "es_AR"},
+                                    "fields": "locale",
+                                }
+                            }]
+                        },
+                    ).execute()
+                    logging.info(f"Set locale es_AR on spreadsheet {file_id}")
+                except Exception as e:
+                    logging.warning(f"Could not set locale on spreadsheet: {e}")
+
             uploaded_urls.append(uploaded.get("webViewLink"))
 
         # Use last URL (Excel) as the main drive link — operator prefers Excel
