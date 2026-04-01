@@ -196,7 +196,7 @@ export default function DashboardPage() {
                 <tr>
                   {["Cliente", "Material", "Importe", "Estado", "Fecha", "Archivos", ""].map((h, i) => (
                     <th key={h} style={{
-                      textAlign: i >= 2 ? "right" : "left",
+                      textAlign: h === "Estado" ? "center" : i >= 2 ? "right" : "left",
                       padding: "10px 18px",
                       fontSize: 10, fontWeight: 500, color: "var(--t3)",
                       textTransform: "uppercase", letterSpacing: "0.09em",
@@ -245,7 +245,7 @@ export default function DashboardPage() {
                           <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 1 }}>USD {q.total_usd.toLocaleString()}</div>
                         )}
                       </td>
-                      <td style={{ padding: "13px 18px" }}>
+                      <td style={{ padding: "13px 18px", textAlign: "center" }}>
                         <button
                           onClick={(e) => toggleStatus(e, q.id, q.status)}
                           title={STATUS_NEXT[q.status] ? `Cambiar a ${STATUS_LABEL[STATUS_NEXT[q.status]!]}` : "Estado final"}
