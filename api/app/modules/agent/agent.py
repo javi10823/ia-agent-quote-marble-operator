@@ -537,7 +537,9 @@ class AgentService:
         elif name == "read_plan":
             return await read_plan(inputs["filename"], inputs.get("crop_instructions", []))
         elif name == "generate_documents":
-            logging.info(f"generate_documents called with quote_data keys: {list(inputs['quote_data'].keys())}")
+            # Use quote_id from tool input if provided (for multi-material quotes)
+            target_qid = inputs.get("quote_id", quote_id)
+            logging.info(f"generate_documents for quote {target_qid} (input keys: {list(inputs['quote_data'].keys())})")
 
             # Always save quote data to DB (even if PDF generation fails)
             update_values = {
@@ -547,20 +549,20 @@ class AgentService:
                 "total_ars": inputs["quote_data"].get("total_ars"),
                 "total_usd": inputs["quote_data"].get("total_usd"),
             }
-            logging.info(f"Saving quote data {quote_id}: {update_values}")
+            logging.info(f"Saving quote data {target_qid}: {update_values}")
             await db.execute(
                 update(Quote)
-                .where(Quote.id == quote_id)
+                .where(Quote.id == target_qid)
                 .values(**update_values)
             )
             await db.commit()
 
-            result = await generate_documents(quote_id, inputs["quote_data"])
+            result = await generate_documents(target_qid, inputs["quote_data"])
             logging.info(f"generate_documents result: ok={result.get('ok')}, error={result.get('error')}")
             if result.get("ok"):
                 await db.execute(
                     update(Quote)
-                    .where(Quote.id == quote_id)
+                    .where(Quote.id == target_qid)
                     .values(
                         pdf_url=result.get("pdf_url"),
                         excel_url=result.get("excel_url"),
@@ -568,12 +570,14 @@ class AgentService:
                     )
                 )
                 await db.commit()
-                logging.info(f"Quote {quote_id} files updated + status=validated")
+                logging.info(f"Quote {target_qid} files updated + status=validated")
             return result
         elif name == "upload_to_drive":
-            logging.info(f"upload_to_drive inputs: client={inputs.get('client_name')}, material={inputs.get('material')}, date={inputs.get('date')}")
+            # Use quote_id from tool input if provided (for multi-material quotes)
+            target_qid = inputs.get("quote_id", quote_id)
+            logging.info(f"upload_to_drive for {target_qid}: client={inputs.get('client_name')}, material={inputs.get('material')}, date={inputs.get('date')}")
             result = await upload_to_drive(
-                quote_id,
+                target_qid,
                 inputs["client_name"],
                 inputs["material"],
                 inputs["date"],
@@ -582,11 +586,11 @@ class AgentService:
             if result.get("ok"):
                 await db.execute(
                     update(Quote)
-                    .where(Quote.id == quote_id)
+                    .where(Quote.id == target_qid)
                     .values(drive_url=result.get("drive_url"))
                 )
                 await db.commit()
-                logging.info(f"Quote {quote_id} drive_url saved: {result.get('drive_url')}")
+                logging.info(f"Quote {target_qid} drive_url saved: {result.get('drive_url')}")
             else:
                 logging.error(f"upload_to_drive FAILED: {result.get('error')}")
             return result
