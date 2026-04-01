@@ -216,16 +216,21 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     ws.cell(r, 1).font = bold_italic
     r += 2
 
-    # Conditions footer (same as PDF)
+    # Conditions footer (same as PDF) — fixed row heights to prevent giant rows
     conditions_font = Font(name="Calibri", size=8)
     conditions_bold = Font(name="Calibri", size=8, bold=True)
+    footer_row_height = 14
 
     ws.cell(r, 1).value = "*COTIZACION OFICIAL: dolar venta banco nacion. Los materiales expresados en dólares se pagan en pesos según la cotizacion del dia."
     ws.cell(r, 1).font = conditions_font
-    r += 2
+    ws.row_dimensions[r].height = footer_row_height
+    r += 1
+    ws.row_dimensions[r].height = 8  # small spacer
+    r += 1
 
     ws.cell(r, 1).value = "CONDICIONES"
     ws.cell(r, 1).font = conditions_bold
+    ws.row_dimensions[r].height = footer_row_height
     r += 1
 
     for line in [
@@ -237,11 +242,14 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     ]:
         ws.cell(r, 1).value = line
         ws.cell(r, 1).font = conditions_font
+        ws.row_dimensions[r].height = footer_row_height
         r += 1
 
+    ws.row_dimensions[r].height = 8  # small spacer
     r += 1
     ws.cell(r, 1).value = "FORMAS DE PAGO"
     ws.cell(r, 1).font = conditions_bold
+    ws.row_dimensions[r].height = footer_row_height
     r += 1
 
     for line in [
@@ -251,11 +259,14 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     ]:
         ws.cell(r, 1).value = line
         ws.cell(r, 1).font = conditions_font
+        ws.row_dimensions[r].height = footer_row_height
         r += 1
 
+    ws.row_dimensions[r].height = 8  # small spacer
     r += 1
     ws.cell(r, 1).value = "TARJETAS DE CREDITO CONSULTAR PLANES"
     ws.cell(r, 1).font = conditions_font
+    ws.row_dimensions[r].height = footer_row_height
 
     # Column widths
     ws.column_dimensions["A"].width = 52
