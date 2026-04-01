@@ -516,6 +516,22 @@ class AgentService:
                 quotes_data = [inputs["quote_data"]]
 
             logging.info(f"generate_documents: {len(quotes_data)} material(s) to generate")
+
+            # Validate required fields before generating
+            for qdata in quotes_data:
+                missing = []
+                if not qdata.get("client_name"):
+                    missing.append("client_name (nombre del cliente)")
+                if not qdata.get("delivery_days"):
+                    missing.append("delivery_days (plazo de entrega)")
+                if not qdata.get("material_name"):
+                    missing.append("material_name (material)")
+                if missing:
+                    return {
+                        "ok": False,
+                        "error": f"Faltan datos requeridos: {', '.join(missing)}. Pedírselos al operador antes de generar.",
+                    }
+
             all_results = []
 
             for idx, qdata in enumerate(quotes_data):

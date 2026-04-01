@@ -233,6 +233,128 @@ class TestMultiMaterialReal:
                 f"Material '{material}' not in excel_url '{excel_url}'"
 
 
+# ── Required data validation — generate_documents rejects incomplete data ─────
+
+class TestRequiredDataValidation:
+    @pytest.mark.asyncio
+    async def test_rejects_missing_client_name(self, db_session, sample_quote_data):
+        """Cannot generate without client_name."""
+        qid = await _create_quote(db_session)
+        sample_quote_data["client_name"] = ""
+
+        agent = AgentService()
+        result = await agent._execute_tool(
+            "generate_documents",
+            {"quotes": [sample_quote_data]},
+            quote_id=qid,
+            db=db_session,
+        )
+
+        assert result["ok"] is False
+        assert "client_name" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_missing_delivery_days(self, db_session, sample_quote_data):
+        """Cannot generate without plazo de entrega."""
+        qid = await _create_quote(db_session)
+        sample_quote_data.pop("delivery_days", None)
+
+        agent = AgentService()
+        result = await agent._execute_tool(
+            "generate_documents",
+            {"quotes": [sample_quote_data]},
+            quote_id=qid,
+            db=db_session,
+        )
+
+        assert result["ok"] is False
+        assert "delivery_days" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_missing_material_name(self, db_session, sample_quote_data):
+        """Cannot generate without material."""
+        qid = await _create_quote(db_session)
+        sample_quote_data["material_name"] = ""
+
+        agent = AgentService()
+        result = await agent._execute_tool(
+            "generate_documents",
+            {"quotes": [sample_quote_data]},
+            quote_id=qid,
+            db=db_session,
+        )
+
+        assert result["ok"] is False
+        assert "material_name" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_accepts_complete_data(self, db_session, sample_quote_data):
+        """Complete data should pass validation."""
+        qid = await _create_quote(db_session)
+
+        agent = AgentService()
+        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK):
+            result = await agent._execute_tool(
+                "generate_documents",
+                {"quotes": [sample_quote_data]},
+                quote_id=qid,
+                db=db_session,
+            )
+
+        assert result["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_multi_material_rejects_if_any_incomplete(
+        self, db_session, sample_multi_material_data
+    ):
+        """If any material in the array is missing data, reject ALL."""
+        qid = await _create_quote(db_session)
+        sample_multi_material_data[1]["client_name"] = ""  # Second material missing name
+
+        agent = AgentService()
+        result = await agent._execute_tool(
+            "generate_documents",
+            {"quotes": sample_multi_material_data},
+            quote_id=qid,
+            db=db_session,
+        )
+
+        assert result["ok"] is False
+
+
+# ── Prompt structure tests — verify critical rules in system prompt ───────────
+
+class TestPromptStructure:
+    def test_questions_last_rule_present(self):
+        """System prompt must contain the 'questions at end' rule."""
+        from app.modules.agent.agent import build_system_prompt
+        blocks = build_system_prompt()
+        full_text = " ".join(b["text"] for b in blocks)
+        assert "AL FINAL" in full_text
+        assert "NUNCA arrancar un mensaje con una pregunta" in full_text
+
+    def test_required_data_rule_present(self):
+        """System prompt must list required data before generating."""
+        from app.modules.agent.agent import build_system_prompt
+        blocks = build_system_prompt()
+        full_text = " ".join(b["text"] for b in blocks)
+        assert "Plazo de entrega" in full_text
+        assert "Nombre del cliente" in full_text or "client_name" in full_text
+
+    def test_no_upload_to_drive_tool(self):
+        """upload_to_drive should NOT be in the tools list."""
+        from app.modules.agent.agent import TOOLS
+        tool_names = [t["name"] for t in TOOLS]
+        assert "upload_to_drive" not in tool_names
+
+    def test_generate_documents_accepts_quotes_array(self):
+        """generate_documents tool schema should accept 'quotes' array."""
+        from app.modules.agent.agent import TOOLS
+        gen_tool = next(t for t in TOOLS if t["name"] == "generate_documents")
+        assert "quotes" in gen_tool["input_schema"]["properties"]
+        assert gen_tool["input_schema"]["properties"]["quotes"]["type"] == "array"
+
+
 # ── update_quote tool — REAL ─────────────────────────────────────────────────
 
 class TestUpdateQuoteReal:
