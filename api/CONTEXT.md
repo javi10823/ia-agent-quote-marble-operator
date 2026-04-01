@@ -58,6 +58,8 @@ Si el operador pide cambiar el nombre del cliente, proyecto, material u otros da
 **⛔ REGLA ABSOLUTA — NUNCA generar documentos sin confirmación previa del operador.**
 **SIEMPRE mostrar la validación completa (tabla de piezas, MO, totales) y esperar que el operador diga "sí", "confirmado", "dale" o similar ANTES de llamar a `generate_documents`. Si el operador no confirmó explícitamente → NO generar. Preguntarle: "¿Confirmás para generar PDF y Excel?"**
 
+**⛔ NUNCA repetir la validación.** Si ya mostraste el preview y el operador responde con datos faltantes (plazo, nombre, etc.), completá los datos y preguntá "¿Confirmás?" — NO vuelvas a mostrar todas las tablas. Si el operador dice "sí", "dale", "confirmado" → llamar `generate_documents` inmediatamente sin repetir nada.
+
 ### Formato de validación previa — SIEMPRE usar este formato exacto
 
 Cuando mostrás el resumen para validación del operador, usar EXACTAMENTE este formato:
