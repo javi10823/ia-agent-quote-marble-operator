@@ -297,6 +297,21 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
     ws.column_dimensions["E"].width = 22
     ws.column_dimensions["F"].width = 18
 
+    # Print settings — so PDF export looks clean (no gridlines, proper margins)
+    from openpyxl.worksheet.views import SheetView
+    from openpyxl.worksheet.page import PageMargins
+
+    ws.views.sheetView[0].showGridLines = False
+    ws.print_area = f"A1:F{r}"
+    ws.page_setup.orientation = "portrait"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_margins = PageMargins(
+        left=0.5, right=0.5, top=0.4, bottom=0.4,
+        header=0.2, footer=0.2,
+    )
+
     wb.save(str(output_path))
 
 
