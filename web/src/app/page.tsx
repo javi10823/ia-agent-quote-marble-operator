@@ -16,8 +16,8 @@ const BADGE_STYLE: Record<Quote["status"], React.CSSProperties> = {
   sent:      { background: "var(--acc2)", color: "var(--acc)" },
 };
 
-const STATUS_NEXT: Record<Quote["status"], Quote["status"]> = {
-  draft: "validated", validated: "sent", sent: "draft",
+const STATUS_NEXT: Record<Quote["status"], Quote["status"] | null> = {
+  draft: "validated", validated: "sent", sent: null,
 };
 
 export default function DashboardPage() {
@@ -42,6 +42,7 @@ export default function DashboardPage() {
   async function toggleStatus(e: React.MouseEvent, id: string, current: Quote["status"]) {
     e.stopPropagation();
     const next = STATUS_NEXT[current];
+    if (!next) return; // "sent" is final — no more transitions
     await updateQuoteStatus(id, next);
     setQuotes(prev => prev.map(q => q.id === id ? { ...q, status: next } : q));
   }
@@ -185,10 +186,14 @@ export default function DashboardPage() {
                         )}
                       </td>
                       <td style={{ padding: "13px 18px" }}>
-                        <button onClick={(e) => toggleStatus(e, q.id, q.status)} style={{
+                        <button
+                          onClick={(e) => toggleStatus(e, q.id, q.status)}
+                          title={STATUS_NEXT[q.status] ? `Cambiar a ${STATUS_LABEL[STATUS_NEXT[q.status]!]}` : "Estado final"}
+                          style={{
                           display: "inline-flex", alignItems: "center", gap: 5,
                           padding: "3px 9px", borderRadius: 999,
-                          fontSize: 11, fontWeight: 500, cursor: "pointer",
+                          fontSize: 11, fontWeight: 500,
+                          cursor: STATUS_NEXT[q.status] ? "pointer" : "default",
                           border: "none", fontFamily: "inherit",
                           ...BADGE_STYLE[q.status],
                         }}>
