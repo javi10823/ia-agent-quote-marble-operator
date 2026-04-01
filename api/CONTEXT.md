@@ -223,6 +223,7 @@ Todos los catálogos tienen precios SIN IVA. Aplicar ×1.21 al presupuestar sin 
 - Alto default = **5cm** si no hay cota explícita
 - En PDF/Excel: una sola línea `ZÓCALO X.XX ml x 0.05 m` con total de ml
 - SIEMPRE aclarar que el zócalo está incluido en el presupuesto
+- **Si el zócalo tiene más de 10cm de alto → agregar 1 agujero de toma corriente (TOMAS) en la MO automáticamente.** No preguntar — si el alto > 0.10m, va 1 TOMAS.
 
 ### Lectura de planos
 - **Cota ARRIBA** del borde = zócalo | **Cota ABAJO** = frentin/faldón

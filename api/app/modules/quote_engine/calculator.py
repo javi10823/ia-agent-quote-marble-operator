@@ -267,6 +267,16 @@ def calculate_quote(input_data: dict) -> dict:
     else:
         logging.warning(f"Flete not found for '{localidad}'")
 
+    # Toma de corriente — si algún zócalo tiene alto > 10cm
+    has_tall_zocalo = any(
+        (p.get("alto") or 0) > 0.10
+        for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
+    )
+    if has_tall_zocalo:
+        sku = "TOMASDEKTON/NEO" if is_sint else "TOMAS"
+        price = _get_mo_price(sku)
+        mo_items.append({"description": "Agujero toma corriente", "quantity": 1, "unit_price": price, "total": price})
+
     # Totals
     total_mo_ars = sum(item["total"] for item in mo_items)
 
