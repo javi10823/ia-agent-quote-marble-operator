@@ -344,12 +344,15 @@ async def _generate_excel(output_path: Path, data: dict) -> None:
 
     ws = wb.active
 
-    # Clear ALL borders from template to get clean PDF export
+    # Clear ALL borders and fills from template for clean export
     from openpyxl.styles import Border
+    from openpyxl.styles import PatternFill as PF
     no_border = Border()
+    no_fill = PF(fill_type=None)
     for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=10):
         for cell in row:
             cell.border = no_border
+            cell.fill = no_fill
 
     # Helper fonts
     bold = Font(name="Calibri", bold=True, size=10)
