@@ -101,12 +101,15 @@ async def chat(
     if not quote:
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
 
-    # Read plan file if provided
+    # Read plan file if provided + save to temp for read_plan tool
     plan_bytes = None
     plan_filename = None
     if plan_file:
         plan_bytes = await plan_file.read()
         plan_filename = plan_file.filename
+        # Save to temp so read_plan tool can access it from disk
+        from app.modules.agent.tools.plan_tool import save_plan_to_temp
+        save_plan_to_temp(plan_filename, plan_bytes)
 
     async def event_stream():
         full_response = ""
