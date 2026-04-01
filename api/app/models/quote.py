@@ -25,6 +25,9 @@ class Quote(Base):
         Enum(QuoteStatus), default=QuoteStatus.DRAFT
     )
 
+    # Parent quote (for multi-material — links to the quote with the chat history)
+    parent_quote_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
     # File URLs
     pdf_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     excel_url: Mapped[str | None] = mapped_column(String(500), nullable=True)

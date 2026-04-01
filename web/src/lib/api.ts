@@ -12,6 +12,7 @@ export interface Quote {
   pdf_url: string | null;
   excel_url: string | null;
   drive_url: string | null;
+  parent_quote_id: string | null;
   created_at: string;
 }
 

@@ -184,6 +184,7 @@ class TestMultiMaterialReal:
         assert q2.total_usd == 529
         assert q2.status == QuoteStatus.VALIDATED
         assert q2.excel_url is not None
+        assert q2.parent_quote_id == qid  # Links to original quote with chat
 
     @pytest.mark.asyncio
     async def test_each_material_has_separate_files(

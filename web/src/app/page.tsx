@@ -208,7 +208,7 @@ export default function DashboardPage() {
                   const isStale = q.status === "draft" && daysOld > 5;
                   return (
                     <tr key={q.id}
-                      onClick={() => { setSelectedId(q.id); router.push(`/quote/${q.id}`); }}
+                      onClick={() => { setSelectedId(q.id); router.push(`/quote/${q.parent_quote_id || q.id}`); }}
                       style={{
                         borderBottom: "1px solid rgba(255,255,255,.045)",
                         cursor: "pointer",

@@ -15,6 +15,7 @@ class QuoteListResponse(BaseModel):
     pdf_url: Optional[str]
     excel_url: Optional[str]
     drive_url: Optional[str]
+    parent_quote_id: Optional[str] = None
     created_at: datetime
 
     class Config:

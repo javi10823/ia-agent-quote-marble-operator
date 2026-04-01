@@ -545,6 +545,7 @@ class AgentService:
                         client_name=qdata.get("client_name", ""),
                         project=qdata.get("project", ""),
                         material=qdata.get("material_name"),
+                        parent_quote_id=quote_id,
                         messages=[],
                         status=QuoteStatus.DRAFT,
                     )

@@ -24,7 +24,7 @@ async def init_db():
         from app.models import quote  # noqa - ensures models are registered
         await conn.run_sync(Base.metadata.create_all)
 
-        # Migrate: expand varchar columns if they exist at smaller size
+        # Migrate: expand varchar columns + add parent_quote_id
         await conn.execute(
             __import__("sqlalchemy").text(
                 "ALTER TABLE quotes "
@@ -33,6 +33,14 @@ async def init_db():
                 "ALTER COLUMN material TYPE VARCHAR(500)"
             )
         )
+        try:
+            await conn.execute(
+                __import__("sqlalchemy").text(
+                    "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS parent_quote_id VARCHAR"
+                )
+            )
+        except Exception:
+            pass  # Column already exists
 
 
 async def get_db():
