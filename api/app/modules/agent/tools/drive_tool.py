@@ -187,6 +187,24 @@ async def upload_to_drive(
                                 "fields": "locale",
                             }
                         },
+                        # Clear all background colors first (xlsx fills conflict with banding)
+                        {
+                            "repeatCell": {
+                                "range": {
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": 22,
+                                    "endRowIndex": end_row,
+                                    "startColumnIndex": 0,
+                                    "endColumnIndex": 6,
+                                },
+                                "cell": {
+                                    "userEnteredFormat": {
+                                        "backgroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+                                    }
+                                },
+                                "fields": "userEnteredFormat.backgroundColor",
+                            }
+                        },
                         # Alternating colors ONLY on content rows (23 to Total PESOS)
                         {
                             "addBanding": {
