@@ -19,6 +19,7 @@ export interface Quote {
 
 export interface QuoteDetail extends Quote {
   messages: Message[];
+  quote_breakdown: Record<string, any> | null;
 }
 
 export interface Message {

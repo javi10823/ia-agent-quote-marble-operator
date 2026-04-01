@@ -2,3 +2,11 @@ __pycache__/
 *.pyc
 venv/
 .pytest_cache/
+api/output/
+web/node_modules/
+web/.next/
+.DS_Store
+service-account.json
+venv/
+.pytest_cache/
+__pycache__/

@@ -553,13 +553,14 @@ class AgentService:
                     await db.commit()
                     logging.info(f"Created additional quote {target_qid} for material: {qdata.get('material_name')}")
 
-                # Save quote data to DB
+                # Save quote data + breakdown to DB
                 save_vals = {
                     "client_name": qdata.get("client_name", ""),
                     "project": qdata.get("project", ""),
                     "material": qdata.get("material_name"),
                     "total_ars": qdata.get("total_ars"),
                     "total_usd": qdata.get("total_usd"),
+                    "quote_breakdown": qdata,
                 }
                 logging.info(f"Saving quote data {target_qid}: {save_vals}")
                 await db.execute(update(Quote).where(Quote.id == target_qid).values(**save_vals))

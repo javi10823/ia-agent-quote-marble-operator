@@ -25,6 +25,7 @@ class QuoteListResponse(BaseModel):
 
 class QuoteDetailResponse(QuoteListResponse):
     messages: list
+    quote_breakdown: Optional[dict] = None
 
     class Config:
         from_attributes = True

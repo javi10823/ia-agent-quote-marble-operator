@@ -58,6 +58,7 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
             material=calc_result["material_name"],
             total_ars=calc_result["total_ars"],
             total_usd=calc_result["total_usd"],
+            quote_breakdown=calc_result,
             messages=[],
             status=QuoteStatus.VALIDATED,
             source="web",
