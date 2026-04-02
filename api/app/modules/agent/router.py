@@ -32,9 +32,17 @@ agent_service = AgentService()
 @router.get("/quotes", response_model=list[QuoteListResponse])
 async def list_quotes(db: AsyncSession = Depends(get_db)):
     from sqlalchemy.orm import defer
+    from sqlalchemy import or_, and_
     result = await db.execute(
         select(Quote)
         .options(defer(Quote.messages), defer(Quote.quote_breakdown), defer(Quote.source_files))
+        .where(
+            # Exclude empty drafts (no client_name) — only show drafts with real data
+            or_(
+                Quote.status != "draft",
+                and_(Quote.status == "draft", Quote.client_name != "", Quote.client_name.isnot(None)),
+            )
+        )
         .order_by(Quote.created_at.desc())
     )
     return result.scalars().all()
@@ -223,6 +231,11 @@ async def delete_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/quotes")
 async def create_quote(db: AsyncSession = Depends(get_db)):
+    # Opportunistic cleanup of old empty drafts
+    from app.core.database import cleanup_empty_drafts
+    import asyncio
+    asyncio.create_task(cleanup_empty_drafts())
+
     quote = Quote(
         id=str(uuid.uuid4()),
         client_name="",

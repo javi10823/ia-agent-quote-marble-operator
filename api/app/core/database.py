@@ -58,3 +58,27 @@ async def get_db():
             yield session
         finally:
             await session.close()
+
+
+async def cleanup_empty_drafts():
+    """Delete draft quotes older than 1 hour that lack client + material.
+    Drafts with real data (client_name AND material set) are preserved."""
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import delete
+    from app.models.quote import Quote
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            delete(Quote).where(
+                Quote.status == "draft",
+                Quote.created_at < cutoff,
+                # Only delete if missing client OR material (incomplete)
+                (Quote.client_name == "") | (Quote.client_name.is_(None)) | (Quote.material.is_(None)),
+            )
+        )
+        if result.rowcount > 0:
+            await db.commit()
+            logging.info(f"Cleaned up {result.rowcount} empty draft(s)")
+        else:
+            await db.commit()

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.core.config import settings
-from app.core.database import init_db
+from app.core.database import init_db, cleanup_empty_drafts
 from app.core.static import mount_static_files
 from app.core.auth import auth_middleware
 from app.modules.agent.router import router as agent_router
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await cleanup_empty_drafts()
     logger.info(f"CORS_ORIGINS: {settings.CORS_ORIGINS}")
     yield
 
