@@ -1,4 +1,4 @@
-import type { UIMessage } from "@/app/quote/[id]/page";
+import type { UIMessage } from "@/lib/types";
 
 interface Props { message: UIMessage; actionText?: string; }
 
