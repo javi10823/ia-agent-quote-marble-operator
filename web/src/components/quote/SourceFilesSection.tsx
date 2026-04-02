@@ -1,3 +1,4 @@
+import { DOT } from "@/lib/chars";
 import Section from "./Section";
 
 interface SourceFile {
@@ -44,7 +45,7 @@ export default function SourceFilesSection({ files }: Props) {
               </div>
               <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>
                 {fmtType(f.type)}
-                {f.size ? ` · ${fmtSize(f.size)}` : ""}
+                {f.size ? ` ${DOT} ${fmtSize(f.size)}` : ""}
               </div>
             </div>
             <a href={f.url} download style={{

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import IconBtn from "@/components/ui/IconBtn";
+import { A, I, DOT, DASH } from "@/lib/chars";
 
 const VALID_TYPES = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -31,12 +32,12 @@ export default function ChatInput({ input, setInput, files, setFiles, dragActive
         continue;
       }
       if (f.size > MAX_FILE_SIZE) {
-        setFileError(`"${f.name}" — máximo 10MB`);
+        setFileError(`"${f.name}" ${DASH} m${A}ximo 10MB`);
         setTimeout(() => setFileError(null), 3000);
         continue;
       }
       if (files.length >= MAX_FILES) {
-        setFileError("Máximo 5 archivos");
+        setFileError(`M${A}ximo 5 archivos`);
         setTimeout(() => setFileError(null), 3000);
         break;
       }
@@ -85,8 +86,8 @@ export default function ChatInput({ input, setInput, files, setFiles, dragActive
           pointerEvents: "none",
         }}>
           <span style={{ fontSize: 28 }}>📁</span>
-          <span style={{ fontSize: 14, fontWeight: 500, color: "var(--acc)" }}>Soltá tu plano PDF o imagen acá</span>
-          <span style={{ fontSize: 11, color: "var(--t3)" }}>PDF, JPG, PNG · Máximo 10MB</span>
+          <span style={{ fontSize: 14, fontWeight: 500, color: "var(--acc)" }}>{`Solt${A} tu plano PDF o imagen ac${A}`}</span>
+          <span style={{ fontSize: 11, color: "var(--t3)" }}>{`PDF, JPG, PNG ${DOT} M${A}ximo 10MB`}</span>
         </div>
       )}
 
@@ -102,7 +103,7 @@ export default function ChatInput({ input, setInput, files, setFiles, dragActive
             }}>
               <span style={{ fontSize: 14 }}>{fileIcon(f.type)}</span>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{f.name}</span>
-              <span style={{ color: "var(--t3)", flexShrink: 0 }}>{fmtType(f.type)} · {fmtSize(f.size)}</span>
+              <span style={{ color: "var(--t3)", flexShrink: 0 }}>{fmtType(f.type)} {DOT} {fmtSize(f.size)}</span>
               <button onClick={() => removeFile(i)} style={{ background: "none", border: "none", color: "var(--t3)", cursor: "pointer", fontSize: 13, padding: "0 2px" }}>✕</button>
             </div>
           ))}
@@ -129,8 +130,8 @@ export default function ChatInput({ input, setInput, files, setFiles, dragActive
         transition: "border-color 0.15s, box-shadow 0.15s",
       }}>
         <textarea value={input} onChange={e => setInput(e.target.value)}
-          onKeyDown={onKey} rows={1} disabled={sending}
-          placeholder="Escribí el enunciado o arrastrá el plano acá..."
+          onKeyDown={onKey} rows={1} disabled={sending} autoFocus
+          placeholder={`Escrib${I} el enunciado o arrastr${A} el plano ac${A}...`}
           style={{
             flex: 1, background: "transparent", border: "none", outline: "none",
             fontFamily: "inherit", fontSize: 13, color: "var(--t1)",

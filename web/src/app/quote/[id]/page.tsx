@@ -7,6 +7,7 @@ import { useQuotes } from "@/lib/quotes-context";
 import MessageBubble from "@/components/chat/MessageBubble";
 import CompareView from "@/components/quote/CompareView";
 import clsx from "clsx";
+import { A, I, O, DOT, SUP2, DASH, ITEM, WARN, CIRCLE, ARROW, XMARK, CLOUD, WAVE, PAGE, PICTURE, CLIP, RULER, TAG, FOLDER, CHART } from "@/lib/chars";
 
 export interface UIMessage {
   id: string;
@@ -19,15 +20,15 @@ export interface UIMessage {
 // ── HELPERS ──────────────────────────────────────────────────────────────────
 
 const fmtARS = (n: number | null | undefined) => {
-  if (n == null || isNaN(n)) return "\u2014";
+  if (n == null || isNaN(n)) return DASH;
   return `$${Math.round(n).toLocaleString("es-AR")}`;
 };
 const fmtUSD = (n: number | null | undefined) => {
-  if (n == null || isNaN(n)) return "\u2014";
+  if (n == null || isNaN(n)) return DASH;
   return `USD ${Math.round(n).toLocaleString("es-AR")}`;
 };
 const fmtQty = (n: number | null | undefined) => {
-  if (n == null || isNaN(n)) return "\u2014";
+  if (n == null || isNaN(n)) return DASH;
   if (Math.abs(n - Math.round(n)) < 0.05) return String(Math.round(n));
   return n.toFixed(2).replace(".", ",");
 };
@@ -139,12 +140,12 @@ export default function QuotePage() {
       }
       if (!gotDone) {
         setActionText("");
-        const errorMsg = acc ? acc + "\n\n\u26A0\uFE0F _La conexi\u00F3n se interrumpi\u00F3._" : "\u26A0\uFE0F La conexi\u00F3n se interrumpi\u00F3. Intent\u00E1 de nuevo.";
+        const errorMsg = acc ? acc + `\n\n${WARN} _La conexi${O}n se interrumpi${O}._` : `${WARN} La conexi${O}n se interrumpi${O}. Intent${A} de nuevo.`;
         setMessages(p => p.map(m => m.id === aid ? { ...m, content: errorMsg, isStreaming: false } : m));
       }
     } catch {
       setActionText("");
-      setMessages(p => p.map(m => m.id === aid ? { ...m, content: "\u26A0\uFE0F Error de conexi\u00F3n. Intent\u00E1 de nuevo.", isStreaming: false } : m));
+      setMessages(p => p.map(m => m.id === aid ? { ...m, content: `${WARN} Error de conexi${O}n. Intent${A} de nuevo.`, isStreaming: false } : m));
     } finally {
       setSending(false);
     }
@@ -176,11 +177,11 @@ export default function QuotePage() {
           <div>
             <div className="flex items-center gap-2">
               <span className="text-base font-semibold text-t1">{quote?.client_name || "Nuevo presupuesto"}</span>
-              <span className={clsx("inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-[10px] font-semibold", st.cls)}>\u25CF {st.label}</span>
+              <span className={clsx("inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-[10px] font-semibold", st.cls)}>{CIRCLE} {st.label}</span>
               {quote?.source === "web" && <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-[10px] font-semibold bg-purple-500/15 text-purple-400">WEB</span>}
             </div>
             <div className="text-xs text-t3 mt-0.5">
-              {quote?.project}{quote?.material ? ` \u00B7 ${quote.material}` : ""}
+              {quote?.project}{quote?.material ? ` ${DOT} ${quote.material}` : ""}
             </div>
           </div>
         </div>
@@ -207,9 +208,9 @@ export default function QuotePage() {
         <div className="flex-1 overflow-y-auto px-7 py-6">
           <DetailView quote={quote} breakdown={bd} onSwitchToChat={() => setTab("chat")} />
           <Section title="Modificaciones" className="mt-5">
-            <div className="text-xs text-t3 mb-2.5">Escrib\u00ED un cambio y Valentina regenera los documentos autom\u00E1ticamente.</div>
+            <div className="text-xs text-t3 mb-2.5">{`Escrib${I} un cambio y Valentina regenera los documentos autom${A}ticamente.`}</div>
             <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
-            <button onClick={() => setTab("chat")} className="mt-2 bg-transparent border-none text-acc text-xs cursor-pointer font-sans p-0">Ver historial completo \u2192</button>
+            <button onClick={() => setTab("chat")} className="mt-2 bg-transparent border-none text-acc text-xs cursor-pointer font-sans p-0">{`Ver historial completo ${ARROW}`}</button>
           </Section>
         </div>
       ) : tab === "chat" ? (
@@ -217,7 +218,7 @@ export default function QuotePage() {
           <div className="flex-1 overflow-y-auto px-7 pt-7 pb-4 flex flex-col gap-5">
             {messages.length === 0 && (
               <div className="px-[18px] py-3.5 bg-s2 rounded-xl text-[13px] text-t2">
-                Hola \uD83D\uDC4B Soy Valentina. Pasame el enunciado del trabajo y/o el plano.
+                {`Hola ${WAVE} Soy Valentina. Pasame el enunciado del trabajo y/o el plano.`}
               </div>
             )}
             {messages.map(msg => <MessageBubble key={msg.id} message={msg} actionText={msg.isStreaming ? actionText : undefined} />)}
@@ -225,7 +226,7 @@ export default function QuotePage() {
           </div>
           <div className="shrink-0 px-7 pt-3.5 pb-[18px] border-t border-b1 bg-s1">
             <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
-            <div className="text-[10px] text-t4 text-center mt-[7px]">Enter para enviar \u00B7 Shift+Enter para nueva l\u00EDnea</div>
+            <div className="text-[10px] text-t4 text-center mt-[7px]">{`Enter para enviar ${DOT} Shift+Enter para nueva l${I}nea`}</div>
           </div>
         </>
       ) : null}
@@ -249,14 +250,14 @@ function DetailView({ quote, breakdown, onSwitchToChat }: { quote: QuoteDetail |
     <div className="flex flex-col gap-5">
       <Section title="Resumen">
         <div className="grid grid-cols-4 gap-4">
-          <MetaItem label="Cliente" value={quote.client_name || "\u2014"} />
-          <MetaItem label="Proyecto" value={quote.project || "\u2014"} />
-          <MetaItem label="Material" value={quote.material || "\u2014"} />
+          <MetaItem label="Cliente" value={quote.client_name || DASH} />
+          <MetaItem label="Proyecto" value={quote.project || DASH} />
+          <MetaItem label="Material" value={quote.material || DASH} />
           <MetaItem label="Fecha" value={new Date(quote.created_at).toLocaleDateString("es-AR")} />
-          <MetaItem label="Demora" value={breakdown?.delivery_days || "\u2014"} />
+          <MetaItem label="Demora" value={breakdown?.delivery_days || DASH} />
           <MetaItem label="Origen" value={quote.source === "web" ? "Web (chatbot)" : "Operador"} />
-          <MetaItem label="Total ARS" value={quote.total_ars ? fmtARS(quote.total_ars) : "\u2014"} highlight />
-          <MetaItem label="Total USD" value={quote.total_usd ? fmtUSD(quote.total_usd) : "\u2014"} highlight />
+          <MetaItem label="Total ARS" value={quote.total_ars ? fmtARS(quote.total_ars) : DASH} highlight />
+          <MetaItem label="Total USD" value={quote.total_usd ? fmtUSD(quote.total_usd) : DASH} highlight />
         </div>
       </Section>
 
@@ -265,12 +266,12 @@ function DetailView({ quote, breakdown, onSwitchToChat }: { quote: QuoteDetail |
           <div className="flex flex-col gap-2">
             {quote.source_files.map((f: any, i: number) => (
               <div key={i} className={clsx("flex items-center gap-3 px-4 py-3 rounded-lg border border-b1", i % 2 === 0 ? "bg-white/[0.02]" : "bg-transparent")}>
-                <span className="text-xl shrink-0">{f.type?.includes("pdf") ? "\uD83D\uDCC4" : f.type?.includes("image") ? "\uD83D\uDDBC\uFE0F" : "\uD83D\uDCCE"}</span>
+                <span className="text-xl shrink-0">{f.type?.includes("pdf") ? PAGE : f.type?.includes("image") ? PICTURE : CLIP}</span>
                 <div className="flex-1 min-w-0">
                   <div className="text-[13px] font-medium text-t1 truncate">{f.filename}</div>
                   <div className="text-[11px] text-t3 mt-0.5">
                     {f.type?.includes("pdf") ? "PDF" : f.type?.includes("jpeg") || f.type?.includes("jpg") ? "JPG" : f.type?.includes("png") ? "PNG" : "Archivo"}
-                    {f.size ? ` \u00B7 ${f.size < 1024 ? f.size + " B" : f.size < 1048576 ? (f.size / 1024).toFixed(1) + " KB" : (f.size / 1048576).toFixed(1) + " MB"}` : ""}
+                    {f.size ? ` ${DOT} ${f.size < 1024 ? f.size + " B" : f.size < 1048576 ? (f.size / 1024).toFixed(1) + " KB" : (f.size / 1048576).toFixed(1) + " MB"}` : ""}
                   </div>
                 </div>
                 <a href={f.url} download className="flex items-center gap-[5px] px-3.5 py-1.5 rounded-md text-[11px] font-medium no-underline border border-acc-hover bg-transparent text-acc cursor-pointer shrink-0 hover:bg-acc/10 transition">
@@ -286,12 +287,12 @@ function DetailView({ quote, breakdown, onSwitchToChat }: { quote: QuoteDetail |
       {breakdown && (
         <Section title="Solicitud">
           <div className="grid grid-cols-2 gap-3">
-            <ReqField label="Material" value={breakdown.material_name || "\u2014"} />
-            <ReqField label="Superficie" value={totalM2 ? `${fmtQty(totalM2)} m\u00B2` : "\u2014"} />
-            <ReqField label="Moneda" value={breakdown.material_currency || "\u2014"} />
-            <ReqField label="Precio/m\u00B2" value={breakdown.material_price_unit ? (breakdown.material_currency === "USD" ? fmtUSD(breakdown.material_price_unit) : fmtARS(breakdown.material_price_unit)) : "\u2014"} />
-            <ReqField label="Plazo" value={breakdown.delivery_days || "\u2014"} />
-            <ReqField label="Proyecto" value={breakdown.project || "\u2014"} />
+            <ReqField label="Material" value={breakdown.material_name || DASH} />
+            <ReqField label="Superficie" value={totalM2 ? `${fmtQty(totalM2)} m${SUP2}` : DASH} />
+            <ReqField label="Moneda" value={breakdown.material_currency || DASH} />
+            <ReqField label={`Precio/m${SUP2}`} value={breakdown.material_price_unit ? (breakdown.material_currency === "USD" ? fmtUSD(breakdown.material_price_unit) : fmtARS(breakdown.material_price_unit)) : DASH} />
+            <ReqField label="Plazo" value={breakdown.delivery_days || DASH} />
+            <ReqField label="Proyecto" value={breakdown.project || DASH} />
           </div>
         </Section>
       )}
@@ -300,7 +301,7 @@ function DetailView({ quote, breakdown, onSwitchToChat }: { quote: QuoteDetail |
         <Section title="Desglose del Presupuesto">
           {pieces.length > 0 && (
             <div className="mb-4">
-              <div className="text-[13px] font-semibold text-t1 mb-2">Material \u2014 {fmtQty(totalM2)} m\u00B2</div>
+              <div className="text-[13px] font-semibold text-t1 mb-2">{`Material ${DASH} ${fmtQty(totalM2)} m${SUP2}`}</div>
               <table className="w-full border-collapse border border-b1 rounded-lg overflow-hidden">
                 <thead><tr className="bg-white/[0.03]">
                   <th className="px-3 py-2 text-[11px] font-semibold text-t3 uppercase tracking-wide text-left border-b border-b1">Pieza</th>
@@ -316,14 +317,14 @@ function DetailView({ quote, breakdown, onSwitchToChat }: { quote: QuoteDetail |
             </div>
           )}
 
-          {merma && <InfoBar icon="\uD83D\uDCD0" label="Merma" status={merma.aplica ? "APLICA" : "NO APLICA"} detail={merma.motivo || ""} />}
+          {merma && <InfoBar icon={RULER} label="Merma" status={merma.aplica ? "APLICA" : "NO APLICA"} detail={merma.motivo || ""} />}
 
           {moItems.length > 0 && (
             <div className="my-4">
               <div className="text-[13px] font-semibold text-t1 mb-2">Mano de Obra</div>
               <table className="w-full border-collapse border border-b1 rounded-lg overflow-hidden">
                 <thead><tr className="bg-white/[0.03]">
-                  <th className="px-3 py-2 text-[11px] font-semibold text-t3 uppercase tracking-wide text-left border-b border-b1">\u00CDtem</th>
+                  <th className="px-3 py-2 text-[11px] font-semibold text-t3 uppercase tracking-wide text-left border-b border-b1">{`${ITEM}tem`}</th>
                   <th className="px-3 py-2 text-[11px] font-semibold text-t3 uppercase tracking-wide text-right border-b border-b1">Cant</th>
                   <th className="px-3 py-2 text-[11px] font-semibold text-t3 uppercase tracking-wide text-right border-b border-b1">Precio</th>
                   <th className="px-3 py-2 text-[11px] font-semibold text-t3 uppercase tracking-wide text-right border-b border-b1">Total</th>
@@ -347,7 +348,7 @@ function DetailView({ quote, breakdown, onSwitchToChat }: { quote: QuoteDetail |
             </div>
           )}
 
-          <InfoBar icon="\uD83C\uDFF7\uFE0F" label="Descuentos" status={discountPct > 0 ? `APLICA ${discountPct}%` : "NO APLICA"} detail={discountPct > 0 ? `${discountPct}% sobre material` : "Particular sin umbral de m\u00B2"} />
+          <InfoBar icon={TAG} label="Descuentos" status={discountPct > 0 ? `APLICA ${discountPct}%` : "NO APLICA"} detail={discountPct > 0 ? `${discountPct}% sobre material` : `Particular sin umbral de m${SUP2}`} />
 
           {(quote.total_ars || quote.total_usd) && (
             <div className="mt-5 px-5 py-4 rounded-[10px] bg-s3 border border-b2 flex justify-between items-center">
@@ -361,8 +362,8 @@ function DetailView({ quote, breakdown, onSwitchToChat }: { quote: QuoteDetail |
         </Section>
       ) : (
         <Section title="Desglose">
-          <div className="text-[13px] text-t3">Este presupuesto no tiene datos de desglose estructurados. Consult\u00E1 el historial de chat para ver los detalles.</div>
-          <button onClick={onSwitchToChat} className="mt-2.5 bg-transparent border-none text-acc text-xs cursor-pointer font-sans p-0">Ver chat \u2192</button>
+          <div className="text-[13px] text-t3">{`Este presupuesto no tiene datos de desglose estructurados. Consult${A} el historial de chat para ver los detalles.`}</div>
+          <button onClick={onSwitchToChat} className="mt-2.5 bg-transparent border-none text-acc text-xs cursor-pointer font-sans p-0">{`Ver chat ${ARROW}`}</button>
         </Section>
       )}
     </div>
@@ -388,9 +389,9 @@ function ChatInput({ input, setInput, files, setFiles, dragActive, setDragActive
   const addFiles = (newFiles: FileList | File[]) => {
     const arr = Array.from(newFiles);
     for (const f of arr) {
-      if (!VALID_TYPES.some(t => f.type.includes(t.split("/")[1]))) { setFileError(`"${f.name}" \u2014 tipo no soportado`); setTimeout(() => setFileError(null), 3000); continue; }
-      if (f.size > MAX_FILE_SIZE) { setFileError(`"${f.name}" \u2014 m\u00E1ximo 10MB`); setTimeout(() => setFileError(null), 3000); continue; }
-      if (files.length >= MAX_FILES) { setFileError("M\u00E1ximo 5 archivos"); setTimeout(() => setFileError(null), 3000); break; }
+      if (!VALID_TYPES.some(t => f.type.includes(t.split("/")[1]))) { setFileError(`"${f.name}" ${DASH} tipo no soportado`); setTimeout(() => setFileError(null), 3000); continue; }
+      if (f.size > MAX_FILE_SIZE) { setFileError(`"${f.name}" ${DASH} m${A}ximo 10MB`); setTimeout(() => setFileError(null), 3000); continue; }
+      if (files.length >= MAX_FILES) { setFileError(`M${A}ximo 5 archivos`); setTimeout(() => setFileError(null), 3000); break; }
       if (files.some(ef => ef.name === f.name && ef.size === f.size)) continue;
       setFiles([...files, f]);
     }
@@ -403,15 +404,15 @@ function ChatInput({ input, setInput, files, setFiles, dragActive, setDragActive
 
   const fmtSize = (b: number) => b < 1024 ? `${b} B` : b < 1048576 ? `${(b/1024).toFixed(1)} KB` : `${(b/1048576).toFixed(1)} MB`;
   const fmtType = (t: string) => t.includes("pdf") ? "PDF" : t.includes("jpeg") || t.includes("jpg") ? "JPG" : t.includes("png") ? "PNG" : "WEBP";
-  const fileIcon = (t: string) => t.includes("pdf") ? "\uD83D\uDCC4" : "\uD83D\uDDBC\uFE0F";
+  const fileIcon = (t: string) => t.includes("pdf") ? PAGE : PICTURE;
 
   return (
     <div onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={e => e.preventDefault()} onDrop={handleDrop} className="relative">
       {dragActive && (
         <div className="absolute inset-0 z-10 bg-acc/[0.08] border-2 border-dashed border-acc rounded-xl flex flex-col items-center justify-center gap-1.5 pointer-events-none">
-          <span className="text-[28px]">\uD83D\uDCC1</span>
-          <span className="text-sm font-medium text-acc">Solt\u00E1 tu plano PDF o imagen ac\u00E1</span>
-          <span className="text-[11px] text-t3">PDF, JPG, PNG \u00B7 M\u00E1ximo 10MB</span>
+          <span className="text-[28px]">{FOLDER}</span>
+          <span className="text-sm font-medium text-acc">{`Solt${A} tu plano PDF o imagen ac${A}`}</span>
+          <span className="text-[11px] text-t3">{`PDF, JPG, PNG ${DOT} M${A}ximo 10MB`}</span>
         </div>
       )}
 
@@ -421,13 +422,13 @@ function ChatInput({ input, setInput, files, setFiles, dragActive, setDragActive
             <div key={`${f.name}-${i}`} className="flex items-center gap-1.5 px-2.5 py-[5px] rounded-md bg-s3 border border-b1 text-[11px] text-t2 max-w-[280px]">
               <span className="text-sm">{fileIcon(f.type)}</span>
               <span className="truncate flex-1">{f.name}</span>
-              <span className="text-t3 shrink-0">{fmtType(f.type)} \u00B7 {fmtSize(f.size)}</span>
-              <button onClick={() => removeFile(i)} className="bg-transparent border-none text-t3 cursor-pointer text-[13px] px-[2px] hover:text-t1">\u2715</button>
+              <span className="text-t3 shrink-0">{fmtType(f.type)} {DOT} {fmtSize(f.size)}</span>
+              <button onClick={() => removeFile(i)} className="bg-transparent border-none text-t3 cursor-pointer text-[13px] px-[2px] hover:text-t1">{XMARK}</button>
             </div>
           ))}
           {fileError && (
             <div className="flex items-center gap-1.5 px-2.5 py-[5px] rounded-md bg-err/[0.08] border border-err/30 text-[11px] text-err">
-              \u26A0\uFE0F {fileError}
+              {WARN} {fileError}
             </div>
           )}
         </div>
@@ -438,7 +439,7 @@ function ChatInput({ input, setInput, files, setFiles, dragActive, setDragActive
         dragActive ? "border border-acc shadow-[0_0_20px_rgba(79,143,255,0.15)]" : "border border-b2",
       )}>
         <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKey} rows={1} disabled={sending}
-          placeholder="Escrib\u00ED el enunciado o arrastr\u00E1 el plano ac\u00E1..."
+          placeholder={`Escrib${I} el enunciado o arrastr${A} el plano ac${A}...`}
           className="flex-1 bg-transparent border-none outline-none font-sans text-[13px] text-t1 resize-none leading-[1.5] max-h-[110px] placeholder:text-t4"
         />
         <div className="flex items-center gap-[5px] shrink-0">
@@ -492,7 +493,7 @@ function InfoBar({ icon, label, status, detail }: { icon: string; label: string;
       isNo ? "bg-white/[0.02] border border-b1" : "bg-amb/[0.06] border border-amb/[0.16]",
     )}>
       <span>{icon}</span>
-      <span className="font-semibold text-t1">{label} \u2014 {status}</span>
+      <span className="font-semibold text-t1">{label} {DASH} {status}</span>
       <span className="text-t3">{detail}</span>
     </div>
   );
@@ -514,7 +515,7 @@ function TabBtn({ active, children, onClick, disabled }: { active: boolean; chil
 }
 
 function FileLink({ href, label, cls }: { href: string; label: string; cls: string }) {
-  const emoji = label === "PDF" ? "\uD83D\uDCC4" : label === "Excel" ? "\uD83D\uDCCA" : "\u2601";
+  const emoji = label === "PDF" ? PAGE : label === "Excel" ? CHART : CLOUD;
   return (
     <a href={href} target="_blank" rel="noopener noreferrer" className={clsx("flex items-center gap-[5px] px-3 py-1.5 rounded-md text-[11px] font-medium no-underline border bg-transparent hover:bg-white/[0.04] transition", cls)}>
       {emoji} {label}

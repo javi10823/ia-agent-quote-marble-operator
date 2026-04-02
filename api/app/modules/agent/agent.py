@@ -10,13 +10,56 @@ from sqlalchemy import update, select
 
 from app.core.config import settings
 from app.models.quote import Quote, QuoteStatus
-from app.modules.agent.tools.catalog_tool import catalog_lookup, check_stock
+from app.modules.agent.tools.catalog_tool import catalog_lookup, check_stock, check_architect
 from app.modules.agent.tools.plan_tool import read_plan
 from app.modules.agent.tools.document_tool import generate_documents
 from app.modules.agent.tools.drive_tool import upload_to_drive
 from app.modules.quote_engine.calculator import calculate_quote
 
 BASE_DIR = Path(__file__).parent.parent.parent.parent
+
+# Materials that MUST have merma
+_SYNTHETIC_MATERIALS = ["silestone", "dekton", "neolith", "puraprima", "purastone", "laminatto"]
+
+
+def _validate_quote_data(qdata: dict) -> tuple[list[str], list[str]]:
+    """Pre-flight checklist before PDF generation. Returns (errors, warnings)."""
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    # ── Errors (block generation) ──
+    if not qdata.get("client_name"):
+        errors.append("Falta nombre del cliente")
+    if not qdata.get("material_name"):
+        errors.append("Falta material")
+    if not qdata.get("delivery_days"):
+        errors.append("Falta plazo de entrega")
+    if not qdata.get("total_ars") and not qdata.get("total_usd"):
+        errors.append("Totales en $0 — verificar cálculo")
+    sectors = qdata.get("sectors", [])
+    if not sectors or not any(s.get("pieces") for s in sectors):
+        errors.append("Sin piezas definidas")
+    if not qdata.get("mo_items"):
+        errors.append("Sin ítems de mano de obra")
+
+    # ── Warnings (alert but allow) ──
+    mat = (qdata.get("material_name") or "").lower()
+    merma = qdata.get("merma") or {}
+
+    # Negro Brasil NEVER has merma
+    if "negro brasil" in mat and merma.get("aplica"):
+        warnings.append("Negro Brasil NUNCA lleva merma — verificar")
+
+    # Synthetic materials SHOULD have merma
+    if any(s in mat for s in _SYNTHETIC_MATERIALS) and not merma.get("aplica"):
+        warnings.append(f"Material sintético ({qdata.get('material_name')}) debería llevar merma")
+
+    # MO items with $0 price
+    for mo in qdata.get("mo_items", []):
+        if mo.get("unit_price", 0) == 0 and mo.get("description"):
+            warnings.append(f"MO ítem '{mo['description']}' tiene precio $0")
+
+    return errors, warnings
 
 # ── BUILDING DETECTION ───────────────────────────────────────────────────────
 
@@ -280,6 +323,17 @@ TOOLS = [
                 "material_sku": {"type": "string", "description": "SKU del material a verificar"},
             },
             "required": ["material_sku"],
+        },
+    },
+    {
+        "name": "check_architect",
+        "description": "Verifica si un cliente es arquitecta registrada con descuento. SIEMPRE llamar cuando se conoce el nombre del cliente, ANTES de calcular. Retorna si hay match exacto, parcial, o ninguno.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_name": {"type": "string", "description": "Nombre del cliente a verificar"},
+            },
+            "required": ["client_name"],
         },
     },
     {
@@ -687,6 +741,8 @@ class AgentService:
             return catalog_lookup(inputs["catalog"], inputs["sku"])
         elif name == "check_stock":
             return check_stock(inputs["material_sku"])
+        elif name == "check_architect":
+            return check_architect(inputs["client_name"])
         elif name == "read_plan":
             return await read_plan(inputs["filename"], inputs.get("crop_instructions", []))
         elif name == "generate_documents":
@@ -698,20 +754,17 @@ class AgentService:
 
             logging.info(f"generate_documents: {len(quotes_data)} material(s) to generate")
 
-            # Validate required fields before generating
+            # Pre-flight checklist before generating
+            all_warnings: list[str] = []
             for qdata in quotes_data:
-                missing = []
-                if not qdata.get("client_name"):
-                    missing.append("client_name (nombre del cliente)")
-                if not qdata.get("delivery_days"):
-                    missing.append("delivery_days (plazo de entrega)")
-                if not qdata.get("material_name"):
-                    missing.append("material_name (material)")
-                if missing:
+                errors, warnings = _validate_quote_data(qdata)
+                if errors:
+                    error_list = "\n".join(f"❌ {e}" for e in errors)
                     return {
                         "ok": False,
-                        "error": f"Faltan datos requeridos: {', '.join(missing)}. Pedírselos al operador antes de generar.",
+                        "error": f"Pre-flight fallido para {qdata.get('material_name', '?')}:\n{error_list}\n\nCorregir estos datos antes de generar.",
                     }
+                all_warnings.extend(warnings)
 
             all_results = []
 
@@ -798,7 +851,11 @@ class AgentService:
                     "error": result.get("error"),
                 })
 
-            return {"ok": True, "generated": len(all_results), "results": all_results}
+            result = {"ok": True, "generated": len(all_results), "results": all_results}
+            if all_warnings:
+                result["warnings"] = all_warnings
+                result["warnings_text"] = "⚠️ Warnings:\n" + "\n".join(f"• {w}" for w in all_warnings)
+            return result
 
         elif name == "update_quote":
             updates = inputs.get("updates", {})

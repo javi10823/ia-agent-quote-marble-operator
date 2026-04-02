@@ -43,7 +43,9 @@ async def db_session(db_engine):
 
 @pytest_asyncio.fixture
 async def client(db_engine):
-    """FastAPI test client with DB override."""
+    """FastAPI test client with DB override + auth cookie."""
+    from app.core.auth import create_token, COOKIE_NAME
+
     session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
 
     async def override_get_db():
@@ -52,7 +54,9 @@ async def client(db_engine):
 
     app.dependency_overrides[get_db] = override_get_db
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    # Create a test JWT token so auth middleware doesn't block requests
+    test_token = create_token("test@test.com")
+    async with AsyncClient(transport=transport, base_url="http://test", cookies={COOKIE_NAME: test_token}) as ac:
         yield ac
     app.dependency_overrides.clear()
 

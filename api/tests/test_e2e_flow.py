@@ -273,7 +273,7 @@ class TestRequiredDataValidation:
         )
 
         assert result["ok"] is False
-        assert "client_name" in result["error"]
+        assert "client" in result["error"].lower() or "nombre" in result["error"].lower()
 
     @pytest.mark.asyncio
     async def test_rejects_missing_delivery_days(self, db_session, sample_quote_data):
@@ -290,7 +290,7 @@ class TestRequiredDataValidation:
         )
 
         assert result["ok"] is False
-        assert "delivery_days" in result["error"]
+        assert "delivery" in result["error"].lower() or "plazo" in result["error"].lower() or "entrega" in result["error"].lower()
 
     @pytest.mark.asyncio
     async def test_rejects_missing_material_name(self, db_session, sample_quote_data):
@@ -307,7 +307,7 @@ class TestRequiredDataValidation:
         )
 
         assert result["ok"] is False
-        assert "material_name" in result["error"]
+        assert "material" in result["error"].lower()
 
     @pytest.mark.asyncio
     async def test_accepts_complete_data(self, db_session, sample_quote_data):

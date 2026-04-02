@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { A } from "@/lib/chars";
 import type { QuoteDetail } from "@/lib/api";
 import { fmtARS, fmtUSD, fmtQty } from "@/lib/format";
 import { tableStyle, thStyle, tdStyle } from "@/lib/constants";
@@ -18,7 +19,6 @@ interface Props {
 
 export default function DetailView({ quote, breakdown, onSwitchToChat }: Props) {
   const { isMobile, isTablet } = useBreakpoints();
-  if (!quote) return null;
 
   const pieces = useMemo(
     () => breakdown?.sectors?.flatMap((s: any) => s.pieces || []) || [],
@@ -38,6 +38,8 @@ export default function DetailView({ quote, breakdown, onSwitchToChat }: Props) 
   const merma = breakdown?.merma;
   const totalM2 = breakdown?.material_m2 || 0;
   const discountPct = breakdown?.discount_pct || 0;
+
+  if (!quote) return null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -164,7 +166,7 @@ export default function DetailView({ quote, breakdown, onSwitchToChat }: Props) 
       ) : (
         <Section title="Desglose">
           <div style={{ fontSize: 13, color: "var(--t3)" }}>
-            Este presupuesto no tiene datos de desglose estructurados. Consultá el historial de chat para ver los detalles.
+            {`Este presupuesto no tiene datos de desglose estructurados. Consult${A} el historial de chat para ver los detalles.`}
           </div>
           <button onClick={onSwitchToChat} style={{
             marginTop: 10, background: "none", border: "none", color: "var(--acc)",

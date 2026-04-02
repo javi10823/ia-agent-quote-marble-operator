@@ -28,7 +28,7 @@
 html, body { height: 100%; overflow: hidden; }
 
 body {
-  font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, sans-serif;
   background: var(--bg);
   color: var(--t1);
   font-size: 15px;

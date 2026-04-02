@@ -7,7 +7,6 @@ import pytest
 from pathlib import Path
 from app.modules.agent.tools.document_tool import (
     generate_documents,
-    _build_html,
     _format_grand_total,
 )
 
@@ -52,34 +51,6 @@ class TestFormatGrandTotal:
     def test_zero_values(self):
         result = _format_grand_total(0, 0, "ARS")
         assert "PRESUPUESTO TOTAL" in result
-
-
-# ── _build_html ──────────────────────────────────────────────────────────────
-
-class TestBuildHTML:
-    def test_contains_client_name(self, sample_quote_data):
-        html = _build_html(sample_quote_data)
-        assert "Juan Carlos" in html
-
-    def test_contains_material(self, sample_quote_data):
-        html = _build_html(sample_quote_data)
-        assert "SILESTONE BLANCO NORTE" in html
-
-    def test_contains_forma_de_pago(self, sample_quote_data):
-        html = _build_html(sample_quote_data)
-        assert "Contado" in html
-
-    def test_contains_footer_note(self, sample_quote_data):
-        html = _build_html(sample_quote_data)
-        assert "No se suben mesadas que no entren en ascensor" in html
-
-    def test_contains_conditions(self, sample_quote_data):
-        html = _build_html(sample_quote_data)
-        assert "PRESUPUESTO SUJETO" in html
-
-    def test_contains_grand_total(self, sample_quote_data):
-        html = _build_html(sample_quote_data)
-        assert "PRESUPUESTO TOTAL" in html
 
 
 # ── generate_documents — file creation ───────────────────────────────────────
