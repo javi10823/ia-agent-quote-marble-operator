@@ -1,0 +1,55 @@
+{
+  "id": "quote-012",
+  "name": "Alma Estudio — Gris Mara descuento",
+  "tags": [
+    "residential",
+    "granito_nacional",
+    "ARS",
+    "descuento_arquitecto",
+    "pileta_empotrada"
+  ],
+  "input": {
+    "client_name": "Alma Estudio",
+    "project": "Reforma",
+    "material": "Gris Mara",
+    "pieces": [
+      {
+        "description": "Mesada antebaño",
+        "largo": 1.36,
+        "prof": 0.55
+      },
+      {
+        "description": "Mesada cocina",
+        "largo": 1.9,
+        "prof": 0.64
+      },
+      {
+        "description": "Mesada cocina amp",
+        "largo": 1.55,
+        "prof": 0.55
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": false,
+    "plazo": "20 días",
+    "discount_pct": 8
+  },
+  "expected": {
+    "material_m2_approx": 2.82,
+    "material_currency": "ARS",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "colocación",
+      "flete"
+    ],
+    "mo_items_must_not_have": [
+      "anafe",
+      "faldón",
+      "corte45"
+    ],
+    "total_usd_gt": 0,
+    "total_ars_gt": 600000
+  }
+}

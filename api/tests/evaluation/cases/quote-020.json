@@ -1,0 +1,49 @@
+{
+  "id": "quote-020",
+  "name": "WERK — Pura Cana edificio",
+  "tags": [
+    "building",
+    "purastone",
+    "USD",
+    "edificio",
+    "isla",
+    "anafe",
+    "pileta_johnson"
+  ],
+  "input": {
+    "client_name": "WERK",
+    "project": "Edificio Werk 34",
+    "material": "Pura Cana",
+    "pieces": [
+      {
+        "description": "MC2 mesada",
+        "largo": 2.57,
+        "prof": 0.62
+      },
+      {
+        "description": "MC2 isla",
+        "largo": 1.96,
+        "prof": 0.84
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": false,
+    "pileta": "empotrada_johnson",
+    "anafe": true,
+    "plazo": "A convenir"
+  },
+  "expected": {
+    "material_m2_approx": 3.24,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "anafe",
+      "flete"
+    ],
+    "mo_items_must_not_have": [
+      "colocación"
+    ],
+    "total_usd_gt": 700,
+    "total_ars_gt": 150000
+  }
+}

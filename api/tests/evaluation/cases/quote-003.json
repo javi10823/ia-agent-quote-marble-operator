@@ -1,0 +1,50 @@
+{
+  "id": "quote-003",
+  "name": "NOE — Silestone Blanco Norte cocina mixta",
+  "tags": [
+    "residential",
+    "silestone",
+    "USD",
+    "anafe",
+    "pileta_empotrada",
+    "zocalo"
+  ],
+  "input": {
+    "client_name": "NOE",
+    "project": "Mesada de cocina",
+    "material": "Blanco Norte",
+    "pieces": [
+      {
+        "description": "Mesada",
+        "largo": 2.1,
+        "prof": 0.6
+      },
+      {
+        "description": "Zócalo",
+        "largo": 3.3,
+        "alto": 0.05
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": true,
+    "plazo": "20/30 días"
+  },
+  "expected": {
+    "material_m2_approx": 1.43,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "anafe",
+      "flete",
+      "colocación"
+    ],
+    "mo_items_must_not_have": [
+      "faldón",
+      "corte45"
+    ],
+    "total_usd_gt": 700,
+    "total_ars_gt": 200000
+  }
+}

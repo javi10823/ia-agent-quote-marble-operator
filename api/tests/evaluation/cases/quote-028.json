@@ -1,0 +1,66 @@
+{
+  "id": "quote-028",
+  "name": "Scalona — Terrazo White multi-ambiente",
+  "tags": [
+    "residential",
+    "purastone",
+    "USD",
+    "descuento_arquitecta",
+    "anafe",
+    "pileta_empotrada"
+  ],
+  "input": {
+    "client_name": "Scalona Arquitectura",
+    "project": "Veramujica 1222",
+    "material": "Terrazo White",
+    "pieces": [
+      {
+        "description": "Baño PB",
+        "largo": 0.91,
+        "prof": 0.46
+      },
+      {
+        "description": "Lavadero",
+        "largo": 1.47,
+        "prof": 0.6
+      },
+      {
+        "description": "Cocina A",
+        "largo": 2.29,
+        "prof": 0.6
+      },
+      {
+        "description": "Cocina B",
+        "largo": 2.24,
+        "prof": 0.6
+      },
+      {
+        "description": "Barra",
+        "largo": 1.6,
+        "prof": 0.67
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": true,
+    "plazo": "30 a 40 días",
+    "discount_pct": 5
+  },
+  "expected": {
+    "material_m2_approx": 5.09,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "anafe",
+      "colocación",
+      "flete"
+    ],
+    "mo_items_must_not_have": [
+      "corte45",
+      "faldón"
+    ],
+    "total_usd_gt": 1700,
+    "total_ars_gt": 350000
+  }
+}

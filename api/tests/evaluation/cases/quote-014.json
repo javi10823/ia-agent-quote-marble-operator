@@ -1,0 +1,50 @@
+{
+  "id": "quote-014",
+  "name": "Hernandez — Dekton Soke toilette",
+  "tags": [
+    "residential",
+    "dekton",
+    "USD",
+    "sinterizado",
+    "pileta_apoyo",
+    "descuento_arquitecto",
+    "stock"
+  ],
+  "input": {
+    "client_name": "Hernandez",
+    "project": "Toilette",
+    "material": "Soke",
+    "pieces": [
+      {
+        "description": "Mesada",
+        "largo": 0.68,
+        "prof": 0.41
+      },
+      {
+        "description": "Estante",
+        "largo": 0.68,
+        "prof": 0.41
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "apoyo",
+    "anafe": false,
+    "plazo": "20 días",
+    "discount_pct": 5
+  },
+  "expected": {
+    "material_m2_approx": 0.56,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "flete",
+      "colocación"
+    ],
+    "mo_items_must_not_have": [
+      "anafe",
+      "pegado pileta"
+    ],
+    "total_usd_gt": 350,
+    "total_ars_gt": 150000
+  }
+}

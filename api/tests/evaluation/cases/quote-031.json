@@ -1,0 +1,43 @@
+{
+  "id": "quote-031",
+  "name": "Anastasia — Silestone Blanco Norte vanitory",
+  "tags": [
+    "residential",
+    "silestone",
+    "USD",
+    "stock",
+    "pileta_apoyo",
+    "pieza_pequeña"
+  ],
+  "input": {
+    "client_name": "Anastasia",
+    "project": "Vanitory",
+    "material": "Blanco Norte",
+    "pieces": [
+      {
+        "description": "Vanitory",
+        "largo": 1.17,
+        "prof": 0.32
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "apoyo",
+    "anafe": false,
+    "plazo": "10 a 15 días"
+  },
+  "expected": {
+    "material_m2_approx": 0.37,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "colocación",
+      "flete"
+    ],
+    "mo_items_must_not_have": [
+      "anafe",
+      "pegado pileta"
+    ],
+    "total_usd_gt": 150,
+    "total_ars_gt": 80000
+  }
+}

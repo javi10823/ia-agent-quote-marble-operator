@@ -1,0 +1,57 @@
+{
+  "id": "quote-004",
+  "name": "Sabrina — Blanco Dallas isla",
+  "tags": [
+    "residential",
+    "granito_importado",
+    "USD",
+    "isla",
+    "anafe",
+    "pileta_empotrada"
+  ],
+  "input": {
+    "client_name": "Sabrina",
+    "project": "Funes",
+    "material": "Blanco Dallas",
+    "pieces": [
+      {
+        "description": "Mesada cocina",
+        "largo": 1.5,
+        "prof": 0.65
+      },
+      {
+        "description": "Zócalo 1",
+        "largo": 1.5,
+        "alto": 0.08
+      },
+      {
+        "description": "Zócalo 2",
+        "largo": 1.2,
+        "alto": 0.05
+      },
+      {
+        "description": "Isla",
+        "largo": 2.3,
+        "prof": 1.2
+      }
+    ],
+    "localidad": "Funes",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": true,
+    "plazo": "30 días"
+  },
+  "expected": {
+    "material_m2_approx": 3.79,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "anafe",
+      "flete",
+      "colocación"
+    ],
+    "mo_items_must_not_have": [],
+    "total_usd_gt": 1200,
+    "total_ars_gt": 300000
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "id": "quote-024",
+  "name": "Franco Esperón — Negro Brasil Piñero",
+  "tags": [
+    "residential",
+    "granito_importado",
+    "USD",
+    "anafe",
+    "pileta_empotrada",
+    "zocalo"
+  ],
+  "input": {
+    "client_name": "Franco Esperón",
+    "project": "Cocina Piñero",
+    "material": "Negro Brasil Extra",
+    "pieces": [
+      {
+        "description": "Mesada 1",
+        "largo": 2.2,
+        "prof": 0.62
+      },
+      {
+        "description": "Mesada 2",
+        "largo": 1.45,
+        "prof": 0.62
+      },
+      {
+        "description": "Mesada 3A",
+        "largo": 2.28,
+        "prof": 0.6
+      },
+      {
+        "description": "Zócalo atrás",
+        "largo": 2.2,
+        "alto": 0.08
+      },
+      {
+        "description": "Zócalo lateral",
+        "largo": 0.62,
+        "alto": 0.08
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": true,
+    "plazo": "30 días"
+  },
+  "expected": {
+    "material_m2_approx": 4.05,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "anafe",
+      "colocación",
+      "flete"
+    ],
+    "mo_items_must_not_have": [
+      "corte45",
+      "faldón"
+    ],
+    "total_usd_gt": 1000,
+    "total_ars_gt": 250000
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "id": "quote-030",
+  "name": "Juan Carlos — Negro Brasil 2 mesadas",
+  "tags": [
+    "residential",
+    "granito_importado",
+    "USD",
+    "regrueso",
+    "anafe",
+    "pileta_empotrada"
+  ],
+  "input": {
+    "client_name": "Juan Carlos",
+    "project": "Cocina",
+    "material": "Negro Brasil Extra",
+    "pieces": [
+      {
+        "description": "Mesada 1",
+        "largo": 2.41,
+        "prof": 0.6
+      },
+      {
+        "description": "Mesada 2",
+        "largo": 3.25,
+        "prof": 0.6
+      },
+      {
+        "description": "Frentin M1",
+        "largo": 2.41,
+        "alto": 0.05
+      },
+      {
+        "description": "Frentin costado M1",
+        "largo": 0.36,
+        "alto": 0.05
+      },
+      {
+        "description": "Frentin M2",
+        "largo": 3.25,
+        "alto": 0.05
+      },
+      {
+        "description": "Frentin costado M2",
+        "largo": 0.25,
+        "alto": 0.05
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": true,
+    "plazo": "30 días"
+  },
+  "expected": {
+    "material_m2_approx": 3.71,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "anafe",
+      "colocación",
+      "flete"
+    ],
+    "mo_items_must_not_have": [
+      "corte45",
+      "faldón"
+    ],
+    "total_usd_gt": 900,
+    "total_ars_gt": 250000
+  }
+}

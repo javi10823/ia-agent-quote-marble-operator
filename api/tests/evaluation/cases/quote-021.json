@@ -1,0 +1,70 @@
+{
+  "id": "quote-021",
+  "name": "Zara Gomez — Negro Boreal cocina L",
+  "tags": [
+    "residential",
+    "granito_nacional",
+    "ARS",
+    "cocina_L",
+    "zocalo",
+    "pileta_empotrada"
+  ],
+  "input": {
+    "client_name": "Zara Gomez",
+    "project": "Cocina",
+    "material": "Negro Boreal Extra",
+    "pieces": [
+      {
+        "description": "Tramo 1 L",
+        "largo": 1.53,
+        "prof": 0.56
+      },
+      {
+        "description": "Tramo 2 L",
+        "largo": 1.315,
+        "prof": 0.6
+      },
+      {
+        "description": "Mesada recta",
+        "largo": 1.885,
+        "prof": 0.6
+      },
+      {
+        "description": "Zócalo lateral",
+        "largo": 1.53,
+        "alto": 0.05
+      },
+      {
+        "description": "Zócalo trasero",
+        "largo": 1.86,
+        "alto": 0.05
+      },
+      {
+        "description": "Zócalo recta",
+        "largo": 1.885,
+        "alto": 0.05
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": false,
+    "plazo": "A convenir"
+  },
+  "expected": {
+    "material_m2_approx": 3.04,
+    "material_currency": "ARS",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "colocación",
+      "flete"
+    ],
+    "mo_items_must_not_have": [
+      "anafe",
+      "corte45",
+      "faldón"
+    ],
+    "total_usd_gt": 0,
+    "total_ars_gt": 700000
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "id": "quote-017",
+  "name": "Simulación — Silestone Blanco Norte cocina",
+  "tags": [
+    "residential",
+    "silestone",
+    "USD",
+    "anafe",
+    "pileta_empotrada",
+    "zocalo"
+  ],
+  "input": {
+    "client_name": "Simulación",
+    "project": "Cocina",
+    "material": "Blanco Norte",
+    "pieces": [
+      {
+        "description": "Mesada",
+        "largo": 2.1,
+        "prof": 0.6
+      },
+      {
+        "description": "Zócalo fondo",
+        "largo": 2.1,
+        "alto": 0.05
+      },
+      {
+        "description": "Zócalo lateral",
+        "largo": 0.6,
+        "alto": 0.05
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": true,
+    "plazo": "40 días"
+  },
+  "expected": {
+    "material_m2_approx": 1.4,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "anafe",
+      "flete",
+      "colocación"
+    ],
+    "mo_items_must_not_have": [
+      "faldón",
+      "corte45"
+    ],
+    "total_usd_gt": 600,
+    "total_ars_gt": 150000
+  }
+}

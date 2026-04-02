@@ -1,0 +1,45 @@
+{
+  "id": "quote-022",
+  "name": "Estudio Doya — Dekton Nebbia baño",
+  "tags": [
+    "residential",
+    "dekton",
+    "USD",
+    "sinterizado",
+    "stock",
+    "pileta_apoyo",
+    "descuento"
+  ],
+  "input": {
+    "client_name": "Estudio Doya",
+    "project": "Baño",
+    "material": "Nebbia",
+    "pieces": [
+      {
+        "description": "Mesada baño",
+        "largo": 1.5,
+        "prof": 0.5
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "apoyo",
+    "anafe": false,
+    "plazo": "A convenir",
+    "discount_pct": 10
+  },
+  "expected": {
+    "material_m2_approx": 0.75,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "colocación",
+      "flete"
+    ],
+    "mo_items_must_not_have": [
+      "anafe",
+      "pegado pileta"
+    ],
+    "total_usd_gt": 350,
+    "total_ars_gt": 120000
+  }
+}

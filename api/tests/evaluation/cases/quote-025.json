@@ -1,0 +1,47 @@
+{
+  "id": "quote-025",
+  "name": "Delfina — Terrazo White isla Ibarlucea",
+  "tags": [
+    "residential",
+    "purastone",
+    "USD",
+    "isla",
+    "merma",
+    "anafe"
+  ],
+  "input": {
+    "client_name": "Delfina",
+    "project": "Cocina Ibarlucea",
+    "material": "Terrazo White",
+    "pieces": [
+      {
+        "description": "Mesada",
+        "largo": 3.2,
+        "prof": 0.6
+      },
+      {
+        "description": "Isla",
+        "largo": 3.15,
+        "prof": 0.8
+      }
+    ],
+    "localidad": "Ibarlucea",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": true,
+    "plazo": "30 días"
+  },
+  "expected": {
+    "material_m2_approx": 4.44,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "anafe",
+      "colocación",
+      "flete"
+    ],
+    "mo_items_must_not_have": [],
+    "total_usd_gt": 1500,
+    "total_ars_gt": 250000
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "quote-002",
+  "name": "Joaquín — Negro Brasil solías sin colocación",
+  "tags": ["residential", "granito_importado", "USD", "sin_colocacion", "sin_pileta"],
+  "input": {
+    "client_name": "Joaquín",
+    "project": "Solías",
+    "material": "Negro Brasil",
+    "pieces": [
+      {"description": "Solía 1", "largo": 0.73, "prof": 0.27},
+      {"description": "Solía 2", "largo": 0.75, "prof": 0.23},
+      {"description": "Solía 3", "largo": 0.78, "prof": 0.20},
+      {"description": "Solía 4", "largo": 0.65, "prof": 0.27},
+      {"description": "Solía 5", "largo": 3.20, "prof": 0.25}
+    ],
+    "localidad": "Rosario",
+    "colocacion": false,
+    "anafe": false,
+    "plazo": "10 días desde la toma de medidas"
+  },
+  "expected": {
+    "material_m2_approx": 1.50,
+    "material_currency": "USD",
+    "mo_items_must_have": ["flete"],
+    "mo_items_must_not_have": ["colocación", "anafe", "pegado pileta"],
+    "total_usd_gt": 400,
+    "total_ars_gt": 25000
+  }
+}

@@ -1,0 +1,478 @@
+[
+  {
+    "id": "quote-001",
+    "name": "Kawano — Purastone Blanco Caná cocina con alzas y tomas",
+    "tags": [
+      "residential",
+      "purastone",
+      "USD",
+      "alzas",
+      "tomas",
+      "pileta_empotrada"
+    ],
+    "material": "Blanco Caná",
+    "example_file": "quote-001*.md"
+  },
+  {
+    "id": "quote-002",
+    "name": "Joaquín — Negro Brasil solías sin colocación",
+    "tags": [
+      "residential",
+      "granito_importado",
+      "USD",
+      "sin_colocacion",
+      "sin_pileta"
+    ],
+    "material": "Negro Brasil",
+    "example_file": "quote-002*.md"
+  },
+  {
+    "id": "quote-003",
+    "name": "NOE — Silestone Blanco Norte cocina mixta",
+    "tags": [
+      "residential",
+      "silestone",
+      "USD",
+      "anafe",
+      "pileta_empotrada",
+      "zocalo"
+    ],
+    "material": "Blanco Norte",
+    "example_file": "quote-003*.md"
+  },
+  {
+    "id": "quote-004",
+    "name": "Sabrina — Blanco Dallas isla",
+    "tags": [
+      "residential",
+      "granito_importado",
+      "USD",
+      "isla",
+      "anafe",
+      "pileta_empotrada"
+    ],
+    "material": "Blanco Dallas",
+    "example_file": "quote-004*.md"
+  },
+  {
+    "id": "quote-005",
+    "name": "Xiomara — Pura Prima Ivory Desert + Johnson",
+    "tags": [
+      "residential",
+      "puraprima",
+      "USD",
+      "pileta_johnson",
+      "anafe",
+      "faldon",
+      "corte45"
+    ],
+    "material": "Ivory Desert",
+    "example_file": "quote-005*.md"
+  },
+  {
+    "id": "quote-006",
+    "name": "Xiomara — Pura Prima Limestone alternativa",
+    "tags": [
+      "residential",
+      "puraprima",
+      "USD",
+      "pileta_johnson",
+      "anafe",
+      "alternativa"
+    ],
+    "material": "Limestone",
+    "example_file": "quote-006*.md"
+  },
+  {
+    "id": "quote-007",
+    "name": "Dinale — Negro Brasil obra grande",
+    "tags": [
+      "residential",
+      "granito_importado",
+      "USD",
+      "sin_colocacion",
+      "descuento"
+    ],
+    "material": "Negro Brasil",
+    "example_file": "quote-007*.md"
+  },
+  {
+    "id": "quote-008",
+    "name": "Clarisa — Silestone Calacatta pileta integrada",
+    "tags": [
+      "residential",
+      "silestone",
+      "USD",
+      "descuento"
+    ],
+    "material": "Calacatta Clasic",
+    "example_file": "quote-008*.md"
+  },
+  {
+    "id": "quote-009",
+    "name": "Alicia — Purastone Crema Pisa baño mínimo",
+    "tags": [
+      "residential",
+      "purastone",
+      "USD",
+      "pileta_apoyo",
+      "sin_colocacion"
+    ],
+    "material": "Crema Pisa",
+    "example_file": "quote-009*.md"
+  },
+  {
+    "id": "quote-010",
+    "name": "Muniagurria — Purastone Terrazo",
+    "tags": [
+      "residential",
+      "purastone",
+      "USD",
+      "anafe",
+      "pileta_empotrada",
+      "descuento"
+    ],
+    "material": "Terrazo",
+    "example_file": "quote-010*.md"
+  },
+  {
+    "id": "quote-011",
+    "name": "Arq. Nadia — Negro Brasil multi-ambiente",
+    "tags": [
+      "residential",
+      "granito_importado",
+      "USD",
+      "anafe",
+      "pileta_empotrada",
+      "alzas"
+    ],
+    "material": "Negro Brasil",
+    "example_file": "quote-011*.md"
+  },
+  {
+    "id": "quote-012",
+    "name": "Alma Estudio — Gris Mara descuento",
+    "tags": [
+      "residential",
+      "granito_nacional",
+      "ARS",
+      "descuento_arquitecto",
+      "pileta_empotrada"
+    ],
+    "material": "Gris Mara",
+    "example_file": "quote-012*.md"
+  },
+  {
+    "id": "quote-013",
+    "name": "Di Santo — Purastone Blanco Paloma alzas",
+    "tags": [
+      "residential",
+      "purastone",
+      "USD",
+      "alzas",
+      "anafe",
+      "pileta_empotrada",
+      "descuento"
+    ],
+    "material": "Blanco Paloma",
+    "example_file": "quote-013*.md"
+  },
+  {
+    "id": "quote-014",
+    "name": "Hernandez — Dekton Soke toilette",
+    "tags": [
+      "residential",
+      "dekton",
+      "USD",
+      "sinterizado",
+      "pileta_apoyo",
+      "descuento_arquitecto",
+      "stock"
+    ],
+    "material": "Soke",
+    "example_file": "quote-014*.md"
+  },
+  {
+    "id": "quote-015",
+    "name": "Munge — Purastone Gris Zen + Johnson",
+    "tags": [
+      "residential",
+      "purastone",
+      "USD",
+      "pileta_johnson",
+      "anafe",
+      "zocalo"
+    ],
+    "material": "Gris Zen",
+    "example_file": "quote-015*.md"
+  },
+  {
+    "id": "quote-016",
+    "name": "Munge — Silestone Gris Expo alternativa",
+    "tags": [
+      "residential",
+      "silestone",
+      "USD",
+      "pileta_johnson",
+      "anafe",
+      "alternativa"
+    ],
+    "material": "Gris Expo",
+    "example_file": "quote-016*.md"
+  },
+  {
+    "id": "quote-017",
+    "name": "Simulación — Silestone Blanco Norte cocina",
+    "tags": [
+      "residential",
+      "silestone",
+      "USD",
+      "anafe",
+      "pileta_empotrada",
+      "zocalo"
+    ],
+    "material": "Blanco Norte",
+    "example_file": "quote-017*.md"
+  },
+  {
+    "id": "quote-018",
+    "name": "Anon — Purastone Terrazo White baño",
+    "tags": [
+      "residential",
+      "purastone",
+      "USD",
+      "stock",
+      "pileta_apoyo"
+    ],
+    "material": "Terrazo White",
+    "example_file": "quote-018*.md"
+  },
+  {
+    "id": "quote-019",
+    "name": "Metrolatina — Negro Boreal edificio",
+    "tags": [
+      "building",
+      "granito_nacional",
+      "ARS",
+      "edificio",
+      "pileta_johnson",
+      "sin_colocacion"
+    ],
+    "material": "Negro Boreal Extra",
+    "example_file": "quote-019*.md"
+  },
+  {
+    "id": "quote-020",
+    "name": "WERK — Pura Cana edificio",
+    "tags": [
+      "building",
+      "purastone",
+      "USD",
+      "edificio",
+      "isla",
+      "anafe",
+      "pileta_johnson"
+    ],
+    "material": "Pura Cana",
+    "example_file": "quote-020*.md"
+  },
+  {
+    "id": "quote-021",
+    "name": "Zara Gomez — Negro Boreal cocina L",
+    "tags": [
+      "residential",
+      "granito_nacional",
+      "ARS",
+      "cocina_L",
+      "zocalo",
+      "pileta_empotrada"
+    ],
+    "material": "Negro Boreal Extra",
+    "example_file": "quote-021*.md"
+  },
+  {
+    "id": "quote-022",
+    "name": "Estudio Doya — Dekton Nebbia baño",
+    "tags": [
+      "residential",
+      "dekton",
+      "USD",
+      "sinterizado",
+      "stock",
+      "pileta_apoyo",
+      "descuento"
+    ],
+    "material": "Nebbia",
+    "example_file": "quote-022*.md"
+  },
+  {
+    "id": "quote-023",
+    "name": "WERK — Blanco Paloma edificio baños",
+    "tags": [
+      "building",
+      "purastone",
+      "USD",
+      "edificio",
+      "pileta_empotrada",
+      "zocalo",
+      "sin_colocacion"
+    ],
+    "material": "Blanco Paloma",
+    "example_file": "quote-023*.md"
+  },
+  {
+    "id": "quote-024",
+    "name": "Franco Esperón — Negro Brasil Piñero",
+    "tags": [
+      "residential",
+      "granito_importado",
+      "USD",
+      "anafe",
+      "pileta_empotrada",
+      "zocalo"
+    ],
+    "material": "Negro Brasil Extra",
+    "example_file": "quote-024*.md"
+  },
+  {
+    "id": "quote-025",
+    "name": "Delfina — Terrazo White isla Ibarlucea",
+    "tags": [
+      "residential",
+      "purastone",
+      "USD",
+      "isla",
+      "merma",
+      "anafe"
+    ],
+    "material": "Terrazo White",
+    "example_file": "quote-025*.md"
+  },
+  {
+    "id": "quote-026",
+    "name": "Luciana Pacor — Blanco Paloma Funes",
+    "tags": [
+      "residential",
+      "purastone",
+      "USD",
+      "stock",
+      "pileta_empotrada",
+      "descuento_arquitecta"
+    ],
+    "material": "Blanco Paloma",
+    "example_file": "quote-026*.md"
+  },
+  {
+    "id": "quote-027",
+    "name": "Agostina — Silestone White Storm sin pileta",
+    "tags": [
+      "residential",
+      "silestone",
+      "USD",
+      "sin_pileta",
+      "zocalo"
+    ],
+    "material": "White Storm",
+    "example_file": "quote-027*.md"
+  },
+  {
+    "id": "quote-028",
+    "name": "Scalona — Terrazo White multi-ambiente",
+    "tags": [
+      "residential",
+      "purastone",
+      "USD",
+      "descuento_arquitecta",
+      "anafe",
+      "pileta_empotrada"
+    ],
+    "material": "Terrazo White",
+    "example_file": "quote-028*.md"
+  },
+  {
+    "id": "quote-029",
+    "name": "Scalona — Calacatta Classic baños PA",
+    "tags": [
+      "residential",
+      "silestone",
+      "USD",
+      "stock",
+      "pileta_apoyo",
+      "descuento"
+    ],
+    "material": "Calacatta Classic",
+    "example_file": "quote-029*.md"
+  },
+  {
+    "id": "quote-030",
+    "name": "Juan Carlos — Negro Brasil 2 mesadas",
+    "tags": [
+      "residential",
+      "granito_importado",
+      "USD",
+      "regrueso",
+      "anafe",
+      "pileta_empotrada"
+    ],
+    "material": "Negro Brasil Extra",
+    "example_file": "quote-030*.md"
+  },
+  {
+    "id": "quote-031",
+    "name": "Anastasia — Silestone Blanco Norte vanitory",
+    "tags": [
+      "residential",
+      "silestone",
+      "USD",
+      "stock",
+      "pileta_apoyo",
+      "pieza_pequeña"
+    ],
+    "material": "Blanco Norte",
+    "example_file": "quote-031*.md"
+  },
+  {
+    "id": "quote-032",
+    "name": "Grupo Madero — Crema Pisa baño",
+    "tags": [
+      "residential",
+      "purastone",
+      "USD",
+      "merma",
+      "pileta_empotrada",
+      "zocalo"
+    ],
+    "material": "Crema Pisa",
+    "example_file": "quote-032*.md"
+  },
+  {
+    "id": "quote-033",
+    "name": "Yanet Moggia — Negro Boreal isla patas",
+    "tags": [
+      "residential",
+      "granito_nacional",
+      "ARS",
+      "isla",
+      "corte45",
+      "pulido",
+      "pileta_johnson"
+    ],
+    "material": "Negro Boreal Leather",
+    "example_file": "quote-033*.md"
+  },
+  {
+    "id": "quote-034",
+    "name": "Alejandro Gavilán — Negro Brasil multi-sector",
+    "tags": [
+      "residential",
+      "granito_importado",
+      "USD",
+      "multi_sector",
+      "isla",
+      "zocalo",
+      "sin_anafe"
+    ],
+    "material": "Negro Brasil Extra",
+    "example_file": "quote-034*.md"
+  }
+]

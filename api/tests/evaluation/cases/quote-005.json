@@ -1,0 +1,58 @@
+{
+  "id": "quote-005",
+  "name": "Xiomara — Pura Prima Ivory Desert + Johnson",
+  "tags": [
+    "residential",
+    "puraprima",
+    "USD",
+    "pileta_johnson",
+    "anafe",
+    "faldon",
+    "corte45"
+  ],
+  "input": {
+    "client_name": "Xiomara Noval",
+    "project": "Mesada de cocina",
+    "material": "Ivory Desert",
+    "pieces": [
+      {
+        "description": "Mesada 1",
+        "largo": 1.5,
+        "prof": 0.6
+      },
+      {
+        "description": "Mesada 2",
+        "largo": 2.7,
+        "prof": 0.6
+      },
+      {
+        "description": "Zócalo",
+        "largo": 4.8,
+        "alto": 0.04
+      },
+      {
+        "description": "Faldón",
+        "largo": 5.4,
+        "alto": 0.04
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_johnson",
+    "anafe": true,
+    "plazo": "30 días"
+  },
+  "expected": {
+    "material_m2_approx": 2.93,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "anafe",
+      "flete",
+      "colocación"
+    ],
+    "mo_items_must_not_have": [],
+    "total_usd_gt": 1500,
+    "total_ars_gt": 600000
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "id": "quote-007",
+  "name": "Dinale — Negro Brasil obra grande",
+  "tags": [
+    "residential",
+    "granito_importado",
+    "USD",
+    "sin_colocacion",
+    "descuento"
+  ],
+  "input": {
+    "client_name": "Dinale",
+    "project": "Obra grande",
+    "material": "Negro Brasil",
+    "pieces": [
+      {
+        "description": "Mesada A",
+        "largo": 3.85,
+        "prof": 0.5
+      },
+      {
+        "description": "Zócalo A",
+        "largo": 4.85,
+        "alto": 0.2
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": false,
+    "pileta": "empotrada_cliente",
+    "anafe": false,
+    "plazo": "60/70 días",
+    "discount_pct": 5
+  },
+  "expected": {
+    "material_m2_approx": 2.9,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "flete"
+    ],
+    "mo_items_must_not_have": [
+      "colocación",
+      "anafe"
+    ],
+    "total_usd_gt": 700,
+    "total_ars_gt": 80000
+  }
+}

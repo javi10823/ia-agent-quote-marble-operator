@@ -1,0 +1,81 @@
+{
+  "id": "quote-034",
+  "name": "Alejandro Gavilán — Negro Brasil multi-sector",
+  "tags": [
+    "residential",
+    "granito_importado",
+    "USD",
+    "multi_sector",
+    "isla",
+    "zocalo",
+    "sin_anafe"
+  ],
+  "input": {
+    "client_name": "Alejandro Gavilán",
+    "project": "Cocina + Isla + Parrilla",
+    "material": "Negro Brasil Extra",
+    "pieces": [
+      {
+        "description": "Parrilla",
+        "largo": 1.387,
+        "prof": 0.77
+      },
+      {
+        "description": "Zócalo parrilla",
+        "largo": 2.93,
+        "alto": 0.05
+      },
+      {
+        "description": "Isla",
+        "largo": 1.9,
+        "prof": 0.8
+      },
+      {
+        "description": "Zócalo isla",
+        "largo": 0.25,
+        "alto": 0.05
+      },
+      {
+        "description": "Cocina A",
+        "largo": 2.59,
+        "prof": 0.6
+      },
+      {
+        "description": "Cocina B",
+        "largo": 0.65,
+        "prof": 0.6
+      },
+      {
+        "description": "Cocina suelta",
+        "largo": 0.6,
+        "prof": 0.6
+      },
+      {
+        "description": "Zócalo cocina",
+        "largo": 5.03,
+        "alto": 0.05
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": false,
+    "plazo": "30 días"
+  },
+  "expected": {
+    "material_m2_approx": 5.3,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "colocación",
+      "flete"
+    ],
+    "mo_items_must_not_have": [
+      "anafe",
+      "corte45",
+      "faldón"
+    ],
+    "total_usd_gt": 1200,
+    "total_ars_gt": 250000
+  }
+}

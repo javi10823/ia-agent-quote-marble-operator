@@ -1,0 +1,58 @@
+{
+  "id": "quote-033",
+  "name": "Yanet Moggia — Negro Boreal isla patas",
+  "tags": [
+    "residential",
+    "granito_nacional",
+    "ARS",
+    "isla",
+    "corte45",
+    "pulido",
+    "pileta_johnson"
+  ],
+  "input": {
+    "client_name": "Yanet Moggia",
+    "project": "Isla Galería",
+    "material": "Negro Boreal Leather",
+    "pieces": [
+      {
+        "description": "Tapa",
+        "largo": 1.7,
+        "prof": 0.64
+      },
+      {
+        "description": "Pata lat izq",
+        "largo": 0.64,
+        "alto": 0.95
+      },
+      {
+        "description": "Pata lat der",
+        "largo": 0.64,
+        "alto": 0.95
+      },
+      {
+        "description": "Pata frontal",
+        "largo": 1.7,
+        "alto": 0.95
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_johnson",
+    "anafe": false,
+    "plazo": "40 días hábiles"
+  },
+  "expected": {
+    "material_m2_approx": 3.92,
+    "material_currency": "ARS",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "colocación"
+    ],
+    "mo_items_must_not_have": [
+      "anafe"
+    ],
+    "total_usd_gt": 0,
+    "total_ars_gt": 1000000
+  }
+}

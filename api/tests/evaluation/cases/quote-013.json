@@ -1,0 +1,57 @@
+{
+  "id": "quote-013",
+  "name": "Di Santo — Purastone Blanco Paloma alzas",
+  "tags": [
+    "residential",
+    "purastone",
+    "USD",
+    "alzas",
+    "anafe",
+    "pileta_empotrada",
+    "descuento"
+  ],
+  "input": {
+    "client_name": "Di Santo",
+    "project": "Cocina",
+    "material": "Blanco Paloma",
+    "pieces": [
+      {
+        "description": "Mesada",
+        "largo": 3.24,
+        "prof": 0.63
+      },
+      {
+        "description": "Alza",
+        "largo": 2.49,
+        "alto": 0.5
+      },
+      {
+        "description": "Alza chica",
+        "largo": 0.76,
+        "alto": 0.23
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": true,
+    "plazo": "30 días",
+    "discount_pct": 5
+  },
+  "expected": {
+    "material_m2_approx": 3.46,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "anafe",
+      "flete",
+      "colocación"
+    ],
+    "mo_items_must_not_have": [
+      "faldón",
+      "corte45"
+    ],
+    "total_usd_gt": 1200,
+    "total_ars_gt": 250000
+  }
+}

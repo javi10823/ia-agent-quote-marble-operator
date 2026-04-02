@@ -1,0 +1,61 @@
+{
+  "id": "quote-010",
+  "name": "Muniagurria — Purastone Terrazo",
+  "tags": [
+    "residential",
+    "purastone",
+    "USD",
+    "anafe",
+    "pileta_empotrada",
+    "descuento"
+  ],
+  "input": {
+    "client_name": "Muniagurria",
+    "project": "Callao 1171",
+    "material": "Terrazo",
+    "pieces": [
+      {
+        "description": "Mesada 1",
+        "largo": 1.53,
+        "prof": 0.645
+      },
+      {
+        "description": "Mesada 2",
+        "largo": 2.067,
+        "prof": 0.645
+      },
+      {
+        "description": "Mesada 3",
+        "largo": 1.595,
+        "prof": 0.635
+      },
+      {
+        "description": "Mesada 4",
+        "largo": 0.995,
+        "prof": 0.635
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": true,
+    "plazo": "30 días",
+    "discount_pct": 5
+  },
+  "expected": {
+    "material_m2_approx": 4.0,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "anafe",
+      "flete",
+      "colocación"
+    ],
+    "mo_items_must_not_have": [
+      "faldón",
+      "corte45"
+    ],
+    "total_usd_gt": 1500,
+    "total_ars_gt": 250000
+  }
+}

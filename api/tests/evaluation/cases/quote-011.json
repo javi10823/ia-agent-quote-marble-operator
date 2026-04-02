@@ -1,0 +1,70 @@
+{
+  "id": "quote-011",
+  "name": "Arq. Nadia — Negro Brasil multi-ambiente",
+  "tags": [
+    "residential",
+    "granito_importado",
+    "USD",
+    "anafe",
+    "pileta_empotrada",
+    "alzas"
+  ],
+  "input": {
+    "client_name": "Arq. Nadia",
+    "project": "Cocina + Baño",
+    "material": "Negro Brasil",
+    "pieces": [
+      {
+        "description": "Mesada cocina 1",
+        "largo": 1.02,
+        "prof": 0.6
+      },
+      {
+        "description": "Mesada cocina 2",
+        "largo": 1.02,
+        "prof": 0.38
+      },
+      {
+        "description": "Mesada cocina 3",
+        "largo": 1.76,
+        "prof": 0.65
+      },
+      {
+        "description": "Alza 1",
+        "largo": 1.76,
+        "alto": 0.6
+      },
+      {
+        "description": "Alza 2",
+        "largo": 0.65,
+        "alto": 0.6
+      },
+      {
+        "description": "Alza 3",
+        "largo": 1.02,
+        "alto": 0.6
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": true,
+    "plazo": "30 días"
+  },
+  "expected": {
+    "material_m2_approx": 4.2,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "anafe",
+      "flete",
+      "colocación"
+    ],
+    "mo_items_must_not_have": [
+      "faldón",
+      "corte45"
+    ],
+    "total_usd_gt": 1000,
+    "total_ars_gt": 250000
+  }
+}

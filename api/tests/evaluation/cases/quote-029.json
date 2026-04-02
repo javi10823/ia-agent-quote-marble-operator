@@ -1,0 +1,48 @@
+{
+  "id": "quote-029",
+  "name": "Scalona — Calacatta Classic baños PA",
+  "tags": [
+    "residential",
+    "silestone",
+    "USD",
+    "stock",
+    "pileta_apoyo",
+    "descuento"
+  ],
+  "input": {
+    "client_name": "Scalona Arquitectura",
+    "project": "Veramujica Baños PA",
+    "material": "Calacatta Classic",
+    "pieces": [
+      {
+        "description": "Baño PA 5",
+        "largo": 0.93,
+        "prof": 0.46
+      },
+      {
+        "description": "Baño PA 6",
+        "largo": 1.29,
+        "prof": 0.45
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "apoyo",
+    "anafe": false,
+    "plazo": "30 a 40 días",
+    "discount_pct": 15
+  },
+  "expected": {
+    "material_m2_approx": 1.01,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "colocación"
+    ],
+    "mo_items_must_not_have": [
+      "anafe",
+      "pegado pileta"
+    ],
+    "total_usd_gt": 400,
+    "total_ars_gt": 60000
+  }
+}

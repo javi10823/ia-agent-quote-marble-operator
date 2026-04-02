@@ -1,0 +1,55 @@
+{
+  "id": "quote-026",
+  "name": "Luciana Pacor — Blanco Paloma Funes",
+  "tags": [
+    "residential",
+    "purastone",
+    "USD",
+    "stock",
+    "pileta_empotrada",
+    "descuento_arquitecta"
+  ],
+  "input": {
+    "client_name": "Luciana Pacor",
+    "project": "Baño",
+    "material": "Blanco Paloma",
+    "pieces": [
+      {
+        "description": "Mesada",
+        "largo": 1.0,
+        "prof": 0.55
+      },
+      {
+        "description": "Zócalo atrás",
+        "largo": 1.0,
+        "alto": 0.05
+      },
+      {
+        "description": "Zócalo lateral",
+        "largo": 0.55,
+        "alto": 0.05
+      }
+    ],
+    "localidad": "Funes",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": false,
+    "plazo": "15 días",
+    "discount_pct": 5
+  },
+  "expected": {
+    "material_m2_approx": 0.63,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "colocación",
+      "flete"
+    ],
+    "mo_items_must_not_have": [
+      "anafe",
+      "corte45"
+    ],
+    "total_usd_gt": 200,
+    "total_ars_gt": 120000
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "id": "quote-008",
+  "name": "Clarisa — Silestone Calacatta pileta integrada",
+  "tags": [
+    "residential",
+    "silestone",
+    "USD",
+    "descuento"
+  ],
+  "input": {
+    "client_name": "Clarisa",
+    "project": "Mesada",
+    "material": "Calacatta Clasic",
+    "pieces": [
+      {
+        "description": "Mesada principal",
+        "largo": 1.78,
+        "prof": 0.43
+      },
+      {
+        "description": "Mesada lateral",
+        "largo": 0.8,
+        "prof": 0.15
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": false,
+    "plazo": "30 días",
+    "discount_pct": 15
+  },
+  "expected": {
+    "material_m2_approx": 0.89,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "flete",
+      "colocación"
+    ],
+    "mo_items_must_not_have": [
+      "anafe"
+    ],
+    "total_usd_gt": 300,
+    "total_ars_gt": 150000
+  }
+}

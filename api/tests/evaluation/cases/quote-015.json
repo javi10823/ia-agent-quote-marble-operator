@@ -1,0 +1,50 @@
+{
+  "id": "quote-015",
+  "name": "Munge — Purastone Gris Zen + Johnson",
+  "tags": [
+    "residential",
+    "purastone",
+    "USD",
+    "pileta_johnson",
+    "anafe",
+    "zocalo"
+  ],
+  "input": {
+    "client_name": "Estudio Munge",
+    "project": "Catamarca 3228",
+    "material": "Gris Zen",
+    "pieces": [
+      {
+        "description": "Mesada",
+        "largo": 2.89,
+        "prof": 0.62
+      },
+      {
+        "description": "Zócalo",
+        "largo": 3.49,
+        "alto": 0.07
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_johnson",
+    "anafe": true,
+    "plazo": "20/30 días"
+  },
+  "expected": {
+    "material_m2_approx": 2.03,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "anafe",
+      "flete",
+      "colocación"
+    ],
+    "mo_items_must_not_have": [
+      "faldón",
+      "corte45"
+    ],
+    "total_usd_gt": 1000,
+    "total_ars_gt": 350000
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "quote-027",
+  "name": "Agostina — Silestone White Storm sin pileta",
+  "tags": [
+    "residential",
+    "silestone",
+    "USD",
+    "sin_pileta",
+    "zocalo"
+  ],
+  "input": {
+    "client_name": "Agostina",
+    "project": "Mesada",
+    "material": "White Storm",
+    "pieces": [
+      {
+        "description": "Mesada",
+        "largo": 2.185,
+        "prof": 0.69
+      },
+      {
+        "description": "Zócalo atrás",
+        "largo": 2.185,
+        "alto": 0.05
+      },
+      {
+        "description": "Zócalo costado",
+        "largo": 0.69,
+        "alto": 0.05
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "anafe": false,
+    "plazo": "15 a 20 días"
+  },
+  "expected": {
+    "material_m2_approx": 1.65,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "colocación",
+      "flete"
+    ],
+    "mo_items_must_not_have": [
+      "anafe",
+      "pegado pileta",
+      "corte45"
+    ],
+    "total_usd_gt": 600,
+    "total_ars_gt": 80000
+  }
+}

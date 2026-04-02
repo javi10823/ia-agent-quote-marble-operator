@@ -1,0 +1,47 @@
+{
+  "id": "quote-009",
+  "name": "Alicia — Purastone Crema Pisa baño mínimo",
+  "tags": [
+    "residential",
+    "purastone",
+    "USD",
+    "pileta_apoyo",
+    "sin_colocacion"
+  ],
+  "input": {
+    "client_name": "Alicia",
+    "project": "Baño",
+    "material": "Crema Pisa",
+    "pieces": [
+      {
+        "description": "Mesada",
+        "largo": 1.1,
+        "prof": 0.35
+      },
+      {
+        "description": "Faldón",
+        "largo": 1.6,
+        "alto": 0.06
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": false,
+    "pileta": "apoyo",
+    "anafe": false,
+    "plazo": "15/20 días"
+  },
+  "expected": {
+    "material_m2_approx": 0.48,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "flete"
+    ],
+    "mo_items_must_not_have": [
+      "colocación",
+      "anafe",
+      "pegado pileta"
+    ],
+    "total_usd_gt": 150,
+    "total_ars_gt": 30000
+  }
+}

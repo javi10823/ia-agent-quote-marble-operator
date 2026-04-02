@@ -1,0 +1,53 @@
+{
+  "id": "quote-032",
+  "name": "Grupo Madero — Crema Pisa baño",
+  "tags": [
+    "residential",
+    "purastone",
+    "USD",
+    "merma",
+    "pileta_empotrada",
+    "zocalo"
+  ],
+  "input": {
+    "client_name": "Grupo Madero",
+    "project": "Baño",
+    "material": "Crema Pisa",
+    "pieces": [
+      {
+        "description": "Mesada",
+        "largo": 2.3,
+        "prof": 0.55
+      },
+      {
+        "description": "Zócalo trasero",
+        "largo": 2.3,
+        "alto": 0.1
+      },
+      {
+        "description": "Frentin frente",
+        "largo": 2.3,
+        "alto": 0.15
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": false,
+    "plazo": "20 a 30 días"
+  },
+  "expected": {
+    "material_m2_approx": 1.84,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "pegado pileta",
+      "colocación",
+      "flete"
+    ],
+    "mo_items_must_not_have": [
+      "anafe"
+    ],
+    "total_usd_gt": 600,
+    "total_ars_gt": 150000
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "id": "quote-018",
+  "name": "Anon — Purastone Terrazo White baño",
+  "tags": [
+    "residential",
+    "purastone",
+    "USD",
+    "stock",
+    "pileta_apoyo"
+  ],
+  "input": {
+    "client_name": "Sin nombre",
+    "project": "Baño Toilette",
+    "material": "Terrazo White",
+    "pieces": [
+      {
+        "description": "Mesada",
+        "largo": 0.9,
+        "prof": 0.5
+      },
+      {
+        "description": "Zócalo arriba",
+        "largo": 0.89,
+        "alto": 0.05
+      },
+      {
+        "description": "Zócalo izq",
+        "largo": 0.5,
+        "alto": 0.05
+      },
+      {
+        "description": "Zócalo der",
+        "largo": 0.5,
+        "alto": 0.05
+      }
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "apoyo",
+    "anafe": false,
+    "plazo": "40 días"
+  },
+  "expected": {
+    "material_m2_approx": 0.54,
+    "material_currency": "USD",
+    "mo_items_must_have": [
+      "colocación"
+    ],
+    "mo_items_must_not_have": [
+      "anafe",
+      "pegado pileta"
+    ],
+    "total_usd_gt": 120,
+    "total_ars_gt": 60000
+  }
+}

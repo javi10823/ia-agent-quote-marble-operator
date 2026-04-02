@@ -1,0 +1,29 @@
+{
+  "id": "quote-001",
+  "name": "Kawano — Purastone Blanco Caná cocina con alzas y tomas",
+  "tags": ["residential", "purastone", "USD", "alzas", "tomas", "pileta_empotrada"],
+  "input": {
+    "client_name": "Agustín Ferrero",
+    "project": "Obra Kawano",
+    "material": "Blanco Caná",
+    "pieces": [
+      {"description": "Mesada tramo 1", "largo": 2.41, "prof": 0.60},
+      {"description": "Alza tramo 1", "largo": 2.41, "alto": 0.60},
+      {"description": "Alza en tramos", "largo": 3.78, "alto": 0.24},
+      {"description": "Mesada tramo 2", "largo": 1.37, "prof": 0.60}
+    ],
+    "localidad": "Rosario",
+    "colocacion": true,
+    "pileta": "empotrada_cliente",
+    "anafe": false,
+    "plazo": "30 días desde la toma de medidas"
+  },
+  "expected": {
+    "material_m2_approx": 4.62,
+    "material_currency": "USD",
+    "mo_items_must_have": ["pegado pileta", "flete", "colocación"],
+    "mo_items_must_not_have": ["anafe", "faldón", "corte45"],
+    "total_usd_gt": 1500,
+    "total_ars_gt": 200000
+  }
+}
