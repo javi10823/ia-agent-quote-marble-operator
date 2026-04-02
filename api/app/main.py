@@ -19,6 +19,11 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    # Clean up stale temp files from previous runs
+    from app.modules.agent.tools.plan_tool import cleanup_old_temp_files
+    removed = cleanup_old_temp_files(max_age_hours=24)
+    if removed:
+        logger.info(f"Cleaned up {removed} stale temp files")
     logger.info(f"CORS_ORIGINS: {settings.CORS_ORIGINS}")
     yield
 

@@ -1,8 +1,12 @@
 import base64
+import logging
 import tempfile
+import time
 from pathlib import Path
 from typing import Optional
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 try:
     from pdf2image import convert_from_bytes
@@ -103,3 +107,28 @@ def save_plan_to_temp(filename: str, data: bytes) -> Path:
     path = TEMP_DIR / safe_name
     path.write_bytes(data)
     return path
+
+
+def cleanup_temp_file(filename: str) -> None:
+    """Remove a specific temp file after processing."""
+    safe_name = Path(filename).name
+    path = TEMP_DIR / safe_name
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError as e:
+        logger.debug(f"Could not remove temp file {path}: {e}")
+
+
+def cleanup_old_temp_files(max_age_hours: int = 24) -> int:
+    """Remove temp files older than max_age_hours. Returns count removed."""
+    cutoff = time.time() - (max_age_hours * 3600)
+    removed = 0
+    try:
+        for f in TEMP_DIR.iterdir():
+            if f.is_file() and f.stat().st_mtime < cutoff:
+                f.unlink()
+                removed += 1
+    except OSError as e:
+        logger.debug(f"Temp cleanup error: {e}")
+    return removed
