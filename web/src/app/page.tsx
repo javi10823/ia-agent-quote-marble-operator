@@ -70,6 +70,7 @@ export default function DashboardPage() {
     e.stopPropagation();
     const next = STATUS_NEXT[current];
     if (!next) return;
+    if (!window.confirm(`¿Cambiar estado de "${STATUS_LABEL[current]}" a "${STATUS_LABEL[next]}"?`)) return;
     try {
       await setStatus(id, next);
     } catch { /* toast already shown by context */ }
@@ -101,7 +102,20 @@ export default function DashboardPage() {
             {new Date().toLocaleDateString("es-AR", { month: "long", year: "numeric" })} · {quotes.length} registros
           </div>
         </div>
-        <button className="px-3 py-[7px] rounded-md text-xs font-medium font-sans cursor-pointer border border-b1 bg-transparent text-t2 -tracking-[0.01em] hover:border-b2 hover:text-t1 transition">
+        <button
+          onClick={() => {
+            const rows = [["Cliente","Proyecto","Material","ARS","USD","Estado","Fuente","Fecha"]];
+            filteredQuotes.forEach(q => rows.push([
+              q.client_name, q.project, q.material || "", String(q.total_ars || ""), String(q.total_usd || ""),
+              q.status, q.source || "operator", new Date(q.created_at).toLocaleDateString("es-AR"),
+            ]));
+            const csv = rows.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(",")).join("\n");
+            const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+            const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+            a.download = `presupuestos-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+          }}
+          className="px-3 py-[7px] rounded-md text-xs font-medium font-sans cursor-pointer border border-b1 bg-transparent text-t2 -tracking-[0.01em] hover:border-b2 hover:text-t1 transition"
+        >
           Exportar CSV
         </button>
       </div>
@@ -187,6 +201,7 @@ export default function DashboardPage() {
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Buscar cliente, material..."
+                  aria-label="Buscar presupuestos"
                   className="bg-transparent border-none outline-none text-t1 text-xs font-sans w-full placeholder:text-t4"
                 />
                 {search && (
@@ -303,6 +318,18 @@ export default function DashboardPage() {
                 })}
               </tbody>
             </table>
+            {filteredQuotes.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-16 gap-2 text-t3">
+                <span className="text-2xl">📋</span>
+                <div className="text-[13px]">{quotes.length === 0 ? "No hay presupuestos todavía" : "Sin resultados para los filtros aplicados"}</div>
+                {(search || dateFrom || dateTo || statusFilter !== "todos") && (
+                  <button onClick={() => { setSearch(""); setDateFrom(""); setDateTo(""); setStatusFilter("todos"); }}
+                    className="mt-1 text-xs text-acc bg-transparent border-none cursor-pointer font-sans hover:underline">
+                    Limpiar filtros
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -1,12 +1,10 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from app.models.quote import QuoteStatus
 
 
 class QuoteListResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: str
     client_name: str
     project: str
@@ -21,6 +19,8 @@ class QuoteListResponse(BaseModel):
     source: Optional[str] = "operator"
     is_read: bool = True
     created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class QuoteDetailResponse(QuoteListResponse):

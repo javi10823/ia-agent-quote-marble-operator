@@ -32,9 +32,40 @@ export interface SourceFile {
   uploaded_at: string;
 }
 
+export interface MOItem {
+  description: string;
+  quantity: number;
+  unit_price: number;
+  base_price?: number;
+  total: number;
+}
+
+export interface QuoteBreakdown {
+  client_name?: string;
+  project?: string;
+  date?: string;
+  delivery_days?: string;
+  material_name?: string;
+  material_type?: string;
+  material_m2?: number;
+  material_price_unit?: number;
+  material_price_base?: number;
+  material_currency?: "USD" | "ARS";
+  material_total?: number;
+  discount_pct?: number;
+  discount_amount?: number;
+  merma?: { aplica: boolean; desperdicio: number; sobrante_m2: number; motivo: string };
+  piece_details?: { description: string; largo: number; dim2: number; m2: number }[];
+  sectors?: { label: string; pieces: string[] }[];
+  sinks?: { name: string; quantity: number; unit_price: number }[];
+  mo_items?: MOItem[];
+  total_ars?: number;
+  total_usd?: number;
+}
+
 export interface QuoteDetail extends Quote {
   messages: Message[];
-  quote_breakdown: Record<string, any> | null;
+  quote_breakdown: QuoteBreakdown | null;
   source_files: SourceFile[] | null;
 }
 

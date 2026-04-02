@@ -5,18 +5,6 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.parent.parent.parent.parent
 CATALOG_DIR = BASE_DIR / "catalog"
 
-IVA_RATE = 1.21
-
-
-def apply_iva_usd(price_base: float) -> int:
-    """USD con IVA: floor(base × 1.21)"""
-    return math.floor(price_base * IVA_RATE)
-
-
-def apply_iva_ars(price_base: float) -> int:
-    """ARS con IVA: round(base × 1.21)"""
-    return round(price_base * IVA_RATE)
-
 
 def _load_catalog(name: str) -> list:
     path = CATALOG_DIR / f"{name}.json"
@@ -41,13 +29,13 @@ def catalog_lookup(catalog: str, sku: str) -> dict:
             # Price with IVA
             if "price_usd" in item:
                 price_base = item["price_usd"]
-                price_with_iva = apply_iva_usd(price_base)
+                price_with_iva = math.floor(price_base * 1.21)
                 result["price_usd"] = price_with_iva
                 result["price_usd_base"] = price_base
                 result["currency"] = "USD"
             elif "price_ars" in item:
                 price_base = item["price_ars"]
-                price_with_iva = apply_iva_ars(price_base)
+                price_with_iva = round(price_base * 1.21)
                 result["price_ars"] = price_with_iva
                 result["price_ars_base"] = price_base
                 result["currency"] = "ARS"

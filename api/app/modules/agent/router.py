@@ -57,13 +57,11 @@ async def update_status(
     body: QuoteStatusUpdate,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
+    await db.execute(
         update(Quote)
         .where(Quote.id == quote_id)
         .values(status=body.status)
     )
-    if result.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
     await db.commit()
     return {"ok": True}
 
@@ -80,9 +78,7 @@ async def patch_quote(
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update")
-    result = await db.execute(update(Quote).where(Quote.id == quote_id).values(**updates))
-    if result.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+    await db.execute(update(Quote).where(Quote.id == quote_id).values(**updates))
     await db.commit()
     return {"ok": True, "updated": list(updates.keys())}
 
@@ -91,11 +87,9 @@ async def patch_quote(
 
 @router.patch("/quotes/{quote_id}/read")
 async def mark_as_read(quote_id: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
+    await db.execute(
         update(Quote).where(Quote.id == quote_id).values(is_read=True)
     )
-    if result.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
     await db.commit()
     return {"ok": True}
 
