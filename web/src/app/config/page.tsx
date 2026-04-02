@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fetchCatalogs, fetchCatalog, validateCatalog, updateCatalog } from "@/lib/api";
+import { useToast } from "@/lib/toast-context";
 import clsx from "clsx";
 
 interface CatalogMeta { name: string; item_count: number; last_updated: string | null; size_kb: number; }
@@ -23,14 +24,22 @@ export default function ConfigPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
-
-  useEffect(() => { fetchCatalogs().then(setCatalogs).catch(console.error); }, []);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const toast = useToast();
 
   useEffect(() => {
-    setLoading(true); setValidation(null);
+    fetchCatalogs().then(setCatalogs).catch((err: any) => {
+      toast(err.message || "Error al cargar catálogos");
+    });
+  }, [toast]);
+
+  useEffect(() => {
+    setLoading(true); setValidation(null); setLoadError(null);
     fetchCatalog(selected).then(d => {
       const s = JSON.stringify(d, null, 2);
       setContent(s); setOriginalContent(s);
+    }).catch((err: any) => {
+      setLoadError(err.message || "Error al cargar catálogo");
     }).finally(() => setLoading(false));
   }, [selected]);
 
@@ -57,6 +66,9 @@ export default function ConfigPage() {
       setValidation(null);
       const updated = await fetchCatalogs();
       setCatalogs(updated);
+      toast("Catálogo guardado correctamente", "success");
+    } catch (err: any) {
+      toast(err.message || "Error al guardar catálogo");
     } finally { setSaving(false); }
   }
 
@@ -168,7 +180,7 @@ export default function ConfigPage() {
               </div>
             )}
             <textarea
-              value={loading ? "Cargando..." : content}
+              value={loading ? "Cargando..." : loadError ? `Error: ${loadError}` : content}
               onChange={e => setContent(e.target.value)}
               disabled={loading}
               spellCheck={false}

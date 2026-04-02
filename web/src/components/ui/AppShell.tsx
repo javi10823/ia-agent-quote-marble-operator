@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
 import { QuotesProvider } from "@/lib/quotes-context";
+import { ToastProvider } from "@/lib/toast-context";
 
 const PUBLIC_PATHS = ["/login"];
 
@@ -15,13 +16,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <QuotesProvider>
-      <div className="flex h-screen overflow-hidden">
-        <Sidebar />
-        <main className="flex-1 flex flex-col overflow-hidden bg-bg">
-          {children}
-        </main>
-      </div>
-    </QuotesProvider>
+    <ToastProvider>
+      <QuotesProvider>
+        <div className="flex h-screen overflow-hidden">
+          <Sidebar />
+          <main className="flex-1 flex flex-col overflow-hidden bg-bg">
+            {children}
+          </main>
+        </div>
+      </QuotesProvider>
+    </ToastProvider>
   );
 }

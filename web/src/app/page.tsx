@@ -24,7 +24,7 @@ const STATUS_NEXT: Record<Quote["status"], Quote["status"] | null> = {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { quotes, loading, removeQuote, setStatus } = useQuotes();
+  const { quotes, loading, error: loadError, refresh, removeQuote, setStatus } = useQuotes();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -60,7 +60,9 @@ export default function DashboardPage() {
     e.stopPropagation();
     const next = STATUS_NEXT[current];
     if (!next) return;
-    await setStatus(id, next);
+    try {
+      await setStatus(id, next);
+    } catch { /* toast already shown by context */ }
   }
 
   function askDelete(e: React.MouseEvent, id: string, clientName: string) {
@@ -74,9 +76,7 @@ export default function DashboardPage() {
     setDeleting(true);
     try {
       await removeQuote(deleteTarget.id);
-    } catch (err) {
-      console.error("Error deleting quote:", err);
-    }
+    } catch { /* toast already shown by context */ }
     setDeleting(false);
     setDeleteTarget(null);
   }
@@ -110,6 +110,13 @@ export default function DashboardPage() {
 
         {loading ? (
           <div className="flex items-center justify-center h-[200px] text-t3 text-[13px]">Cargando...</div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center justify-center h-[200px] gap-3">
+            <div className="text-err text-[13px]">✕ {loadError}</div>
+            <button onClick={() => refresh()} className="px-3 py-1.5 rounded-md text-xs font-medium border border-b1 bg-transparent text-t2 cursor-pointer hover:border-b2 hover:text-t1 transition">
+              Reintentar
+            </button>
+          </div>
         ) : (
           <div className="bg-s1 border border-b1 rounded-[10px] overflow-hidden">
             {/* Filter bar */}

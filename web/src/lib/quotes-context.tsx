@@ -8,6 +8,7 @@ import {
   updateQuoteStatus as apiUpdateStatus,
   type Quote,
 } from "./api";
+import { useToast } from "./toast-context";
 
 interface QuotesContextValue {
   quotes: Quote[];
@@ -26,6 +27,7 @@ export function QuotesProvider({ children }: { children: ReactNode }) {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   const refresh = useCallback(async () => {
     try {
@@ -34,44 +36,54 @@ export function QuotesProvider({ children }: { children: ReactNode }) {
       setError(null);
     } catch (err: any) {
       setError(err.message || "Error al cargar presupuestos");
+      toast(err.message || "Error al cargar presupuestos");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
   const addQuote = useCallback(async () => {
-    const { id } = await apiCreateQuote();
-    // Optimistic: add empty draft to list
-    setQuotes(prev => [{
-      id,
-      client_name: "",
-      project: "",
-      material: null,
-      total_ars: null,
-      total_usd: null,
-      status: "draft" as const,
-      pdf_url: null,
-      excel_url: null,
-      drive_url: null,
-      parent_quote_id: null,
-      source: "operator",
-      is_read: true,
-      created_at: new Date().toISOString(),
-    }, ...prev]);
-    return id;
-  }, []);
+    try {
+      const { id } = await apiCreateQuote();
+      setQuotes(prev => [{
+        id, client_name: "", project: "", material: null,
+        total_ars: null, total_usd: null, status: "draft" as const,
+        pdf_url: null, excel_url: null, drive_url: null,
+        parent_quote_id: null, source: "operator", is_read: true,
+        created_at: new Date().toISOString(),
+      }, ...prev]);
+      return id;
+    } catch (err: any) {
+      toast(err.message || "Error al crear presupuesto");
+      throw err;
+    }
+  }, [toast]);
 
   const removeQuote = useCallback(async (id: string) => {
-    await apiDeleteQuote(id);
+    const backup = quotes;
     setQuotes(prev => prev.filter(q => q.id !== id));
-  }, []);
+    try {
+      await apiDeleteQuote(id);
+    } catch (err: any) {
+      setQuotes(backup); // rollback
+      toast(err.message || "Error al eliminar presupuesto");
+      throw err;
+    }
+  }, [quotes, toast]);
 
   const setStatus = useCallback(async (id: string, status: Quote["status"]) => {
-    await apiUpdateStatus(id, status);
+    const backup = quotes;
     setQuotes(prev => prev.map(q => q.id === id ? { ...q, status } : q));
-  }, []);
+    try {
+      await apiUpdateStatus(id, status);
+    } catch (err: any) {
+      setQuotes(backup); // rollback
+      toast(err.message || "Error al cambiar estado");
+      throw err;
+    }
+  }, [quotes, toast]);
 
   const markRead = useCallback((id: string) => {
     setQuotes(prev => prev.map(q => q.id === id ? { ...q, is_read: true } : q));

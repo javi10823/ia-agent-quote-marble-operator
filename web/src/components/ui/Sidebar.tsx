@@ -11,8 +11,10 @@ export default function Sidebar() {
   const { quotes, addQuote } = useQuotes();
 
   async function handleNew() {
-    const id = await addQuote();
-    router.push(`/quote/${id}`);
+    try {
+      const id = await addQuote();
+      router.push(`/quote/${id}`);
+    } catch { /* toast already shown by context */ }
   }
 
   return (

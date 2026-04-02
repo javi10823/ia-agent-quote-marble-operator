@@ -53,6 +53,7 @@ export default function QuotePage() {
   const dragCounter = useRef(0);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [actionText, setActionText] = useState("");
   const { refresh: refreshQuotes, markRead } = useQuotes();
 
@@ -74,6 +75,8 @@ export default function QuotePage() {
         }));
       setMessages(uiMsgs);
       if (q.status === "validated" || q.status === "sent") setTab("detail");
+    }).catch((err: any) => {
+      setLoadError(err.message || "Error al cargar presupuesto");
     }).finally(() => setLoading(false));
   }, [quoteId]);
 
@@ -140,6 +143,12 @@ export default function QuotePage() {
   };
 
   if (loading) return <div className="flex items-center justify-center h-full text-t3 text-[13px]">Cargando...</div>;
+  if (loadError) return (
+    <div className="flex flex-col items-center justify-center h-full gap-3">
+      <div className="text-err text-[13px]">✕ {loadError}</div>
+      <button onClick={() => window.location.reload()} className="px-3 py-1.5 rounded-md text-xs font-medium border border-b1 bg-transparent text-t2 cursor-pointer hover:border-b2 hover:text-t1 transition">Reintentar</button>
+    </div>
+  );
 
   const st = STATUS_CLASS[quote?.status || "draft"];
   const bd = quote?.quote_breakdown || null;
