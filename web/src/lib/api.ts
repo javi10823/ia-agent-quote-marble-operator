@@ -260,3 +260,42 @@ export async function updateCatalog(name: string, content: unknown) {
   if (!res.ok) throw new Error("Error al guardar catálogo");
   return res.json();
 }
+
+// ── Users ────────────────────────────────────────────────────────────────────
+
+export interface UserInfo {
+  id: string;
+  username: string;
+  created_at: string | null;
+}
+
+export async function fetchUsers(): Promise<UserInfo[]> {
+  const res = await fetch(`${API_BASE}/api/auth/users`, { credentials: "include" });
+  handleAuthError(res);
+  if (!res.ok) throw new Error("Error al cargar usuarios");
+  return res.json();
+}
+
+export async function apiCreateUser(username: string, password: string): Promise<{ ok: boolean; id: string }> {
+  const res = await fetch(`${API_BASE}/api/auth/create-user`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+    credentials: "include",
+  });
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al crear usuario");
+  }
+  return res.json();
+}
+
+export async function deleteUser(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/auth/users/${id}`, { method: "DELETE", credentials: "include" });
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al eliminar usuario");
+  }
+}

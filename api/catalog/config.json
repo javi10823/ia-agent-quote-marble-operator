@@ -41,5 +41,16 @@
     "flete_mesadas_per_trip": 6,
     "discount_percentage": 18,
     "discount_min_m2": 15
+  },
+  "company": {
+    "name": "D'ANGELO",
+    "subtitle": "MARMOLERIA",
+    "address": "SAN NICOLAS 1160",
+    "phone": "341-3082996",
+    "email": "marmoleriadangelo@gmail.com"
+  },
+  "conditions": {
+    "general": "*PRESUPUESTO SUJETO A VARIACION DE PRECIO\n*MATERIALES IMPORTADOS SEGUN COTIZACION DOLAR VENTA BANCO NACION AL MOMENTO DE LA CONFIRMACION\n*LA TOMA DE MEDIDAS NO PODRA SUPERAR LOS 30 DIAS DESDE LA CONFIRMACION, CASO CONTRARIO EL 20% RESTANTE SE ACTUALIZARA SEGUN INDICE LA CONSTRUCCION\n*PRESUPUESTO DEFINITIVO SEGUN MEDIDAS TOMADAS EN OBRA\n*LOS PRECIOS INCLUYEN IVA",
+    "payment": "*Materiales Importados: 80% seña, 20% restante contra entrega (cotizacion dolar venta BCO NACION).\n*Materiales Nacionales: 80% seña, 20% restante contra entrega.\nPago contado / transferencia / debito / credito / cheques 15 dias para importados y 30 dias para nacionales\nTARJETAS DE CREDITO CONSULTAR PLANES"
   }
 }
