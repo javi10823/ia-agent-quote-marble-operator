@@ -1,3 +1,11 @@
+"""
+Google Drive integration — upload/delete files.
+
+All Google API calls are synchronous (googleapiclient). They run in a thread
+pool via asyncio.to_thread() to avoid blocking the event loop.
+"""
+
+import asyncio
 import logging
 from pathlib import Path
 from datetime import datetime
@@ -15,26 +23,44 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
 ]
 
+# ── Service cache (avoid rebuilding on every call) ───────────────────────────
+
+_credentials_cache = None
+_drive_service_cache = None
+_sheets_service_cache = None
+
 
 def _get_credentials():
+    global _credentials_cache
+    if _credentials_cache is not None:
+        return _credentials_cache
     import os, base64, json as json_mod
     b64 = os.environ.get("SERVICE_ACCOUNT_BASE64")
     if b64:
         info = json_mod.loads(base64.b64decode(b64).decode("utf-8"))
-        return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+        _credentials_cache = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
     else:
-        return service_account.Credentials.from_service_account_file(
+        _credentials_cache = service_account.Credentials.from_service_account_file(
             settings.GOOGLE_SERVICE_ACCOUNT_FILE, scopes=SCOPES,
         )
+    return _credentials_cache
 
 
 def _get_drive_service():
-    return build("drive", "v3", credentials=_get_credentials())
+    global _drive_service_cache
+    if _drive_service_cache is None:
+        _drive_service_cache = build("drive", "v3", credentials=_get_credentials())
+    return _drive_service_cache
 
 
 def _get_sheets_service():
-    return build("sheets", "v4", credentials=_get_credentials())
+    global _sheets_service_cache
+    if _sheets_service_cache is None:
+        _sheets_service_cache = build("sheets", "v4", credentials=_get_credentials())
+    return _sheets_service_cache
 
+
+# ── Sync internals (run in thread pool) ──────────────────────────────────────
 
 def _get_or_create_folder(service, name: str, parent_id: str) -> str:
     """Get folder by name under parent, or create it. Supports Shared Drives."""
@@ -66,8 +92,8 @@ def _get_or_create_folder(service, name: str, parent_id: str) -> str:
     return folder["id"]
 
 
-def delete_drive_file(file_id: str) -> bool:
-    """Delete a file from Google Drive by its file ID."""
+def _delete_drive_file_sync(file_id: str) -> bool:
+    """Delete a file from Google Drive. Blocking — use delete_drive_file() instead."""
     try:
         service = _get_drive_service()
         service.files().delete(fileId=file_id, supportsAllDrives=True).execute()
@@ -78,16 +104,13 @@ def delete_drive_file(file_id: str) -> bool:
         return False
 
 
-async def upload_to_drive(
+def _upload_to_drive_sync(
     quote_id: str,
     client_name: str,
     material: str,
     date_str: str,
 ) -> dict:
-    """
-    Upload PDF and Excel to Google Drive (Shared Drive).
-    Folder structure: Presupuestos/YYYY/MM-Mes/
-    """
+    """Upload PDF and Excel to Google Drive. Blocking — use upload_to_drive() instead."""
     try:
         service = _get_drive_service()
         root_folder = settings.GOOGLE_DRIVE_FOLDER_ID
@@ -107,10 +130,8 @@ async def upload_to_drive(
         year_id = _get_or_create_folder(service, year, presupuestos_id)
         month_id = _get_or_create_folder(service, month_folder, year_id)
 
-        # Find generated files — scan directory for actual files instead of guessing names
+        # Find generated files
         quote_dir = OUTPUT_DIR / quote_id
-
-        # Find files by extension (more reliable than reconstructing filename)
         pdf_files = list(quote_dir.glob("*.pdf")) if quote_dir.exists() else []
         excel_files = list(quote_dir.glob("*.xlsx")) if quote_dir.exists() else []
         pdf_path = pdf_files[0] if pdf_files else quote_dir / "not_found.pdf"
@@ -121,6 +142,7 @@ async def upload_to_drive(
         logging.info(f"  Excel exists: {excel_path.exists()} → {excel_path}")
 
         uploaded_urls = []
+        last_file_id = None
 
         # Only upload Excel to Drive (PDF stays local only)
         for file_path, mime in [
@@ -154,7 +176,6 @@ async def upload_to_drive(
             file_metadata = {
                 "name": file_path.name,
                 "parents": [month_id],
-                # Convert xlsx to Google Sheets native format
                 "mimeType": "application/vnd.google-apps.spreadsheet",
             }
             media = MediaFileUpload(str(file_path), mimetype=mime, resumable=True)
@@ -166,25 +187,19 @@ async def upload_to_drive(
             ).execute()
             logging.info(f"Uploaded to Drive: {file_path.name} → {uploaded.get('webViewLink')}")
 
-            # Set Argentine locale via Sheets API (fills come from template)
+            # Set Argentine locale via Sheets API
             file_id = uploaded.get("id")
             if file_id:
                 try:
                     sheets_service = _get_sheets_service()
-
-                    requests = [
-                        # Set locale only — template handles all formatting
-                        {
+                    sheets_service.spreadsheets().batchUpdate(
+                        spreadsheetId=file_id,
+                        body={"requests": [{
                             "updateSpreadsheetProperties": {
                                 "properties": {"locale": "es_AR"},
                                 "fields": "locale",
                             }
-                        },
-                    ]
-
-                    sheets_service.spreadsheets().batchUpdate(
-                        spreadsheetId=file_id,
-                        body={"requests": requests},
+                        }]},
                     ).execute()
                     logging.info(f"Set locale es_AR on spreadsheet {file_id}")
                 except Exception as e:
@@ -193,7 +208,6 @@ async def upload_to_drive(
             uploaded_urls.append(uploaded.get("webViewLink"))
             last_file_id = uploaded.get("id")
 
-        # Use last URL (Excel) as the main drive link — operator prefers Excel
         drive_url = uploaded_urls[-1] if uploaded_urls else None
 
         return {
@@ -207,3 +221,22 @@ async def upload_to_drive(
     except Exception as e:
         logging.error(f"Drive upload error: {e}")
         return {"ok": False, "error": str(e)}
+
+
+# ── Async wrappers (these are what callers should use) ───────────────────────
+
+async def delete_drive_file(file_id: str) -> bool:
+    """Delete a Drive file without blocking the event loop."""
+    return await asyncio.to_thread(_delete_drive_file_sync, file_id)
+
+
+async def upload_to_drive(
+    quote_id: str,
+    client_name: str,
+    material: str,
+    date_str: str,
+) -> dict:
+    """Upload to Drive without blocking the event loop."""
+    return await asyncio.to_thread(
+        _upload_to_drive_sync, quote_id, client_name, material, date_str
+    )

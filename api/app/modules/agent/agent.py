@@ -745,7 +745,7 @@ class AgentService:
                     old_quote = await db.execute(select(Quote).where(Quote.id == target_qid))
                     old_q = old_quote.scalar_one_or_none()
                     if old_q and old_q.drive_file_id:
-                        delete_drive_file(old_q.drive_file_id)
+                        await delete_drive_file(old_q.drive_file_id)
                         logging.info(f"Deleted old Drive file {old_q.drive_file_id} for quote {target_qid}")
 
                     # Upload to Drive
