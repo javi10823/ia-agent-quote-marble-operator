@@ -269,6 +269,41 @@ Nunca ignorar una cota como detalle estructural salvo que claramente corresponda
 - Formato de línea: `LARGO X PROF X CANT UNID` (ej: `1.50 X 0.60 X 6 UNID`). Si es 1 unidad, omitir `X CANT UNID`
 - Agrupar bajo subencabezado `COCINAS` o `BAÑOS` según corresponda
 
+## Reglas adicionales de interpretación (Fase 3)
+
+### Cotas oblicuas
+- Las cotas oblicuas (diagonales) en un plano **NO son largo ni profundidad** de la mesada.
+- Ignorarlas para m². Solo usar cotas horizontales y verticales alineadas a los ejes.
+- Ref: quote-032.
+
+### Anotación "FRENTE"
+- "FRENTE X cm x Y cm" en plano o especificaciones = **pieza de zócalo frontal** (material).
+- NO es faldón ni pata. Se suma al m² total.
+- Ref: quote-024.
+
+### "DESAGUE" sin modelo
+- Si el plano dice "DESAGUE" sin especificar modelo de pileta → interpretar como **pileta de apoyo** (AGUJEROAPOYO).
+- Si dice "DESAGUE" con modelo → pileta empotrada (PEGADOPILETA).
+- Ref: quote-014.
+
+### 3 puntitos junto a óvalo
+- Representan agujeros de fijación → la pileta es **empotrada** → cobrar PEGADOPILETA.
+- No confundir con grifería.
+- Ref: quote-026.
+
+### Piezas sueltas cerca de un sector
+- Una pieza suelta (ej: 0.60 x 0.60) dibujada cerca de una cocina = **tramo adicional de ese sector**.
+- No crear un sector separado.
+- Ref: quote-034.
+
+### Especificaciones escritas vs dibujo
+- Si hay especificaciones escritas con ml explícitos de zócalos Y el dibujo también los muestra → **preferir las medidas escritas** (más precisas).
+- Ref: quote-034.
+
+### Dos cotas de profundidad en mismo largo
+- Si una pieza muestra dos cotas de profundidad distintas sobre el mismo largo (ej: 0.60 + 0.42) → son **dos tramos separados con mismo largo pero diferente profundidad**.
+- Ref: quote-024.
+
 ## Checklist antes de presupuestar
 
 - [ ] ¿Cuántas piezas hay? (mesadas, alzas, zócalos, estantes, etc.)
@@ -278,3 +313,6 @@ Nunca ignorar una cota como detalle estructural salvo que claramente corresponda
 - [ ] ¿Hay anafe? ¿Tomas eléctricas?
 - [ ] ¿La obra es en Rosario o localidad del interior? → flete
 - [ ] ¿El cliente quiere colocación incluida?
+- [ ] ¿Hay cotas oblicuas? → ignorar para m²
+- [ ] ¿Dice "FRENTE" → zócalo frontal, no faldón
+- [ ] ¿Hay piezas sueltas cerca de un sector? → incluirlas en ese sector

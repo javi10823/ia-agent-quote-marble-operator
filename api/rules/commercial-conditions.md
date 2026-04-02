@@ -85,10 +85,24 @@ NOMBRE MATERIAL     3,46    USD408    USD1412
 - La fila "TOTAL USD/ARS" muestra el neto ya descontado
 - Si NO hay descuento → omitir la línea DESC completamente
 
+## Flete compartido entre presupuestos
+
+- Cuando hay **varios presupuestos para la misma obra** (ej: cocina en Purastone + baños en Silestone), el flete va en **uno solo** de los PDFs.
+- El operador indica en cuál incluirlo.
+- No cobrar flete duplicado.
+- Ref: quote-029.
+
+## Precio especial fuera de catálogo
+
+- El operador puede indicar un precio especial no estándar (ej: "precio ÷1.15").
+- El precio especial **NO se acumula** con descuento de arquitecta ni otros descuentos.
+- Solo aplicar **UN mecanismo** de descuento/precio especial por presupuesto.
+- Ref: quote-029.
+
 ## Restricciones operativas
 
 - No se suben mesadas por escalera
-- No se suben mesadas que no entren por ascensor (edificios)
+- No se suben mesadas que no entren por ascensor (edificios) — incluir nota en PDF: "NO SE SUBEN MESADAS QUE NO ENTREN POR ASCENSOR"
 - Los precios incluyen IVA
 
 ## Notas estándar del presupuesto

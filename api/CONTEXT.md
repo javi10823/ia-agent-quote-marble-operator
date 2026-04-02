@@ -375,11 +375,15 @@ Ejemplo isla 1.70×0.64×0.95:
 ### Colocación
 - Mínimo 1 m²: `max(m²_total, 1.0)`
 - Calculada sobre TOTAL de m² incluyendo zócalos
+- **Estantes sueltos** (no instalados en obra) → NO incluir en colocación (ref: quote-011)
+- **Sobrante/merma** → NO incluir en colocación — solo m² reales de piezas
 
 ### Inferencias automáticas
 - Isla en enunciado → PEGADOPILETA automático
 - Alzada en enunciado → 1 TOMAS automático (excepto isla con frente revestido)
 - Colocación default: **SÍ** | Flete default: **Rosario (ENVIOROS)**
+- **"DESAGUE" sin modelo** en plano → pileta de apoyo (AGUJEROAPOYO) (ref: quote-014)
+- **Flete compartido:** si hay varios presupuestos para misma obra, flete en uno solo — preguntar al operador (ref: quote-029)
 
 ### Mesada >3m
 Agregar `(SE REALIZA EN 2 TRAMOS)` en la descripción

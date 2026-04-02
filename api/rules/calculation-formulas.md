@@ -425,3 +425,101 @@ salvo que el cliente diga explícitamente "leather".
 - **PUL2** → solo para Dekton, Neolith, Laminatto, Puraprima (sinterizados)
 Regla: siempre el más económico salvo que sea sinterizado.
 
+---
+
+## Reglas extraídas de los 34 ejemplos validados
+
+> Estas reglas fueron extraídas de las notas/aprendizajes de los 34 ejemplos en `examples/`.
+> Codificadas como Fase 3 del plan de mejora de Valentina.
+
+### Stock parcial
+- Si algunas piezas caben en retazos de stock y otras no → aplicar **sin merma solo a las piezas de stock** y **merma normal a las piezas nuevas**.
+- Validar pieza por pieza: `largo_pieza <= largo_retazo` AND `ancho_pieza <= ancho_retazo`.
+- No alcanza con comparar m² totales — verificar dimensiones físicas.
+- Ref: quote-028 (Scalona — stock parcial, merma solo en piezas nuevas).
+
+### Pileta integrada — SKUs especiales
+- **PILETAINTEGRADA A 45** (pileta integrada estándar) — SKU propio en labor.json.
+- **PILETADESAGUEOCULTO** (pileta integrada desagüe oculto) — SKU propio, precio distinto.
+- **PILETAINTEGRADARECTA** (pileta integrada recta) — SKU propio, precio distinto.
+- Si el operador pide pileta integrada → mostrar opciones con precios.
+- Ref: quote-008.
+
+### Pulido de forma (curvas/redondeos)
+- Si el plano muestra una curva o redondeo en el borde → cobrar **PULIDO DE FORMA**.
+- El precio lo fija el operador — no está en catálogo estándar.
+- Cotizar el rectángulo envolvente como siempre, y agregar PULIDO DE FORMA como ítem MO.
+- Ref: quote-026.
+
+### Precio especial fuera de catálogo
+- El operador puede indicar un precio especial (ej: "÷1.15") que no está en el catálogo.
+- El precio especial **NO se acumula** con descuento de arquitecta ni otros descuentos.
+- Solo aplicar UN mecanismo de descuento — el que indique el operador.
+- Ref: quote-029.
+
+### Flete compartido entre presupuestos
+- Cuando hay **varios presupuestos para la misma obra** (ej: cocina + baños), el flete va en **uno solo** de los PDFs.
+- El operador indica en cuál.
+- Ref: quote-029.
+
+### Interpretación de "DESAGUE" en plano
+- Si el plano dice "DESAGUE" sin modelo de pileta especificado → interpretar como **pileta de apoyo** (AGUJEROAPOYO).
+- Si dice "DESAGUE" con modelo (ej: "Ferrum Cadria") → pileta empotrada (PEGADOPILETA).
+- Ref: quote-014.
+
+### Cotas oblicuas en plano
+- Las cotas oblicuas (diagonales) en un plano **NO son largo ni profundidad**.
+- Ignorarlas para el cálculo de m² de mesadas.
+- Solo usar cotas horizontales y verticales alineadas a los ejes de la pieza.
+- Ref: quote-032.
+
+### Anotación "FRENTE" en plano
+- Si el plano dice "FRENTE X cm x Y cm" → es una **pieza de zócalo frontal** (material).
+- NO es faldón ni pata.
+- Se suma al m² total como pieza de material.
+- Ref: quote-024.
+
+### Pieza suelta cerca de un sector
+- Una pieza suelta (ej: 0.60 x 0.60) dibujada cerca de una cocina o sector = **tramo adicional de ese sector**.
+- No crear un sector separado — incluirla en el sector más cercano.
+- Ref: quote-034.
+
+### Profundidad por tipo de ambiente
+- **Cocina:** profundidad estándar 0.60m (si no se indica).
+- **Lavadero:** profundidad estándar 0.60m (NO 0.62m).
+- **Baño:** profundidad variable — siempre leerla del plano.
+- **Isla:** profundidad variable — siempre leerla del plano.
+- Ref: quote-020.
+
+### Estantes y piezas sueltas — colocación
+- Los **estantes sueltos** que se entregan sin instalar → **NO incluir en colocación**.
+- Solo incluir en colocación las piezas que se instalan in situ.
+- Ref: quote-011.
+
+### Grand total — formato obligatorio
+- **Siempre enteros** — sin decimales en el total final.
+- **Label obligatorio:** `"$XXX.XXX mano de obra + piletas + USD XXX material"` (si aplica USD).
+- Si es todo ARS: `"$XXX.XXX mano de obra + material"`.
+- Ref: quote-014, quote-019.
+
+### Símbolos en plano — guía rápida
+| Símbolo | Significado |
+|---------|-----------|
+| Rayado/tachado (hatching) | Pared → no frentin en ese lado |
+| c/p | Centro de pileta → ignorar |
+| Eje bacha | = c/p → ignorar |
+| 3 puntitos junto a óvalo | Agujeros de fijación → pileta empotrada (PEGADOPILETA) |
+| "INGLETE" | Unión a 45° → CORTE45 |
+| "Bordes pulidos" | PUL en esos cantos |
+| "DESAGUE" sin modelo | Pileta de apoyo → AGUJEROAPOYO |
+| "FRENTE X cm" | Zócalo frontal (material), no faldón |
+| Cota oblicua | Ignorar para m² |
+
+### Descuentos — regla unificada
+- **Método general:** `precio × (1 - desc%)` — ej: 5% → ×0.95.
+- **Edificio material >15m²:** `floor(precio_con_iva / 1.18)` — excepción documentada.
+- **Edificio MO (excepto flete):** `precio / 1.05`.
+- **Precio especial:** precio÷factor indicado por operador — NO acumular con otros descuentos.
+- **Solo 1 descuento por presupuesto.** Si aplican 2 → usar el mayor.
+- Ref: quote-022, quote-029, CONTEXT.md.
+
