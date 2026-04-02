@@ -5,7 +5,13 @@ import { useRouter, usePathname } from "next/navigation";
 import { logout } from "@/lib/auth";
 import clsx from "clsx";
 
-export default function Sidebar() {
+interface SidebarProps {
+  isMobile?: boolean;
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export default function Sidebar({ isMobile, isOpen, onClose }: SidebarProps) {
   const router = useRouter();
   const path = usePathname();
   const [quoteCount, setQuoteCount] = useState<number | null>(null);
@@ -14,17 +20,27 @@ export default function Sidebar() {
     fetch("/api/quotes").then(r => r.json()).then(data => setQuoteCount(data.length)).catch(() => {});
   }, [path]);
 
+  function navigate(to: string) {
+    router.push(to);
+    onClose?.();
+  }
+
   async function handleNew() {
     const res = await fetch("/api/quotes", { method: "POST" });
     const { id } = await res.json();
-    router.push(`/quote/${id}`);
+    navigate(`/quote/${id}`);
   }
 
-  return (
-    <nav className="w-[212px] shrink-0 bg-s1 border-r border-b1 flex flex-col px-2.5 pt-[18px] pb-5 h-screen">
+  const nav = (
+    <nav className={clsx(
+      "bg-s1 flex flex-col px-2.5 pt-[18px] pb-5",
+      isMobile
+        ? "fixed top-0 left-0 w-[260px] h-full z-50 border-r border-b1 transition-transform duration-200"
+        : "w-[212px] shrink-0 border-r border-b1 h-screen",
+    )} style={isMobile ? { transform: isOpen ? "translateX(0)" : "translateX(-100%)" } : undefined}>
       {/* Logo */}
       <div
-        onClick={() => router.push("/")}
+        onClick={() => navigate("/")}
         className="flex items-center gap-2.5 px-2 pt-0.5 pb-5 cursor-pointer"
       >
         <div className="w-[26px] h-[26px] rounded-md bg-acc flex items-center justify-center text-xs font-semibold text-white -tracking-[0.5px]">
@@ -44,7 +60,7 @@ export default function Sidebar() {
         label="Presupuestos"
         badge={quoteCount !== null ? String(quoteCount) : "\u2014"}
         active={path === "/"}
-        onClick={() => router.push("/")}
+        onClick={() => navigate("/")}
       />
 
       <span className="text-[10px] font-medium text-t4 uppercase tracking-[0.10em] px-2 pb-1 mt-3.5">
@@ -54,7 +70,7 @@ export default function Sidebar() {
         icon={<GearIcon />}
         label="Catálogo"
         active={path === "/config"}
-        onClick={() => router.push("/config")}
+        onClick={() => navigate("/config")}
       />
 
       {/* Separator */}
@@ -70,7 +86,7 @@ export default function Sidebar() {
         </button>
 
         <button
-          onClick={async () => { await logout(); router.push("/login"); }}
+          onClick={async () => { await logout(); navigate("/login"); }}
           className="w-full py-[7px] px-2 bg-transparent border-none rounded-md text-t3 text-[11px] font-normal font-sans cursor-pointer flex items-center justify-center gap-1.5 transition-colors duration-150 hover:text-t2 mt-2.5"
         >
           <LogoutIcon /> Cerrar sesión
@@ -78,6 +94,23 @@ export default function Sidebar() {
       </div>
     </nav>
   );
+
+  if (isMobile) {
+    return (
+      <>
+        {/* Backdrop */}
+        {isOpen && (
+          <div
+            onClick={onClose}
+            className="fixed inset-0 z-40 bg-black/50 transition-opacity duration-200"
+          />
+        )}
+        {nav}
+      </>
+    );
+  }
+
+  return nav;
 }
 
 function NavItem({ icon, label, badge, active, onClick }: {
