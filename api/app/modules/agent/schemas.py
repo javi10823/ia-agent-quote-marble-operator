@@ -17,6 +17,7 @@ class QuoteListResponse(BaseModel):
     drive_url: Optional[str]
     parent_quote_id: Optional[str] = None
     source: Optional[str] = "operator"
+    is_read: bool = True
     created_at: datetime
 
     class Config:

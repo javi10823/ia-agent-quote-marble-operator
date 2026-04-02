@@ -209,34 +209,56 @@ export default function DashboardPage() {
                 {filteredQuotes.map(q => {
                   const daysOld = (Date.now() - new Date(q.created_at).getTime()) / 86400000;
                   const isStale = q.status === "draft" && daysOld > 5;
+                  const isUnread = !q.is_read;
                   return (
                     <tr key={q.id}
                       onClick={() => { setSelectedId(q.id); router.push(`/quote/${q.parent_quote_id || q.id}`); }}
                       style={{
                         borderBottom: "1px solid rgba(255,255,255,.045)",
                         cursor: "pointer",
-                        background: selectedId === q.id ? "rgba(79,143,255,.07)" : undefined,
+                        background: selectedId === q.id
+                          ? "rgba(79,143,255,.07)"
+                          : isUnread ? "rgba(79,143,255,.04)" : undefined,
                         borderLeft: selectedId === q.id ? "2px solid var(--acc)" : "2px solid transparent",
                         transition: "background .08s",
                       }}
-                      onMouseEnter={e => { if (selectedId !== q.id) (e.currentTarget as HTMLTableRowElement).style.background = "rgba(255,255,255,.035)"; }}
-                      onMouseLeave={e => { if (selectedId !== q.id) (e.currentTarget as HTMLTableRowElement).style.background = ""; }}
+                      onMouseEnter={e => { if (selectedId !== q.id) (e.currentTarget as HTMLTableRowElement).style.background = isUnread ? "rgba(79,143,255,.07)" : "rgba(255,255,255,.035)"; }}
+                      onMouseLeave={e => { if (selectedId !== q.id) (e.currentTarget as HTMLTableRowElement).style.background = isUnread ? "rgba(79,143,255,.04)" : ""; }}
                     >
-                      <td style={{ padding: "13px 18px" }}>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--t1)", letterSpacing: "-0.01em" }}>
-                          {q.client_name || <span style={{ color: "var(--t3)", fontStyle: "italic" }}>Sin nombre</span>}
-                          {q.source === "web" && (
+                      <td style={{ padding: "13px 18px", paddingLeft: 18 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+                          {isUnread && (
                             <span style={{
-                              marginLeft: 6, fontSize: 9, fontWeight: 600,
-                              padding: "1px 5px", borderRadius: 4,
-                              background: "rgba(138,43,226,.15)", color: "#a855f7",
-                              letterSpacing: "0.03em",
-                            }}>WEB</span>
+                              width: 7, height: 7, borderRadius: "50%",
+                              background: "var(--acc)", flexShrink: 0,
+                              marginRight: 8,
+                            }} />
                           )}
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: isUnread ? 600 : 500, color: "var(--t1)", letterSpacing: "-0.01em" }}>
+                              {q.client_name || <span style={{ color: "var(--t3)", fontStyle: "italic" }}>Sin nombre</span>}
+                              {q.source === "web" && (
+                                <span style={{
+                                  marginLeft: 6, fontSize: 9, fontWeight: 600,
+                                  padding: "1px 5px", borderRadius: 4,
+                                  background: "rgba(138,43,226,.15)", color: "#a855f7",
+                                  letterSpacing: "0.03em",
+                                }}>WEB</span>
+                              )}
+                              {isUnread && (
+                                <span style={{
+                                  marginLeft: 6, fontSize: 9, fontWeight: 600,
+                                  padding: "1px 6px", borderRadius: 4,
+                                  background: "var(--acc2)", color: "var(--acc)",
+                                  letterSpacing: "0.03em",
+                                }}>NUEVO</span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 1 }}>{q.project}</div>
+                          </div>
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 1 }}>{q.project}</div>
                       </td>
-                      <td style={{ padding: "13px 18px", fontSize: 12, color: "var(--t2)" }}>{q.material || "—"}</td>
+                      <td style={{ padding: "13px 18px", fontSize: 12, color: isUnread ? "var(--t1)" : "var(--t2)", fontWeight: isUnread ? 500 : 400 }}>{q.material || "—"}</td>
                       <td style={{ padding: "13px 18px", textAlign: "right" }}>
                         <div style={{ fontSize: 13, color: "var(--t1)", fontFamily: "'Geist Mono',monospace", letterSpacing: "-0.02em" }}>
                           {q.total_ars ? `$${q.total_ars.toLocaleString("es-AR")}` : "—"}

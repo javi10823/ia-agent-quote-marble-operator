@@ -14,6 +14,7 @@ export interface Quote {
   drive_url: string | null;
   parent_quote_id: string | null;
   source: string | null;
+  is_read: boolean;
   created_at: string;
 }
 
@@ -76,6 +77,11 @@ export async function updateQuoteStatus(
 export async function deleteQuote(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/api/quotes/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Error al eliminar presupuesto");
+}
+
+export async function markQuoteAsRead(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/quotes/${id}/read`, { method: "PATCH" });
+  if (!res.ok) throw new Error("Error al marcar como leído");
 }
 
 // ── Chat SSE ──────────────────────────────────────────────────────────────────

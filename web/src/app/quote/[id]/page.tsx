@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { fetchQuote, streamChat, type QuoteDetail } from "@/lib/api";
+import { fetchQuote, streamChat, markQuoteAsRead, type QuoteDetail } from "@/lib/api";
 import MessageBubble from "@/components/chat/MessageBubble";
 
 export interface UIMessage {
@@ -60,6 +60,10 @@ export default function QuotePage() {
   useEffect(() => {
     fetchQuote(quoteId).then(q => {
       setQuote(q);
+      // Mark as read if unread (web quotes)
+      if (!q.is_read) {
+        markQuoteAsRead(quoteId).catch(() => {});
+      }
       const uiMsgs: UIMessage[] = q.messages
         .filter((m: any) => m.role === "user" || m.role === "assistant")
         .map((m: any, i: number) => ({

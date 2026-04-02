@@ -63,6 +63,7 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
             messages=[],
             status=QuoteStatus.VALIDATED,
             source="web",
+            is_read=False,
         )
         db.add(quote)
         await db.commit()

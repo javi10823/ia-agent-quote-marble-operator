@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from sqlalchemy import String, Float, DateTime, JSON, Enum, Text
+from sqlalchemy import String, Float, Boolean, DateTime, JSON, Enum, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -30,6 +30,9 @@ class Quote(Base):
 
     # Source: "operator" (chat with Valentina) or "web" (external API)
     source: Mapped[str | None] = mapped_column(String(20), nullable=True, default="operator")
+
+    # Read status: False for new web quotes, True for operator-created or already opened
+    is_read: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # File URLs
     pdf_url: Mapped[str | None] = mapped_column(String(500), nullable=True)

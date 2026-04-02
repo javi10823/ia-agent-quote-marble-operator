@@ -80,6 +80,17 @@ async def patch_quote(
     return {"ok": True, "updated": list(updates.keys())}
 
 
+# ── MARK QUOTE AS READ ───────────────────────────────────────────────────────
+
+@router.patch("/quotes/{quote_id}/read")
+async def mark_as_read(quote_id: str, db: AsyncSession = Depends(get_db)):
+    await db.execute(
+        update(Quote).where(Quote.id == quote_id).values(is_read=True)
+    )
+    await db.commit()
+    return {"ok": True}
+
+
 # ── DELETE QUOTE ──────────────────────────────────────────────────────────────
 
 @router.delete("/quotes/{quote_id}")
