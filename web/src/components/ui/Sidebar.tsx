@@ -1,46 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { logout } from "@/lib/auth";
+import { useQuotes } from "@/lib/quotes-context";
 import clsx from "clsx";
 
-interface SidebarProps {
-  isMobile?: boolean;
-  isOpen?: boolean;
-  onClose?: () => void;
-}
-
-export default function Sidebar({ isMobile, isOpen, onClose }: SidebarProps) {
+export default function Sidebar() {
   const router = useRouter();
   const path = usePathname();
-  const [quoteCount, setQuoteCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    fetch("/api/quotes").then(r => r.json()).then(data => setQuoteCount(data.length)).catch(() => {});
-  }, [path]);
-
-  function navigate(to: string) {
-    router.push(to);
-    onClose?.();
-  }
+  const { quotes, addQuote } = useQuotes();
 
   async function handleNew() {
-    const res = await fetch("/api/quotes", { method: "POST" });
-    const { id } = await res.json();
-    navigate(`/quote/${id}`);
+    const id = await addQuote();
+    router.push(`/quote/${id}`);
   }
 
-  const nav = (
-    <nav className={clsx(
-      "bg-s1 flex flex-col px-2.5 pt-[18px] pb-5",
-      isMobile
-        ? "fixed top-0 left-0 w-[260px] h-full z-50 border-r border-b1 transition-transform duration-200"
-        : "w-[212px] shrink-0 border-r border-b1 h-screen",
-    )} style={isMobile ? { transform: isOpen ? "translateX(0)" : "translateX(-100%)" } : undefined}>
+  return (
+    <nav className="w-[212px] shrink-0 bg-s1 border-r border-b1 flex flex-col px-2.5 pt-[18px] pb-5 h-screen">
       {/* Logo */}
       <div
-        onClick={() => navigate("/")}
+        onClick={() => router.push("/")}
         className="flex items-center gap-2.5 px-2 pt-0.5 pb-5 cursor-pointer"
       >
         <div className="w-[26px] h-[26px] rounded-md bg-acc flex items-center justify-center text-xs font-semibold text-white -tracking-[0.5px]">
@@ -58,9 +37,9 @@ export default function Sidebar({ isMobile, isOpen, onClose }: SidebarProps) {
       <NavItem
         icon={<GridIcon />}
         label="Presupuestos"
-        badge={quoteCount !== null ? String(quoteCount) : "\u2014"}
+        badge={String(quotes.length)}
         active={path === "/"}
-        onClick={() => navigate("/")}
+        onClick={() => router.push("/")}
       />
 
       <span className="text-[10px] font-medium text-t4 uppercase tracking-[0.10em] px-2 pb-1 mt-3.5">
@@ -70,7 +49,7 @@ export default function Sidebar({ isMobile, isOpen, onClose }: SidebarProps) {
         icon={<GearIcon />}
         label="Catálogo"
         active={path === "/config"}
-        onClick={() => navigate("/config")}
+        onClick={() => router.push("/config")}
       />
 
       {/* Separator */}
@@ -86,7 +65,7 @@ export default function Sidebar({ isMobile, isOpen, onClose }: SidebarProps) {
         </button>
 
         <button
-          onClick={async () => { await logout(); navigate("/login"); }}
+          onClick={async () => { await logout(); router.push("/login"); }}
           className="w-full py-[7px] px-2 bg-transparent border-none rounded-md text-t3 text-[11px] font-normal font-sans cursor-pointer flex items-center justify-center gap-1.5 transition-colors duration-150 hover:text-t2 mt-2.5"
         >
           <LogoutIcon /> Cerrar sesión
@@ -94,23 +73,6 @@ export default function Sidebar({ isMobile, isOpen, onClose }: SidebarProps) {
       </div>
     </nav>
   );
-
-  if (isMobile) {
-    return (
-      <>
-        {/* Backdrop */}
-        {isOpen && (
-          <div
-            onClick={onClose}
-            className="fixed inset-0 z-40 bg-black/50 transition-opacity duration-200"
-          />
-        )}
-        {nav}
-      </>
-    );
-  }
-
-  return nav;
 }
 
 function NavItem({ icon, label, badge, active, onClick }: {

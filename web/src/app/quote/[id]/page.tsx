@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { fetchQuote, streamChat, markQuoteAsRead, type QuoteDetail } from "@/lib/api";
+import { useQuotes } from "@/lib/quotes-context";
 import MessageBubble from "@/components/chat/MessageBubble";
 import clsx from "clsx";
 
@@ -53,6 +54,7 @@ export default function QuotePage() {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionText, setActionText] = useState("");
+  const { refresh: refreshQuotes, markRead } = useQuotes();
 
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -60,7 +62,7 @@ export default function QuotePage() {
   useEffect(() => {
     fetchQuote(quoteId).then(q => {
       setQuote(q);
-      if (!q.is_read) markQuoteAsRead(quoteId).catch(() => {});
+      if (!q.is_read) { markQuoteAsRead(quoteId).catch(() => {}); markRead(quoteId); }
       const uiMsgs: UIMessage[] = q.messages
         .filter((m: any) => m.role === "user" || m.role === "assistant")
         .map((m: any, i: number) => ({
@@ -117,6 +119,7 @@ export default function QuotePage() {
           setMessages(p => p.map(m => m.id === aid ? { ...m, isStreaming: false } : m));
           const updated = await fetchQuote(quoteId);
           setQuote(updated);
+          refreshQuotes();
         }
       }
       if (!gotDone) {

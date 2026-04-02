@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { fetchQuotes, updateQuoteStatus, deleteQuote, type Quote } from "@/lib/api";
+import { type Quote } from "@/lib/api";
+import { useQuotes } from "@/lib/quotes-context";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import clsx from "clsx";
@@ -23,17 +24,12 @@ const STATUS_NEXT: Record<Quote["status"], Quote["status"] | null> = {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [quotes, setQuotes] = useState<Quote[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { quotes, loading, removeQuote, setStatus } = useQuotes();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [search, setSearch] = useState("");
-
-  useEffect(() => {
-    fetchQuotes().then(setQuotes).finally(() => setLoading(false));
-  }, []);
 
   const staleDrafts = quotes.filter(q => {
     if (q.status !== "draft") return false;
@@ -64,8 +60,7 @@ export default function DashboardPage() {
     e.stopPropagation();
     const next = STATUS_NEXT[current];
     if (!next) return;
-    await updateQuoteStatus(id, next);
-    setQuotes(prev => prev.map(q => q.id === id ? { ...q, status: next } : q));
+    await setStatus(id, next);
   }
 
   function askDelete(e: React.MouseEvent, id: string, clientName: string) {
@@ -78,8 +73,7 @@ export default function DashboardPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await deleteQuote(deleteTarget.id);
-      setQuotes(prev => prev.filter(q => q.id !== deleteTarget.id));
+      await removeQuote(deleteTarget.id);
     } catch (err) {
       console.error("Error deleting quote:", err);
     }
