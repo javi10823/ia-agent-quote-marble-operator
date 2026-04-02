@@ -713,8 +713,8 @@ class AgentService:
                     await db.commit()
                     logging.info(f"Created additional quote {target_qid} for material: {qdata.get('material_name')}")
 
-                # Save quote data + breakdown to DB
-                save_vals = {
+                # Build all quote values, generate docs, upload — single commit
+                quote_vals: dict = {
                     "client_name": qdata.get("client_name", ""),
                     "project": qdata.get("project", ""),
                     "material": qdata.get("material_name"),
@@ -722,23 +722,17 @@ class AgentService:
                     "total_usd": qdata.get("total_usd"),
                     "quote_breakdown": qdata,
                 }
-                logging.info(f"Saving quote data {target_qid}: {save_vals}")
-                await db.execute(update(Quote).where(Quote.id == target_qid).values(**save_vals))
-                await db.commit()
+                logging.info(f"Saving quote data {target_qid}: {quote_vals}")
 
                 # Generate PDF + Excel
                 result = await generate_documents(target_qid, qdata)
                 logging.info(f"generate_documents [{idx}] {qdata.get('material_name')}: ok={result.get('ok')}, error={result.get('error')}")
 
+                drive_result: dict = {}
                 if result.get("ok"):
-                    await db.execute(
-                        update(Quote).where(Quote.id == target_qid).values(
-                            pdf_url=result.get("pdf_url"),
-                            excel_url=result.get("excel_url"),
-                            status="validated",
-                        )
-                    )
-                    await db.commit()
+                    quote_vals["pdf_url"] = result.get("pdf_url")
+                    quote_vals["excel_url"] = result.get("excel_url")
+                    quote_vals["status"] = "validated"
 
                     # Delete old Drive file if exists (prevents duplicates)
                     from app.modules.agent.tools.drive_tool import delete_drive_file
@@ -758,13 +752,12 @@ class AgentService:
                     )
                     logging.info(f"upload_to_drive [{idx}]: {drive_result.get('ok')}")
                     if drive_result.get("ok"):
-                        await db.execute(
-                            update(Quote).where(Quote.id == target_qid).values(
-                                drive_url=drive_result.get("drive_url"),
-                                drive_file_id=drive_result.get("drive_file_id"),
-                            )
-                        )
-                        await db.commit()
+                        quote_vals["drive_url"] = drive_result.get("drive_url")
+                        quote_vals["drive_file_id"] = drive_result.get("drive_file_id")
+
+                # Single atomic commit for all quote updates
+                await db.execute(update(Quote).where(Quote.id == target_qid).values(**quote_vals))
+                await db.commit()
 
                 all_results.append({
                     "quote_id": target_qid,
