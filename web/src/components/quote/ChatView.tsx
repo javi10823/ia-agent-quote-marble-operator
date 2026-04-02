@@ -2,6 +2,7 @@ import type { UIMessage } from "@/lib/types";
 import type { ChatInputProps } from "@/components/chat/ChatInput";
 import MessageBubble from "@/components/chat/MessageBubble";
 import ChatInput from "@/components/chat/ChatInput";
+import { DOT, I } from "@/lib/chars";
 
 interface Props {
   messages: UIMessage[];
@@ -25,7 +26,7 @@ export default function ChatView({ messages, actionText, endRef, chatInputProps 
       <div style={{ flexShrink: 0, padding: "14px 28px 18px", borderTop: "1px solid var(--b1)", background: "var(--s1)" }}>
         <ChatInput {...chatInputProps} />
         <div style={{ fontSize: 10, color: "var(--t4)", textAlign: "center", marginTop: 7 }}>
-          Enter para enviar · Shift+Enter para nueva línea
+          {`Enter para enviar ${DOT} Shift+Enter para nueva l${I}nea`}
         </div>
       </div>
     </>

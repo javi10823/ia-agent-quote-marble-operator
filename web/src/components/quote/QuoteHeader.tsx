@@ -1,4 +1,5 @@
 import FileLink from "@/components/ui/FileLink";
+import { DOT } from "@/lib/chars";
 import { STATUS, backBtnStyle, badgeStyle } from "@/lib/constants";
 import { useBreakpoints } from "@/lib/useMediaQuery";
 import type { QuoteDetail } from "@/lib/api";
@@ -32,7 +33,7 @@ export default function QuoteHeader({ quote, onBack }: Props) {
             {quote?.source === "web" && <span style={{ ...badgeStyle, background: "rgba(138,43,226,.15)", color: "#a855f7" }}>WEB</span>}
           </div>
           <div style={{ fontSize: 12, color: "var(--t3)", marginTop: 2 }}>
-            {quote?.project}{quote?.material ? ` · ${quote.material}` : ""}
+            {quote?.project}{quote?.material ? ` ${DOT} ${quote.material}` : ""}
           </div>
         </div>
       </div>

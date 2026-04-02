@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { A } from "@/lib/chars";
 import type { QuoteDetail } from "@/lib/api";
 import { fmtARS, fmtUSD, fmtQty } from "@/lib/format";
 import { tableStyle, thStyle, tdStyle } from "@/lib/constants";
@@ -165,7 +166,7 @@ export default function DetailView({ quote, breakdown, onSwitchToChat }: Props) 
       ) : (
         <Section title="Desglose">
           <div style={{ fontSize: 13, color: "var(--t3)" }}>
-            Este presupuesto no tiene datos de desglose estructurados. Consultá el historial de chat para ver los detalles.
+            {`Este presupuesto no tiene datos de desglose estructurados. Consult${A} el historial de chat para ver los detalles.`}
           </div>
           <button onClick={onSwitchToChat} style={{
             marginTop: 10, background: "none", border: "none", color: "var(--acc)",
