@@ -1,6 +1,12 @@
 // Use relative URLs to go through Next.js rewrite proxy (avoids CORS)
 const API_BASE = "";
 
+function handleAuthError(res: Response): void {
+  if (res.status === 401 && typeof window !== "undefined") {
+    window.location.href = "/login";
+  }
+}
+
 export interface Quote {
   id: string;
   client_name: string;
@@ -45,19 +51,22 @@ export interface ContentBlock {
 // ── Quotes ────────────────────────────────────────────────────────────────────
 
 export async function fetchQuotes(): Promise<Quote[]> {
-  const res = await fetch(`${API_BASE}/api/quotes`);
+  const res = await fetch(`${API_BASE}/api/quotes`, { credentials: "include" });
+  handleAuthError(res);
   if (!res.ok) throw new Error("Error al cargar presupuestos");
   return res.json();
 }
 
 export async function fetchQuote(id: string): Promise<QuoteDetail> {
-  const res = await fetch(`${API_BASE}/api/quotes/${id}`);
+  const res = await fetch(`${API_BASE}/api/quotes/${id}`, { credentials: "include" });
+  handleAuthError(res);
   if (!res.ok) throw new Error("Presupuesto no encontrado");
   return res.json();
 }
 
 export async function createQuote(): Promise<{ id: string }> {
-  const res = await fetch(`${API_BASE}/api/quotes`, { method: "POST" });
+  const res = await fetch(`${API_BASE}/api/quotes`, { method: "POST", credentials: "include" });
+  handleAuthError(res);
   if (!res.ok) throw new Error("Error al crear presupuesto");
   return res.json();
 }
@@ -70,17 +79,20 @@ export async function updateQuoteStatus(
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status }),
+    credentials: "include",
   });
+  handleAuthError(res);
   if (!res.ok) throw new Error("Error al actualizar estado");
 }
 
 export async function deleteQuote(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/quotes/${id}`, { method: "DELETE" });
+  const res = await fetch(`${API_BASE}/api/quotes/${id}`, { method: "DELETE", credentials: "include" });
+  handleAuthError(res);
   if (!res.ok) throw new Error("Error al eliminar presupuesto");
 }
 
 export async function markQuoteAsRead(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/quotes/${id}/read`, { method: "PATCH" });
+  const res = await fetch(`${API_BASE}/api/quotes/${id}/read`, { method: "PATCH", credentials: "include" });
   if (!res.ok) throw new Error("Error al marcar como leído");
 }
 
@@ -107,6 +119,7 @@ export async function* streamChat(
   const res = await fetch(`${API_BASE}/api/quotes/${quoteId}/chat`, {
     method: "POST",
     body: formData,
+    credentials: "include",
   });
 
   if (!res.ok) {
@@ -153,13 +166,15 @@ export async function* streamChat(
 // ── Catalog ───────────────────────────────────────────────────────────────────
 
 export async function fetchCatalogs() {
-  const res = await fetch(`${API_BASE}/api/catalog`);
+  const res = await fetch(`${API_BASE}/api/catalog`, { credentials: "include" });
+  handleAuthError(res);
   if (!res.ok) throw new Error("Error al cargar catálogos");
   return res.json();
 }
 
 export async function fetchCatalog(name: string) {
-  const res = await fetch(`${API_BASE}/api/catalog/${name}`);
+  const res = await fetch(`${API_BASE}/api/catalog/${name}`, { credentials: "include" });
+  handleAuthError(res);
   if (!res.ok) throw new Error("Catálogo no encontrado");
   return res.json();
 }
@@ -169,7 +184,9 @@ export async function validateCatalog(name: string, content: unknown) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
+    credentials: "include",
   });
+  handleAuthError(res);
   if (!res.ok) throw new Error("Error al validar catálogo");
   return res.json();
 }
@@ -179,7 +196,9 @@ export async function updateCatalog(name: string, content: unknown) {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
+    credentials: "include",
   });
+  handleAuthError(res);
   if (!res.ok) throw new Error("Error al guardar catálogo");
   return res.json();
 }

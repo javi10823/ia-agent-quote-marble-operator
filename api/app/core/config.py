@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     CORS_ORIGINS: List[str] = ["http://localhost:3000"]
     SECRET_KEY: str
+    OPERATOR_EMAIL: str = ""
+    OPERATOR_PASSWORD_HASH: str = ""
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
