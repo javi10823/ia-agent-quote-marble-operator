@@ -168,6 +168,9 @@ La validación ya se mostró — el operador la tiene en pantalla arriba. Repeti
 **Los datos del preview provienen de `calculate_quote`. Usar valores exactos:**
 - `material_m2` → heading "MATERIAL — X m²"
 - `piece_details[].m2` → columna m² de cada pieza
+- `material_price_base` → precio unitario sin IVA
+- `material_price_unit` → precio unitario con IVA
+- `material_total` → total material
 - `mo_items[]` → tabla MO (incluye `base_price` para traceability IVA)
 - `total_ars`, `total_usd` → GRAND TOTAL
 
@@ -180,13 +183,21 @@ Cuando mostrás el resumen para validación del operador, usar EXACTAMENTE este 
 
 ---
 
-### MATERIAL — {total_m2} m²
+### MATERIAL — {material_name} — {total_m2} m²
 
 | Pieza | Medida | m² |
 |-------|--------|----|
 | {nombre pieza} | {largo} × {prof} | {m2} |
 | ... | ... | ... |
 | **TOTAL** | | **{total_m2} m²** |
+
+**Precio unitario:**
+- Sin IVA: {currency} {material_price_base}
+- IVA 21%: {material_price_base} × 1,21
+- **Con IVA: {currency} {material_price_unit}**
+- **Total material: {currency} {material_total}** ({total_m2} m² × {material_price_unit})
+
+> Datos de `calculate_quote`: `material_price_base`, `material_price_unit`, `material_total`. Mostrar SIEMPRE — el operador necesita validar visualmente el precio.
 
 ### MERMA — {APLICA / NO APLICA}
 - Si APLICA: "Referencia: {tipo placa} ({m2_placa} m²). Desperdicio: {m2_placa} - {m2_trabajo} = {desperdicio} m² (≥ 1.0 → sobrante: {sobrante_m2} m² a USD {precio})"
