@@ -144,11 +144,6 @@ async def auth_middleware(request: Request, call_next):
     if path in PUBLIC_ROUTES or path.startswith(PUBLIC_PREFIXES):
         return await call_next(request)
 
-    # Allow static files (they go through Next.js rewrite anyway)
-    if path.startswith("/files/"):
-        # TODO: protect static files in Phase 2
-        return await call_next(request)
-
     # Check cookie
     token = request.cookies.get(COOKIE_NAME)
     if not token:
