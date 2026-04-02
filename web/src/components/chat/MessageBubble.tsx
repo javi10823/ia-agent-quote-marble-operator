@@ -10,7 +10,7 @@ export default function MessageBubble({ message, actionText }: Props) {
     return (
       <div className="msg-anim flex gap-3 flex-row-reverse items-start">
         <Avatar isV={false} />
-        <div className="max-w-[52%] px-4 py-3 bg-acc-bg border border-acc-hover rounded-[12px_2px_12px_12px] text-[15px] leading-[1.65] text-white/[0.78]">
+        <div className="max-w-[85%] md:max-w-[70%] lg:max-w-[52%] px-3 md:px-4 py-2.5 md:py-3 bg-acc-bg border border-acc-hover rounded-[12px_2px_12px_12px] text-sm md:text-[15px] leading-[1.65] text-white/[0.78]">
           {message.attachmentName && (
             <div className="inline-flex items-center gap-[5px] px-2 py-1 rounded-[5px] bg-white/[0.08] border border-b1 text-[11px] text-t2 mb-[7px]">
               📎 {message.attachmentName}

@@ -45,10 +45,14 @@ body::after {
   z-index: 9999;
 }
 
-/* Scrollbar */
+/* Scrollbar — wider on touch devices */
 ::-webkit-scrollbar { width: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 2px; }
+@media (pointer: coarse) {
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
+}
 
 /* Chat streaming cursor */
 .streaming-cursor::after {

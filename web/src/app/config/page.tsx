@@ -103,12 +103,12 @@ export default function ConfigPage() {
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Catalog list */}
-        <div className="w-[200px] shrink-0 bg-s1 border-r border-b1 px-2 py-3 overflow-y-auto">
+        <div className="md:w-[200px] shrink-0 bg-s1 border-b md:border-b-0 md:border-r border-b1 px-2 py-2 md:py-3 overflow-x-auto md:overflow-x-hidden overflow-y-auto flex md:block gap-1 md:gap-0">
           {GROUPS.map(group => (
             <div key={group.label}>
-              <div className="text-[10px] font-medium text-t4 uppercase tracking-[0.09em] px-2 pt-2 pb-1 mt-1.5">
+              <div className="hidden md:block text-[10px] font-medium text-t4 uppercase tracking-[0.09em] px-2 pt-2 pb-1 mt-1.5">
                 {group.label}
               </div>
               {group.items.map(name => {
@@ -119,7 +119,7 @@ export default function ConfigPage() {
                     key={name}
                     onClick={() => setSelected(name)}
                     className={clsx(
-                      "flex flex-col gap-0.5 p-2 rounded-md text-xs cursor-pointer border-none w-full text-left transition-all duration-100 font-sans",
+                      "flex flex-col gap-0.5 p-2 rounded-md text-xs cursor-pointer border-none w-full md:w-full shrink-0 md:shrink text-left transition-all duration-100 font-sans whitespace-nowrap md:whitespace-normal",
                       isActive ? "text-acc bg-acc-bg" : "text-t2 bg-transparent hover:bg-white/[0.04]",
                     )}
                   >

@@ -84,19 +84,19 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-7 pt-5 pb-[18px] border-b border-b1 shrink-0">
-        <div>
-          <div className="text-lg font-medium -tracking-[0.03em]">Presupuestos</div>
+      <div className="flex items-center justify-between px-4 lg:px-7 pt-4 lg:pt-5 pb-3 lg:pb-[18px] border-b border-b1 shrink-0">
+        <div className="ml-10 lg:ml-0">
+          <div className="text-base lg:text-lg font-medium -tracking-[0.03em]">Presupuestos</div>
           <div className="text-[11px] text-t3 mt-0.5">
             {new Date().toLocaleDateString("es-AR", { month: "long", year: "numeric" })} · {quotes.length} registros
           </div>
         </div>
-        <button className="px-3 py-[7px] rounded-md text-xs font-medium font-sans cursor-pointer border border-b1 bg-transparent text-t2 -tracking-[0.01em] hover:border-b2 hover:text-t1 transition">
+        <button className="hidden md:flex px-3 py-[7px] rounded-md text-xs font-medium font-sans cursor-pointer border border-b1 bg-transparent text-t2 -tracking-[0.01em] hover:border-b2 hover:text-t1 transition">
           Exportar CSV
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-7 py-6">
+      <div className="flex-1 overflow-y-auto px-3 md:px-5 lg:px-7 py-4 lg:py-6">
         {/* Stale drafts banner */}
         {staleDrafts.length > 0 && (
           <div className="flex items-center gap-2.5 bg-amb/[0.06] border border-amb/[0.16] rounded-lg px-3.5 py-2.5 mb-5 text-xs text-amb">
@@ -113,8 +113,8 @@ export default function DashboardPage() {
         ) : (
           <div className="bg-s1 border border-b1 rounded-[10px] overflow-hidden">
             {/* Filter bar */}
-            <div className="flex items-center justify-between px-4 py-2.5 bg-s2 border-b border-b1">
-              <div className="flex gap-1.5">
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2 px-3 md:px-4 py-2.5 bg-s2 border-b border-b1">
+              <div className="flex gap-1.5 overflow-x-auto pb-1 md:pb-0 flex-nowrap">
                 {([
                   { key: "todos", label: "Todos" },
                   { key: "draft", label: "Borrador" },
@@ -142,7 +142,7 @@ export default function DashboardPage() {
                   </button>
                 ))}
               </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-b1 bg-s3 w-60">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-b1 bg-s3 w-full md:w-60">
                 <svg className="text-t3 shrink-0" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
@@ -161,16 +161,17 @@ export default function DashboardPage() {
             </div>
 
             {/* Table */}
-            <table className="w-full border-collapse">
+            <div className="overflow-x-auto">
+            <table className="w-full border-collapse min-w-0">
               <thead className="bg-s2 border-b border-b1">
                 <tr>
-                  <th className="text-left px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em] w-[28%]">Cliente</th>
-                  <th className="text-left px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Material</th>
-                  <th className="text-right px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Importe</th>
-                  <th className="text-center px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Estado</th>
-                  <th className="text-right px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Fecha</th>
-                  <th className="text-right px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Archivos</th>
-                  <th className="px-[18px] py-2.5 w-10"></th>
+                  <th className="text-left px-3 lg:px-[18px] py-2.5 text-[11px] lg:text-[10px] font-medium text-t3 uppercase tracking-[0.09em] w-[28%]">Cliente</th>
+                  <th className="text-left px-3 lg:px-[18px] py-2.5 text-[11px] lg:text-[10px] font-medium text-t3 uppercase tracking-[0.09em] hidden lg:table-cell">Material</th>
+                  <th className="text-right px-3 lg:px-[18px] py-2.5 text-[11px] lg:text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Importe</th>
+                  <th className="text-center px-3 lg:px-[18px] py-2.5 text-[11px] lg:text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Estado</th>
+                  <th className="text-right px-3 lg:px-[18px] py-2.5 text-[11px] lg:text-[10px] font-medium text-t3 uppercase tracking-[0.09em] hidden md:table-cell">Fecha</th>
+                  <th className="text-right px-3 lg:px-[18px] py-2.5 text-[11px] lg:text-[10px] font-medium text-t3 uppercase tracking-[0.09em] hidden lg:table-cell">Archivos</th>
+                  <th className="px-2 lg:px-[18px] py-2.5 w-10"></th>
                 </tr>
               </thead>
               <tbody>
@@ -193,7 +194,7 @@ export default function DashboardPage() {
                       )}
                     >
                       {/* Cliente */}
-                      <td className="px-[18px] py-[13px]">
+                      <td className="px-3 lg:px-[18px] py-[13px]">
                         <div className="flex items-center">
                           {isUnread && <span className="w-[7px] h-[7px] rounded-full bg-acc shrink-0 mr-2" />}
                           <div>
@@ -211,11 +212,11 @@ export default function DashboardPage() {
                         </div>
                       </td>
                       {/* Material */}
-                      <td className={clsx("px-[18px] py-[13px] text-xs", isUnread ? "text-t1 font-medium" : "text-t2")}>
+                      <td className={clsx("px-3 lg:px-[18px] py-[13px] text-xs hidden lg:table-cell", isUnread ? "text-t1 font-medium" : "text-t2")}>
                         {q.material || "\u2014"}
                       </td>
                       {/* Importe */}
-                      <td className="px-[18px] py-[13px] text-right">
+                      <td className="px-3 lg:px-[18px] py-[13px] text-right">
                         <div className="text-[13px] text-t1 font-mono -tracking-[0.02em]">
                           {q.total_ars ? `$${q.total_ars.toLocaleString("es-AR")}` : "\u2014"}
                         </div>
@@ -224,7 +225,7 @@ export default function DashboardPage() {
                         ) : null}
                       </td>
                       {/* Estado */}
-                      <td className="px-[18px] py-[13px] text-center">
+                      <td className="px-3 lg:px-[18px] py-[13px] text-center">
                         <button
                           onClick={(e) => toggleStatus(e, q.id, q.status)}
                           title={STATUS_NEXT[q.status] ? `Cambiar a ${STATUS_LABEL[STATUS_NEXT[q.status]!]}` : "Estado final"}
@@ -239,12 +240,12 @@ export default function DashboardPage() {
                         </button>
                       </td>
                       {/* Fecha */}
-                      <td className={clsx("px-[18px] py-[13px] text-[11px] text-right", isStale ? "text-amb" : "text-t3")}>
+                      <td className={clsx("px-3 lg:px-[18px] py-[13px] text-[11px] text-right hidden md:table-cell", isStale ? "text-amb" : "text-t3")}>
                         {format(new Date(q.created_at), "d MMM", { locale: es })}
                         {isStale && ` ·${Math.floor(daysOld)}d`}
                       </td>
                       {/* Archivos */}
-                      <td className="px-[18px] py-[13px]">
+                      <td className="px-3 lg:px-[18px] py-[13px] hidden lg:table-cell">
                         <div className="flex gap-1 justify-end" onClick={e => e.stopPropagation()}>
                           {q.pdf_url && <FileBtn href={q.pdf_url} emoji="📄" />}
                           {q.excel_url && <FileBtn href={q.excel_url} emoji="📊" />}
@@ -256,7 +257,7 @@ export default function DashboardPage() {
                         <button
                           onClick={(e) => askDelete(e, q.id, q.client_name)}
                           title="Eliminar presupuesto"
-                          className="w-7 h-7 rounded-md border border-b1 bg-transparent text-t3 cursor-pointer flex items-center justify-center text-xs transition-all hover:border-err/50 hover:text-err"
+                          className="w-8 h-8 md:w-7 md:h-7 rounded-md border border-b1 bg-transparent text-t3 cursor-pointer flex items-center justify-center text-xs transition-all hover:border-err/50 hover:text-err"
                         >
                           ✕
                         </button>
@@ -266,6 +267,7 @@ export default function DashboardPage() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>
@@ -278,7 +280,7 @@ export default function DashboardPage() {
         >
           <div
             onClick={e => e.stopPropagation()}
-            className="bg-s2 border border-b2 rounded-[14px] px-8 py-7 w-[380px] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
+            className="bg-s2 border border-b2 rounded-[14px] px-5 md:px-8 py-6 md:py-7 w-full max-w-[380px] mx-4 shadow-[0_20px_60px_rgba(0,0,0,.5)]"
           >
             <div className="text-[15px] font-medium text-t1 mb-2">Eliminar presupuesto</div>
             <div className="text-[13px] text-t2 leading-relaxed mb-6">
