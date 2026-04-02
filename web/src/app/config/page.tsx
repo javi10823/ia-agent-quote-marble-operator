@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fetchCatalogs, fetchCatalog, validateCatalog, updateCatalog } from "@/lib/api";
+import clsx from "clsx";
 
 interface CatalogMeta { name: string; item_count: number; last_updated: string | null; size_kb: number; }
 
@@ -59,61 +60,72 @@ export default function ConfigPage() {
     } finally { setSaving(false); }
   }
 
+  const disableValidate = !hasChanges || validating;
+  const disableSave = !validation?.valid || saving || !hasChanges;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div className="flex flex-col h-full">
       {/* Header */}
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "20px 28px 18px", borderBottom: "1px solid var(--b1)", flexShrink: 0,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-          <button onClick={() => router.push("/")} style={backStyle}>
+      <div className="flex items-center justify-between px-7 pt-5 pb-[18px] border-b border-b1 shrink-0">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => router.push("/")}
+            className="w-[30px] h-[30px] rounded-md border border-b1 bg-transparent text-t2 cursor-pointer flex items-center justify-center transition hover:border-b2 hover:text-t1"
+          >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
           <div>
-            <div style={{ fontSize: 18, fontWeight: 500, letterSpacing: "-0.03em" }}>Catálogo</div>
-            <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>Validación IA antes de guardar</div>
+            <div className="text-lg font-medium -tracking-[0.03em]">Catálogo</div>
+            <div className="text-[11px] text-t3 mt-0.5">Validación IA antes de guardar</div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 7 }}>
-          <button onClick={handleValidate} disabled={!hasChanges || validating} style={btnStyle(!hasChanges || validating)}>
+        <div className="flex gap-[7px]">
+          <button
+            onClick={handleValidate}
+            disabled={disableValidate}
+            className={clsx(
+              "px-3 py-[7px] rounded-md text-xs font-medium font-sans border border-b1 bg-transparent text-t2 -tracking-[0.01em] transition",
+              disableValidate ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:border-b2 hover:text-t1",
+            )}
+          >
             {validating ? "Validando..." : "Validar con IA"}
           </button>
-          <button onClick={handleSave} disabled={!validation?.valid || saving || !hasChanges} style={{
-            ...btnStyle(!validation?.valid || saving || !hasChanges),
-            background: "var(--acc2)", borderColor: "var(--acc3)", color: "var(--acc)",
-          }}>
+          <button
+            onClick={handleSave}
+            disabled={disableSave}
+            className={clsx(
+              "px-3 py-[7px] rounded-md text-xs font-medium font-sans border bg-acc-bg border-acc-hover text-acc -tracking-[0.01em] transition",
+              disableSave ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:bg-acc/20",
+            )}
+          >
             {saving ? "Guardando..." : "Guardar cambios"}
           </button>
         </div>
       </div>
 
-      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <div className="flex-1 flex overflow-hidden">
         {/* Catalog list */}
-        <div style={{
-          width: 200, flexShrink: 0,
-          background: "var(--s1)", borderRight: "1px solid var(--b1)",
-          padding: "12px 8px", overflowY: "auto",
-        }}>
+        <div className="w-[200px] shrink-0 bg-s1 border-r border-b1 px-2 py-3 overflow-y-auto">
           {GROUPS.map(group => (
             <div key={group.label}>
-              <div style={{ fontSize: 10, fontWeight: 500, color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.09em", padding: "8px 8px 4px", marginTop: 6 }}>
+              <div className="text-[10px] font-medium text-t4 uppercase tracking-[0.09em] px-2 pt-2 pb-1 mt-1.5">
                 {group.label}
               </div>
               {group.items.map(name => {
                 const m = catalogs.find(c => c.name === name);
+                const isActive = selected === name;
                 return (
-                  <button key={name} onClick={() => setSelected(name)} style={{
-                    display: "flex", flexDirection: "column", gap: 2,
-                    padding: 8, borderRadius: 6, fontSize: 12,
-                    color: selected === name ? "var(--acc)" : "var(--t2)",
-                    cursor: "pointer", border: "none", width: "100%", textAlign: "left",
-                    background: selected === name ? "var(--acc2)" : "transparent",
-                    transition: "all .1s", fontFamily: "inherit",
-                  }}>
+                  <button
+                    key={name}
+                    onClick={() => setSelected(name)}
+                    className={clsx(
+                      "flex flex-col gap-0.5 p-2 rounded-md text-xs cursor-pointer border-none w-full text-left transition-all duration-100 font-sans",
+                      isActive ? "text-acc bg-acc-bg" : "text-t2 bg-transparent hover:bg-white/[0.04]",
+                    )}
+                  >
                     {name}.json
-                    <span style={{ fontSize: 10, color: selected === name ? "rgba(79,143,255,.55)" : "var(--t3)" }}>
-                      {m ? `${m.item_count} ítems` : "—"}
+                    <span className={clsx("text-[10px]", isActive ? "text-acc/55" : "text-t3")}>
+                      {m ? `${m.item_count} ítems` : "\u2014"}
                       {m?.last_updated ? ` · ${m.last_updated}` : ""}
                     </span>
                   </button>
@@ -124,39 +136,33 @@ export default function ConfigPage() {
         </div>
 
         {/* Editor */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "12px 22px", borderBottom: "1px solid var(--b1)",
-            background: "rgba(0,0,0,.12)", flexShrink: 0,
-          }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: "var(--t1)", display: "flex", alignItems: "center", gap: 9 }}>
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between px-[22px] py-3 border-b border-b1 bg-black/[0.12] shrink-0">
+            <div className="text-[13px] font-medium text-t1 flex items-center gap-2.5">
               {selected}.json
               {meta && (
-                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 999, fontWeight: 500, background: "var(--amb2)", color: "var(--amb)", border: "1px solid rgba(245,166,35,.16)" }}>
+                <span className="text-[10px] px-2 py-[2px] rounded-full font-medium bg-amb-bg text-amb border border-amb/[0.16]">
                   {meta.item_count} ítems{meta.last_updated ? ` · ${meta.last_updated}` : ""}
                 </span>
               )}
               {validation?.valid && !hasChanges && (
-                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 999, fontWeight: 500, background: "var(--grn2)", color: "var(--grn)", border: "1px solid rgba(48,209,88,.18)" }}>✓ Válido</span>
+                <span className="text-[10px] px-2 py-[2px] rounded-full font-medium bg-grn-bg text-grn border border-grn/[0.18]">
+                  ✓ Válido
+                </span>
               )}
             </div>
-            <span style={{ fontSize: 11, color: "var(--t3)" }}>
+            <span className="text-[11px] text-t3">
               {hasChanges && !validation && "• Cambios sin guardar"}
               {validation?.valid && hasChanges && "✓ Validado"}
               {validation && !validation.valid && "✕ Error"}
             </span>
           </div>
 
-          <div style={{ flex: 1, padding: "16px 22px", display: "flex", flexDirection: "column", gap: 10, overflow: "hidden" }}>
+          <div className="flex-1 px-[22px] py-4 flex flex-col gap-2.5 overflow-hidden">
             {validation && validation.warnings.length > 0 && (
-              <div style={{
-                background: "rgba(245,166,35,.06)", border: "1px solid rgba(245,166,35,.16)",
-                borderRadius: 7, padding: "10px 13px",
-                fontSize: 12, color: "rgba(245,166,35,.85)", display: "flex", gap: 8,
-              }}>
+              <div className="bg-amb/[0.06] border border-amb/[0.16] rounded-[7px] px-[13px] py-2.5 text-xs text-amb/85 flex gap-2">
                 <span>⚠</span>
-                <div>{validation.warnings.map((w, i) => (
+                <div>{validation.warnings.map((w: any, i: number) => (
                   <div key={i}>{w.sku && <strong>{w.sku}: </strong>}{w.message}</div>
                 ))}</div>
               </div>
@@ -166,13 +172,7 @@ export default function ConfigPage() {
               onChange={e => setContent(e.target.value)}
               disabled={loading}
               spellCheck={false}
-              style={{
-                flex: 1, background: "rgba(0,0,0,.28)", border: "1px solid var(--b1)",
-                borderRadius: 8, padding: 14,
-                fontFamily: "'Geist Mono', monospace", fontSize: 12,
-                color: "var(--t2)", resize: "none", outline: "none", lineHeight: 1.75,
-                transition: "border-color .15s",
-              }}
+              className="flex-1 bg-black/[0.28] border border-b1 rounded-lg p-3.5 font-mono text-xs text-t2 resize-none outline-none leading-[1.75] transition-[border-color] duration-150 focus:border-acc"
             />
           </div>
         </div>
@@ -180,20 +180,3 @@ export default function ConfigPage() {
     </div>
   );
 }
-
-const backStyle: React.CSSProperties = {
-  width: 30, height: 30, borderRadius: 6,
-  border: "1px solid var(--b1)", background: "transparent",
-  color: "var(--t2)", cursor: "pointer",
-  display: "flex", alignItems: "center", justifyContent: "center",
-  transition: "all .1s",
-};
-
-const btnStyle = (disabled: boolean): React.CSSProperties => ({
-  padding: "7px 13px", borderRadius: 6,
-  fontSize: 12, fontWeight: 500, fontFamily: "inherit",
-  cursor: disabled ? "not-allowed" : "pointer",
-  border: "1px solid var(--b1)", background: "transparent",
-  color: "var(--t2)", letterSpacing: "-0.01em",
-  opacity: disabled ? 0.4 : 1, transition: "all .1s",
-});
