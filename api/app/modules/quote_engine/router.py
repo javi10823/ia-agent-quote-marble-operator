@@ -174,25 +174,29 @@ async def upload_source_files(
     for f in files:
         if not f.filename:
             continue
+        # Sanitize filename — strip directory traversal
+        safe_name = Path(f.filename).name
+        if not safe_name:
+            continue
         ct = f.content_type or ""
         if ct not in ALLOWED:
-            errors.append(f"'{f.filename}' — unsupported type ({ct})")
+            errors.append(f"'{safe_name}' — unsupported type ({ct})")
             continue
         data = await f.read()
         if len(data) > MAX_SIZE:
-            errors.append(f"'{f.filename}' — exceeds 10MB")
+            errors.append(f"'{safe_name}' — exceeds 10MB")
             continue
 
         # Save to disk
         sources_dir = Path(__file__).parent.parent.parent.parent / "output" / quote_id / "sources"
         sources_dir.mkdir(parents=True, exist_ok=True)
-        (sources_dir / f.filename).write_bytes(data)
+        (sources_dir / safe_name).write_bytes(data)
 
         saved.append({
-            "filename": f.filename,
+            "filename": safe_name,
             "type": ct,
             "size": len(data),
-            "url": f"/files/{quote_id}/sources/{f.filename}",
+            "url": f"/files/{quote_id}/sources/{safe_name}",
             "uploaded_at": datetime.now().isoformat(),
         })
 

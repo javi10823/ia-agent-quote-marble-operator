@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import tempfile
 from pathlib import Path
@@ -15,8 +14,11 @@ TEMP_DIR = Path(tempfile.gettempdir()) / "marble_plans"
 TEMP_DIR.mkdir(exist_ok=True)
 
 
-def _read_plan_sync(filename: str, crop_instructions: list) -> dict:
-    """Blocking: rasterize plan at 300 DPI + crop mesadas."""
+async def read_plan(filename: str, crop_instructions: list) -> dict:
+    """
+    Rasterize a plan file at 300 DPI and optionally crop individual mesadas.
+    Returns base64-encoded images for Claude to analyze.
+    """
     plan_path = TEMP_DIR / filename
     if not plan_path.exists():
         return {"error": f"Archivo no encontrado: {filename}"}
@@ -45,6 +47,7 @@ def _read_plan_sync(filename: str, crop_instructions: list) -> dict:
     base_image = images[0]
     result_images = []
 
+    # Full plan (reduced)
     full_w = base_image.width
     full_h = base_image.height
     result_images.append({
@@ -54,6 +57,7 @@ def _read_plan_sync(filename: str, crop_instructions: list) -> dict:
         "height": full_h,
     })
 
+    # Individual crops
     for crop in crop_instructions:
         try:
             cropped = base_image.crop((
@@ -81,11 +85,6 @@ def _read_plan_sync(filename: str, crop_instructions: list) -> dict:
     }
 
 
-async def read_plan(filename: str, crop_instructions: list) -> dict:
-    """Non-blocking wrapper — runs rasterization in thread pool."""
-    return await asyncio.to_thread(_read_plan_sync, filename, crop_instructions)
-
-
 def _image_to_b64(img: Image.Image, max_width: Optional[int] = None) -> str:
     if max_width and img.width > max_width:
         ratio = max_width / img.width
@@ -100,9 +99,7 @@ def _image_to_b64(img: Image.Image, max_width: Optional[int] = None) -> str:
 
 def save_plan_to_temp(filename: str, data: bytes) -> Path:
     """Save uploaded plan file to temp directory for tool access."""
-    path = TEMP_DIR / filename
-    # Ensure resolved path stays within TEMP_DIR (defense in depth)
-    if not path.resolve().parent == TEMP_DIR.resolve():
-        raise ValueError(f"Invalid filename: {filename}")
+    safe_name = Path(filename).name  # strip directory traversal (../ etc.)
+    path = TEMP_DIR / safe_name
     path.write_bytes(data)
     return path

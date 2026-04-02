@@ -12,18 +12,7 @@ ALLOWED_MIME_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp"
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 MAX_FILES = 5
 
-import re
-
 from app.core.database import get_db
-
-
-def _safe_filename(name: str) -> str:
-    """Strip path separators and dangerous characters from upload filenames."""
-    # Take only the basename (no directory traversal)
-    name = name.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-    # Remove any remaining dangerous characters
-    name = re.sub(r'[^\w.\-() ]', '_', name)
-    return name or "upload"
 from app.models.quote import Quote, QuoteStatus
 from app.modules.agent.agent import AgentService
 from app.modules.agent.schemas import (
@@ -172,36 +161,38 @@ async def chat(
     for pf in plan_files:
         if not pf.filename:
             continue
-        # Sanitize filename to prevent path traversal
-        safe_name = _safe_filename(pf.filename)
+        # Sanitize filename — strip directory traversal (../ etc.)
+        safe_filename = Path(pf.filename).name
+        if not safe_filename:
+            continue
         # Validate MIME type
         content_type = pf.content_type or ""
-        if not any(content_type.startswith(t.split("/")[0]) and t.split("/")[1] in content_type for t in ALLOWED_MIME_TYPES) and content_type not in ALLOWED_MIME_TYPES:
-            errors.append(f"'{safe_name}' — tipo no soportado ({content_type}). Solo PDF, JPG, PNG, WEBP.")
+        if content_type not in ALLOWED_MIME_TYPES:
+            errors.append(f"'{safe_filename}' — tipo no soportado ({content_type}). Solo PDF, JPG, PNG, WEBP.")
             continue
         # Read and validate size
         file_bytes = await pf.read()
         if len(file_bytes) > MAX_FILE_SIZE:
-            errors.append(f"'{safe_name}' — excede 10MB ({len(file_bytes) / 1048576:.1f}MB)")
+            errors.append(f"'{safe_filename}' — excede 10MB ({len(file_bytes) / 1048576:.1f}MB)")
             continue
-        validated_files.append((file_bytes, safe_name))
+        validated_files.append((file_bytes, safe_filename))
 
         # Save to temp for read_plan tool
-        save_plan_to_temp(safe_name, file_bytes)
+        save_plan_to_temp(safe_filename, file_bytes)
 
         # Persist source file for download
         sources_dir = Path(__file__).parent.parent.parent.parent / "output" / quote_id / "sources"
         sources_dir.mkdir(parents=True, exist_ok=True)
-        (sources_dir / safe_name).write_bytes(file_bytes)
+        (sources_dir / safe_filename).write_bytes(file_bytes)
 
         # Update DB with source file metadata
         existing_files = quote.source_files or []
-        if not any(f["filename"] == safe_name for f in existing_files):
+        if not any(f["filename"] == safe_filename for f in existing_files):
             existing_files.append({
-                "filename": safe_name,
+                "filename": safe_filename,
                 "type": content_type,
                 "size": len(file_bytes),
-                "url": f"/files/{quote_id}/sources/{safe_name}",
+                "url": f"/files/{quote_id}/sources/{safe_filename}",
                 "uploaded_at": datetime.now().isoformat(),
             })
             await db.execute(
