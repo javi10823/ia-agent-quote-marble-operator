@@ -104,30 +104,38 @@ def _find_flete(localidad: str) -> dict:
     return {"found": False, "error": f"Zona '{localidad}' no encontrada en delivery-zones"}
 
 
-def _get_mo_price(sku: str) -> int:
-    """Get MO price with IVA from labor.json."""
+def _get_mo_price(sku: str) -> tuple:
+    """Get MO price with IVA and base price from labor.json.
+    Returns (price_with_iva, price_base).
+    """
     result = catalog_lookup("labor", sku)
     if result.get("found"):
-        return result.get("price_ars", 0)
-    return 0
+        return result.get("price_ars", 0), result.get("price_ars_base", 0)
+    return 0, 0
 
 
 def calculate_m2(pieces: list) -> tuple[float, list[dict]]:
-    """Calculate total m2 from pieces. Returns (total_m2, piece_details)."""
+    """Calculate total m2 from pieces. Returns (total_m2, piece_details).
+
+    Rounding policy (BUG-045):
+    - Per piece: NO rounding (sum raw values)
+    - Total: round to 2 decimals
+    - Display per piece: 4 decimals (for traceability only)
+    """
     total = 0.0
     details = []
     for p in pieces:
         largo = p.get("largo", 0)
         dim2 = p.get("prof") or p.get("alto") or 0
-        m2 = round(largo * dim2, 3)
-        total += m2
+        raw_m2 = largo * dim2
+        total += raw_m2
         details.append({
             "description": p.get("description", ""),
             "largo": largo,
             "dim2": dim2,
-            "m2": m2,
+            "m2": round(raw_m2, 4),  # display only
         })
-    return round(total, 3), details
+    return round(total, 2), details
 
 
 def calculate_merma(m2_needed: float, material_type: str) -> dict:
@@ -163,7 +171,7 @@ def calculate_merma(m2_needed: float, material_type: str) -> dict:
         n_plates = math.ceil(m2_needed / m2_ref)
         m2_ref_total = n_plates * m2_ref
 
-    desperdicio = round(m2_ref_total - m2_needed, 3)
+    desperdicio = round(m2_ref_total - m2_needed, 2)
 
     if desperdicio < 1.0:
         return {
@@ -173,7 +181,7 @@ def calculate_merma(m2_needed: float, material_type: str) -> dict:
             "motivo": f"Desperdicio {desperdicio} m² < 1.0 → sin sobrante (ref: {ref_label})",
         }
     else:
-        sobrante = round(desperdicio / 2, 3)
+        sobrante = round(desperdicio / 2, 2)
         return {
             "aplica": True,
             "desperdicio": desperdicio,
@@ -239,31 +247,32 @@ def calculate_quote(input_data: dict) -> dict:
     if pileta:
         if pileta in ("empotrada_cliente", "empotrada_johnson"):
             sku = "PILETADEKTON/NEOLITH" if is_sint else "PEGADOPILETA"
-            price = _get_mo_price(sku)
-            mo_items.append({"description": "Agujero y pegado pileta", "quantity": 1, "unit_price": price, "total": price})
+            price, base = _get_mo_price(sku)
+            mo_items.append({"description": "Agujero y pegado pileta", "quantity": 1, "unit_price": price, "base_price": base, "total": price})
         elif pileta == "apoyo":
             sku = "PILETAAPOYODEKTON/NEO" if is_sint else "AGUJEROAPOYO"
-            price = _get_mo_price(sku)
-            mo_items.append({"description": "Agujero pileta apoyo", "quantity": 1, "unit_price": price, "total": price})
+            price, base = _get_mo_price(sku)
+            mo_items.append({"description": "Agujero pileta apoyo", "quantity": 1, "unit_price": price, "base_price": base, "total": price})
 
     # Anafe
     if anafe:
         sku = "ANAFEDEKTON/NEOLITH" if is_sint else "ANAFE"
-        price = _get_mo_price(sku)
-        mo_items.append({"description": "Agujero anafe", "quantity": 1, "unit_price": price, "total": price})
+        price, base = _get_mo_price(sku)
+        mo_items.append({"description": "Agujero anafe", "quantity": 1, "unit_price": price, "base_price": base, "total": price})
 
     # Colocación
     if colocacion:
         sku = "COLOCACIONDEKTON/NEOLITH" if is_sint else "COLOCACION"
-        price = _get_mo_price(sku)
+        price, base = _get_mo_price(sku)
         qty = max(total_m2, 1.0)
-        mo_items.append({"description": "Colocación", "quantity": round(qty, 2), "unit_price": price, "total": round(price * qty)})
+        mo_items.append({"description": "Colocación", "quantity": round(qty, 2), "unit_price": price, "base_price": base, "total": round(price * qty)})
 
     # Flete
     flete_result = _find_flete(localidad)
     if flete_result.get("found"):
         flete_price = flete_result.get("price_ars", 0)
-        mo_items.append({"description": f"Flete + toma medidas {localidad}", "quantity": 1, "unit_price": flete_price, "total": flete_price})
+        flete_base = flete_result.get("price_ars_base", 0)
+        mo_items.append({"description": f"Flete + toma medidas {localidad}", "quantity": 1, "unit_price": flete_price, "base_price": flete_base, "total": flete_price})
     else:
         logging.warning(f"Flete not found for '{localidad}'")
 
@@ -278,8 +287,8 @@ def calculate_quote(input_data: dict) -> dict:
     )
     if has_tall_zocalo or has_revestimiento:
         sku = "TOMASDEKTON/NEO" if is_sint else "TOMAS"
-        price = _get_mo_price(sku)
-        mo_items.append({"description": "Agujero toma corriente", "quantity": 1, "unit_price": price, "total": price})
+        price, base = _get_mo_price(sku)
+        mo_items.append({"description": "Agujero toma corriente", "quantity": 1, "unit_price": price, "base_price": base, "total": price})
 
     # Totals
     total_mo_ars = sum(item["total"] for item in mo_items)
@@ -311,11 +320,13 @@ def calculate_quote(input_data: dict) -> dict:
         "material_type": mat_type,
         "material_m2": total_m2,
         "material_price_unit": price_unit,
+        "material_price_base": price_base,
         "material_currency": currency,
         "material_total": material_total_net,
         "discount_pct": discount_pct,
         "discount_amount": discount_amount,
         "merma": merma,
+        "piece_details": piece_details,
         "mo_items": mo_items,
         "total_ars": total_ars,
         "total_usd": total_usd,

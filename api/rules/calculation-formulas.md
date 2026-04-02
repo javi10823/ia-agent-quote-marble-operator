@@ -15,11 +15,24 @@ Los zócalos, alzas y frentines se suman al m2 total de la pieza — no se lista
 m2 = largo (m) × ancho (m)
 ```
 
-**Regla de suma de piezas:** NO redondear piezas individualmente. Sumar directo y redondear el total a 3 decimales.
+**Regla de suma de piezas:** NO redondear piezas individualmente. Sumar directo y redondear el total a **2 decimales**.
 ```
 m2_total = largo1×ancho1 + largo2×ancho2 + ...
 ```
-Ejemplo: 2.10×0.60 + 2.10×0.05 + 0.60×0.05 = 1.26 + 0.105 + 0.030 = **1.395 m2**
+Ejemplo: 2.10×0.60 + 2.10×0.05 + 0.60×0.05 = 1.26 + 0.105 + 0.030 = **1.40 m2**
+
+### Política de redondeo — CENTRALIZADA
+
+| Valor | Redondeo | Ejemplo |
+|-------|----------|---------|
+| m² por pieza | SIN redondear | 3.00 × 0.62 = 1.86 (sin round) |
+| m² total | round 2 dec | 3.8844 → 3.88 |
+| Precio USD unitario | floor (truncar) | floor(379.85 × 1.21) = 459 |
+| Total material USD | round entero | round(3.88 × 459) = 1781 |
+| Precio ARS MO | round entero | round(49698.65 × 1.21) = 60135 |
+| Colocación qty | = m² total (2 dec) | max(3.88, 1.0) = 3.88 |
+
+**NUNCA redondear piezas individuales antes de sumar.** Esto causa discrepancias entre heading, tabla y total.
 
 
 ---
@@ -311,6 +324,8 @@ del agujero de la superficie total.
 | Agujero pileta apoyo | Pileta de apoyo — solo perforación, sin pegado |
 | Agujero anafe | Perforación para anafe — se cobra aparte |
 | Agujero tomas | Tomacorrientes — se cobra por unidad |
+
+> **ANAFE — solo con evidencia:** cobrar únicamente si el plano muestra el símbolo de anafe/hornallas dibujado o el operador lo menciona explícitamente en el enunciado. **Cocina ≠ anafe automático.** Ref: quote-034 — cocina sin anafe en plano → no se cobró.
 
 ---
 

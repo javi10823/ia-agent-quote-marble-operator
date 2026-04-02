@@ -14,6 +14,7 @@ from app.modules.agent.tools.catalog_tool import catalog_lookup, check_stock
 from app.modules.agent.tools.plan_tool import read_plan
 from app.modules.agent.tools.document_tool import generate_documents
 from app.modules.agent.tools.drive_tool import upload_to_drive
+from app.modules.quote_engine.calculator import calculate_quote
 
 BASE_DIR = Path(__file__).parent.parent.parent.parent
 
@@ -250,6 +251,45 @@ TOOLS = [
                 },
             },
             "required": ["quote_id", "updates"],
+        },
+    },
+    {
+        "name": "calculate_quote",
+        "description": "Calcula m², merma, material total, y mano de obra de forma determinística. SIEMPRE usar para cálculos numéricos — NUNCA calcular inline. Devuelve piece_details, mo_items con base_price (traceability IVA), totales ARS/USD, y merma. Usar estos valores exactos en el preview y pasarlos a generate_documents.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_name": {"type": "string", "description": "Nombre del cliente"},
+                "project": {"type": "string", "description": "Nombre del proyecto"},
+                "material": {"type": "string", "description": "Nombre del material (ej: Pura Stone Blanco Nube)"},
+                "pieces": {
+                    "type": "array",
+                    "description": "Lista de piezas con medidas en metros",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "description": {"type": "string", "description": "Nombre de la pieza (ej: Mesada principal)"},
+                            "largo": {"type": "number", "description": "Largo en metros"},
+                            "prof": {"type": "number", "description": "Profundidad en metros (para mesadas, zócalos horizontales)"},
+                            "alto": {"type": "number", "description": "Alto en metros (para revestimientos, patas)"},
+                        },
+                        "required": ["description", "largo"],
+                    },
+                },
+                "localidad": {"type": "string", "description": "Zona de flete (ej: Rosario)"},
+                "colocacion": {"type": "boolean", "description": "Si lleva colocación (default: true)"},
+                "pileta": {
+                    "type": "string",
+                    "enum": ["empotrada_cliente", "empotrada_johnson", "apoyo"],
+                    "description": "Tipo de pileta. Omitir si no hay pileta.",
+                },
+                "anafe": {"type": "boolean", "description": "SOLO true si hay evidencia de anafe en plano o enunciado. Cocina ≠ anafe automático."},
+                "frentin": {"type": "boolean", "description": "Si lleva frentin/regrueso"},
+                "pulido": {"type": "boolean", "description": "Si lleva pulido de cantos"},
+                "plazo": {"type": "string", "description": "Plazo de entrega"},
+                "discount_pct": {"type": "number", "description": "Porcentaje de descuento (0-100)"},
+            },
+            "required": ["client_name", "material", "pieces", "localidad", "plazo"],
         },
     },
 ]
@@ -633,5 +673,7 @@ class AgentService:
             )
             await db.commit()
             return {"ok": True, "updated_fields": list(clean.keys())}
+        elif name == "calculate_quote":
+            return calculate_quote(inputs)
         else:
             return {"error": f"Tool desconocida: {name}"}

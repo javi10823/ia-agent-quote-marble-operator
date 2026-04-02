@@ -33,7 +33,8 @@ class TestCalculateM2:
             {"description": "Tramo B", "largo": 1.37, "prof": 0.6},
         ]
         m2, details = calculate_m2(pieces)
-        assert m2 == pytest.approx(2.268, abs=0.001)
+        # 2.41*0.6 + 1.37*0.6 = 1.446 + 0.822 = 2.268 → round(2) = 2.27
+        assert m2 == 2.27
 
     def test_empty_pieces(self):
         m2, details = calculate_m2([])

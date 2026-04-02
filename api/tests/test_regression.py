@@ -1,6 +1,6 @@
 """Regression tests — each bug fix gets a test that reproduces the exact scenario."""
 
-from app.modules.quote_engine.calculator import calculate_quote, calculate_merma
+from app.modules.quote_engine.calculator import calculate_quote, calculate_merma, calculate_m2
 
 
 # ── BUG-043: Plano Marmoleria — zócalo omitido + revestimiento sin TOMAS ─────
@@ -142,3 +142,130 @@ class TestBug038NegroBrasilMerma:
         merma = calculate_merma(2.0, "GRANITO NEGRO BRASIL")
         assert merma["aplica"] is False
         assert "Negro Brasil" in merma["motivo"]
+
+
+# ── BUG-045: Blanco Nube — m² inconsistente, anafe falso, rounding cascado ──
+
+class TestBug045BlancoNubeM2Rounding:
+    """BUG-045: Per-piece rounding caused 3.89 instead of 3.88."""
+
+    def test_no_per_piece_rounding(self):
+        """Pieces must NOT be rounded individually before summing."""
+        pieces = [
+            {"description": "Mesada principal", "largo": 3.00, "prof": 0.62},
+            {"description": "Mesada secundaria", "largo": 1.16, "prof": 0.60},
+            {"description": "Revestimiento pared", "largo": 0.99, "prof": 1.22},
+            {"description": "Zócalo", "largo": 2.01, "alto": 0.06},
+        ]
+        m2, details = calculate_m2(pieces)
+        # Raw: 1.86 + 0.696 + 1.2078 + 0.1206 = 3.8844 → round(2) = 3.88
+        assert m2 == 3.88, f"Expected 3.88 but got {m2} — likely per-piece rounding"
+
+    def test_total_is_sum_rounded_not_sum_of_rounded(self):
+        """Verify round(sum) != sum(round) for this specific case."""
+        pieces = [
+            {"description": "Mesada principal", "largo": 3.00, "prof": 0.62},
+            {"description": "Mesada secundaria", "largo": 1.16, "prof": 0.60},
+            {"description": "Revestimiento pared", "largo": 0.99, "prof": 1.22},
+            {"description": "Zócalo", "largo": 2.01, "alto": 0.06},
+        ]
+        m2, details = calculate_m2(pieces)
+        # Sum of individually rounded (2 dec) = 1.86 + 0.70 + 1.21 + 0.12 = 3.89
+        sum_of_rounded = sum(round(d["largo"] * d["dim2"], 2) for d in details)
+        assert m2 != round(sum_of_rounded, 2), \
+            "m2 should be round(raw_sum) not sum(round(each))"
+
+
+class TestBug045AnafeSinEvidencia:
+    """BUG-045: Agujero anafe was added without plan evidence."""
+
+    def test_no_anafe_when_false(self):
+        """ANAFE must not appear when anafe=False (no evidence)."""
+        result = calculate_quote({
+            "client_name": "Test Arquitectura",
+            "material": "Blanco Nube",
+            "pieces": [{"description": "Mesada cocina", "largo": 3.00, "prof": 0.62}],
+            "localidad": "Rosario",
+            "plazo": "30 días",
+            "anafe": False,
+        })
+        assert result["ok"]
+        mo_descs = [m["description"].lower() for m in result["mo_items"]]
+        assert not any("anafe" in d for d in mo_descs), \
+            f"ANAFE found without evidence: {mo_descs}"
+
+    def test_anafe_when_true(self):
+        """ANAFE must appear when anafe=True (evidence exists)."""
+        result = calculate_quote({
+            "client_name": "Test",
+            "material": "Blanco Nube",
+            "pieces": [{"description": "Mesada cocina", "largo": 3.00, "prof": 0.62}],
+            "localidad": "Rosario",
+            "plazo": "30 días",
+            "anafe": True,
+        })
+        assert result["ok"]
+        mo_descs = [m["description"].lower() for m in result["mo_items"]]
+        assert any("anafe" in d for d in mo_descs), \
+            f"ANAFE not found when anafe=True: {mo_descs}"
+
+
+class TestBug045ColocacionMatchesMaterial:
+    """BUG-045: Colocación qty must use same m² as material."""
+
+    def test_colocacion_qty_equals_material_m2(self):
+        result = calculate_quote({
+            "client_name": "Test",
+            "material": "Blanco Nube",
+            "pieces": [
+                {"description": "Mesada", "largo": 3.00, "prof": 0.62},
+                {"description": "Mesada 2", "largo": 1.16, "prof": 0.60},
+                {"description": "Rev pared", "largo": 0.99, "prof": 1.22},
+                {"description": "Zócalo", "largo": 2.01, "alto": 0.06},
+            ],
+            "localidad": "Rosario",
+            "colocacion": True,
+            "plazo": "30 días",
+        })
+        assert result["ok"]
+        coloc = next(m for m in result["mo_items"] if "colocación" in m["description"].lower())
+        assert coloc["quantity"] == result["material_m2"], \
+            f"Colocación qty {coloc['quantity']} ≠ material_m2 {result['material_m2']}"
+
+
+class TestBug045IVATraceability:
+    """BUG-045: Each MO item must include base_price for IVA traceability."""
+
+    def test_mo_items_have_base_price(self):
+        result = calculate_quote({
+            "client_name": "Test",
+            "material": "Blanco Nube",
+            "pieces": [{"description": "Mesada", "largo": 2.00, "prof": 0.60}],
+            "localidad": "Rosario",
+            "plazo": "30 días",
+        })
+        assert result["ok"]
+        for item in result["mo_items"]:
+            assert "base_price" in item, \
+                f"MO item '{item['description']}' missing base_price"
+            if item["base_price"] > 0:
+                expected_with_iva = round(item["base_price"] * 1.21)
+                assert item["unit_price"] == expected_with_iva, \
+                    f"'{item['description']}': unit_price {item['unit_price']} ≠ round({item['base_price']} × 1.21) = {expected_with_iva}"
+
+    def test_piece_details_in_result(self):
+        """calculate_quote must return piece_details for preview."""
+        result = calculate_quote({
+            "client_name": "Test",
+            "material": "Blanco Nube",
+            "pieces": [
+                {"description": "Mesada", "largo": 3.00, "prof": 0.62},
+                {"description": "Zócalo", "largo": 3.00, "alto": 0.05},
+            ],
+            "localidad": "Rosario",
+            "plazo": "30 días",
+        })
+        assert result["ok"]
+        assert "piece_details" in result
+        assert len(result["piece_details"]) == 2
+        assert result["piece_details"][0]["description"] == "Mesada"
