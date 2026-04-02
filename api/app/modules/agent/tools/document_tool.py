@@ -513,4 +513,161 @@ def _format_grand_total(total_ars: float, total_usd: float, currency: str) -> st
     if currency == "USD" and total_usd:
         return f"PRESUPUESTO TOTAL: {_fmt_ars(total_ars)} mano de obra + {_fmt_usd(total_usd)} material"
     return f"PRESUPUESTO TOTAL: {_fmt_ars(total_ars)} mano de obra + material"
-    client_name = data["client_name"]
+
+
+def generate_comparison_pdf(pdf_path: Path, client_name: str, project: str, quotes_data: list[dict]) -> None:
+    """Generate a landscape comparison PDF for multiple material variants."""
+    from fpdf import FPDF
+
+    date_str = datetime.now().strftime("%d/%m/%Y")
+    n = len(quotes_data)
+
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    # Top bar
+    pdf.set_fill_color(26, 47, 94)
+    pdf.rect(0, 0, 297, 4, "F")
+
+    # Logo
+    logo_path = TEMPLATES_DIR / "logo-dangelo.png"
+    if logo_path.exists():
+        pdf.image(str(logo_path), x=10, y=10, w=55)
+        pdf.set_y(35)
+    else:
+        pdf.set_y(12)
+        pdf.set_font("Helvetica", "B", 28)
+        pdf.cell(0, 12, "D'ANGELO", new_x="LMARGIN", new_y="NEXT")
+
+    # Contact
+    pdf.set_font("Helvetica", "", 8)
+    pdf.cell(0, 4, "SAN NICOLAS 1160  |  341-3082996  |  marmoleriadangelo@gmail.com", new_x="LMARGIN", new_y="NEXT")
+
+    # Title
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, "Comparativo de Presupuestos", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(0, 5, f"Fecha: {date_str}  |  Cliente: {client_name}  |  Proyecto: {project}", new_x="LMARGIN", new_y="NEXT")
+
+    # Separator
+    pdf.ln(3)
+    pdf.set_draw_color(26, 26, 26)
+    pdf.line(10, pdf.get_y(), 287, pdf.get_y())
+    pdf.ln(4)
+
+    # Table layout
+    label_w = 55
+    usable = 277 - label_w  # 297 - 2*10 margins - label
+    col_w = usable / n
+
+    # Extract data per variant
+    def _mo_total(bd: dict) -> float:
+        return sum(m.get("quantity", 0) * m.get("unit_price", 0) for m in bd.get("mo_items", []))
+
+    variants = []
+    for bd in quotes_data:
+        merma = bd.get("merma", {})
+        currency = bd.get("material_currency", "USD")
+        fmt_price = _fmt_usd if currency == "USD" else _fmt_ars
+        variants.append({
+            "material": bd.get("_material") or bd.get("material_name", "—"),
+            "currency": currency,
+            "price_m2": fmt_price(bd.get("material_price_unit", 0)),
+            "m2": _fmt_qty(bd.get("material_m2", 0)) + " m\u00b2",
+            "total_mat": fmt_price(bd.get("material_total", 0)),
+            "discount": f"{bd.get('discount_pct', 0)}%" if bd.get("discount_pct") else "No aplica",
+            "mo_total": _fmt_ars(_mo_total(bd)),
+            "merma": merma.get("motivo", "No aplica") if merma else "No aplica",
+            "delivery": _normalize_delivery(bd.get("delivery_days", "")),
+            "total_ars": bd.get("_total_ars") or bd.get("total_ars", 0),
+            "total_usd": bd.get("_total_usd") or bd.get("total_usd", 0),
+        })
+
+    # Find cheapest by total_usd (or total_ars if no USD)
+    best_idx = 0
+    best_val = float("inf")
+    for i, v in enumerate(variants):
+        val = v["total_usd"] if v["total_usd"] else v["total_ars"]
+        if val and val < best_val:
+            best_val = val
+            best_idx = i
+
+    # Header row — material names
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_fill_color(26, 47, 94)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(label_w, 8, "", fill=True)
+    for i, v in enumerate(variants):
+        pdf.cell(col_w, 8, v["material"][:30], align="C", fill=True)
+    pdf.ln()
+    pdf.set_text_color(0, 0, 0)
+
+    # Rows definition
+    rows = [
+        ("Precio / m\u00b2", "price_m2"),
+        ("Superficie", "m2"),
+        ("Total Material", "total_mat"),
+        ("Descuento", "discount"),
+        ("Mano de Obra", "mo_total"),
+        ("Merma", "merma"),
+        ("Plazo de entrega", "delivery"),
+    ]
+
+    row_counter = 0
+    for label, key in rows:
+        is_odd = row_counter % 2 == 0
+        if is_odd:
+            pdf.set_fill_color(242, 242, 242)
+        else:
+            pdf.set_fill_color(255, 255, 255)
+
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(label_w, 7, label, fill=True)
+        pdf.set_font("Helvetica", "", 9)
+        for v in variants:
+            pdf.cell(col_w, 7, str(v[key])[:35], align="C", fill=True)
+        pdf.ln()
+        row_counter += 1
+
+    # Total rows — highlighted
+    pdf.ln(2)
+    pdf.set_draw_color(26, 47, 94)
+    pdf.line(10, pdf.get_y(), 287, pdf.get_y())
+    pdf.ln(2)
+
+    for total_label, total_key, fmt_fn in [
+        ("TOTAL ARS", "total_ars", _fmt_ars),
+        ("TOTAL USD", "total_usd", _fmt_usd),
+    ]:
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.cell(label_w, 9, total_label)
+        for i, v in enumerate(variants):
+            val = v[total_key]
+            text = fmt_fn(val) if val else "—"
+            if i == best_idx:
+                pdf.set_text_color(0, 128, 0)
+            pdf.cell(col_w, 9, text, align="C")
+            pdf.set_text_color(0, 0, 0)
+        pdf.ln()
+
+    # Best option indicator
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "I", 9)
+    pdf.set_text_color(0, 128, 0)
+    best_name = variants[best_idx]["material"]
+    pdf.cell(0, 5, f"* Opcion mas economica: {best_name}", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_text_color(0, 0, 0)
+
+    # Footer conditions
+    pdf.ln(6)
+    pdf.set_font("Helvetica", "", 7)
+    for line in [
+        "*PRESUPUESTO SUJETO A VARIACION DE PRECIO",
+        "*MATERIALES IMPORTADOS SEGUN COTIZACION DOLAR VENTA BANCO NACION AL MOMENTO DE LA CONFIRMACION",
+        "*LOS PRECIOS INCLUYEN IVA",
+    ]:
+        pdf.cell(0, 3, line, new_x="LMARGIN", new_y="NEXT")
+
+    pdf.output(str(pdf_path))

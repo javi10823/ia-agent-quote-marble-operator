@@ -127,6 +127,33 @@ export async function markQuoteAsRead(id: string): Promise<void> {
   if (!res.ok) throw new Error("Error al marcar como leído");
 }
 
+// ── Quote Comparison ─────────────────────────────────────────────────────────
+
+export interface QuoteCompareItem {
+  id: string;
+  material: string | null;
+  total_ars: number | null;
+  total_usd: number | null;
+  status: string;
+  pdf_url: string | null;
+  quote_breakdown: QuoteBreakdown | null;
+}
+
+export interface QuoteCompareResponse {
+  parent_id: string;
+  client_name: string;
+  project: string;
+  quotes: QuoteCompareItem[];
+}
+
+export async function fetchQuoteComparison(id: string): Promise<QuoteCompareResponse | null> {
+  const res = await fetch(`${API_BASE}/api/quotes/${id}/compare`, { credentials: "include" });
+  if (res.status === 404) return null;
+  handleAuthError(res);
+  if (!res.ok) throw new Error("Error al cargar comparación");
+  return res.json();
+}
+
 // ── Chat SSE ──────────────────────────────────────────────────────────────────
 
 export interface ChatChunk {

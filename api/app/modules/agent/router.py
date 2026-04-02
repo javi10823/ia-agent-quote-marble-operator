@@ -18,6 +18,8 @@ from app.modules.agent.agent import AgentService
 from app.modules.agent.schemas import (
     QuoteListResponse,
     QuoteDetailResponse,
+    QuoteCompareItem,
+    QuoteCompareResponse,
     QuoteStatusUpdate,
 )
 
@@ -47,6 +49,103 @@ async def get_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
     if not quote:
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
     return quote
+
+
+# ── COMPARE QUOTES ───────────────────────────────────────────────────────────
+
+@router.get("/quotes/{quote_id}/compare", response_model=QuoteCompareResponse)
+async def compare_quotes(quote_id: str, db: AsyncSession = Depends(get_db)):
+    """Return all related quotes (parent + children) for side-by-side comparison."""
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+
+    root_id = quote.parent_quote_id or quote.id
+
+    # Load root quote
+    if root_id != quote.id:
+        root_result = await db.execute(select(Quote).where(Quote.id == root_id))
+        root = root_result.scalar_one_or_none()
+        if not root:
+            raise HTTPException(status_code=404, detail="Presupuesto padre no encontrado")
+    else:
+        root = quote
+
+    # Load all children
+    children_result = await db.execute(
+        select(Quote)
+        .where(Quote.parent_quote_id == root_id)
+        .order_by(Quote.created_at)
+    )
+    children = children_result.scalars().all()
+
+    all_quotes = [root] + list(children)
+    if len(all_quotes) < 2:
+        raise HTTPException(status_code=404, detail="No hay variantes para comparar")
+
+    return QuoteCompareResponse(
+        parent_id=root_id,
+        client_name=root.client_name,
+        project=root.project,
+        quotes=[QuoteCompareItem.model_validate(q) for q in all_quotes],
+    )
+
+
+@router.get("/quotes/{quote_id}/compare/pdf")
+async def compare_pdf(quote_id: str, db: AsyncSession = Depends(get_db)):
+    """Generate and return a comparison PDF for all related quotes."""
+    from fastapi.responses import FileResponse
+    from app.modules.agent.tools.document_tool import generate_comparison_pdf, OUTPUT_DIR
+
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+
+    root_id = quote.parent_quote_id or quote.id
+
+    if root_id != quote.id:
+        root_result = await db.execute(select(Quote).where(Quote.id == root_id))
+        root = root_result.scalar_one_or_none()
+        if not root:
+            raise HTTPException(status_code=404, detail="Presupuesto padre no encontrado")
+    else:
+        root = quote
+
+    children_result = await db.execute(
+        select(Quote)
+        .where(Quote.parent_quote_id == root_id)
+        .order_by(Quote.created_at)
+    )
+    children = children_result.scalars().all()
+    all_quotes = [root] + list(children)
+
+    if len(all_quotes) < 2:
+        raise HTTPException(status_code=404, detail="No hay variantes para comparar")
+
+    quotes_data = []
+    for q in all_quotes:
+        bd = q.quote_breakdown or {}
+        bd["_total_ars"] = q.total_ars or bd.get("total_ars", 0)
+        bd["_total_usd"] = q.total_usd or bd.get("total_usd", 0)
+        bd["_material"] = q.material or bd.get("material_name", "")
+        quotes_data.append(bd)
+
+    pdf_dir = OUTPUT_DIR / root_id
+    pdf_dir.mkdir(exist_ok=True)
+    pdf_path = pdf_dir / "comparativo.pdf"
+
+    import asyncio
+    await asyncio.to_thread(
+        generate_comparison_pdf, pdf_path, root.client_name, root.project, quotes_data
+    )
+
+    return FileResponse(
+        path=str(pdf_path),
+        media_type="application/pdf",
+        filename=f"Comparativo - {root.client_name}.pdf",
+    )
 
 
 # ── UPDATE QUOTE STATUS ───────────────────────────────────────────────────────
