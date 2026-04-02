@@ -40,6 +40,7 @@ export default function Sidebar() {
         icon={<GridIcon />}
         label="Presupuestos"
         badge={String(quotes.length)}
+        unreadCount={quotes.filter(q => !q.is_read).length}
         active={path === "/"}
         onClick={() => router.push("/")}
       />
@@ -77,10 +78,11 @@ export default function Sidebar() {
   );
 }
 
-function NavItem({ icon, label, badge, active, onClick }: {
+function NavItem({ icon, label, badge, unreadCount, active, onClick }: {
   icon: React.ReactNode;
   label: string;
   badge?: string;
+  unreadCount?: number;
   active: boolean;
   onClick: () => void;
 }) {
@@ -94,11 +96,15 @@ function NavItem({ icon, label, badge, active, onClick }: {
     >
       <span className={clsx("shrink-0", active ? "opacity-100" : "opacity-65")}>{icon}</span>
       {label}
-      {badge && (
+      {unreadCount ? (
+        <span className="ml-auto text-[10px] font-semibold px-[7px] py-px rounded-full bg-acc text-white font-mono">
+          {unreadCount}
+        </span>
+      ) : badge ? (
         <span className="ml-auto text-[10px] font-medium px-[7px] py-px rounded-full bg-white/[0.07] text-t3 font-mono">
           {badge}
         </span>
-      )}
+      ) : null}
     </button>
   );
 }

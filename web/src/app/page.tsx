@@ -30,6 +30,8 @@ export default function DashboardPage() {
   const [deleting, setDeleting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const staleDrafts = useMemo(() => quotes.filter(q => {
     if (q.status !== "draft") return false;
@@ -39,6 +41,14 @@ export default function DashboardPage() {
   const filteredQuotes = useMemo(() => quotes.filter(q => {
     if (statusFilter === "web" && q.source !== "web") return false;
     else if (statusFilter !== "todos" && statusFilter !== "web" && q.status !== statusFilter) return false;
+    if (dateFrom) {
+      const from = new Date(dateFrom);
+      if (new Date(q.created_at) < from) return false;
+    }
+    if (dateTo) {
+      const to = new Date(dateTo + "T23:59:59");
+      if (new Date(q.created_at) > to) return false;
+    }
     if (search) {
       const s = search.toLowerCase();
       return (q.client_name || "").toLowerCase().includes(s) ||
@@ -46,7 +56,7 @@ export default function DashboardPage() {
              (q.project || "").toLowerCase().includes(s);
     }
     return true;
-  }), [quotes, statusFilter, search]);
+  }), [quotes, statusFilter, search, dateFrom, dateTo]);
 
   const statusCounts = useMemo(() => ({
     todos: quotes.length,
@@ -148,6 +158,26 @@ export default function DashboardPage() {
                     </span>
                   </button>
                 ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={e => setDateFrom(e.target.value)}
+                  className="px-2 py-[5px] rounded-md text-[11px] font-sans border border-b1 bg-s3 text-t2 outline-none w-[120px] [color-scheme:dark]"
+                  title="Desde"
+                />
+                <span className="text-t4 text-[10px]">—</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={e => setDateTo(e.target.value)}
+                  className="px-2 py-[5px] rounded-md text-[11px] font-sans border border-b1 bg-s3 text-t2 outline-none w-[120px] [color-scheme:dark]"
+                  title="Hasta"
+                />
+                {(dateFrom || dateTo) && (
+                  <button onClick={() => { setDateFrom(""); setDateTo(""); }} className="text-t3 text-[11px] bg-transparent border-none cursor-pointer hover:text-t2 p-0">✕</button>
+                )}
               </div>
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-b1 bg-s3 w-60">
                 <svg className="text-t3 shrink-0" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
