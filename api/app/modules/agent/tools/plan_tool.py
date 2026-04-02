@@ -101,5 +101,8 @@ def _image_to_b64(img: Image.Image, max_width: Optional[int] = None) -> str:
 def save_plan_to_temp(filename: str, data: bytes) -> Path:
     """Save uploaded plan file to temp directory for tool access."""
     path = TEMP_DIR / filename
+    # Ensure resolved path stays within TEMP_DIR (defense in depth)
+    if not path.resolve().parent == TEMP_DIR.resolve():
+        raise ValueError(f"Invalid filename: {filename}")
     path.write_bytes(data)
     return path
