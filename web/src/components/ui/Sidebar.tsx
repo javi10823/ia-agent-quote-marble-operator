@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { logout } from "@/lib/auth";
 
 export default function Sidebar() {
   const router = useRouter();
@@ -63,7 +64,7 @@ export default function Sidebar() {
       {/* Separator */}
       <div style={{ height: 1, background: "var(--b1)", margin: "12px 0" }} />
 
-      {/* CTA */}
+      {/* CTA + Logout */}
       <div style={{ marginTop: "auto" }}>
         <button onClick={handleNew} style={{
           width: "100%", padding: "10px 12px",
@@ -86,6 +87,23 @@ export default function Sidebar() {
           }}
         >
           <PlusIcon /> Nuevo presupuesto
+        </button>
+
+        <button
+          onClick={async () => { await logout(); router.push("/login"); }}
+          style={{
+            width: "100%", padding: "7px 8px",
+            background: "transparent", border: "none", borderRadius: 6,
+            color: "var(--t3)", fontSize: 11, fontWeight: 400,
+            fontFamily: "inherit", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            transition: "color 0.15s",
+            marginTop: 10,
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t2)"; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t3)"; }}
+        >
+          <LogoutIcon /> Cerrar sesión
         </button>
       </div>
     </nav>
@@ -152,6 +170,14 @@ function PlusIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
       <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+  );
+}
+
+function LogoutIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
     </svg>
   );
 }
