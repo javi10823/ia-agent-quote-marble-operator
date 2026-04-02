@@ -10,3 +10,6 @@ service-account.json
 venv/
 .pytest_cache/
 __pycache__/
+.claude/worktrees/
+AUDIT.md
+.DS_Store
