@@ -158,16 +158,20 @@ def select_examples(user_message: str, is_building: bool, max_examples: int = 3)
 
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
 
-def build_system_prompt(has_plan: bool = False, is_building: bool = False, user_message: str = "") -> list:
-    """
-    Build system prompt as a list of content blocks with cache_control.
-    Stable core content is cached (5 min TTL). Conditional content is not cached.
-    Cached tokens don't count toward the rate limit on subsequent requests.
-    """
+# ── SYSTEM PROMPT CACHE ───────────────────────────────────────────────────────
+# Stable text (CONTEXT.md + core rules) doesn't change between requests.
+# Cache in memory to avoid 6+ disk reads per request.
+_stable_text_cache: str | None = None
+_conditional_file_cache: dict[str, str] = {}
+
+
+def _get_stable_text() -> str:
+    global _stable_text_cache
+    if _stable_text_cache is not None:
+        return _stable_text_cache
+
     context = (BASE_DIR / "CONTEXT.md").read_text(encoding="utf-8")
     rules_dir = BASE_DIR / "rules"
-
-    # Stable core — always loaded, forms the cached block
     core_files = [
         "calculation-formulas.md",
         "commercial-conditions.md",
@@ -175,14 +179,31 @@ def build_system_prompt(has_plan: bool = False, is_building: bool = False, user_
         "pricing-variables.md",
         "quote-process-general.md",
     ]
-
     core_rules = []
     for name in core_files:
         path = rules_dir / name
         if path.exists():
             core_rules.append(f"## {path.stem}\n\n{path.read_text(encoding='utf-8')}")
+    _stable_text_cache = "\n\n---\n\n".join([context] + core_rules)
+    logging.info(f"System prompt stable text cached ({len(_stable_text_cache)} chars)")
+    return _stable_text_cache
 
-    stable_text = "\n\n---\n\n".join([context] + core_rules)
+
+def _read_cached_file(path) -> str:
+    """Read file with in-memory cache."""
+    key = str(path)
+    if key not in _conditional_file_cache:
+        _conditional_file_cache[key] = path.read_text(encoding="utf-8")
+    return _conditional_file_cache[key]
+
+
+def build_system_prompt(has_plan: bool = False, is_building: bool = False, user_message: str = "") -> list:
+    """
+    Build system prompt as a list of content blocks with cache_control.
+    Stable core content is cached in memory + Anthropic prompt cache (5 min TTL).
+    """
+    stable_text = _get_stable_text()
+    rules_dir = BASE_DIR / "rules"
 
     # Conditional content — loaded based on context
     conditional_parts = []
@@ -190,17 +211,17 @@ def build_system_prompt(has_plan: bool = False, is_building: bool = False, user_
     if is_building:
         bldg_path = rules_dir / "quote-process-buildings.md"
         if bldg_path.exists():
-            conditional_parts.append(f"## {bldg_path.stem}\n\n{bldg_path.read_text(encoding='utf-8')}")
+            conditional_parts.append(f"## {bldg_path.stem}\n\n{_read_cached_file(bldg_path)}")
 
     if has_plan:
         plan_path = rules_dir / "plan-reading.md"
         if plan_path.exists():
-            conditional_parts.append(f"## {plan_path.stem}\n\n{plan_path.read_text(encoding='utf-8')}")
+            conditional_parts.append(f"## {plan_path.stem}\n\n{_read_cached_file(plan_path)}")
 
     # Examples — select 3 most relevant based on user message features
     example_paths = select_examples(user_message, is_building, max_examples=3)
     for ep in example_paths:
-        conditional_parts.append(f"## Ejemplo: {ep.stem}\n\n{ep.read_text(encoding='utf-8')}")
+        conditional_parts.append(f"## Ejemplo: {ep.stem}\n\n{_read_cached_file(ep)}")
 
     # Build system content blocks with cache_control on stable block
     blocks = [

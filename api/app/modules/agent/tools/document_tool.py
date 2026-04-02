@@ -68,7 +68,7 @@ async def generate_documents(quote_id: str, quote_data: dict) -> dict:
         pdf_path = quote_dir / f"{filename_base}.pdf"
         excel_path = quote_dir / f"{filename_base}.xlsx"
 
-        # Generate both in thread pool (sync I/O — fpdf2, openpyxl)
+        # Generate both in parallel — run blocking I/O in thread pool
         await asyncio.gather(
             asyncio.to_thread(_generate_excel, excel_path, quote_data),
             asyncio.to_thread(_generate_pdf, pdf_path, quote_data),

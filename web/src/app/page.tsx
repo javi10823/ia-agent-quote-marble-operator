@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { type Quote } from "@/lib/api";
 import { useQuotes } from "@/lib/quotes-context";
@@ -30,14 +30,13 @@ export default function DashboardPage() {
   const [deleting, setDeleting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [search, setSearch] = useState("");
-  const [undoToast, setUndoToast] = useState<{ id: string; from: Quote["status"]; to: Quote["status"]; timer: ReturnType<typeof setTimeout> } | null>(null);
 
-  const staleDrafts = quotes.filter(q => {
+  const staleDrafts = useMemo(() => quotes.filter(q => {
     if (q.status !== "draft") return false;
     return (Date.now() - new Date(q.created_at).getTime()) / 86400000 > 5;
-  });
+  }), [quotes]);
 
-  const filteredQuotes = quotes.filter(q => {
+  const filteredQuotes = useMemo(() => quotes.filter(q => {
     if (statusFilter === "web" && q.source !== "web") return false;
     else if (statusFilter !== "todos" && statusFilter !== "web" && q.status !== statusFilter) return false;
     if (search) {
@@ -47,36 +46,24 @@ export default function DashboardPage() {
              (q.project || "").toLowerCase().includes(s);
     }
     return true;
-  });
+  }), [quotes, statusFilter, search]);
 
-  const statusCounts: Record<string, number> = {
+  const statusCounts = useMemo(() => ({
     todos: quotes.length,
     draft: quotes.filter(q => q.status === "draft").length,
     validated: quotes.filter(q => q.status === "validated").length,
     sent: quotes.filter(q => q.status === "sent").length,
     web: quotes.filter(q => q.source === "web").length,
-  };
+  }), [quotes]);
 
-  const toggleStatus = useCallback(async (e: React.MouseEvent | React.KeyboardEvent, id: string, current: Quote["status"]) => {
+  async function toggleStatus(e: React.MouseEvent, id: string, current: Quote["status"]) {
     e.stopPropagation();
     const next = STATUS_NEXT[current];
     if (!next) return;
-    if (undoToast) clearTimeout(undoToast.timer);
     try {
       await setStatus(id, next);
     } catch { /* toast already shown by context */ }
-    const timer = setTimeout(() => setUndoToast(null), 5000);
-    setUndoToast({ id, from: current, to: next, timer });
-  }, [undoToast, setStatus]);
-
-  const undoStatus = useCallback(async () => {
-    if (!undoToast) return;
-    clearTimeout(undoToast.timer);
-    try {
-      await setStatus(undoToast.id, undoToast.from);
-    } catch { /* toast already shown by context */ }
-    setUndoToast(null);
-  }, [undoToast, setStatus]);
+  }
 
   function askDelete(e: React.MouseEvent, id: string, clientName: string) {
     e.stopPropagation();
@@ -97,34 +84,19 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 lg:px-7 pt-4 lg:pt-5 pb-3 lg:pb-[18px] border-b border-b1 shrink-0">
-        <div className="ml-10 lg:ml-0">
-          <div className="text-base lg:text-lg font-medium -tracking-[0.03em]">Presupuestos</div>
+      <div className="flex items-center justify-between px-7 pt-5 pb-[18px] border-b border-b1 shrink-0">
+        <div>
+          <div className="text-lg font-medium -tracking-[0.03em]">Presupuestos</div>
           <div className="text-[11px] text-t3 mt-0.5">
             {new Date().toLocaleDateString("es-AR", { month: "long", year: "numeric" })} · {quotes.length} registros
           </div>
         </div>
-        <button
-          onClick={() => {
-            const rows = [["Cliente", "Proyecto", "Material", "Total ARS", "Total USD", "Estado", "Fecha"]];
-            filteredQuotes.forEach(q => rows.push([
-              q.client_name || "", q.project || "", q.material || "",
-              q.total_ars?.toString() || "", q.total_usd?.toString() || "",
-              STATUS_LABEL[q.status], format(new Date(q.created_at), "dd/MM/yyyy"),
-            ]));
-            const csv = rows.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(",")).join("\n");
-            const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
-            const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-            a.download = `presupuestos-${format(new Date(), "yyyy-MM-dd")}.csv`; a.click();
-          }}
-          aria-label="Exportar presupuestos a CSV"
-          className="hidden md:flex px-3 py-[7px] rounded-md text-xs font-medium font-sans cursor-pointer border border-b1 bg-transparent text-t2 -tracking-[0.01em] hover:border-b2 hover:text-t1 transition"
-        >
+        <button className="px-3 py-[7px] rounded-md text-xs font-medium font-sans cursor-pointer border border-b1 bg-transparent text-t2 -tracking-[0.01em] hover:border-b2 hover:text-t1 transition">
           Exportar CSV
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 md:px-5 lg:px-7 py-4 lg:py-6">
+      <div className="flex-1 overflow-y-auto px-7 py-6">
         {/* Stale drafts banner */}
         {staleDrafts.length > 0 && (
           <div className="flex items-center gap-2.5 bg-amb/[0.06] border border-amb/[0.16] rounded-lg px-3.5 py-2.5 mb-5 text-xs text-amb">
@@ -148,8 +120,8 @@ export default function DashboardPage() {
         ) : (
           <div className="bg-s1 border border-b1 rounded-[10px] overflow-hidden">
             {/* Filter bar */}
-            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2 px-3 md:px-4 py-2.5 bg-s2 border-b border-b1">
-              <div className="flex gap-1.5 overflow-x-auto pb-1 md:pb-0 flex-nowrap">
+            <div className="flex items-center justify-between px-4 py-2.5 bg-s2 border-b border-b1">
+              <div className="flex gap-1.5">
                 {([
                   { key: "todos", label: "Todos" },
                   { key: "draft", label: "Borrador" },
@@ -177,7 +149,7 @@ export default function DashboardPage() {
                   </button>
                 ))}
               </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-b1 bg-s3 w-full md:w-60">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-b1 bg-s3 w-60">
                 <svg className="text-t3 shrink-0" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
@@ -185,7 +157,6 @@ export default function DashboardPage() {
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Buscar cliente, material..."
-                  aria-label="Buscar presupuestos"
                   className="bg-transparent border-none outline-none text-t1 text-xs font-sans w-full placeholder:text-t4"
                 />
                 {search && (
@@ -197,17 +168,16 @@ export default function DashboardPage() {
             </div>
 
             {/* Table */}
-            <div className="overflow-x-auto">
-            <table className="w-full border-collapse min-w-0">
+            <table className="w-full border-collapse">
               <thead className="bg-s2 border-b border-b1">
                 <tr>
-                  <th className="text-left px-3 lg:px-[18px] py-2.5 text-[11px] lg:text-[10px] font-medium text-t3 uppercase tracking-[0.09em] w-[28%]">Cliente</th>
-                  <th className="text-left px-3 lg:px-[18px] py-2.5 text-[11px] lg:text-[10px] font-medium text-t3 uppercase tracking-[0.09em] hidden lg:table-cell">Material</th>
-                  <th className="text-right px-3 lg:px-[18px] py-2.5 text-[11px] lg:text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Importe</th>
-                  <th className="text-center px-3 lg:px-[18px] py-2.5 text-[11px] lg:text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Estado</th>
-                  <th className="text-right px-3 lg:px-[18px] py-2.5 text-[11px] lg:text-[10px] font-medium text-t3 uppercase tracking-[0.09em] hidden md:table-cell">Fecha</th>
-                  <th className="text-right px-3 lg:px-[18px] py-2.5 text-[11px] lg:text-[10px] font-medium text-t3 uppercase tracking-[0.09em] hidden lg:table-cell">Archivos</th>
-                  <th className="px-2 lg:px-[18px] py-2.5 w-10"></th>
+                  <th className="text-left px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em] w-[28%]">Cliente</th>
+                  <th className="text-left px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Material</th>
+                  <th className="text-right px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Importe</th>
+                  <th className="text-center px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Estado</th>
+                  <th className="text-right px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Fecha</th>
+                  <th className="text-right px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Archivos</th>
+                  <th className="px-[18px] py-2.5 w-10"></th>
                 </tr>
               </thead>
               <tbody>
@@ -219,11 +189,7 @@ export default function DashboardPage() {
                   return (
                     <tr
                       key={q.id}
-                      tabIndex={0}
-                      role="button"
-                      aria-label={`Ver presupuesto de ${q.client_name || "Sin nombre"}`}
                       onClick={() => { setSelectedId(q.id); router.push(`/quote/${q.parent_quote_id || q.id}`); }}
-                      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(q.id); router.push(`/quote/${q.parent_quote_id || q.id}`); }}}
                       className={clsx(
                         "border-b border-white/[0.045] cursor-pointer transition-[background] duration-75",
                         isSelected
@@ -234,7 +200,7 @@ export default function DashboardPage() {
                       )}
                     >
                       {/* Cliente */}
-                      <td className="px-3 lg:px-[18px] py-[13px]">
+                      <td className="px-[18px] py-[13px]">
                         <div className="flex items-center">
                           {isUnread && <span className="w-[7px] h-[7px] rounded-full bg-acc shrink-0 mr-2" />}
                           <div>
@@ -252,11 +218,11 @@ export default function DashboardPage() {
                         </div>
                       </td>
                       {/* Material */}
-                      <td className={clsx("px-3 lg:px-[18px] py-[13px] text-xs hidden lg:table-cell", isUnread ? "text-t1 font-medium" : "text-t2")}>
+                      <td className={clsx("px-[18px] py-[13px] text-xs", isUnread ? "text-t1 font-medium" : "text-t2")}>
                         {q.material || "\u2014"}
                       </td>
                       {/* Importe */}
-                      <td className="px-3 lg:px-[18px] py-[13px] text-right">
+                      <td className="px-[18px] py-[13px] text-right">
                         <div className="text-[13px] text-t1 font-mono -tracking-[0.02em]">
                           {q.total_ars ? `$${q.total_ars.toLocaleString("es-AR")}` : "\u2014"}
                         </div>
@@ -265,10 +231,9 @@ export default function DashboardPage() {
                         ) : null}
                       </td>
                       {/* Estado */}
-                      <td className="px-3 lg:px-[18px] py-[13px] text-center">
+                      <td className="px-[18px] py-[13px] text-center">
                         <button
                           onClick={(e) => toggleStatus(e, q.id, q.status)}
-                          aria-label={STATUS_NEXT[q.status] ? `Cambiar estado a ${STATUS_LABEL[STATUS_NEXT[q.status]!]}` : `Estado: ${STATUS_LABEL[q.status]}`}
                           title={STATUS_NEXT[q.status] ? `Cambiar a ${STATUS_LABEL[STATUS_NEXT[q.status]!]}` : "Estado final"}
                           className={clsx(
                             "inline-flex items-center gap-[5px] px-2 py-[3px] rounded-full text-[11px] font-medium border-none font-sans",
@@ -281,12 +246,12 @@ export default function DashboardPage() {
                         </button>
                       </td>
                       {/* Fecha */}
-                      <td className={clsx("px-3 lg:px-[18px] py-[13px] text-[11px] text-right hidden md:table-cell", isStale ? "text-amb" : "text-t3")}>
+                      <td className={clsx("px-[18px] py-[13px] text-[11px] text-right", isStale ? "text-amb" : "text-t3")}>
                         {format(new Date(q.created_at), "d MMM", { locale: es })}
                         {isStale && ` ·${Math.floor(daysOld)}d`}
                       </td>
                       {/* Archivos */}
-                      <td className="px-3 lg:px-[18px] py-[13px] hidden lg:table-cell">
+                      <td className="px-[18px] py-[13px]">
                         <div className="flex gap-1 justify-end" onClick={e => e.stopPropagation()}>
                           {q.pdf_url && <FileBtn href={q.pdf_url} emoji="📄" />}
                           {q.excel_url && <FileBtn href={q.excel_url} emoji="📊" />}
@@ -297,9 +262,8 @@ export default function DashboardPage() {
                       <td className="px-2.5 py-[13px] w-10">
                         <button
                           onClick={(e) => askDelete(e, q.id, q.client_name)}
-                          aria-label={`Eliminar presupuesto de ${q.client_name || "Sin nombre"}`}
                           title="Eliminar presupuesto"
-                          className="w-8 h-8 md:w-7 md:h-7 rounded-md border border-b1 bg-transparent text-t3 cursor-pointer flex items-center justify-center text-xs transition-all hover:border-err/50 hover:text-err"
+                          className="w-7 h-7 rounded-md border border-b1 bg-transparent text-t3 cursor-pointer flex items-center justify-center text-xs transition-all hover:border-err/50 hover:text-err"
                         >
                           ✕
                         </button>
@@ -307,40 +271,11 @@ export default function DashboardPage() {
                     </tr>
                   );
                 })}
-                {filteredQuotes.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="py-16 text-center">
-                      <div className="text-3xl mb-3 opacity-30">📋</div>
-                      <div className="text-sm text-t2 font-medium">
-                        {search ? "Sin resultados" : "No hay presupuestos"}
-                      </div>
-                      <div className="text-xs text-t3 mt-1">
-                        {search ? `No se encontraron presupuestos para "${search}"` : "Creá uno nuevo para empezar"}
-                      </div>
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
-            </div>
           </div>
         )}
       </div>
-
-      {/* Undo toast */}
-      {undoToast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-s2 border border-b2 rounded-xl px-4 py-3 shadow-[0_8px_30px_rgba(0,0,0,.4)] animate-[fadeUp_0.2s_ease]">
-          <span className="text-sm text-t2">
-            Estado cambiado a <strong className="text-t1">{STATUS_LABEL[undoToast.to]}</strong>
-          </span>
-          <button
-            onClick={undoStatus}
-            className="px-3 py-1 rounded-md text-xs font-semibold bg-acc text-white border-none cursor-pointer hover:bg-[#3a7aff] transition"
-          >
-            Deshacer
-          </button>
-        </div>
-      )}
 
       {/* Delete modal */}
       {deleteTarget && (
@@ -350,7 +285,7 @@ export default function DashboardPage() {
         >
           <div
             onClick={e => e.stopPropagation()}
-            className="bg-s2 border border-b2 rounded-[14px] px-5 md:px-8 py-6 md:py-7 w-full max-w-[380px] mx-4 shadow-[0_20px_60px_rgba(0,0,0,.5)]"
+            className="bg-s2 border border-b2 rounded-[14px] px-8 py-7 w-[380px] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
           >
             <div className="text-[15px] font-medium text-t1 mb-2">Eliminar presupuesto</div>
             <div className="text-[13px] text-t2 leading-relaxed mb-6">
@@ -382,13 +317,11 @@ export default function DashboardPage() {
 }
 
 function FileBtn({ href, emoji }: { href: string; emoji: string }) {
-  const label = emoji === "📄" ? "Descargar PDF" : emoji === "📊" ? "Descargar Excel" : "Abrir en Drive";
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      aria-label={label}
       className="w-[26px] h-[26px] rounded-[5px] border border-b1 bg-transparent flex items-center justify-center text-[11px] cursor-pointer no-underline text-t2 transition-all hover:border-b2 hover:bg-white/[0.06]"
     >
       {emoji}

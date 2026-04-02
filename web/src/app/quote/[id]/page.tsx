@@ -109,17 +109,24 @@ export default function QuotePage() {
     try {
       let acc = "";
       let gotDone = false;
+      let rafPending = false;
+      const flushAcc = () => {
+        rafPending = false;
+        setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc } : m));
+      };
       for await (const chunk of streamChat(quoteId, text, filesToSend.length > 0 ? filesToSend : undefined)) {
         if (chunk.type === "text") {
           acc += chunk.content;
           setActionText("");
-          setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc } : m));
+          // Throttle state updates to 1 per animation frame
+          if (!rafPending) { rafPending = true; requestAnimationFrame(flushAcc); }
         } else if (chunk.type === "action") {
           setActionText(chunk.content);
         } else if (chunk.type === "done") {
           gotDone = true;
           setActionText("");
-          setMessages(p => p.map(m => m.id === aid ? { ...m, isStreaming: false } : m));
+          // Final flush with complete content + streaming=false
+          setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc, isStreaming: false } : m));
           const updated = await fetchQuote(quoteId);
           setQuote(updated);
           refreshQuotes();
@@ -156,9 +163,9 @@ export default function QuotePage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between px-3 md:px-5 lg:px-7 py-3 md:py-3.5 border-b border-b1 shrink-0 bg-s1 gap-2 md:gap-0">
-        <div className="flex items-center gap-2.5 md:gap-3.5 ml-10 md:ml-0">
-          <button onClick={() => router.push("/")} className="w-8 h-8 md:w-[30px] md:h-[30px] rounded-md border border-b1 bg-transparent text-t2 cursor-pointer flex items-center justify-center shrink-0 hover:border-b2 hover:text-t1 transition">
+      <div className="flex items-center justify-between px-7 py-3.5 border-b border-b1 shrink-0 bg-s1">
+        <div className="flex items-center gap-3.5">
+          <button onClick={() => router.push("/")} className="w-[30px] h-[30px] rounded-md border border-b1 bg-transparent text-t2 cursor-pointer flex items-center justify-center hover:border-b2 hover:text-t1 transition">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
           </button>
           <div>
@@ -180,14 +187,14 @@ export default function QuotePage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-b1 bg-s1 pl-3 md:pl-5 lg:pl-7">
+      <div className="flex border-b border-b1 bg-s1 pl-7">
         <TabBtn active={tab === "detail"} onClick={() => setTab("detail")} disabled={!quote || quote.status === "draft"}>Detalle</TabBtn>
         <TabBtn active={tab === "chat"} onClick={() => setTab("chat")}>Chat</TabBtn>
       </div>
 
       {/* Content */}
       {tab === "detail" ? (
-        <div className="flex-1 overflow-y-auto px-3 md:px-5 lg:px-7 py-4 lg:py-6">
+        <div className="flex-1 overflow-y-auto px-7 py-6">
           <DetailView quote={quote} breakdown={bd} onSwitchToChat={() => setTab("chat")} />
           <Section title="Modificaciones" className="mt-5">
             <div className="text-xs text-t3 mb-2.5">Escrib\u00ED un cambio y Valentina regenera los documentos autom\u00E1ticamente.</div>
@@ -197,7 +204,7 @@ export default function QuotePage() {
         </div>
       ) : (
         <>
-          <div className="flex-1 overflow-y-auto px-3 md:px-5 lg:px-7 pt-5 lg:pt-7 pb-4 flex flex-col gap-4 lg:gap-5">
+          <div className="flex-1 overflow-y-auto px-7 pt-7 pb-4 flex flex-col gap-5">
             {messages.length === 0 && (
               <div className="px-[18px] py-3.5 bg-s2 rounded-xl text-[13px] text-t2">
                 Hola \uD83D\uDC4B Soy Valentina. Pasame el enunciado del trabajo y/o el plano.
@@ -206,9 +213,9 @@ export default function QuotePage() {
             {messages.map(msg => <MessageBubble key={msg.id} message={msg} actionText={msg.isStreaming ? actionText : undefined} />)}
             <div ref={endRef} />
           </div>
-          <div className="shrink-0 px-3 md:px-5 lg:px-7 pt-3 lg:pt-3.5 pb-3 lg:pb-[18px] border-t border-b1 bg-s1">
+          <div className="shrink-0 px-7 pt-3.5 pb-[18px] border-t border-b1 bg-s1">
             <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
-            <div className="hidden md:block text-[10px] text-t4 text-center mt-[7px]">Enter para enviar \u00B7 Shift+Enter para nueva l\u00EDnea</div>
+            <div className="text-[10px] text-t4 text-center mt-[7px]">Enter para enviar \u00B7 Shift+Enter para nueva l\u00EDnea</div>
           </div>
         </>
       )}
@@ -231,7 +238,7 @@ function DetailView({ quote, breakdown, onSwitchToChat }: { quote: QuoteDetail |
   return (
     <div className="flex flex-col gap-5">
       <Section title="Resumen">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+        <div className="grid grid-cols-4 gap-4">
           <MetaItem label="Cliente" value={quote.client_name || "\u2014"} />
           <MetaItem label="Proyecto" value={quote.project || "\u2014"} />
           <MetaItem label="Material" value={quote.material || "\u2014"} />
@@ -268,7 +275,7 @@ function DetailView({ quote, breakdown, onSwitchToChat }: { quote: QuoteDetail |
 
       {breakdown && (
         <Section title="Solicitud">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <ReqField label="Material" value={breakdown.material_name || "\u2014"} />
             <ReqField label="Superficie" value={totalM2 ? `${fmtQty(totalM2)} m\u00B2` : "\u2014"} />
             <ReqField label="Moneda" value={breakdown.material_currency || "\u2014"} />
@@ -284,7 +291,7 @@ function DetailView({ quote, breakdown, onSwitchToChat }: { quote: QuoteDetail |
           {pieces.length > 0 && (
             <div className="mb-4">
               <div className="text-[13px] font-semibold text-t1 mb-2">Material \u2014 {fmtQty(totalM2)} m\u00B2</div>
-              <div className="overflow-x-auto"><table className="w-full border-collapse border border-b1 rounded-lg overflow-hidden">
+              <table className="w-full border-collapse border border-b1 rounded-lg overflow-hidden">
                 <thead><tr className="bg-white/[0.03]">
                   <th className="px-3 py-2 text-[11px] font-semibold text-t3 uppercase tracking-wide text-left border-b border-b1">Pieza</th>
                   <th className="px-3 py-2 text-[11px] font-semibold text-t3 uppercase tracking-wide text-right border-b border-b1">Detalle</th>
@@ -295,7 +302,7 @@ function DetailView({ quote, breakdown, onSwitchToChat }: { quote: QuoteDetail |
                     <td className="px-3 py-[9px] text-[13px] text-t3 text-right border-b border-white/[0.04]"></td>
                   </tr>
                 ))}</tbody>
-              </table></div>
+              </table>
             </div>
           )}
 
@@ -304,7 +311,7 @@ function DetailView({ quote, breakdown, onSwitchToChat }: { quote: QuoteDetail |
           {moItems.length > 0 && (
             <div className="my-4">
               <div className="text-[13px] font-semibold text-t1 mb-2">Mano de Obra</div>
-              <div className="overflow-x-auto"><table className="w-full border-collapse border border-b1 rounded-lg overflow-hidden">
+              <table className="w-full border-collapse border border-b1 rounded-lg overflow-hidden">
                 <thead><tr className="bg-white/[0.03]">
                   <th className="px-3 py-2 text-[11px] font-semibold text-t3 uppercase tracking-wide text-left border-b border-b1">\u00CDtem</th>
                   <th className="px-3 py-2 text-[11px] font-semibold text-t3 uppercase tracking-wide text-right border-b border-b1">Cant</th>
@@ -326,7 +333,7 @@ function DetailView({ quote, breakdown, onSwitchToChat }: { quote: QuoteDetail |
                     <td className="px-3 py-[9px] text-[13px] font-semibold text-t1 text-right">{fmtARS(totalMO)}</td>
                   </tr>
                 </tbody>
-              </table></div>
+              </table>
             </div>
           )}
 
@@ -442,7 +449,7 @@ function ChatInput({ input, setInput, files, setFiles, dragActive, setDragActive
 
 function Section({ title, children, className: extra }: { title: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className={clsx("bg-s1 border border-b1 rounded-xl px-3 md:px-4 lg:px-[22px] py-3 lg:py-[18px]", extra)}>
+    <div className={clsx("bg-s1 border border-b1 rounded-xl px-[22px] py-[18px]", extra)}>
       <div className="text-[13px] font-semibold text-t1 uppercase tracking-[0.06em] mb-3.5 pb-2 border-b border-b1">{title}</div>
       {children}
     </div>
