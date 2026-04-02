@@ -29,5 +29,24 @@ class QuoteDetailResponse(QuoteListResponse):
     source_files: Optional[list] = None
 
 
+class QuoteCompareItem(BaseModel):
+    id: str
+    material: Optional[str]
+    total_ars: Optional[float]
+    total_usd: Optional[float]
+    status: QuoteStatus
+    pdf_url: Optional[str]
+    quote_breakdown: Optional[dict] = None
+
+    model_config = {"from_attributes": True}
+
+
+class QuoteCompareResponse(BaseModel):
+    parent_id: str
+    client_name: str
+    project: str
+    quotes: list[QuoteCompareItem]
+
+
 class QuoteStatusUpdate(BaseModel):
     status: QuoteStatus

@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { fetchQuote, streamChat, markQuoteAsRead, type QuoteDetail } from "@/lib/api";
+import { fetchQuote, streamChat, markQuoteAsRead, fetchQuoteComparison, type QuoteDetail, type QuoteCompareResponse } from "@/lib/api";
 import { useQuotes } from "@/lib/quotes-context";
 import MessageBubble from "@/components/chat/MessageBubble";
+import CompareView from "@/components/quote/CompareView";
 import clsx from "clsx";
 
 export interface UIMessage {
@@ -45,8 +46,9 @@ export default function QuotePage() {
   const quoteId = params.id as string;
 
   const [quote, setQuote] = useState<QuoteDetail | null>(null);
+  const [comparison, setComparison] = useState<QuoteCompareResponse | null>(null);
   const [messages, setMessages] = useState<UIMessage[]>([]);
-  const [tab, setTab] = useState<"detail" | "chat">("chat");
+  const [tab, setTab] = useState<"detail" | "chat" | "compare">("chat");
   const [input, setInput] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
@@ -78,6 +80,8 @@ export default function QuotePage() {
     }).catch((err: any) => {
       setLoadError(err.message || "Error al cargar presupuesto");
     }).finally(() => setLoading(false));
+
+    fetchQuoteComparison(quoteId).then(c => setComparison(c)).catch(() => {});
   }, [quoteId]);
 
   useEffect(() => {
@@ -104,7 +108,7 @@ export default function QuotePage() {
       { id: aid, role: "assistant", content: "", isStreaming: true },
     ]);
     setInput(""); setAttachedFiles([]); setSending(true); setActionText("");
-    if (tab === "detail") setTab("chat");
+    if (tab !== "chat") setTab("chat");
 
     try {
       let acc = "";
@@ -130,6 +134,7 @@ export default function QuotePage() {
           const updated = await fetchQuote(quoteId);
           setQuote(updated);
           refreshQuotes();
+          fetchQuoteComparison(quoteId).then(c => setComparison(c)).catch(() => {});
         }
       }
       if (!gotDone) {
@@ -190,10 +195,15 @@ export default function QuotePage() {
       <div className="flex border-b border-b1 bg-s1 pl-7">
         <TabBtn active={tab === "detail"} onClick={() => setTab("detail")} disabled={!quote || quote.status === "draft"}>Detalle</TabBtn>
         <TabBtn active={tab === "chat"} onClick={() => setTab("chat")}>Chat</TabBtn>
+        {comparison && <TabBtn active={tab === "compare"} onClick={() => setTab("compare")}>Comparar</TabBtn>}
       </div>
 
       {/* Content */}
-      {tab === "detail" ? (
+      {tab === "compare" && comparison ? (
+        <div className="flex-1 overflow-y-auto px-7 py-6">
+          <CompareView data={comparison} />
+        </div>
+      ) : tab === "detail" ? (
         <div className="flex-1 overflow-y-auto px-7 py-6">
           <DetailView quote={quote} breakdown={bd} onSwitchToChat={() => setTab("chat")} />
           <Section title="Modificaciones" className="mt-5">
@@ -202,7 +212,7 @@ export default function QuotePage() {
             <button onClick={() => setTab("chat")} className="mt-2 bg-transparent border-none text-acc text-xs cursor-pointer font-sans p-0">Ver historial completo \u2192</button>
           </Section>
         </div>
-      ) : (
+      ) : tab === "chat" ? (
         <>
           <div className="flex-1 overflow-y-auto px-7 pt-7 pb-4 flex flex-col gap-5">
             {messages.length === 0 && (
@@ -218,7 +228,7 @@ export default function QuotePage() {
             <div className="text-[10px] text-t4 text-center mt-[7px]">Enter para enviar \u00B7 Shift+Enter para nueva l\u00EDnea</div>
           </div>
         </>
-      )}
+      ) : null}
     </div>
   );
 }

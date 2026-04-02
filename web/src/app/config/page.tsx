@@ -1,63 +1,118 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { fetchCatalogs, fetchCatalog, validateCatalog, updateCatalog } from "@/lib/api";
 import { useToast } from "@/lib/toast-context";
-import clsx from "clsx";
+import CatalogSidebar from "@/components/catalog/CatalogSidebar";
+import CatalogToolbar from "@/components/catalog/CatalogToolbar";
+import CsvImportModal from "@/components/catalog/CsvImportModal";
 
-interface CatalogMeta { name: string; item_count: number; last_updated: string | null; size_kb: number; }
+// Dynamic import to avoid SSR issues with CodeMirror
+const CatalogEditor = dynamic(() => import("@/components/catalog/CatalogEditor"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex-1 flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-5 h-5 border-2 border-acc/30 border-t-acc rounded-full animate-spin" />
+        <span className="text-xs text-t3">Cargando editor...</span>
+      </div>
+    </div>
+  ),
+});
 
-const GROUPS = [
-  { label: "Mano de obra", items: ["labor", "delivery-zones"] },
-  { label: "Materiales", items: ["materials-silestone", "materials-purastone", "materials-dekton", "materials-neolith", "materials-puraprima", "materials-laminatto", "materials-granito-nacional", "materials-granito-importado", "materials-marmol"] },
-  { label: "Piletas y otros", items: ["sinks", "stock", "architects", "config"] },
-];
+interface CatalogMeta {
+  name: string;
+  item_count: number;
+  last_updated: string | null;
+  size_kb: number;
+}
+
+interface Validation {
+  valid: boolean;
+  warnings: { type: string; sku?: string; message: string }[];
+}
 
 export default function ConfigPage() {
-  const router = useRouter();
   const [catalogs, setCatalogs] = useState<CatalogMeta[]>([]);
   const [selected, setSelected] = useState("labor");
   const [content, setContent] = useState("");
   const [originalContent, setOriginalContent] = useState("");
-  const [validation, setValidation] = useState<{ valid: boolean; warnings: any[] } | null>(null);
+  const [validation, setValidation] = useState<Validation | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [csvImportOpen, setCsvImportOpen] = useState(false);
+  const [warningsExpanded, setWarningsExpanded] = useState(true);
   const toast = useToast();
-
-  useEffect(() => {
-    fetchCatalogs().then(setCatalogs).catch((err: any) => {
-      toast(err.message || "Error al cargar catálogos");
-    });
-  }, [toast]);
-
-  useEffect(() => {
-    setLoading(true); setValidation(null); setLoadError(null);
-    fetchCatalog(selected).then(d => {
-      const s = JSON.stringify(d, null, 2);
-      setContent(s); setOriginalContent(s);
-    }).catch((err: any) => {
-      setLoadError(err.message || "Error al cargar catálogo");
-    }).finally(() => setLoading(false));
-  }, [selected]);
 
   const hasChanges = content !== originalContent;
   const meta = catalogs.find(c => c.name === selected);
 
-  async function handleValidate() {
+  // Load catalog list
+  useEffect(() => {
+    fetchCatalogs().then(setCatalogs).catch((err: any) => {
+      toast(err.message || "Error al cargar catalogos");
+    });
+  }, [toast]);
+
+  // Load selected catalog
+  const loadCatalog = useCallback((name: string) => {
+    setLoading(true);
+    setValidation(null);
+    setLoadError(null);
+    fetchCatalog(name)
+      .then(d => {
+        const s = JSON.stringify(d, null, 2);
+        setContent(s);
+        setOriginalContent(s);
+      })
+      .catch((err: any) => {
+        setLoadError(err.message || "Error al cargar catalogo");
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    loadCatalog(selected);
+  }, [selected, loadCatalog]);
+
+  // Switch catalog with unsaved guard
+  const handleSelectCatalog = useCallback(
+    (name: string) => {
+      if (name === selected) return;
+      if (hasChanges) {
+        const ok = window.confirm(
+          "Tenes cambios sin guardar. Si cambias de catalogo se van a perder.\n\n¿Continuar?"
+        );
+        if (!ok) return;
+      }
+      setSelected(name);
+    },
+    [selected, hasChanges]
+  );
+
+  // Validate
+  const handleValidate = useCallback(async () => {
     setValidating(true);
     try {
       const parsed = JSON.parse(content);
       const result = await validateCatalog(selected, parsed);
       setValidation(result);
+      setWarningsExpanded(true);
     } catch {
-      setValidation({ valid: false, warnings: [{ type: "error", message: "JSON inválido — revisá la sintaxis" }] });
-    } finally { setValidating(false); }
-  }
+      setValidation({
+        valid: false,
+        warnings: [{ type: "error", message: "JSON invalido — revisa la sintaxis" }],
+      });
+    } finally {
+      setValidating(false);
+    }
+  }, [content, selected]);
 
-  async function handleSave() {
+  // Save
+  const handleSave = useCallback(async () => {
     if (!validation?.valid) return;
     setSaving(true);
     try {
@@ -66,129 +121,134 @@ export default function ConfigPage() {
       setValidation(null);
       const updated = await fetchCatalogs();
       setCatalogs(updated);
-      toast("Catálogo guardado correctamente", "success");
+      toast("Catalogo guardado correctamente", "success");
     } catch (err: any) {
-      toast(err.message || "Error al guardar catálogo");
-    } finally { setSaving(false); }
-  }
+      toast(err.message || "Error al guardar catalogo");
+    } finally {
+      setSaving(false);
+    }
+  }, [validation, content, selected, toast]);
 
-  const disableValidate = !hasChanges || validating;
-  const disableSave = !validation?.valid || saving || !hasChanges;
+  // CSV import apply
+  const handleCsvApply = useCallback((jsonString: string) => {
+    setContent(jsonString);
+    setValidation(null);
+    toast("Datos importados. Valida y guarda para confirmar.", "warning");
+  }, [toast]);
+
+  // Keyboard shortcut: Ctrl/Cmd+S to save
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        if (validation?.valid && hasChanges && !saving) {
+          handleSave();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [validation, hasChanges, saving, handleSave]);
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between px-7 pt-5 pb-[18px] border-b border-b1 shrink-0">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.push("/")}
-            className="w-[30px] h-[30px] rounded-md border border-b1 bg-transparent text-t2 cursor-pointer flex items-center justify-center transition hover:border-b2 hover:text-t1"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
-          </button>
-          <div>
-            <div className="text-lg font-medium -tracking-[0.03em]">Catálogo</div>
-            <div className="text-[11px] text-t3 mt-0.5">Validación IA antes de guardar</div>
-          </div>
-        </div>
-        <div className="flex gap-[7px]">
-          <button
-            onClick={handleValidate}
-            disabled={disableValidate}
-            className={clsx(
-              "px-3 py-[7px] rounded-md text-xs font-medium font-sans border border-b1 bg-transparent text-t2 -tracking-[0.01em] transition",
-              disableValidate ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:border-b2 hover:text-t1",
-            )}
-          >
-            {validating ? "Validando..." : "Validar con IA"}
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={disableSave}
-            className={clsx(
-              "px-3 py-[7px] rounded-md text-xs font-medium font-sans border bg-acc-bg border-acc-hover text-acc -tracking-[0.01em] transition",
-              disableSave ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:bg-acc/20",
-            )}
-          >
-            {saving ? "Guardando..." : "Guardar cambios"}
-          </button>
-        </div>
-      </div>
+      {/* Toolbar */}
+      <CatalogToolbar
+        catalogName={selected}
+        meta={meta}
+        hasChanges={hasChanges}
+        validation={validation}
+        validating={validating}
+        saving={saving}
+        onValidate={handleValidate}
+        onSave={handleSave}
+        onImport={() => setCsvImportOpen(true)}
+        onBack={() => window.history.back()}
+      />
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        {/* Catalog list */}
-        <div className="md:w-[200px] shrink-0 bg-s1 border-b md:border-b-0 md:border-r border-b1 px-2 py-2 md:py-3 overflow-x-auto md:overflow-x-hidden overflow-y-auto flex md:block gap-1 md:gap-0">
-          {GROUPS.map(group => (
-            <div key={group.label}>
-              <div className="hidden md:block text-[10px] font-medium text-t4 uppercase tracking-[0.09em] px-2 pt-2 pb-1 mt-1.5">
-                {group.label}
-              </div>
-              {group.items.map(name => {
-                const m = catalogs.find(c => c.name === name);
-                const isActive = selected === name;
-                return (
-                  <button
-                    key={name}
-                    onClick={() => setSelected(name)}
-                    className={clsx(
-                      "flex flex-col gap-0.5 p-2 rounded-md text-xs cursor-pointer border-none w-full md:w-full shrink-0 md:shrink text-left transition-all duration-100 font-sans whitespace-nowrap md:whitespace-normal",
-                      isActive ? "text-acc bg-acc-bg" : "text-t2 bg-transparent hover:bg-white/[0.04]",
-                    )}
-                  >
-                    {name}.json
-                    <span className={clsx("text-[10px]", isActive ? "text-acc/55" : "text-t3")}>
-                      {m ? `${m.item_count} ítems` : "\u2014"}
-                      {m?.last_updated ? ` · ${m.last_updated}` : ""}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+        {/* Sidebar */}
+        <CatalogSidebar
+          catalogs={catalogs}
+          selected={selected}
+          onSelect={handleSelectCatalog}
+          hasUnsavedChanges={hasChanges}
+        />
 
-        {/* Editor */}
+        {/* Editor area */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex items-center justify-between px-[22px] py-3 border-b border-b1 bg-black/[0.12] shrink-0">
-            <div className="text-[13px] font-medium text-t1 flex items-center gap-2.5">
-              {selected}.json
-              {meta && (
-                <span className="text-[10px] px-2 py-[2px] rounded-full font-medium bg-amb-bg text-amb border border-amb/[0.16]">
-                  {meta.item_count} ítems{meta.last_updated ? ` · ${meta.last_updated}` : ""}
-                </span>
-              )}
-              {validation?.valid && !hasChanges && (
-                <span className="text-[10px] px-2 py-[2px] rounded-full font-medium bg-grn-bg text-grn border border-grn/[0.18]">
-                  ✓ Válido
-                </span>
-              )}
-            </div>
-            <span className="text-[11px] text-t3">
-              {hasChanges && !validation && "• Cambios sin guardar"}
-              {validation?.valid && hasChanges && "✓ Validado"}
-              {validation && !validation.valid && "✕ Error"}
-            </span>
-          </div>
-
-          <div className="flex-1 px-[22px] py-4 flex flex-col gap-2.5 overflow-hidden">
-            {validation && validation.warnings.length > 0 && (
-              <div className="bg-amb/[0.06] border border-amb/[0.16] rounded-[7px] px-[13px] py-2.5 text-xs text-amb/85 flex gap-2">
-                <span>⚠</span>
-                <div>{validation.warnings.map((w: any, i: number) => (
-                  <div key={i}>{w.sku && <strong>{w.sku}: </strong>}{w.message}</div>
-                ))}</div>
+          {/* Validation warnings */}
+          {validation && validation.warnings.length > 0 && (
+            <div className="px-5 pt-3 shrink-0">
+              <div className="bg-amb/[0.05] border border-amb/[0.14] rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setWarningsExpanded(!warningsExpanded)}
+                  className="w-full flex items-center gap-2 px-3.5 py-2.5 text-xs text-amb bg-transparent border-none cursor-pointer font-sans text-left hover:bg-amb/[0.03] transition"
+                >
+                  <svg
+                    width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                    className={`transition-transform ${warningsExpanded ? "rotate-90" : ""}`}
+                  >
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                  <span className="font-medium">
+                    {validation.warnings.length} advertencia{validation.warnings.length > 1 ? "s" : ""}
+                  </span>
+                  {!validation.valid && (
+                    <span className="text-err text-[10px] ml-1">— corregir antes de guardar</span>
+                  )}
+                </button>
+                {warningsExpanded && (
+                  <div className="px-3.5 pb-2.5 flex flex-col gap-1">
+                    {validation.warnings.map((w, i) => (
+                      <div key={i} className="flex items-start gap-2 text-[11px] text-amb/85 py-0.5">
+                        <span className="shrink-0 mt-0.5">
+                          {w.type === "error" ? (
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ff453a" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                          ) : (
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                          )}
+                        </span>
+                        <span>
+                          {w.sku && (
+                            <span className="font-mono text-[10px] px-1 py-px rounded bg-white/[0.05] mr-1.5">
+                              {w.sku}
+                            </span>
+                          )}
+                          {w.message}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-            <textarea
-              value={loading ? "Cargando..." : loadError ? `Error: ${loadError}` : content}
-              onChange={e => setContent(e.target.value)}
-              disabled={loading}
-              spellCheck={false}
-              className="flex-1 bg-black/[0.28] border border-b1 rounded-lg p-3.5 font-mono text-xs text-t2 resize-none outline-none leading-[1.75] transition-[border-color] duration-150 focus:border-acc"
-            />
+            </div>
+          )}
+
+          {/* Editor */}
+          <div className="flex-1 overflow-hidden px-5 py-3">
+            <div className="h-full border border-b1 rounded-lg overflow-hidden">
+              <CatalogEditor
+                value={content}
+                onChange={setContent}
+                loading={loading}
+                loadError={loadError}
+                onRetry={() => loadCatalog(selected)}
+              />
+            </div>
           </div>
         </div>
       </div>
+
+      {/* CSV Import Modal */}
+      {csvImportOpen && (
+        <CsvImportModal
+          catalogName={selected}
+          currentContent={content}
+          onApply={handleCsvApply}
+          onClose={() => setCsvImportOpen(false)}
+        />
+      )}
     </div>
   );
 }
