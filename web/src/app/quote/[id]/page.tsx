@@ -15,9 +15,16 @@ export interface UIMessage {
 
 // ── HELPERS ──────────────────────────────────────────────────────────────────
 
-const fmtARS = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`;
-const fmtUSD = (n: number) => `USD ${Math.round(n).toLocaleString("es-AR")}`;
-const fmtQty = (n: number) => {
+const fmtARS = (n: number | null | undefined) => {
+  if (n == null || isNaN(n)) return "—";
+  return `$${Math.round(n).toLocaleString("es-AR")}`;
+};
+const fmtUSD = (n: number | null | undefined) => {
+  if (n == null || isNaN(n)) return "—";
+  return `USD ${Math.round(n).toLocaleString("es-AR")}`;
+};
+const fmtQty = (n: number | null | undefined) => {
+  if (n == null || isNaN(n)) return "—";
   if (Math.abs(n - Math.round(n)) < 0.05) return String(Math.round(n));
   return n.toFixed(2).replace(".", ",");
 };
@@ -248,7 +255,10 @@ function DetailView({ quote, breakdown, onSwitchToChat }: {
   if (!quote) return null;
 
   const pieces = breakdown?.sectors?.flatMap((s: any) => s.pieces || []) || [];
-  const moItems = breakdown?.mo_items || [];
+  const moItems = (breakdown?.mo_items || []).map((m: any) => ({
+    ...m,
+    total: m.total ?? (m.quantity ?? 0) * (m.unit_price ?? 0),
+  }));
   const merma = breakdown?.merma;
   const totalM2 = breakdown?.material_m2 || 0;
   const discountPct = breakdown?.discount_pct || 0;

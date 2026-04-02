@@ -217,6 +217,7 @@ TOOLS = [
                                         "description": {"type": "string"},
                                         "quantity": {"type": "number"},
                                         "unit_price": {"type": "number"},
+                                        "total": {"type": "number", "description": "quantity × unit_price"},
                                     },
                                 },
                             },
