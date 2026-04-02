@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { type Quote } from "@/lib/api";
 import { useQuotes } from "@/lib/quotes-context";
@@ -30,6 +30,7 @@ export default function DashboardPage() {
   const [deleting, setDeleting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [search, setSearch] = useState("");
+  const [undoToast, setUndoToast] = useState<{ id: string; from: Quote["status"]; to: Quote["status"]; timer: ReturnType<typeof setTimeout> } | null>(null);
 
   const staleDrafts = quotes.filter(q => {
     if (q.status !== "draft") return false;
@@ -56,14 +57,26 @@ export default function DashboardPage() {
     web: quotes.filter(q => q.source === "web").length,
   };
 
-  async function toggleStatus(e: React.MouseEvent, id: string, current: Quote["status"]) {
+  const toggleStatus = useCallback(async (e: React.MouseEvent | React.KeyboardEvent, id: string, current: Quote["status"]) => {
     e.stopPropagation();
     const next = STATUS_NEXT[current];
     if (!next) return;
+    if (undoToast) clearTimeout(undoToast.timer);
     try {
       await setStatus(id, next);
     } catch { /* toast already shown by context */ }
-  }
+    const timer = setTimeout(() => setUndoToast(null), 5000);
+    setUndoToast({ id, from: current, to: next, timer });
+  }, [undoToast, setStatus]);
+
+  const undoStatus = useCallback(async () => {
+    if (!undoToast) return;
+    clearTimeout(undoToast.timer);
+    try {
+      await setStatus(undoToast.id, undoToast.from);
+    } catch { /* toast already shown by context */ }
+    setUndoToast(null);
+  }, [undoToast, setStatus]);
 
   function askDelete(e: React.MouseEvent, id: string, clientName: string) {
     e.stopPropagation();
@@ -91,7 +104,22 @@ export default function DashboardPage() {
             {new Date().toLocaleDateString("es-AR", { month: "long", year: "numeric" })} · {quotes.length} registros
           </div>
         </div>
-        <button className="hidden md:flex px-3 py-[7px] rounded-md text-xs font-medium font-sans cursor-pointer border border-b1 bg-transparent text-t2 -tracking-[0.01em] hover:border-b2 hover:text-t1 transition">
+        <button
+          onClick={() => {
+            const rows = [["Cliente", "Proyecto", "Material", "Total ARS", "Total USD", "Estado", "Fecha"]];
+            filteredQuotes.forEach(q => rows.push([
+              q.client_name || "", q.project || "", q.material || "",
+              q.total_ars?.toString() || "", q.total_usd?.toString() || "",
+              STATUS_LABEL[q.status], format(new Date(q.created_at), "dd/MM/yyyy"),
+            ]));
+            const csv = rows.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(",")).join("\n");
+            const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+            const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+            a.download = `presupuestos-${format(new Date(), "yyyy-MM-dd")}.csv`; a.click();
+          }}
+          aria-label="Exportar presupuestos a CSV"
+          className="hidden md:flex px-3 py-[7px] rounded-md text-xs font-medium font-sans cursor-pointer border border-b1 bg-transparent text-t2 -tracking-[0.01em] hover:border-b2 hover:text-t1 transition"
+        >
           Exportar CSV
         </button>
       </div>
@@ -157,6 +185,7 @@ export default function DashboardPage() {
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Buscar cliente, material..."
+                  aria-label="Buscar presupuestos"
                   className="bg-transparent border-none outline-none text-t1 text-xs font-sans w-full placeholder:text-t4"
                 />
                 {search && (
@@ -190,7 +219,11 @@ export default function DashboardPage() {
                   return (
                     <tr
                       key={q.id}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`Ver presupuesto de ${q.client_name || "Sin nombre"}`}
                       onClick={() => { setSelectedId(q.id); router.push(`/quote/${q.parent_quote_id || q.id}`); }}
+                      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(q.id); router.push(`/quote/${q.parent_quote_id || q.id}`); }}}
                       className={clsx(
                         "border-b border-white/[0.045] cursor-pointer transition-[background] duration-75",
                         isSelected
@@ -235,6 +268,7 @@ export default function DashboardPage() {
                       <td className="px-3 lg:px-[18px] py-[13px] text-center">
                         <button
                           onClick={(e) => toggleStatus(e, q.id, q.status)}
+                          aria-label={STATUS_NEXT[q.status] ? `Cambiar estado a ${STATUS_LABEL[STATUS_NEXT[q.status]!]}` : `Estado: ${STATUS_LABEL[q.status]}`}
                           title={STATUS_NEXT[q.status] ? `Cambiar a ${STATUS_LABEL[STATUS_NEXT[q.status]!]}` : "Estado final"}
                           className={clsx(
                             "inline-flex items-center gap-[5px] px-2 py-[3px] rounded-full text-[11px] font-medium border-none font-sans",
@@ -263,6 +297,7 @@ export default function DashboardPage() {
                       <td className="px-2.5 py-[13px] w-10">
                         <button
                           onClick={(e) => askDelete(e, q.id, q.client_name)}
+                          aria-label={`Eliminar presupuesto de ${q.client_name || "Sin nombre"}`}
                           title="Eliminar presupuesto"
                           className="w-8 h-8 md:w-7 md:h-7 rounded-md border border-b1 bg-transparent text-t3 cursor-pointer flex items-center justify-center text-xs transition-all hover:border-err/50 hover:text-err"
                         >
@@ -272,12 +307,40 @@ export default function DashboardPage() {
                     </tr>
                   );
                 })}
+                {filteredQuotes.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="py-16 text-center">
+                      <div className="text-3xl mb-3 opacity-30">📋</div>
+                      <div className="text-sm text-t2 font-medium">
+                        {search ? "Sin resultados" : "No hay presupuestos"}
+                      </div>
+                      <div className="text-xs text-t3 mt-1">
+                        {search ? `No se encontraron presupuestos para "${search}"` : "Creá uno nuevo para empezar"}
+                      </div>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
             </div>
           </div>
         )}
       </div>
+
+      {/* Undo toast */}
+      {undoToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-s2 border border-b2 rounded-xl px-4 py-3 shadow-[0_8px_30px_rgba(0,0,0,.4)] animate-[fadeUp_0.2s_ease]">
+          <span className="text-sm text-t2">
+            Estado cambiado a <strong className="text-t1">{STATUS_LABEL[undoToast.to]}</strong>
+          </span>
+          <button
+            onClick={undoStatus}
+            className="px-3 py-1 rounded-md text-xs font-semibold bg-acc text-white border-none cursor-pointer hover:bg-[#3a7aff] transition"
+          >
+            Deshacer
+          </button>
+        </div>
+      )}
 
       {/* Delete modal */}
       {deleteTarget && (
@@ -319,11 +382,13 @@ export default function DashboardPage() {
 }
 
 function FileBtn({ href, emoji }: { href: string; emoji: string }) {
+  const label = emoji === "📄" ? "Descargar PDF" : emoji === "📊" ? "Descargar Excel" : "Abrir en Drive";
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
+      aria-label={label}
       className="w-[26px] h-[26px] rounded-[5px] border border-b1 bg-transparent flex items-center justify-center text-[11px] cursor-pointer no-underline text-t2 transition-all hover:border-b2 hover:bg-white/[0.06]"
     >
       {emoji}
