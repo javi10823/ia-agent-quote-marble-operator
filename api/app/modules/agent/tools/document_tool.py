@@ -68,10 +68,10 @@ async def generate_documents(quote_id: str, quote_data: dict) -> dict:
         pdf_path = quote_dir / f"{filename_base}.pdf"
         excel_path = quote_dir / f"{filename_base}.xlsx"
 
-        # Generate both in parallel
+        # Generate both in thread pool (sync I/O — fpdf2, openpyxl)
         await asyncio.gather(
-            _generate_excel(excel_path, quote_data),
-            _generate_pdf(pdf_path, quote_data),
+            asyncio.to_thread(_generate_excel, excel_path, quote_data),
+            asyncio.to_thread(_generate_pdf, pdf_path, quote_data),
         )
 
         return {
@@ -84,7 +84,7 @@ async def generate_documents(quote_id: str, quote_data: dict) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-async def _generate_pdf(pdf_path: Path, data: dict) -> None:
+def _generate_pdf(pdf_path: Path, data: dict) -> None:
     """Generate clean PDF using fpdf2 — matches Excel content."""
     from fpdf import FPDF
 
@@ -325,7 +325,7 @@ async def _generate_pdf(pdf_path: Path, data: dict) -> None:
     pdf.output(str(pdf_path))
 
 
-async def _generate_excel(output_path: Path, data: dict) -> None:
+def _generate_excel(output_path: Path, data: dict) -> None:
     """Generate Excel from template — only replace values, keep all formatting."""
     import openpyxl
     from openpyxl.styles import Font, Alignment, Border, Side

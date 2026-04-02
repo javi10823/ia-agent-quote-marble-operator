@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import tempfile
 from pathlib import Path
@@ -14,11 +15,8 @@ TEMP_DIR = Path(tempfile.gettempdir()) / "marble_plans"
 TEMP_DIR.mkdir(exist_ok=True)
 
 
-async def read_plan(filename: str, crop_instructions: list) -> dict:
-    """
-    Rasterize a plan file at 300 DPI and optionally crop individual mesadas.
-    Returns base64-encoded images for Claude to analyze.
-    """
+def _read_plan_sync(filename: str, crop_instructions: list) -> dict:
+    """Blocking: rasterize plan at 300 DPI + crop mesadas."""
     plan_path = TEMP_DIR / filename
     if not plan_path.exists():
         return {"error": f"Archivo no encontrado: {filename}"}
@@ -47,7 +45,6 @@ async def read_plan(filename: str, crop_instructions: list) -> dict:
     base_image = images[0]
     result_images = []
 
-    # Full plan (reduced)
     full_w = base_image.width
     full_h = base_image.height
     result_images.append({
@@ -57,7 +54,6 @@ async def read_plan(filename: str, crop_instructions: list) -> dict:
         "height": full_h,
     })
 
-    # Individual crops
     for crop in crop_instructions:
         try:
             cropped = base_image.crop((
@@ -83,6 +79,11 @@ async def read_plan(filename: str, crop_instructions: list) -> dict:
         "images": result_images,
         "note": "Imágenes rasterizadas a 300 DPI. Analizar cada crop individualmente.",
     }
+
+
+async def read_plan(filename: str, crop_instructions: list) -> dict:
+    """Non-blocking wrapper — runs rasterization in thread pool."""
+    return await asyncio.to_thread(_read_plan_sync, filename, crop_instructions)
 
 
 def _image_to_b64(img: Image.Image, max_width: Optional[int] = None) -> str:
