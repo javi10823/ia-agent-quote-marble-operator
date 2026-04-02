@@ -18,7 +18,6 @@ interface Props {
 
 export default function DetailView({ quote, breakdown, onSwitchToChat }: Props) {
   const { isMobile, isTablet } = useBreakpoints();
-  if (!quote) return null;
 
   const pieces = useMemo(
     () => breakdown?.sectors?.flatMap((s: any) => s.pieces || []) || [],
@@ -38,6 +37,8 @@ export default function DetailView({ quote, breakdown, onSwitchToChat }: Props) 
   const merma = breakdown?.merma;
   const totalM2 = breakdown?.material_m2 || 0;
   const discountPct = breakdown?.discount_pct || 0;
+
+  if (!quote) return null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
