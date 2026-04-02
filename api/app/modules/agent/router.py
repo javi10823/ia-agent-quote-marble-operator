@@ -103,7 +103,7 @@ async def delete_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
     # Delete Drive file if exists
     if quote.drive_file_id:
         from app.modules.agent.tools.drive_tool import delete_drive_file
-        delete_drive_file(quote.drive_file_id)
+        await delete_drive_file(quote.drive_file_id)
 
     # Delete local files
     import shutil
