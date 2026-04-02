@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { logout } from "@/lib/auth";
+import clsx from "clsx";
 
 export default function Sidebar() {
   const router = useRouter();
@@ -20,40 +21,35 @@ export default function Sidebar() {
   }
 
   return (
-    <nav style={{
-      width: 212,
-      flexShrink: 0,
-      background: "var(--s1)",
-      borderRight: "1px solid var(--b1)",
-      display: "flex",
-      flexDirection: "column",
-      padding: "18px 10px 20px",
-      height: "100vh",
-    }}>
-      {/* Logo — click goes to home */}
-      <div onClick={() => router.push("/")} style={{ display: "flex", alignItems: "center", gap: 9, padding: "2px 8px 22px", cursor: "pointer" }}>
-        <div style={{
-          width: 26, height: 26, borderRadius: 6,
-          background: "var(--acc)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 12, fontWeight: 600, color: "#fff", letterSpacing: -0.5,
-        }}>D</div>
-        <span style={{ fontSize: 13, fontWeight: 500, letterSpacing: "-0.02em", color: "var(--t1)" }}>
-          D'Angelo
+    <nav className="w-[212px] shrink-0 bg-s1 border-r border-b1 flex flex-col px-2.5 pt-[18px] pb-5 h-screen">
+      {/* Logo */}
+      <div
+        onClick={() => router.push("/")}
+        className="flex items-center gap-2.5 px-2 pt-0.5 pb-5 cursor-pointer"
+      >
+        <div className="w-[26px] h-[26px] rounded-md bg-acc flex items-center justify-center text-xs font-semibold text-white -tracking-[0.5px]">
+          D
+        </div>
+        <span className="text-[13px] font-medium -tracking-[0.02em] text-t1">
+          D&apos;Angelo
         </span>
       </div>
 
       {/* Nav */}
-      <span style={sectionStyle}>Principal</span>
+      <span className="text-[10px] font-medium text-t4 uppercase tracking-[0.10em] px-2 pb-1">
+        Principal
+      </span>
       <NavItem
         icon={<GridIcon />}
         label="Presupuestos"
-        badge={quoteCount !== null ? String(quoteCount) : "—"}
+        badge={quoteCount !== null ? String(quoteCount) : "\u2014"}
         active={path === "/"}
         onClick={() => router.push("/")}
       />
 
-      <span style={{ ...sectionStyle, marginTop: 14 }}>Sistema</span>
+      <span className="text-[10px] font-medium text-t4 uppercase tracking-[0.10em] px-2 pb-1 mt-3.5">
+        Sistema
+      </span>
       <NavItem
         icon={<GearIcon />}
         label="Catálogo"
@@ -62,46 +58,20 @@ export default function Sidebar() {
       />
 
       {/* Separator */}
-      <div style={{ height: 1, background: "var(--b1)", margin: "12px 0" }} />
+      <div className="h-px bg-b1 my-3" />
 
       {/* CTA + Logout */}
-      <div style={{ marginTop: "auto" }}>
-        <button onClick={handleNew} style={{
-          width: "100%", padding: "10px 12px",
-          background: "var(--acc)", border: "none", borderRadius: 8,
-          color: "#fff", fontSize: 13, fontWeight: 500,
-          fontFamily: "inherit", cursor: "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-          transition: "all 0.15s",
-          letterSpacing: "-0.01em",
-        }}
-          onMouseEnter={e => {
-            (e.target as HTMLButtonElement).style.background = "#3a7aff";
-            (e.target as HTMLButtonElement).style.transform = "translateY(-1px)";
-            (e.target as HTMLButtonElement).style.boxShadow = "0 8px 24px rgba(79,143,255,.30)";
-          }}
-          onMouseLeave={e => {
-            (e.target as HTMLButtonElement).style.background = "var(--acc)";
-            (e.target as HTMLButtonElement).style.transform = "";
-            (e.target as HTMLButtonElement).style.boxShadow = "";
-          }}
+      <div className="mt-auto">
+        <button
+          onClick={handleNew}
+          className="w-full py-2.5 px-3 bg-acc border-none rounded-lg text-white text-[13px] font-medium font-sans cursor-pointer flex items-center justify-center gap-[7px] -tracking-[0.01em] transition-all duration-150 hover:bg-[#3a7aff] hover:-translate-y-px hover:shadow-[0_8px_24px_rgba(79,143,255,.30)]"
         >
           <PlusIcon /> Nuevo presupuesto
         </button>
 
         <button
           onClick={async () => { await logout(); router.push("/login"); }}
-          style={{
-            width: "100%", padding: "7px 8px",
-            background: "transparent", border: "none", borderRadius: 6,
-            color: "var(--t3)", fontSize: 11, fontWeight: 400,
-            fontFamily: "inherit", cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            transition: "color 0.15s",
-            marginTop: 10,
-          }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t2)"; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t3)"; }}
+          className="w-full py-[7px] px-2 bg-transparent border-none rounded-md text-t3 text-[11px] font-normal font-sans cursor-pointer flex items-center justify-center gap-1.5 transition-colors duration-150 hover:text-t2 mt-2.5"
         >
           <LogoutIcon /> Cerrar sesión
         </button>
@@ -118,35 +88,23 @@ function NavItem({ icon, label, badge, active, onClick }: {
   onClick: () => void;
 }) {
   return (
-    <button onClick={onClick} style={{
-      display: "flex", alignItems: "center", gap: 8,
-      padding: 8, borderRadius: 6,
-      fontSize: 12, fontWeight: 400,
-      color: active ? "var(--acc)" : "var(--t2)",
-      cursor: "pointer", border: "none",
-      background: active ? "rgba(79,143,255,.11)" : "transparent",
-      width: "100%", textAlign: "left",
-      transition: "all .1s", fontFamily: "inherit",
-    }}>
-      <span style={{ opacity: active ? 1 : 0.65, flexShrink: 0 }}>{icon}</span>
+    <button
+      onClick={onClick}
+      className={clsx(
+        "flex items-center gap-2 p-2 rounded-md text-xs font-normal cursor-pointer border-none w-full text-left transition-all duration-100 font-sans",
+        active ? "text-acc bg-acc/[0.11]" : "text-t2 bg-transparent hover:bg-white/[0.04]",
+      )}
+    >
+      <span className={clsx("shrink-0", active ? "opacity-100" : "opacity-65")}>{icon}</span>
       {label}
       {badge && (
-        <span style={{
-          marginLeft: "auto", fontSize: 10, fontWeight: 500,
-          padding: "1px 7px", borderRadius: 999,
-          background: "rgba(255,255,255,.07)", color: "var(--t3)",
-          fontFamily: "'Geist Mono', monospace",
-        }}>{badge}</span>
+        <span className="ml-auto text-[10px] font-medium px-[7px] py-px rounded-full bg-white/[0.07] text-t3 font-mono">
+          {badge}
+        </span>
       )}
     </button>
   );
 }
-
-const sectionStyle: React.CSSProperties = {
-  fontSize: 10, fontWeight: 500, color: "var(--t4)",
-  textTransform: "uppercase", letterSpacing: "0.10em",
-  padding: "0 8px 5px",
-};
 
 function GridIcon() {
   return (
