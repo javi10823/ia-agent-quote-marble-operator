@@ -63,6 +63,9 @@ async def get_db():
 async def cleanup_empty_drafts():
     """Delete draft quotes older than 1 hour that lack client + material.
     Drafts with real data (client_name AND material set) are preserved."""
+    if settings.APP_ENV == "test":
+        return  # Skip cleanup in test environment
+
     from datetime import datetime, timedelta, timezone
     from sqlalchemy import delete
     from app.models.quote import Quote

@@ -26,8 +26,14 @@ class TestListQuotes:
 
     @pytest.mark.asyncio
     async def test_list_after_create(self, client):
-        await client.post("/api/quotes")
-        await client.post("/api/quotes")
+        # Create quotes with client_name so they appear in listing
+        # (empty drafts are hidden from list_quotes)
+        r1 = await client.post("/api/quotes")
+        r2 = await client.post("/api/quotes")
+        q1_id = r1.json()["id"]
+        q2_id = r2.json()["id"]
+        await client.patch(f"/api/quotes/{q1_id}", json={"client_name": "Test 1"})
+        await client.patch(f"/api/quotes/{q2_id}", json={"client_name": "Test 2"})
         resp = await client.get("/api/quotes")
         assert resp.status_code == 200
         assert len(resp.json()) == 2
