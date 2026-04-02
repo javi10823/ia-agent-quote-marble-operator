@@ -32,9 +32,133 @@ def _detect_building(user_message: str) -> bool:
     return any(kw in text for kw in BUILDING_KEYWORDS)
 
 
+# ── EXAMPLE SELECTION ────────────────────────────────────────────────────────
+
+# Feature keywords → tags mapping for example selection
+_FEATURE_TAGS = {
+    # Material types
+    "silestone": "silestone",
+    "dekton": "dekton",
+    "neolith": "neolith",
+    "purastone": "purastone",
+    "puraprima": "puraprima",
+    "pura prima": "puraprima",
+    "laminatto": "laminatto",
+    "granito": "granito_importado",
+    "negro brasil": "granito_importado",
+    "gris mara": "granito_nacional",
+    "negro boreal": "granito_nacional",
+    # Work features
+    "isla": "isla",
+    "anafe": "anafe",
+    "hornalla": "anafe",
+    "pileta": "pileta_empotrada",
+    "bacha": "pileta_empotrada",
+    "apoyo": "pileta_apoyo",
+    "johnson": "pileta_johnson",
+    "alzada": "alzas",
+    "alza": "alzas",
+    "frentin": "faldon",
+    "faldón": "faldon",
+    "faldon": "faldon",
+    "corte 45": "corte45",
+    "inglete": "corte45",
+    "zócalo": "zocalo",
+    "zocalo": "zocalo",
+    "toma": "tomas",
+    "regrueso": "regrueso",
+    "pulido": "pulido",
+    "descuento": "descuento",
+    "arquitecta": "descuento_arquitecta",
+    "sobrante": "sobrante",
+    # Context
+    "edificio": "building",
+    "departamento": "building",
+    "baño": "pileta_apoyo",
+    "toilette": "pileta_apoyo",
+}
+
+
+def _extract_features(user_message: str, is_building: bool) -> set:
+    """Extract feature tags from user message for example matching."""
+    text = user_message.lower()
+    tags = set()
+    if is_building:
+        tags.add("building")
+    else:
+        tags.add("residential")
+    for keyword, tag in _FEATURE_TAGS.items():
+        if keyword in text:
+            tags.add(tag)
+    return tags
+
+
+def _load_example_index() -> list:
+    """Load examples/index.json once."""
+    index_path = BASE_DIR / "examples" / "index.json"
+    if not index_path.exists():
+        return []
+    import json
+    with open(index_path) as f:
+        return json.load(f)
+
+
+_EXAMPLE_INDEX = _load_example_index()
+
+
+def select_examples(user_message: str, is_building: bool, max_examples: int = 3) -> list:
+    """
+    Select the most relevant examples based on tag overlap with the current case.
+    Returns list of example file paths (sorted by relevance, most relevant first).
+    Always includes at least 1 example (fallback: quote-030).
+    """
+    features = _extract_features(user_message, is_building)
+    examples_dir = BASE_DIR / "examples"
+
+    # Score each example by tag overlap
+    scored = []
+    for entry in _EXAMPLE_INDEX:
+        entry_tags = set(entry.get("tags", []))
+        overlap = len(features & entry_tags)
+        # Bonus: exact material match
+        material = entry.get("material", "").lower()
+        if material and material in user_message.lower():
+            overlap += 3
+        scored.append((overlap, entry["id"], entry))
+
+    # Sort by score descending, then by ID for stability
+    scored.sort(key=lambda x: (-x[0], x[1]))
+
+    # Pick top N, ensuring diversity (not all same material type)
+    selected = []
+    seen_materials = set()
+    for score, eid, entry in scored:
+        if len(selected) >= max_examples:
+            break
+        mat = entry.get("material", "")
+        # Allow first 2 freely, then require material diversity
+        if len(selected) < 2 or mat not in seen_materials:
+            selected.append(eid)
+            seen_materials.add(mat)
+
+    # Fallback: always at least quote-030 (comprehensive residential example)
+    if not selected:
+        selected = ["quote-030"]
+
+    # Resolve to file paths
+    paths = []
+    for eid in selected:
+        matches = list(examples_dir.glob(f"{eid}*.md"))
+        if matches:
+            paths.append(matches[0])
+
+    logging.info(f"Example selection: features={features}, selected={selected}")
+    return paths
+
+
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
 
-def build_system_prompt(has_plan: bool = False, is_building: bool = False) -> list:
+def build_system_prompt(has_plan: bool = False, is_building: bool = False, user_message: str = "") -> list:
     """
     Build system prompt as a list of content blocks with cache_control.
     Stable core content is cached (5 min TTL). Conditional content is not cached.
@@ -73,15 +197,10 @@ def build_system_prompt(has_plan: bool = False, is_building: bool = False) -> li
         if plan_path.exists():
             conditional_parts.append(f"## {plan_path.stem}\n\n{plan_path.read_text(encoding='utf-8')}")
 
-    # Examples — 1 by default, add building example if needed
-    examples_dir = BASE_DIR / "examples"
-    example_names = ["quote-030"]
-    if is_building:
-        example_names.append("quote-019")
-
-    for name in example_names:
-        for f in examples_dir.glob(f"{name}*.md"):
-            conditional_parts.append(f.read_text(encoding="utf-8"))
+    # Examples — select 3 most relevant based on user message features
+    example_paths = select_examples(user_message, is_building, max_examples=3)
+    for ep in example_paths:
+        conditional_parts.append(f"## Ejemplo: {ep.stem}\n\n{ep.read_text(encoding='utf-8')}")
 
     # Build system content blocks with cache_control on stable block
     blocks = [
@@ -376,7 +495,7 @@ class AgentService:
         # Build system prompt per request with contextual loading
         has_plan = plan_bytes is not None and plan_filename is not None
         is_building = _detect_building(user_message)
-        system_prompt = build_system_prompt(has_plan=has_plan, is_building=is_building)
+        system_prompt = build_system_prompt(has_plan=has_plan, is_building=is_building, user_message=user_message)
 
         # Build user message content
         content = []
