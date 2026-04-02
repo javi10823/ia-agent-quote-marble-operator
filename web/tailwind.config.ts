@@ -30,8 +30,8 @@ const config: Config = {
         err: "var(--red)",
       },
       fontFamily: {
-        sans: ["Geist", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
-        mono: ["Geist Mono", "monospace"],
+        sans: ["var(--font-geist-sans)", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
+        mono: ["var(--font-geist-mono)", "monospace"],
       },
     },
   },

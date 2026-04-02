@@ -129,7 +129,7 @@ export default function ChatInput({ input, setInput, files, setFiles, dragActive
         transition: "border-color 0.15s, box-shadow 0.15s",
       }}>
         <textarea value={input} onChange={e => setInput(e.target.value)}
-          onKeyDown={onKey} rows={1} disabled={sending}
+          onKeyDown={onKey} rows={1} disabled={sending} autoFocus
           placeholder="Escribí el enunciado o arrastrá el plano acá..."
           style={{
             flex: 1, background: "transparent", border: "none", outline: "none",
