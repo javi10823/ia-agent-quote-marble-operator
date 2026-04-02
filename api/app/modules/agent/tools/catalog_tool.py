@@ -100,6 +100,34 @@ def catalog_lookup(catalog: str, sku: str) -> dict:
     }
 
 
+def check_architect(client_name: str) -> dict:
+    """Check if a client is a registered architect with discount."""
+    items = _load_catalog("architects")
+    name_lower = client_name.lower().strip()
+
+    # Exact match
+    for item in items:
+        item_name = (item.get("name") or "").lower()
+        item_firm = (item.get("firm") or "").lower()
+        if name_lower == item_name or name_lower == item_firm:
+            return {"found": True, "exact": True, "name": item["name"], "firm": item.get("firm"), "discount": item.get("discount", True)}
+
+    # Partial / fuzzy match — check if client name appears in architect name or vice versa
+    partial = []
+    for item in items:
+        item_name = (item.get("name") or "").lower()
+        item_firm = (item.get("firm") or "").lower()
+        # Check bidirectional containment (handles "Nadia" matching "ARQ. NADIA")
+        if (name_lower in item_name or item_name in name_lower or
+            (item_firm and (name_lower in item_firm or item_firm in name_lower))):
+            partial.append({"name": item["name"], "firm": item.get("firm")})
+
+    if partial:
+        return {"found": True, "exact": False, "matches": partial, "message": f"Posible arquitecta: {', '.join(p['name'] for p in partial)}. Confirmar con operador."}
+
+    return {"found": False, "message": f"'{client_name}' no está en architects.json"}
+
+
 def check_stock(material_sku: str) -> dict:
     """Check available stock pieces for a material."""
     items = _load_catalog("stock")

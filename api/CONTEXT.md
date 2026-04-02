@@ -385,6 +385,14 @@ Ejemplo isla 1.70×0.64×0.95:
 - **"DESAGUE" sin modelo** en plano → pileta de apoyo (AGUJEROAPOYO) (ref: quote-014)
 - **Flete compartido:** si hay varios presupuestos para misma obra, flete en uno solo — preguntar al operador (ref: quote-029)
 
+### ⛔ Auto-detección de descuento arquitecta — OBLIGATORIO
+- **SIEMPRE** llamar `check_architect(client_name)` apenas conozcas el nombre del cliente, ANTES de calcular.
+- **Match exacto** → aplicar descuento automáticamente: 5% importado / 8% nacional. Informar: "📋 Cliente registrada como arquitecta — aplicando X% descuento sobre material."
+- **Match parcial** → sugerir al operador: "El nombre es similar a [NOMBRE] en architects.json. ¿Aplico descuento de arquitecta?"
+- **Sin match** → no aplicar descuento por este concepto.
+- **Pasar `discount_pct` a `calculate_quote`** según el resultado: 5 para USD, 8 para ARS.
+- **NUNCA olvidar este paso.** Un error de descuento es el más costoso en confianza del cliente.
+
 ### Mesada >3m
 Agregar `(SE REALIZA EN 2 TRAMOS)` en la descripción
 

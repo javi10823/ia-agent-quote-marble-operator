@@ -10,7 +10,7 @@ from sqlalchemy import update, select
 
 from app.core.config import settings
 from app.models.quote import Quote, QuoteStatus
-from app.modules.agent.tools.catalog_tool import catalog_lookup, check_stock
+from app.modules.agent.tools.catalog_tool import catalog_lookup, check_stock, check_architect
 from app.modules.agent.tools.plan_tool import read_plan
 from app.modules.agent.tools.document_tool import generate_documents
 from app.modules.agent.tools.drive_tool import upload_to_drive
@@ -280,6 +280,17 @@ TOOLS = [
                 "material_sku": {"type": "string", "description": "SKU del material a verificar"},
             },
             "required": ["material_sku"],
+        },
+    },
+    {
+        "name": "check_architect",
+        "description": "Verifica si un cliente es arquitecta registrada con descuento. SIEMPRE llamar cuando se conoce el nombre del cliente, ANTES de calcular. Retorna si hay match exacto, parcial, o ninguno.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client_name": {"type": "string", "description": "Nombre del cliente a verificar"},
+            },
+            "required": ["client_name"],
         },
     },
     {
@@ -687,6 +698,8 @@ class AgentService:
             return catalog_lookup(inputs["catalog"], inputs["sku"])
         elif name == "check_stock":
             return check_stock(inputs["material_sku"])
+        elif name == "check_architect":
+            return check_architect(inputs["client_name"])
         elif name == "read_plan":
             return await read_plan(inputs["filename"], inputs.get("crop_instructions", []))
         elif name == "generate_documents":
