@@ -6,9 +6,11 @@ from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.static import mount_static_files
+from app.core.auth import auth_middleware
 from app.modules.agent.router import router as agent_router
 from app.modules.catalog.router import router as catalog_router
 from app.modules.quote_engine.router import router as quote_engine_router
+from app.modules.auth.router import router as auth_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -36,6 +38,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.middleware("http")(auth_middleware)
+
+app.include_router(auth_router, prefix="/api")
 app.include_router(agent_router, prefix="/api")
 app.include_router(catalog_router, prefix="/api")
 app.include_router(quote_engine_router, prefix="/api")
