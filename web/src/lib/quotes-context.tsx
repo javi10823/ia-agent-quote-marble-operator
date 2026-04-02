@@ -47,13 +47,8 @@ export function QuotesProvider({ children }: { children: ReactNode }) {
   const addQuote = useCallback(async () => {
     try {
       const { id } = await apiCreateQuote();
-      setQuotes(prev => [{
-        id, client_name: "", project: "", material: null,
-        total_ars: null, total_usd: null, status: "draft" as const,
-        pdf_url: null, excel_url: null, drive_url: null,
-        parent_quote_id: null, source: "operator", is_read: true,
-        created_at: new Date().toISOString(),
-      }, ...prev]);
+      // Don't add empty draft to list — backend hides drafts without client_name.
+      // The quote will appear in the list after the operator sets client+material via chat.
       return id;
     } catch (err: any) {
       toast(err.message || "Error al crear presupuesto");
