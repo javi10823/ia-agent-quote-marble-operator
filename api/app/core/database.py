@@ -21,7 +21,7 @@ class Base(DeclarativeBase):
 
 async def init_db():
     async with engine.begin() as conn:
-        from app.models import quote  # noqa - ensures models are registered
+        from app.models import quote, user  # noqa - ensures models are registered
         await conn.run_sync(Base.metadata.create_all)
 
         # Migrate: expand varchar columns + add parent_quote_id
