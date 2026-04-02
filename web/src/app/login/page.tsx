@@ -6,7 +6,7 @@ import { login } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
@@ -18,7 +18,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await login(email, password);
+      await login(username, password);
       router.push("/");
     } catch (err: any) {
       setError(err.message || "Error al iniciar sesión");
@@ -83,16 +83,16 @@ export default function LoginPage() {
         {/* Form */}
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 18 }}>
-            <label htmlFor="email" style={{ display: "block", fontSize: 12, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>
-              Email
+            <label htmlFor="username" style={{ display: "block", fontSize: 12, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>
+              Usuario
             </label>
             <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="operador@dangelo.com"
-              autoComplete="email"
+              id="username"
+              type="text"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              placeholder="marmoleria"
+              autoComplete="username"
               required
               style={{
                 width: "100%", padding: "11px 14px",

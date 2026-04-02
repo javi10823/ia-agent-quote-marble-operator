@@ -1,18 +1,20 @@
 """
 Authentication module — JWT with httpOnly cookies.
 
-Single-user auth for operator access. Credentials stored in env vars.
-Extensible to multi-user with DB table later.
+Users stored in DB (table 'users'). Passwords hashed with HMAC-SHA256.
 """
 
 import hashlib
 import hmac
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import Request, Response, HTTPException
 from jose import jwt, JWTError
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 
@@ -28,6 +30,7 @@ COOKIE_NAME = "auth_token"
 PUBLIC_ROUTES = {
     "/health",
     "/api/auth/login",
+    "/api/auth/create-user",  # Protected internally (checks if users exist)
     "/api/v1/quote",  # Web API — uses its own API key
 }
 
@@ -99,24 +102,33 @@ def clear_auth_cookie(response: Response):
 
 # ── User Validation ─────────────────────────────────────────────────────────
 
-def validate_credentials(email: str, password: str) -> bool:
-    """
-    Validate operator credentials.
-    For MVP: single user from env vars (OPERATOR_EMAIL, OPERATOR_PASSWORD_HASH).
-    Future: query users table in DB.
-    """
-    expected_email = getattr(settings, "OPERATOR_EMAIL", None)
-    expected_hash = getattr(settings, "OPERATOR_PASSWORD_HASH", None)
+async def validate_credentials(username: str, password: str, db: AsyncSession) -> bool:
+    """Validate credentials against users table in DB."""
+    from app.models.user import User
 
-    if not expected_email or not expected_hash:
-        # Fallback: accept any login if env vars not set (dev mode)
-        logger.warning("OPERATOR_EMAIL/OPERATOR_PASSWORD_HASH not set — auth disabled")
-        return True
-
-    if email.lower().strip() != expected_email.lower().strip():
+    result = await db.execute(
+        select(User).where(User.username == username.strip())
+    )
+    user = result.scalar_one_or_none()
+    if not user:
         return False
 
-    return verify_password(password, expected_hash)
+    return verify_password(password, user.password_hash)
+
+
+async def create_user(username: str, password: str, db: AsyncSession) -> str:
+    """Create a new user in the DB. Returns user ID."""
+    from app.models.user import User
+
+    user = User(
+        id=str(uuid.uuid4()),
+        username=username.strip(),
+        password_hash=hash_password(password),
+    )
+    db.add(user)
+    await db.commit()
+    logger.info(f"Created user: {username}")
+    return user.id
 
 
 # ── Middleware ───────────────────────────────────────────────────────────────
