@@ -16,11 +16,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Create output directory
-RUN mkdir -p output
-
 # Non-root user
-RUN useradd -r -s /bin/false appuser && chown -R appuser:appuser /app
+RUN useradd -r -s /bin/false appuser \
+    && mkdir -p /app/output /tmp/plans \
+    && chown -R appuser:appuser /app /tmp/plans
 USER appuser
 
 EXPOSE 8000

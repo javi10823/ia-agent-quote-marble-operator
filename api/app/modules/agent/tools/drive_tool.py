@@ -15,8 +15,7 @@ from google.oauth2 import service_account
 
 from app.core.config import settings
 
-BASE_DIR = Path(__file__).parent.parent.parent.parent.parent
-OUTPUT_DIR = BASE_DIR / "output"
+from app.core.static import OUTPUT_DIR
 
 SCOPES = [
     "https://www.googleapis.com/auth/drive",

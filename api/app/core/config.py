@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     OPERATOR_EMAIL: str = ""
     OPERATOR_PASSWORD_HASH: str = ""
+    OUTPUT_DIR: str = ""
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

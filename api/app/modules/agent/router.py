@@ -217,8 +217,8 @@ async def delete_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
 
     # Delete local files
     import shutil
-    from pathlib import Path
-    output_dir = Path(__file__).parent.parent.parent.parent / "output" / quote_id
+    from app.core.static import OUTPUT_DIR
+    output_dir = OUTPUT_DIR / quote_id
     if output_dir.exists():
         shutil.rmtree(output_dir, ignore_errors=True)
 
@@ -296,7 +296,8 @@ async def chat(
         save_plan_to_temp(safe_filename, file_bytes)
 
         # Persist source file for download
-        sources_dir = Path(__file__).parent.parent.parent.parent / "output" / quote_id / "sources"
+        from app.core.static import OUTPUT_DIR as _OUT
+        sources_dir = _OUT / quote_id / "sources"
         sources_dir.mkdir(parents=True, exist_ok=True)
         (sources_dir / safe_filename).write_bytes(file_bytes)
 

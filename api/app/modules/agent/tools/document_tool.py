@@ -6,8 +6,8 @@ import asyncio
 
 BASE_DIR = Path(__file__).parent.parent.parent.parent.parent
 TEMPLATES_DIR = BASE_DIR / "templates"
-OUTPUT_DIR = BASE_DIR / "output"
-OUTPUT_DIR.mkdir(exist_ok=True)
+
+from app.core.static import OUTPUT_DIR
 
 
 DELIVERY_SUFFIX = "días desde la toma de medidas"
