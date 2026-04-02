@@ -1,10 +1,12 @@
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
+from pydantic import ConfigDict, field_validator
 from typing import List
 import json
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(env_file=".env")
+
     DATABASE_URL: str
     ANTHROPIC_API_KEY: str
     ANTHROPIC_MODEL: str = "claude-sonnet-4-5-20250514"
@@ -25,9 +27,6 @@ class Settings(BaseSettings):
                 return json.loads(v)
             return [origin.strip() for origin in v.split(",")]
         return v
-
-    class Config:
-        env_file = ".env"
 
 
 settings = Settings()
