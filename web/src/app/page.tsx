@@ -5,15 +5,16 @@ import { useRouter } from "next/navigation";
 import { fetchQuotes, updateQuoteStatus, deleteQuote, type Quote } from "@/lib/api";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import clsx from "clsx";
 
 const STATUS_LABEL: Record<Quote["status"], string> = {
   draft: "Borrador", validated: "Validado", sent: "Enviado",
 };
 
-const BADGE_STYLE: Record<Quote["status"], React.CSSProperties> = {
-  draft:     { background: "var(--amb2)", color: "var(--amb)" },
-  validated: { background: "var(--grn2)", color: "var(--grn)" },
-  sent:      { background: "var(--acc2)", color: "var(--acc)" },
+const BADGE_CLASS: Record<Quote["status"], string> = {
+  draft:     "bg-amb-bg text-amb",
+  validated: "bg-grn-bg text-grn",
+  sent:      "bg-acc-bg text-acc",
 };
 
 const STATUS_NEXT: Record<Quote["status"], Quote["status"] | null> = {
@@ -34,29 +35,24 @@ export default function DashboardPage() {
     fetchQuotes().then(setQuotes).finally(() => setLoading(false));
   }, []);
 
-  // Drafts older than 5 days
   const staleDrafts = quotes.filter(q => {
     if (q.status !== "draft") return false;
-    const days = (Date.now() - new Date(q.created_at).getTime()) / 86400000;
-    return days > 5;
+    return (Date.now() - new Date(q.created_at).getTime()) / 86400000 > 5;
   });
 
-  // Filter by status/source + search
   const filteredQuotes = quotes.filter(q => {
     if (statusFilter === "web" && q.source !== "web") return false;
     else if (statusFilter !== "todos" && statusFilter !== "web" && q.status !== statusFilter) return false;
     if (search) {
       const s = search.toLowerCase();
-      return (
-        (q.client_name || "").toLowerCase().includes(s) ||
-        (q.material || "").toLowerCase().includes(s) ||
-        (q.project || "").toLowerCase().includes(s)
-      );
+      return (q.client_name || "").toLowerCase().includes(s) ||
+             (q.material || "").toLowerCase().includes(s) ||
+             (q.project || "").toLowerCase().includes(s);
     }
     return true;
   });
 
-  const statusCounts = {
+  const statusCounts: Record<string, number> = {
     todos: quotes.length,
     draft: quotes.filter(q => q.status === "draft").length,
     validated: quotes.filter(q => q.status === "validated").length,
@@ -67,7 +63,7 @@ export default function DashboardPage() {
   async function toggleStatus(e: React.MouseEvent, id: string, current: Quote["status"]) {
     e.stopPropagation();
     const next = STATUS_NEXT[current];
-    if (!next) return; // "sent" is final — no more transitions
+    if (!next) return;
     await updateQuoteStatus(id, next);
     setQuotes(prev => prev.map(q => q.id === id ? { ...q, status: next } : q));
   }
@@ -92,57 +88,39 @@ export default function DashboardPage() {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div className="flex flex-col h-full">
       {/* Header */}
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "20px 28px 18px",
-        borderBottom: "1px solid var(--b1)", flexShrink: 0,
-      }}>
+      <div className="flex items-center justify-between px-7 pt-5 pb-[18px] border-b border-b1 shrink-0">
         <div>
-          <div style={{ fontSize: 18, fontWeight: 500, letterSpacing: "-0.03em" }}>Presupuestos</div>
-          <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>
+          <div className="text-lg font-medium -tracking-[0.03em]">Presupuestos</div>
+          <div className="text-[11px] text-t3 mt-0.5">
             {new Date().toLocaleDateString("es-AR", { month: "long", year: "numeric" })} · {quotes.length} registros
           </div>
         </div>
-        <button style={btnStyle} onClick={() => {}}>Exportar CSV</button>
+        <button className="px-3 py-[7px] rounded-md text-xs font-medium font-sans cursor-pointer border border-b1 bg-transparent text-t2 -tracking-[0.01em] hover:border-b2 hover:text-t1 transition">
+          Exportar CSV
+        </button>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }}>
-
-        {/* Needs action banner */}
+      <div className="flex-1 overflow-y-auto px-7 py-6">
+        {/* Stale drafts banner */}
         {staleDrafts.length > 0 && (
-          <div style={{
-            display: "flex", alignItems: "center", gap: 10,
-            background: "rgba(245,166,35,.06)",
-            border: "1px solid rgba(245,166,35,.16)",
-            borderRadius: 8, padding: "10px 14px",
-            marginBottom: 20, fontSize: 12, color: "var(--amb)",
-          }}>
-            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--amb)", flexShrink: 0 }} />
+          <div className="flex items-center gap-2.5 bg-amb/[0.06] border border-amb/[0.16] rounded-lg px-3.5 py-2.5 mb-5 text-xs text-amb">
+            <div className="w-1.5 h-1.5 rounded-full bg-amb shrink-0" />
             <span>
-              <strong style={{ color: "var(--amb)" }}>{staleDrafts.length} {staleDrafts.length === 1 ? "presupuesto en borrador lleva" : "presupuestos en borrador llevan"} más de 5 días sin acción</strong>
+              <strong>{staleDrafts.length} {staleDrafts.length === 1 ? "presupuesto en borrador lleva" : "presupuestos en borrador llevan"} más de 5 días sin acción</strong>
               {" — "}{staleDrafts.map(q => q.client_name || "Sin nombre").join(" y ")}
             </span>
           </div>
         )}
 
-        {/* KPIs removed — info is now in the filter chips */}
-
-        {/* Filter bar + Table */}
         {loading ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200, color: "var(--t3)", fontSize: 13 }}>
-            Cargando...
-          </div>
+          <div className="flex items-center justify-center h-[200px] text-t3 text-[13px]">Cargando...</div>
         ) : (
-          <div style={{ background: "var(--s1)", border: "1px solid var(--b1)", borderRadius: 10, overflow: "hidden" }}>
+          <div className="bg-s1 border border-b1 rounded-[10px] overflow-hidden">
             {/* Filter bar */}
-            <div style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "10px 16px", background: "var(--s2)",
-              borderBottom: "1px solid var(--b1)",
-            }}>
-              <div style={{ display: "flex", gap: 6 }}>
+            <div className="flex items-center justify-between px-4 py-2.5 bg-s2 border-b border-b1">
+              <div className="flex gap-1.5">
                 {([
                   { key: "todos", label: "Todos" },
                   { key: "draft", label: "Borrador" },
@@ -150,59 +128,55 @@ export default function DashboardPage() {
                   { key: "sent", label: "Enviado" },
                   { key: "web", label: "Web" },
                 ] as const).map(f => (
-                  <button key={f.key} onClick={() => setStatusFilter(f.key)} style={{
-                    padding: "5px 12px", borderRadius: 6, fontSize: 12, fontWeight: 500,
-                    border: statusFilter === f.key ? "1px solid var(--acc3)" : "1px solid var(--b1)",
-                    background: statusFilter === f.key ? "var(--acc2)" : "transparent",
-                    color: statusFilter === f.key ? "var(--acc)" : "var(--t3)",
-                    cursor: "pointer", fontFamily: "inherit",
-                    display: "flex", alignItems: "center", gap: 6,
-                  }}>
+                  <button
+                    key={f.key}
+                    onClick={() => setStatusFilter(f.key)}
+                    className={clsx(
+                      "flex items-center gap-1.5 px-3 py-[5px] rounded-md text-xs font-medium font-sans cursor-pointer border transition",
+                      statusFilter === f.key
+                        ? "border-acc-hover bg-acc-bg text-acc"
+                        : "border-b1 bg-transparent text-t3 hover:text-t2 hover:border-b2",
+                    )}
+                  >
                     {f.label}
-                    <span style={{
-                      fontSize: 10, padding: "1px 6px", borderRadius: 99,
-                      background: statusFilter === f.key ? "rgba(79,143,255,.2)" : "rgba(255,255,255,.06)",
-                    }}>{statusCounts[f.key]}</span>
+                    <span className={clsx(
+                      "text-[10px] px-1.5 py-px rounded-full",
+                      statusFilter === f.key ? "bg-acc/20" : "bg-white/[0.06]",
+                    )}>
+                      {statusCounts[f.key]}
+                    </span>
                   </button>
                 ))}
               </div>
-              <div style={{
-                display: "flex", alignItems: "center", gap: 8,
-                padding: "6px 12px", borderRadius: 8,
-                border: "1px solid var(--b1)", background: "var(--s3)", width: 240,
-              }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: "var(--t3)", flexShrink: 0 }}>
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-b1 bg-s3 w-60">
+                <svg className="text-t3 shrink-0" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
                 <input
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Buscar cliente, material..."
-                  style={{
-                    background: "transparent", border: "none", outline: "none",
-                    color: "var(--t1)", fontSize: 12, fontFamily: "inherit", width: "100%",
-                  }}
+                  className="bg-transparent border-none outline-none text-t1 text-xs font-sans w-full placeholder:text-t4"
                 />
                 {search && (
-                  <button onClick={() => setSearch("")} style={{
-                    background: "none", border: "none", color: "var(--t3)",
-                    cursor: "pointer", fontSize: 11, padding: 0,
-                  }}>✕</button>
+                  <button onClick={() => setSearch("")} className="bg-transparent border-none text-t3 cursor-pointer text-[11px] p-0 hover:text-t2">
+                    ✕
+                  </button>
                 )}
               </div>
             </div>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead style={{ background: "var(--s2)", borderBottom: "1px solid var(--b1)" }}>
+
+            {/* Table */}
+            <table className="w-full border-collapse">
+              <thead className="bg-s2 border-b border-b1">
                 <tr>
-                  {["Cliente", "Material", "Importe", "Estado", "Fecha", "Archivos", ""].map((h, i) => (
-                    <th key={h} style={{
-                      textAlign: h === "Estado" ? "center" : i >= 2 ? "right" : "left",
-                      padding: "10px 18px",
-                      fontSize: 10, fontWeight: 500, color: "var(--t3)",
-                      textTransform: "uppercase", letterSpacing: "0.09em",
-                      ...(h === "Cliente" && { width: "28%" }),
-                    }}>{h}</th>
-                  ))}
+                  <th className="text-left px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em] w-[28%]">Cliente</th>
+                  <th className="text-left px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Material</th>
+                  <th className="text-right px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Importe</th>
+                  <th className="text-center px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Estado</th>
+                  <th className="text-right px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Fecha</th>
+                  <th className="text-right px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Archivos</th>
+                  <th className="px-[18px] py-2.5 w-10"></th>
                 </tr>
               </thead>
               <tbody>
@@ -210,104 +184,85 @@ export default function DashboardPage() {
                   const daysOld = (Date.now() - new Date(q.created_at).getTime()) / 86400000;
                   const isStale = q.status === "draft" && daysOld > 5;
                   const isUnread = !q.is_read;
+                  const isSelected = selectedId === q.id;
                   return (
-                    <tr key={q.id}
+                    <tr
+                      key={q.id}
                       onClick={() => { setSelectedId(q.id); router.push(`/quote/${q.parent_quote_id || q.id}`); }}
-                      style={{
-                        borderBottom: "1px solid rgba(255,255,255,.045)",
-                        cursor: "pointer",
-                        background: selectedId === q.id
-                          ? "rgba(79,143,255,.07)"
-                          : isUnread ? "rgba(79,143,255,.04)" : undefined,
-                        borderLeft: selectedId === q.id ? "2px solid var(--acc)" : "2px solid transparent",
-                        transition: "background .08s",
-                      }}
-                      onMouseEnter={e => { if (selectedId !== q.id) (e.currentTarget as HTMLTableRowElement).style.background = isUnread ? "rgba(79,143,255,.07)" : "rgba(255,255,255,.035)"; }}
-                      onMouseLeave={e => { if (selectedId !== q.id) (e.currentTarget as HTMLTableRowElement).style.background = isUnread ? "rgba(79,143,255,.04)" : ""; }}
+                      className={clsx(
+                        "border-b border-white/[0.045] cursor-pointer transition-[background] duration-75",
+                        isSelected
+                          ? "bg-acc/[0.07] border-l-2 border-l-acc"
+                          : isUnread
+                            ? "bg-acc/[0.04] border-l-2 border-l-transparent hover:bg-acc/[0.07]"
+                            : "border-l-2 border-l-transparent hover:bg-white/[0.035]",
+                      )}
                     >
-                      <td style={{ padding: "13px 18px", paddingLeft: 18 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
-                          {isUnread && (
-                            <span style={{
-                              width: 7, height: 7, borderRadius: "50%",
-                              background: "var(--acc)", flexShrink: 0,
-                              marginRight: 8,
-                            }} />
-                          )}
+                      {/* Cliente */}
+                      <td className="px-[18px] py-[13px]">
+                        <div className="flex items-center">
+                          {isUnread && <span className="w-[7px] h-[7px] rounded-full bg-acc shrink-0 mr-2" />}
                           <div>
-                            <div style={{ fontSize: 13, fontWeight: isUnread ? 600 : 500, color: "var(--t1)", letterSpacing: "-0.01em" }}>
-                              {q.client_name || <span style={{ color: "var(--t3)", fontStyle: "italic" }}>Sin nombre</span>}
+                            <div className={clsx("text-[13px] text-t1 -tracking-[0.01em]", isUnread ? "font-semibold" : "font-medium")}>
+                              {q.client_name || <span className="text-t3 italic">Sin nombre</span>}
                               {q.source === "web" && (
-                                <span style={{
-                                  marginLeft: 6, fontSize: 9, fontWeight: 600,
-                                  padding: "1px 5px", borderRadius: 4,
-                                  background: "rgba(138,43,226,.15)", color: "#a855f7",
-                                  letterSpacing: "0.03em",
-                                }}>WEB</span>
+                                <span className="ml-1.5 text-[9px] font-semibold px-[5px] py-px rounded bg-purple-500/15 text-purple-400 tracking-wide">WEB</span>
                               )}
                               {isUnread && (
-                                <span style={{
-                                  marginLeft: 6, fontSize: 9, fontWeight: 600,
-                                  padding: "1px 6px", borderRadius: 4,
-                                  background: "var(--acc2)", color: "var(--acc)",
-                                  letterSpacing: "0.03em",
-                                }}>NUEVO</span>
+                                <span className="ml-1.5 text-[9px] font-semibold px-1.5 py-px rounded bg-acc-bg text-acc tracking-wide">NUEVO</span>
                               )}
                             </div>
-                            <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 1 }}>{q.project}</div>
+                            <div className="text-[11px] text-t3 mt-px">{q.project}</div>
                           </div>
                         </div>
                       </td>
-                      <td style={{ padding: "13px 18px", fontSize: 12, color: isUnread ? "var(--t1)" : "var(--t2)", fontWeight: isUnread ? 500 : 400 }}>{q.material || "—"}</td>
-                      <td style={{ padding: "13px 18px", textAlign: "right" }}>
-                        <div style={{ fontSize: 13, color: "var(--t1)", fontFamily: "'Geist Mono',monospace", letterSpacing: "-0.02em" }}>
-                          {q.total_ars ? `$${q.total_ars.toLocaleString("es-AR")}` : "—"}
-                        </div>
-                        {q.total_usd && (
-                          <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 1 }}>USD {q.total_usd.toLocaleString()}</div>
-                        )}
+                      {/* Material */}
+                      <td className={clsx("px-[18px] py-[13px] text-xs", isUnread ? "text-t1 font-medium" : "text-t2")}>
+                        {q.material || "\u2014"}
                       </td>
-                      <td style={{ padding: "13px 18px", textAlign: "center" }}>
+                      {/* Importe */}
+                      <td className="px-[18px] py-[13px] text-right">
+                        <div className="text-[13px] text-t1 font-mono -tracking-[0.02em]">
+                          {q.total_ars ? `$${q.total_ars.toLocaleString("es-AR")}` : "\u2014"}
+                        </div>
+                        {q.total_usd ? (
+                          <div className="text-[11px] text-t3 mt-px">USD {q.total_usd.toLocaleString()}</div>
+                        ) : null}
+                      </td>
+                      {/* Estado */}
+                      <td className="px-[18px] py-[13px] text-center">
                         <button
                           onClick={(e) => toggleStatus(e, q.id, q.status)}
                           title={STATUS_NEXT[q.status] ? `Cambiar a ${STATUS_LABEL[STATUS_NEXT[q.status]!]}` : "Estado final"}
-                          style={{
-                          display: "inline-flex", alignItems: "center", gap: 5,
-                          padding: "3px 9px", borderRadius: 999,
-                          fontSize: 11, fontWeight: 500,
-                          cursor: STATUS_NEXT[q.status] ? "pointer" : "default",
-                          border: "none", fontFamily: "inherit",
-                          ...BADGE_STYLE[q.status],
-                        }}>
-                          <span style={{ width: 5, height: 5, borderRadius: "50%", background: "currentColor", display: "inline-block" }} />
+                          className={clsx(
+                            "inline-flex items-center gap-[5px] px-2 py-[3px] rounded-full text-[11px] font-medium border-none font-sans",
+                            STATUS_NEXT[q.status] ? "cursor-pointer" : "cursor-default",
+                            BADGE_CLASS[q.status],
+                          )}
+                        >
+                          <span className="w-[5px] h-[5px] rounded-full bg-current" />
                           {STATUS_LABEL[q.status]}
                         </button>
                       </td>
-                      <td style={{ padding: "13px 18px", fontSize: 11, textAlign: "right", color: isStale ? "var(--amb)" : "var(--t3)" }}>
+                      {/* Fecha */}
+                      <td className={clsx("px-[18px] py-[13px] text-[11px] text-right", isStale ? "text-amb" : "text-t3")}>
                         {format(new Date(q.created_at), "d MMM", { locale: es })}
                         {isStale && ` ·${Math.floor(daysOld)}d`}
                       </td>
-                      <td style={{ padding: "13px 18px" }}>
-                        <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
+                      {/* Archivos */}
+                      <td className="px-[18px] py-[13px]">
+                        <div className="flex gap-1 justify-end" onClick={e => e.stopPropagation()}>
                           {q.pdf_url && <FileBtn href={q.pdf_url} emoji="📄" />}
                           {q.excel_url && <FileBtn href={q.excel_url} emoji="📊" />}
                           {q.drive_url && <FileBtn href={q.drive_url} emoji="☁" />}
                         </div>
                       </td>
-                      <td style={{ padding: "13px 10px", width: 40 }}>
+                      {/* Delete */}
+                      <td className="px-2.5 py-[13px] w-10">
                         <button
                           onClick={(e) => askDelete(e, q.id, q.client_name)}
                           title="Eliminar presupuesto"
-                          style={{
-                            width: 28, height: 28, borderRadius: 6,
-                            border: "1px solid var(--b1)",
-                            background: "transparent",
-                            color: "var(--t3)",
-                            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: 12, transition: "all .15s",
-                          }}
-                          onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,69,58,.5)"; e.currentTarget.style.color = "#ff453a"; }}
-                          onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.color = "var(--t3)"; }}
+                          className="w-7 h-7 rounded-md border border-b1 bg-transparent text-t3 cursor-pointer flex items-center justify-center text-xs transition-all hover:border-err/50 hover:text-err"
                         >
                           ✕
                         </button>
@@ -321,52 +276,34 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Delete confirmation modal */}
+      {/* Delete modal */}
       {deleteTarget && (
         <div
           onClick={() => setDeleteTarget(null)}
-          style={{
-            position: "fixed", inset: 0, zIndex: 999,
-            background: "rgba(0,0,0,.6)", backdropFilter: "blur(4px)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}
+          className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-[4px] flex items-center justify-center"
         >
           <div
             onClick={e => e.stopPropagation()}
-            style={{
-              background: "var(--s2)", border: "1px solid var(--b2)",
-              borderRadius: 14, padding: "28px 32px", width: 380,
-              boxShadow: "0 20px 60px rgba(0,0,0,.5)",
-            }}
+            className="bg-s2 border border-b2 rounded-[14px] px-8 py-7 w-[380px] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
           >
-            <div style={{ fontSize: 15, fontWeight: 500, color: "var(--t1)", marginBottom: 8 }}>
-              Eliminar presupuesto
+            <div className="text-[15px] font-medium text-t1 mb-2">Eliminar presupuesto</div>
+            <div className="text-[13px] text-t2 leading-relaxed mb-6">
+              ¿Eliminar el presupuesto de <strong className="text-t1">{deleteTarget.name}</strong>? Esta acción no se puede deshacer.
             </div>
-            <div style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.6, marginBottom: 24 }}>
-              ¿Eliminar el presupuesto de <strong style={{ color: "var(--t1)" }}>{deleteTarget.name}</strong>? Esta acción no se puede deshacer.
-            </div>
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <div className="flex gap-2.5 justify-end">
               <button
                 onClick={() => setDeleteTarget(null)}
-                style={{
-                  padding: "8px 18px", borderRadius: 8,
-                  fontSize: 13, fontWeight: 500, fontFamily: "inherit",
-                  cursor: "pointer", border: "1px solid var(--b2)",
-                  background: "transparent", color: "var(--t2)",
-                }}
+                className="px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans cursor-pointer border border-b2 bg-transparent text-t2 hover:text-t1 hover:border-b3 transition"
               >
                 Cancelar
               </button>
               <button
                 onClick={confirmDelete}
                 disabled={deleting}
-                style={{
-                  padding: "8px 18px", borderRadius: 8,
-                  fontSize: 13, fontWeight: 500, fontFamily: "inherit",
-                  cursor: deleting ? "wait" : "pointer", border: "none",
-                  background: "var(--red)", color: "#fff",
-                  opacity: deleting ? 0.6 : 1,
-                }}
+                className={clsx(
+                  "px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans border-none text-white transition",
+                  deleting ? "bg-err/60 cursor-wait" : "bg-err cursor-pointer hover:bg-red-500",
+                )}
               >
                 {deleting ? "Eliminando..." : "Eliminar"}
               </button>
@@ -380,29 +317,13 @@ export default function DashboardPage() {
 
 function FileBtn({ href, emoji }: { href: string; emoji: string }) {
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer"
-      style={{
-        width: 26, height: 26, borderRadius: 5,
-        border: "1px solid var(--b1)", background: "transparent",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 11, cursor: "pointer", textDecoration: "none", color: "var(--t2)",
-        transition: "all .1s",
-      }}
-      onMouseEnter={e => {
-        (e.currentTarget as HTMLAnchorElement).style.borderColor = "var(--b2)";
-        (e.currentTarget as HTMLAnchorElement).style.background = "rgba(255,255,255,.06)";
-      }}
-      onMouseLeave={e => {
-        (e.currentTarget as HTMLAnchorElement).style.borderColor = "var(--b1)";
-        (e.currentTarget as HTMLAnchorElement).style.background = "transparent";
-      }}
-    >{emoji}</a>
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="w-[26px] h-[26px] rounded-[5px] border border-b1 bg-transparent flex items-center justify-center text-[11px] cursor-pointer no-underline text-t2 transition-all hover:border-b2 hover:bg-white/[0.06]"
+    >
+      {emoji}
+    </a>
   );
 }
-
-const btnStyle: React.CSSProperties = {
-  padding: "7px 13px", borderRadius: 6,
-  fontSize: 12, fontWeight: 500, fontFamily: "inherit",
-  cursor: "pointer", border: "1px solid var(--b1)",
-  background: "transparent", color: "var(--t2)", letterSpacing: "-0.01em",
-};
