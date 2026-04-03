@@ -55,6 +55,30 @@ async def list_quotes(
     return result.scalars().all()
 
 
+# ── CHECK FOR CHANGES (lightweight polling) ─────────────────────────────────
+
+@router.get("/quotes/check")
+async def check_quotes(db: AsyncSession = Depends(get_db)):
+    """Lightweight check: returns count + last update timestamp for smart polling."""
+    from sqlalchemy import func, or_, and_
+    result = await db.execute(
+        select(
+            func.count(Quote.id),
+            func.max(Quote.updated_at),
+        ).where(
+            or_(
+                Quote.status != "draft",
+                and_(Quote.status == "draft", Quote.client_name != "", Quote.client_name.isnot(None)),
+            )
+        )
+    )
+    row = result.one()
+    return {
+        "count": row[0],
+        "last_updated_at": row[1].isoformat() if row[1] else None,
+    }
+
+
 # ── GET QUOTE DETAIL ─────────────────────────────────────────────────────────
 
 @router.get("/quotes/{quote_id}", response_model=QuoteDetailResponse)

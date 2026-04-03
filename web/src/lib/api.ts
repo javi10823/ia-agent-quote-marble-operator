@@ -89,6 +89,18 @@ export async function fetchQuotes(): Promise<Quote[]> {
   return res.json();
 }
 
+export interface QuotesCheck {
+  count: number;
+  last_updated_at: string | null;
+}
+
+export async function checkQuotes(): Promise<QuotesCheck> {
+  const res = await fetch(`${API_BASE}/api/quotes/check`, { credentials: "include" });
+  handleAuthError(res);
+  if (!res.ok) throw new Error("Error al verificar presupuestos");
+  return res.json();
+}
+
 export async function fetchQuote(id: string): Promise<QuoteDetail> {
   const res = await fetch(`${API_BASE}/api/quotes/${id}`, { credentials: "include" });
   handleAuthError(res);
