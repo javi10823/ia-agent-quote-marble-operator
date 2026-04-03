@@ -100,6 +100,16 @@ def catalog_lookup(catalog: str, sku: str) -> dict:
     }
 
 
+def catalog_batch_lookup(queries: list[dict]) -> dict:
+    """Look up multiple SKUs across catalogs in a single call. Returns results keyed by index."""
+    results = {}
+    for i, q in enumerate(queries):
+        catalog = q.get("catalog", "")
+        sku = q.get("sku", "")
+        results[str(i)] = catalog_lookup(catalog, sku)
+    return {"results": results, "count": len(results)}
+
+
 def check_architect(client_name: str) -> dict:
     """Check if a client is a registered architect with discount."""
     items = _load_catalog("architects")

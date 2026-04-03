@@ -10,7 +10,7 @@ from sqlalchemy import update, select
 
 from app.core.config import settings
 from app.models.quote import Quote, QuoteStatus
-from app.modules.agent.tools.catalog_tool import catalog_lookup, check_stock, check_architect
+from app.modules.agent.tools.catalog_tool import catalog_lookup, catalog_batch_lookup, check_stock, check_architect
 from app.modules.agent.tools.plan_tool import read_plan
 from app.modules.agent.tools.document_tool import generate_documents
 from app.modules.agent.tools.drive_tool import upload_to_drive
@@ -382,6 +382,28 @@ TOOLS = [
                 },
             },
             "required": ["catalog", "sku"],
+        },
+    },
+    {
+        "name": "catalog_batch_lookup",
+        "description": "Busca MÚLTIPLES SKUs en una sola llamada. PREFERIR esta tool sobre catalog_lookup cuando necesitás buscar 2 o más precios (material, MO, flete, pileta, etc.). Reduce tiempos drásticamente.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "queries": {
+                    "type": "array",
+                    "description": "Lista de búsquedas. Cada una con catalog y sku.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "catalog": {"type": "string", "description": "Nombre del catálogo"},
+                            "sku": {"type": "string", "description": "SKU a buscar"},
+                        },
+                        "required": ["catalog", "sku"],
+                    },
+                },
+            },
+            "required": ["queries"],
         },
     },
     {
@@ -811,6 +833,8 @@ class AgentService:
         logging.info(f"Tool call: {name} | quote: {quote_id}")
         if name == "catalog_lookup":
             return catalog_lookup(inputs["catalog"], inputs["sku"])
+        elif name == "catalog_batch_lookup":
+            return catalog_batch_lookup(inputs["queries"])
         elif name == "check_stock":
             return check_stock(inputs["material_sku"])
         elif name == "check_architect":
