@@ -241,7 +241,8 @@ SIEMPRE respetar este formato — con ## para el título, ### para secciones, ta
 - **Plazo** — si está en el enunciado, usar ese valor. Si no, usar default de config.json.
 - **Pileta / Bacha** — SINÓNIMOS: "bacha" = "pileta" = "sink". Si el enunciado dice "cotizar bacha", "con bacha", "lleva bacha", "bacha incluida" → interpretar como pileta empotrada. Si no aclara marca/modelo → preguntar "¿la trae el cliente o presupuestamos una Johnson?". NUNCA ignorar una mención explícita de bacha/pileta. Inferir tipo por ambiente (cocina/lavadero → empotrada, baño → preguntar)
 - **Zócalo** — si lleva, alto
-- **Frentín/regrueso** — si lleva
+- **Frentín** — si lleva (pieza en el canto frontal, suma m²)
+- **Regrueso** — si lleva (engrosamiento del borde, MO por ml)
 - **Anafe** — si lleva
 
 **Solo preguntar lo que genuinamente NO está en el enunciado.**
@@ -252,7 +253,10 @@ Si el enunciado del operador menciona explícitamente un requerimiento (bacha, p
 **Sinónimos de negocio que DEBEN reconocerse:**
 - bacha = pileta = sink
 - colocación = instalación = puesta en obra
-- frentín = regrueso = canto visto
+- frentín ≠ regrueso (son cosas distintas):
+  - **frentín** = pieza de material pegada en el canto frontal de la mesada para dar volumen visual (suma m² al material + FALDON/CORTE45 en MO). Típico en sinterizados de 12mm.
+  - **regrueso** = engrosamiento del canto de la mesada pegando una tira debajo del borde (SKU REGRUESO en MO por ml, no suma m²). Típico en materiales de 20mm.
+  - NO son sinónimos. Si el operador dice "frentín", no interpretar como "regrueso" ni viceversa.
 - mesada = encimera = tope
 
 **Reglas de extracción — CRÍTICAS:**
