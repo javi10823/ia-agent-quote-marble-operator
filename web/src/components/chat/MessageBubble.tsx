@@ -7,6 +7,11 @@ interface Props { message: UIMessage; actionText?: string; }
 export default memo(function MessageBubble({ message, actionText }: Props) {
   const isV = message.role === "assistant";
 
+  const blocks = useMemo(
+    () => isV ? parseBlocks(message.content, message.isStreaming, actionText) : [],
+    [message.content, message.isStreaming, actionText, isV],
+  );
+
   if (!isV) {
     return (
       <div className="msg-anim flex gap-3 flex-row-reverse items-start">
@@ -22,11 +27,6 @@ export default memo(function MessageBubble({ message, actionText }: Props) {
       </div>
     );
   }
-
-  const blocks = useMemo(
-    () => parseBlocks(message.content, message.isStreaming, actionText),
-    [message.content, message.isStreaming, actionText],
-  );
 
   return (
     <div className="msg-anim flex gap-3 items-start">
