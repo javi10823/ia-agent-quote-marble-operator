@@ -124,9 +124,9 @@ Solo en estos casos regenerar todo. En cualquier otro caso → modo patch.
 
 ```
 1. Recibir enunciado y/o plano del operador
-2. Si hay plano → usar tool read_plan (rasteriza a 300 DPI, crop por mesada)
+2. Si hay plano → ya lo tenés adjunto en el mensaje, leerlo directamente. Solo usar read_plan si necesitás crop de una zona específica.
 3. Leer plano en 4 PASADAS: inventario → paredes/libres → medidas → verificación
-4. Calcular con tools: catalog_lookup, calculate_quote
+4. Calcular con tools: catalog_batch_lookup (para todos los precios de una vez), calculate_quote
 5. Mostrar resumen completo (transparencia total — operador valida en tiempo real)
 6. Esperar confirmación explícita
 7. generate_documents (genera PDF + Excel + sube a Drive automáticamente)

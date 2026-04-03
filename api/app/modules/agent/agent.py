@@ -430,7 +430,7 @@ TOOLS = [
     },
     {
         "name": "read_plan",
-        "description": "Rasteriza un plano (PDF o imagen) a 300 DPI y hace crop individual de cada mesada para lectura precisa. SIEMPRE usar antes de interpretar cualquier plano.",
+        "description": "Rasteriza un plano a 300 DPI con crop por mesada. SOLO usar si necesitás un crop específico de una zona del plano. Si el plano ya fue adjuntado como PDF/imagen en el mensaje del operador, ya lo podés ver directamente SIN llamar esta tool — leerlo del mensaje directamente es más rápido.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -692,7 +692,9 @@ class AgentService:
                         "data": base64.b64encode(plan_bytes).decode(),
                     },
                 })
-        content.append({"type": "text", "text": user_message})
+        # Only add text block if non-empty (Anthropic rejects empty text blocks)
+        if user_message.strip():
+            content.append({"type": "text", "text": user_message})
 
         # Append user message to history
         new_messages = messages + [{"role": "user", "content": content}]
