@@ -594,10 +594,23 @@ def _extract_quote_info(user_message: str) -> dict:
     info = {}
 
     # Try to find client name after "cliente" keyword (case insensitive)
-    match = re.search(r"(?:cliente|clienta)\s+(.+?)(?:\s*,|\s+con\s|\s+en\s|\s+lleva|\s+sin\s|$)", user_message, re.IGNORECASE)
+    # Cut at business keywords that signal the name ended
+    _DELIMITERS = (
+        r"\s*,|\s+con\s|\s+en\s|\s+lleva|\s+sin\s"
+        r"|\s+proyecto\s|\s+presupuesto\s|\s+mesada\s|\s+cocina\s"
+        r"|\s+ba[ñn]o\s|\s+departamento\s|\s+edificio\s|\s+cotizar\s"
+        r"|\s+medidas\s|\s+colocacion\s|\s+colocación\s|\s+z[oó]calo\s"
+        r"|\s+anafe\s|\s+bacha\s|\s+pileta\s|\s+flete\s|\s+demora\s"
+        r"|\s+plazo\s|\s+material\s|\s+isla\s|\s+lavadero\s|\s+vanitory\s"
+        r"|\s+revestimiento\s|\s+frentin\s|\s+frent[ií]n\s|\s+regrueso\s"
+        r"|\s+pulido\s|\s+descuento\s|\s+consultar\s"
+    )
+    match = re.search(
+        rf"(?:cliente|clienta)\s+(.+?)(?:{_DELIMITERS}|$)",
+        user_message, re.IGNORECASE,
+    )
     if match:
         name = match.group(1).strip()
-        # Title case the name
         info["client_name"] = name.title()
 
     # Try to find material name

@@ -174,13 +174,13 @@ export default function QuotePage() {
           <button onClick={() => router.push("/")} className="w-[30px] h-[30px] rounded-md border border-b1 bg-transparent text-t2 cursor-pointer flex items-center justify-center hover:border-b2 hover:text-t1 transition">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
           </button>
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="text-base font-semibold text-t1">{quote?.client_name || "Nuevo presupuesto"}</span>
-              <span className={clsx("inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-[10px] font-semibold", st.cls)}>{CIRCLE} {st.label}</span>
-              {quote?.source === "web" && <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-[10px] font-semibold bg-purple-500/15 text-purple-400">WEB</span>}
+              <span className="text-base font-semibold text-t1 truncate max-w-[500px]">{quote?.client_name || "Nuevo presupuesto"}</span>
+              <span className={clsx("inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-[10px] font-semibold shrink-0", st.cls)}>{CIRCLE} {st.label}</span>
+              {quote?.source === "web" && <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-[10px] font-semibold bg-purple-500/15 text-purple-400 shrink-0">WEB</span>}
             </div>
-            <div className="text-xs text-t3 mt-0.5">
+            <div className="text-xs text-t3 mt-0.5 truncate max-w-[600px]">
               {quote?.project}{quote?.material ? ` ${DOT} ${quote.material}` : ""}
             </div>
           </div>

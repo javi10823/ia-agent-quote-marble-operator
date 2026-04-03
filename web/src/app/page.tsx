@@ -245,11 +245,11 @@ export default function DashboardPage() {
                       )}
                     >
                       {/* Cliente */}
-                      <td className="px-[18px] py-[13px]">
+                      <td className="px-[18px] py-[13px] max-w-[300px]">
                         <div className="flex items-center">
                           {isUnread && <span className="w-[7px] h-[7px] rounded-full bg-acc shrink-0 mr-2" />}
-                          <div>
-                            <div className={clsx("text-[13px] text-t1 -tracking-[0.01em]", isUnread ? "font-semibold" : "font-medium")}>
+                          <div className="min-w-0">
+                            <div className={clsx("text-[13px] text-t1 -tracking-[0.01em] truncate", isUnread ? "font-semibold" : "font-medium")}>
                               {q.client_name || <span className="text-t3 italic">Sin nombre</span>}
                               {q.source === "web" && (
                                 <span className="ml-1.5 text-[9px] font-semibold px-[5px] py-px rounded bg-purple-500/15 text-purple-400 tracking-wide">WEB</span>
@@ -258,12 +258,12 @@ export default function DashboardPage() {
                                 <span className="ml-1.5 text-[9px] font-semibold px-1.5 py-px rounded bg-acc-bg text-acc tracking-wide">NUEVO</span>
                               )}
                             </div>
-                            <div className="text-[11px] text-t3 mt-px">{q.project}</div>
+                            <div className="text-[11px] text-t3 mt-px truncate">{q.project}</div>
                           </div>
                         </div>
                       </td>
                       {/* Material */}
-                      <td className={clsx("px-[18px] py-[13px] text-xs", isUnread ? "text-t1 font-medium" : "text-t2")}>
+                      <td className={clsx("px-[18px] py-[13px] text-xs max-w-[250px] truncate", isUnread ? "text-t1 font-medium" : "text-t2")}>
                         {q.material || "\u2014"}
                       </td>
                       {/* Importe */}
