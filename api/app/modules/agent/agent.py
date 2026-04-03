@@ -692,12 +692,27 @@ class AgentService:
                         "data": base64.b64encode(plan_bytes).decode(),
                     },
                 })
-        # Only add text block if non-empty (Anthropic rejects empty text blocks)
-        if user_message.strip():
-            content.append({"type": "text", "text": user_message})
+        # Always include a text block — Anthropic rejects empty text content blocks
+        text = user_message.strip() if user_message.strip() else "(adjunto plano)"
+        content.append({"type": "text", "text": text})
+
+        # Sanitize history — remove any empty text blocks from prior messages
+        clean_messages = []
+        for msg in messages:
+            mc = msg.get("content", "")
+            if isinstance(mc, list):
+                filtered = [b for b in mc if not (isinstance(b, dict) and b.get("type") == "text" and not (b.get("text") or "").strip())]
+                if filtered:
+                    clean_messages.append({**msg, "content": filtered})
+                else:
+                    clean_messages.append({**msg, "content": [{"type": "text", "text": "."}]})
+            elif isinstance(mc, str) and not mc.strip():
+                clean_messages.append({**msg, "content": "."})
+            else:
+                clean_messages.append(msg)
 
         # Append user message to history
-        new_messages = messages + [{"role": "user", "content": content}]
+        new_messages = clean_messages + [{"role": "user", "content": content}]
 
         # Agentic loop with tool use
         assistant_messages = []
