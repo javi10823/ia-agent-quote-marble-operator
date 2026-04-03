@@ -139,7 +139,7 @@ La fecha del presupuesto se asigna automáticamente con la fecha del día.
 - [ ] Localidad de la obra → determina la zona de entrega y el precio de flete
 - [ ] ¿Lleva colocación en obra o no?
 - [ ] ¿Lleva pulido de cantos? — si está en el enunciado usarlo, si no → preguntar al operador
-- [ ] ¿Cuál es la fecha de entrega / plazo? — si está en el enunciado usarlo directamente, si no → usar el valor por defecto de config.json (40 días). No preguntar.
+- [ ] ¿Cuál es la fecha de entrega / plazo? — si está en el enunciado usarlo directamente, si no → usar el valor por defecto de config.json (delivery_days.display). No preguntar.
 - [ ] ¿Lleva flete o el cliente lo retira?
 - [ ] ¿Requiere toma de medidas o el cliente entrega las medidas exactas?
 - [ ] ¿Lleva zócalos?
