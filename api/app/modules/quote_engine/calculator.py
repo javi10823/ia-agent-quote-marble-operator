@@ -202,6 +202,7 @@ def calculate_quote(input_data: dict) -> dict:
     localidad = input_data["localidad"]
     colocacion = input_data.get("colocacion", True)
     pileta = input_data.get("pileta")
+    pileta_sku = input_data.get("pileta_sku")  # Specific sink product SKU from sinks.json
     anafe = input_data.get("anafe", False)
     frentin = input_data.get("frentin", False)
     pulido = input_data.get("pulido", False)
@@ -290,14 +291,34 @@ def calculate_quote(input_data: dict) -> dict:
         price, base = _get_mo_price(sku)
         mo_items.append({"description": "Agujero toma corriente", "quantity": 1, "unit_price": price, "base_price": base, "total": price})
 
+    # Sink product (physical sink, not just labor)
+    sinks = []
+    if pileta == "empotrada_johnson":
+        sink_result = None
+        if pileta_sku:
+            # Specific model requested
+            sink_result = catalog_lookup("sinks", pileta_sku)
+        if not sink_result or not sink_result.get("found"):
+            # Try default Johnson search
+            sink_result = catalog_lookup("sinks", "QUADRAQ71A")
+        if sink_result and sink_result.get("found"):
+            sink_price = sink_result.get("price_ars", 0)
+            sinks.append({
+                "name": sink_result.get("name", "Pileta Johnson"),
+                "quantity": 1,
+                "unit_price": sink_price,
+            })
+            logging.info(f"Added sink product: {sink_result.get('name')} @ ${sink_price}")
+
     # Totals
+    total_sinks_ars = sum(s["unit_price"] * s["quantity"] for s in sinks)
     total_mo_ars = sum(item["total"] for item in mo_items)
 
     if currency == "USD":
-        total_ars = total_mo_ars
+        total_ars = total_mo_ars + total_sinks_ars
         total_usd = material_total_net
     else:
-        total_ars = total_mo_ars + material_total_net
+        total_ars = total_mo_ars + total_sinks_ars + material_total_net
         total_usd = 0
 
     # Build sectors for document generation
@@ -331,5 +352,5 @@ def calculate_quote(input_data: dict) -> dict:
         "total_ars": total_ars,
         "total_usd": total_usd,
         "sectors": sectors,
-        "sinks": [],
+        "sinks": sinks,
     }

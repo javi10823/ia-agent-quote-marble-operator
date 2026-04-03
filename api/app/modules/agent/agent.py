@@ -568,7 +568,11 @@ TOOLS = [
                 "pileta": {
                     "type": "string",
                     "enum": ["empotrada_cliente", "empotrada_johnson", "apoyo"],
-                    "description": "Tipo de pileta. Omitir si no hay pileta.",
+                    "description": "Tipo de pileta. empotrada_johnson = incluir producto Johnson + MO de instalación. empotrada_cliente = solo MO (el cliente trae la pileta). Omitir si no hay pileta.",
+                },
+                "pileta_sku": {
+                    "type": "string",
+                    "description": "SKU del modelo de pileta en sinks.json (ej: QUADRAQ71A). Solo para empotrada_johnson. Si no se conoce el modelo, omitir y se usará Johnson default.",
                 },
                 "anafe": {"type": "boolean", "description": "SOLO true si hay evidencia de anafe en plano o enunciado. Cocina ≠ anafe automático."},
                 "frentin": {"type": "boolean", "description": "Si lleva frentin/regrueso"},
