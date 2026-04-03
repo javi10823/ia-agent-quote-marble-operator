@@ -768,6 +768,8 @@ class AgentService:
                     tool_use.input,
                     quote_id=quote_id,
                     db=db,
+                    conversation_history=messages,
+                    current_user_message=user_message,
                 )
                 tool_results.append({
                     "type": "tool_result",
@@ -805,7 +807,7 @@ class AgentService:
 
         yield {"type": "done", "content": ""}
 
-    async def _execute_tool(self, name: str, inputs: dict, quote_id: str, db: AsyncSession) -> dict:
+    async def _execute_tool(self, name: str, inputs: dict, quote_id: str, db: AsyncSession, conversation_history: list | None = None, current_user_message: str = "") -> dict:
         logging.info(f"Tool call: {name} | quote: {quote_id}")
         if name == "catalog_lookup":
             return catalog_lookup(inputs["catalog"], inputs["sku"])
@@ -943,6 +945,23 @@ class AgentService:
             await db.commit()
             return {"ok": True, "updated_fields": list(clean.keys())}
         elif name == "calculate_quote":
+            # ── Defensive injection: if conversation mentions bacha/pileta
+            # but the agent didn't include it, auto-inject it ──
+            if not inputs.get("pileta"):
+                all_text = current_user_message.lower()
+                if conversation_history:
+                    for msg in conversation_history:
+                        if msg.get("role") == "user":
+                            c = msg.get("content", "")
+                            if isinstance(c, str):
+                                all_text += " " + c.lower()
+                            elif isinstance(c, list):
+                                for blk in c:
+                                    if isinstance(blk, dict) and blk.get("type") == "text":
+                                        all_text += " " + blk.get("text", "").lower()
+                if any(kw in all_text for kw in ["bacha", "pileta", "cotizar bacha", "con bacha"]):
+                    inputs["pileta"] = "empotrada_johnson"
+                    logging.warning(f"Auto-injected pileta=empotrada_johnson — detected in conversation but missing from calculate_quote call")
             return calculate_quote(inputs)
         else:
             return {"error": f"Tool desconocida: {name}"}
