@@ -13,9 +13,15 @@ from app.core.static import OUTPUT_DIR
 DELIVERY_SUFFIX = "días desde la toma de medidas"
 CATALOG_DIR = BASE_DIR / "catalog"
 
+_company_config_cache: dict | None = None
+
 
 def _load_company_config() -> dict:
-    """Load company + conditions from config.json. Falls back to defaults."""
+    """Load company + conditions from config.json. Cached in memory."""
+    global _company_config_cache
+    if _company_config_cache is not None:
+        return _company_config_cache
+
     import json
     try:
         with open(CATALOG_DIR / "config.json") as f:
@@ -26,7 +32,7 @@ def _load_company_config() -> dict:
     company = cfg.get("company", {})
     conditions = cfg.get("conditions", {})
 
-    return {
+    _company_config_cache = {
         "name": company.get("name", "D'ANGELO"),
         "subtitle": company.get("subtitle", "MARMOLERIA"),
         "address": company.get("address", "SAN NICOLAS 1160"),
@@ -35,6 +41,13 @@ def _load_company_config() -> dict:
         "conditions_general": conditions.get("general", ""),
         "conditions_payment": conditions.get("payment", ""),
     }
+    return _company_config_cache
+
+
+def invalidate_company_config_cache():
+    """Clear cached company config so next call reloads from disk."""
+    global _company_config_cache
+    _company_config_cache = None
 
 
 def _fmt_ars(value: float) -> str:
@@ -479,7 +492,6 @@ def _inject_locale(xlsx_path: str):
 
                 if item.filename == 'xl/workbook.xml':
                     text = data.decode('utf-8')
-                    # Add spreadsheetLocale to calcPr if it exists
                     if '<calcPr' in text and 'spreadsheetLocale' not in text:
                         text = re.sub(
                             r'<calcPr\b',
@@ -487,7 +499,6 @@ def _inject_locale(xlsx_path: str):
                             text,
                         )
                     elif '<calcPr' not in text:
-                        # Add calcPr before </workbook>
                         text = text.replace(
                             '</workbook>',
                             '<calcPr spreadsheetLocale="es_AR" calcId="191029"/></workbook>',

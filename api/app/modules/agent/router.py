@@ -31,7 +31,11 @@ agent_service = AgentService()
 # ── LIST QUOTES ──────────────────────────────────────────────────────────────
 
 @router.get("/quotes", response_model=list[QuoteListResponse])
-async def list_quotes(db: AsyncSession = Depends(get_db)):
+async def list_quotes(
+    limit: int = 100,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+):
     from sqlalchemy.orm import defer
     from sqlalchemy import or_, and_
     result = await db.execute(
@@ -45,6 +49,8 @@ async def list_quotes(db: AsyncSession = Depends(get_db)):
             )
         )
         .order_by(Quote.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
     return result.scalars().all()
 

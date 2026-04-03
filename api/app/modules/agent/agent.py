@@ -163,6 +163,20 @@ def _load_example_index() -> list:
 
 _EXAMPLE_INDEX = _load_example_index()
 
+# Pre-build a map of example ID → file path to avoid glob() on every request
+_EXAMPLE_FILE_MAP: dict[str, Path] = {}
+_examples_dir = BASE_DIR / "examples"
+if _examples_dir.exists():
+    for md_file in _examples_dir.glob("*.md"):
+        _EXAMPLE_FILE_MAP[md_file.stem.split("-")[0] + "-" + md_file.stem.split("-")[1] if "-" in md_file.stem else md_file.stem] = md_file
+    # Rebuild with proper ID matching from index
+    _EXAMPLE_FILE_MAP.clear()
+    for md_file in _examples_dir.glob("*.md"):
+        for entry in _EXAMPLE_INDEX:
+            if md_file.name.startswith(entry["id"]):
+                _EXAMPLE_FILE_MAP[entry["id"]] = md_file
+                break
+
 
 # Examples already included in the cached stable block — skip them in dynamic selection
 _CACHED_EXAMPLE_IDS = {"quote-013", "quote-003", "quote-004", "quote-010", "quote-030"}
@@ -204,12 +218,11 @@ def select_examples(user_message: str, is_building: bool, max_examples: int = 2)
             selected.append(eid)
             seen_materials.add(mat)
 
-    # Resolve to file paths
+    # Resolve to file paths using pre-built map (no filesystem glob)
     paths = []
     for eid in selected:
-        matches = list(examples_dir.glob(f"{eid}*.md"))
-        if matches:
-            paths.append(matches[0])
+        if eid in _EXAMPLE_FILE_MAP:
+            paths.append(_EXAMPLE_FILE_MAP[eid])
 
     logging.info(f"Example selection: features={features}, selected={selected}")
     return paths

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from typing import Any
 
 from app.modules.agent.tools.catalog_tool import invalidate_catalog_cache
+from app.modules.agent.tools.document_tool import invalidate_company_config_cache
 
 BASE_DIR = Path(__file__).parent.parent.parent.parent
 CATALOG_DIR = BASE_DIR / "catalog"
@@ -90,6 +91,8 @@ async def update_catalog(catalog_name: str, body: CatalogUpdateRequest):
     )
 
     invalidate_catalog_cache(catalog_name)
+    if catalog_name == "config":
+        invalidate_company_config_cache()
 
     return {"ok": True, "catalog": catalog_name}
 
