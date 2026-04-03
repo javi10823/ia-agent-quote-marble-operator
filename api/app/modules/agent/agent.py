@@ -64,6 +64,16 @@ def _validate_quote_data(qdata: dict) -> tuple[list[str], list[str]]:
         if mo.get("unit_price", 0) == 0 and mo.get("description"):
             warnings.append(f"MO ítem '{mo['description']}' tiene precio $0")
 
+    # Check if pileta was likely requested but missing from MO
+    mo_descriptions = " ".join(m.get("description", "").lower() for m in qdata.get("mo_items", []))
+    sinks = qdata.get("sinks", [])
+    has_pileta_in_quote = (
+        "pileta" in mo_descriptions or "pegado" in mo_descriptions
+        or "johnson" in mo_descriptions or len(sinks) > 0
+    )
+    if not has_pileta_in_quote:
+        warnings.append("No hay pileta/bacha en el presupuesto — verificar si el operador la pidió")
+
     return errors, warnings
 
 # ── BUILDING DETECTION ───────────────────────────────────────────────────────
@@ -204,7 +214,57 @@ def select_examples(user_message: str, is_building: bool, max_examples: int = 3)
     return paths
 
 
-# ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
+# ── EXPLICIT REQUIREMENT DETECTION ────────────────────────────────────────────
+# Scans all user messages for explicit requirements that MUST appear in the quote.
+# Returns a reminder block injected at the END of the system prompt (recency bias).
+
+_REQUIREMENT_PATTERNS: list[tuple[list[str], str, str]] = [
+    # (keywords, requirement_id, human_label)
+    (["bacha", "pileta", "sink"], "pileta", "PILETA/BACHA — el operador pidió cotizar pileta. DEBE aparecer en el presupuesto. Si no se definió tipo, presupuestar Johnson por defecto."),
+    (["anafe", "hornalla"], "anafe", "ANAFE — el operador mencionó anafe. Incluir agujero de anafe en MO."),
+    (["zócalo", "zocalo"], "zocalo", "ZÓCALO — el operador mencionó zócalo. Incluir en piezas y MO."),
+    (["frentín", "frentin"], "frentin", "FRENTÍN — el operador mencionó frentín. Incluir como pieza (suma m²) + FALDON/CORTE45 en MO."),
+    (["regrueso"], "regrueso", "REGRUESO — el operador mencionó regrueso. Incluir REGRUESO por ml en MO."),
+    (["pulido"], "pulido", "PULIDO — el operador mencionó pulido de cantos. Incluir PUL en MO."),
+    (["colocación", "colocacion", "con colocacion", "instalación", "instalacion"], "colocacion", "COLOCACIÓN — el operador pidió colocación. Incluir en MO."),
+]
+
+
+def _build_requirement_reminder(user_message: str, conversation_history: list | None) -> str | None:
+    """Scan all user messages and build a reminder of explicit requirements."""
+    # Collect all user text from conversation
+    all_user_text = user_message.lower()
+    if conversation_history:
+        for msg in conversation_history:
+            if msg.get("role") == "user":
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    all_user_text += " " + content.lower()
+                elif isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            all_user_text += " " + block.get("text", "").lower()
+
+    # Detect requirements
+    detected = []
+    for keywords, req_id, label in _REQUIREMENT_PATTERNS:
+        if any(kw in all_user_text for kw in keywords):
+            detected.append(label)
+
+    if not detected:
+        return None
+
+    lines = "\n".join(f"- {d}" for d in detected)
+    return (
+        f"\n\n⚠️ RECORDATORIO — REQUERIMIENTOS EXPLÍCITOS DEL OPERADOR:\n"
+        f"Los siguientes requerimientos fueron mencionados explícitamente en la conversación. "
+        f"TODOS deben estar reflejados en el presupuesto. NO omitir ninguno.\n\n"
+        f"{lines}\n\n"
+        f"Si alguno de estos no está incluido en tu cálculo actual, DETENETE y agregalo antes de continuar."
+    )
+
+
+
 
 # ── SYSTEM PROMPT CACHE ───────────────────────────────────────────────────────
 # Stable text (CONTEXT.md + core rules) doesn't change between requests.
@@ -245,7 +305,7 @@ def _read_cached_file(path) -> str:
     return _conditional_file_cache[key]
 
 
-def build_system_prompt(has_plan: bool = False, is_building: bool = False, user_message: str = "") -> list:
+def build_system_prompt(has_plan: bool = False, is_building: bool = False, user_message: str = "", conversation_history: list | None = None) -> list:
     """
     Build system prompt as a list of content blocks with cache_control.
     Stable core content is cached in memory + Anthropic prompt cache (5 min TTL).
@@ -286,6 +346,11 @@ def build_system_prompt(has_plan: bool = False, is_building: bool = False, user_
             "type": "text",
             "text": conditional_text,
         })
+
+    # ── Requirement reminder — scan ALL user messages for explicit requests ──
+    reminder = _build_requirement_reminder(user_message, conversation_history)
+    if reminder:
+        blocks.append({"type": "text", "text": reminder})
 
     stable_chars = len(stable_text)
     cond_chars = sum(len(p) for p in conditional_parts)
@@ -575,7 +640,7 @@ class AgentService:
         # Build system prompt per request with contextual loading
         has_plan = plan_bytes is not None and plan_filename is not None
         is_building = _detect_building(user_message)
-        system_prompt = build_system_prompt(has_plan=has_plan, is_building=is_building, user_message=user_message)
+        system_prompt = build_system_prompt(has_plan=has_plan, is_building=is_building, user_message=user_message, conversation_history=messages)
 
         # Build user message content
         content = []
