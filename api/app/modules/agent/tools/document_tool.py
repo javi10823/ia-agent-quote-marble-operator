@@ -317,14 +317,15 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
 
     pdf.ln(3)
 
-    # Conditions (from config.json)
+    # Conditions (from config.json) — use multi_cell for word wrap
+    usable_w = 190  # A4 width (210) minus margins (10+10)
     if co["conditions_general"]:
         pdf.set_font("Helvetica", "B", 7)
         pdf.cell(0, 3, "CONDICIONES", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("Helvetica", "", 7)
         for line in co["conditions_general"].split("\n"):
             if line.strip():
-                pdf.cell(0, 3, line.strip(), new_x="LMARGIN", new_y="NEXT")
+                pdf.multi_cell(usable_w, 3, line.strip(), new_x="LMARGIN", new_y="NEXT")
         pdf.ln(2)
 
     if co["conditions_payment"]:
@@ -333,7 +334,7 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
         pdf.set_font("Helvetica", "", 7)
         for line in co["conditions_payment"].split("\n"):
             if line.strip():
-                pdf.cell(0, 3, line.strip(), new_x="LMARGIN", new_y="NEXT")
+                pdf.multi_cell(usable_w, 3, line.strip(), new_x="LMARGIN", new_y="NEXT")
 
     pdf.output(str(pdf_path))
 
