@@ -175,15 +175,29 @@ export async function* streamChat(
     }
   }
 
-  const res = await fetch(`${API_BASE}/api/quotes/${quoteId}/chat`, {
-    method: "POST",
-    body: formData,
-    credentials: "include",
-  });
+  // Abort if no response within 60s (connection timeout)
+  const controller = new AbortController();
+  const connectTimeout = setTimeout(() => controller.abort(), 60_000);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/quotes/${quoteId}/chat`, {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+      signal: controller.signal,
+    });
+  } catch (e: any) {
+    clearTimeout(connectTimeout);
+    if (e.name === "AbortError") {
+      throw new Error("El servidor tardó demasiado en responder. Intentá de nuevo.");
+    }
+    throw new Error("No se pudo conectar con Valentina. Intentá de nuevo.");
+  }
+  clearTimeout(connectTimeout);
 
   if (!res.ok) {
     if (res.status === 400) {
-      // Backend validation error — show the detail message
       try {
         const err = await res.json();
         throw new Error(err.detail || "Error en los archivos adjuntos.");
@@ -203,22 +217,37 @@ export async function* streamChat(
   const decoder = new TextDecoder();
   let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  // Stall timeout: abort if no data received for 90s during streaming
+  let stallTimer: ReturnType<typeof setTimeout> | null = null;
+  const resetStallTimer = () => {
+    if (stallTimer) clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => {
+      reader.cancel();
+    }, 90_000);
+  };
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
+  try {
+    resetStallTimer();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        try {
-          const chunk: ChatChunk = JSON.parse(line.slice(6));
-          yield chunk;
-        } catch {}
+      resetStallTimer();
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          try {
+            const chunk: ChatChunk = JSON.parse(line.slice(6));
+            yield chunk;
+          } catch {}
+        }
       }
     }
+  } finally {
+    if (stallTimer) clearTimeout(stallTimer);
   }
 }
 
