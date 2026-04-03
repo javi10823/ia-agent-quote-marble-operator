@@ -1,9 +1,10 @@
+import { memo, useMemo } from "react";
 import clsx from "clsx";
 import type { UIMessage } from "@/app/quote/[id]/page";
 
 interface Props { message: UIMessage; actionText?: string; }
 
-export default function MessageBubble({ message, actionText }: Props) {
+export default memo(function MessageBubble({ message, actionText }: Props) {
   const isV = message.role === "assistant";
 
   if (!isV) {
@@ -22,7 +23,10 @@ export default function MessageBubble({ message, actionText }: Props) {
     );
   }
 
-  const blocks = parseBlocks(message.content, message.isStreaming, actionText);
+  const blocks = useMemo(
+    () => parseBlocks(message.content, message.isStreaming, actionText),
+    [message.content, message.isStreaming, actionText],
+  );
 
   return (
     <div className="msg-anim flex gap-3 items-start">
@@ -34,7 +38,7 @@ export default function MessageBubble({ message, actionText }: Props) {
       </div>
     </div>
   );
-}
+});
 
 // ── BLOCK RENDERER ──────────────────────────────────────────────────────────
 
@@ -65,7 +69,7 @@ function parseBlocks(content: string, isStreaming?: boolean, actionText?: string
   return blocks;
 }
 
-function Block({ block, isLast, isStreaming, actionText }: { block: BlockType; isLast: boolean; isStreaming: boolean; actionText?: string }) {
+const Block = memo(function Block({ block, isLast, isStreaming, actionText }: { block: BlockType; isLast: boolean; isStreaming: boolean; actionText?: string }) {
   if (block.type === "thinking") {
     const lines = block.content ? block.content.split("\n") : [""];
     return (
@@ -88,11 +92,11 @@ function Block({ block, isLast, isStreaming, actionText }: { block: BlockType; i
       <FormattedText text={block.content} isStreaming={isStreaming} />
     </div>
   );
-}
+});
 
 // ── TEXT FORMATTER ───────────────────────────────────────────────────────────
 
-function FormattedText({ text, isStreaming }: { text: string; isStreaming?: boolean }) {
+const FormattedText = memo(function FormattedText({ text, isStreaming }: { text: string; isStreaming?: boolean }) {
   const lines = text.split("\n");
   const elements: React.ReactNode[] = [];
   let i = 0;
@@ -153,9 +157,9 @@ function FormattedText({ text, isStreaming }: { text: string; isStreaming?: bool
       {elements}
     </div>
   );
-}
+});
 
-function MarkdownTable({ lines }: { lines: string[] }) {
+const MarkdownTable = memo(function MarkdownTable({ lines }: { lines: string[] }) {
   const dataLines = lines.filter(l => !l.match(/^\|[\s\-:|]+\|$/));
   if (dataLines.length === 0) return null;
 
@@ -198,11 +202,13 @@ function MarkdownTable({ lines }: { lines: string[] }) {
       </table>
     </div>
   );
-}
+});
 
-function InlineFormat({ text }: { text: string }) {
+const INLINE_REGEX = /\[([^\]]+)\]\(([^)]+)\)|\*\*(.*?)\*\*|(https?:\/\/[^\s,)]+)|`(\/files\/[^`]+)`/g;
+
+const InlineFormat = memo(function InlineFormat({ text }: { text: string }) {
   const elements: React.ReactNode[] = [];
-  const regex = /\[([^\]]+)\]\(([^)]+)\)|\*\*(.*?)\*\*|(https?:\/\/[^\s,)]+)|`(\/files\/[^`]+)`/g;
+  const regex = new RegExp(INLINE_REGEX.source, INLINE_REGEX.flags);
   let lastIndex = 0;
   let match;
 
@@ -236,7 +242,7 @@ function InlineFormat({ text }: { text: string }) {
   if (lastIndex < text.length) elements.push(text.slice(lastIndex));
   if (elements.length === 0) return <>{text}</>;
   return <>{elements}</>;
-}
+});
 
 // ── AVATAR ───────────────────────────────────────────────────────────────────
 
