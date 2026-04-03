@@ -11,6 +11,30 @@ from app.core.static import OUTPUT_DIR
 
 
 DELIVERY_SUFFIX = "días desde la toma de medidas"
+CATALOG_DIR = BASE_DIR / "catalog"
+
+
+def _load_company_config() -> dict:
+    """Load company + conditions from config.json. Falls back to defaults."""
+    import json
+    try:
+        with open(CATALOG_DIR / "config.json") as f:
+            cfg = json.load(f)
+    except Exception:
+        cfg = {}
+
+    company = cfg.get("company", {})
+    conditions = cfg.get("conditions", {})
+
+    return {
+        "name": company.get("name", "D'ANGELO"),
+        "subtitle": company.get("subtitle", "MARMOLERIA"),
+        "address": company.get("address", "SAN NICOLAS 1160"),
+        "phone": company.get("phone", "341-3082996"),
+        "email": company.get("email", "marmoleriadangelo@gmail.com"),
+        "conditions_general": conditions.get("general", ""),
+        "conditions_payment": conditions.get("payment", ""),
+    }
 
 
 def _fmt_ars(value: float) -> str:
@@ -102,6 +126,8 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
     total_ars = data.get("total_ars", 0)
     total_usd = data.get("total_usd", 0)
 
+    co = _load_company_config()
+
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
@@ -118,15 +144,15 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
     else:
         pdf.set_y(12)
         pdf.set_font("Helvetica", "B", 28)
-        pdf.cell(0, 12, "D'ANGELO", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 12, co["name"], new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("Helvetica", "", 8)
-        pdf.cell(0, 4, "MARMOLERIA", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 4, co["subtitle"], new_x="LMARGIN", new_y="NEXT")
 
     # Contact
     pdf.set_font("Helvetica", "", 8)
-    pdf.cell(0, 4, "SAN NICOLAS 1160", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 4, "341-3082996", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 4, "marmoleriadangelo@gmail.com", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 4, co["address"], new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 4, co["phone"], new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 4, co["email"], new_x="LMARGIN", new_y="NEXT")
 
     # Title
     pdf.ln(5)
@@ -291,35 +317,23 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
 
     pdf.ln(3)
 
-    # Conditions
-    pdf.set_font("Helvetica", "", 7)
-    pdf.cell(0, 3, "*COTIZACION OFICIAL: dolar venta banco nacion. Los materiales expresados en dolares se pagan en pesos segun la cotizacion del dia.", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(2)
-    pdf.set_font("Helvetica", "B", 7)
-    pdf.cell(0, 3, "CONDICIONES", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 7)
-    for line in [
-        "*PRESUPUESTO SUJETO A VARIACION DE PRECIO",
-        "*MATERIALES IMPORTADOS SEGUN COTIZACION DOLAR VENTA BANCO NACION AL MOMENTO DE LA CONFIRMACION",
-        "*LA TOMA DE MEDIDAS NO PODRA SUPERAR LOS 30 DIAS DESDE LA CONFIRMACION, CASO CONTRARIO EL 20% RESTANTE SE ACTUALIZARA SEGUN INDICE LA CONSTRUCCION",
-        "*PRESUPUESTO DEFINITIVO SEGUN MEDIDAS TOMADAS EN OBRA",
-        "*LOS PRECIOS INCLUYEN IVA",
-    ]:
-        pdf.cell(0, 3, line, new_x="LMARGIN", new_y="NEXT")
+    # Conditions (from config.json)
+    if co["conditions_general"]:
+        pdf.set_font("Helvetica", "B", 7)
+        pdf.cell(0, 3, "CONDICIONES", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 7)
+        for line in co["conditions_general"].split("\n"):
+            if line.strip():
+                pdf.cell(0, 3, line.strip(), new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(2)
 
-    pdf.ln(2)
-    pdf.set_font("Helvetica", "B", 7)
-    pdf.cell(0, 3, "FORMAS DE PAGO", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 7)
-    for line in [
-        "*Materiales Importados: 80% sena, 20% restante contra entrega (cotizacion dolar venta BCO NACION).",
-        "*Materiales Nacionales: 80% sena, 20% restante contra entrega.",
-        "Pago contado / transferencia / debito / credito / cheques 15 dias para importados y 30 dias para nacionales",
-    ]:
-        pdf.cell(0, 3, line, new_x="LMARGIN", new_y="NEXT")
-
-    pdf.ln(1)
-    pdf.cell(0, 3, "TARJETAS DE CREDITO CONSULTAR PLANES", new_x="LMARGIN", new_y="NEXT")
+    if co["conditions_payment"]:
+        pdf.set_font("Helvetica", "B", 7)
+        pdf.cell(0, 3, "FORMAS DE PAGO", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 7)
+        for line in co["conditions_payment"].split("\n"):
+            if line.strip():
+                pdf.cell(0, 3, line.strip(), new_x="LMARGIN", new_y="NEXT")
 
     pdf.output(str(pdf_path))
 
@@ -519,6 +533,7 @@ def generate_comparison_pdf(pdf_path: Path, client_name: str, project: str, quot
     """Generate a landscape comparison PDF for multiple material variants."""
     from fpdf import FPDF
 
+    co = _load_company_config()
     date_str = datetime.now().strftime("%d/%m/%Y")
     n = len(quotes_data)
 
@@ -538,11 +553,11 @@ def generate_comparison_pdf(pdf_path: Path, client_name: str, project: str, quot
     else:
         pdf.set_y(12)
         pdf.set_font("Helvetica", "B", 28)
-        pdf.cell(0, 12, "D'ANGELO", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 12, co["name"], new_x="LMARGIN", new_y="NEXT")
 
     # Contact
     pdf.set_font("Helvetica", "", 8)
-    pdf.cell(0, 4, "SAN NICOLAS 1160  |  341-3082996  |  marmoleriadangelo@gmail.com", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 4, f'{co["address"]}  |  {co["phone"]}  |  {co["email"]}', new_x="LMARGIN", new_y="NEXT")
 
     # Title
     pdf.ln(3)
@@ -660,14 +675,12 @@ def generate_comparison_pdf(pdf_path: Path, client_name: str, project: str, quot
     pdf.cell(0, 5, f"* Opcion mas economica: {best_name}", new_x="LMARGIN", new_y="NEXT")
     pdf.set_text_color(0, 0, 0)
 
-    # Footer conditions
+    # Footer conditions (from config.json)
     pdf.ln(6)
     pdf.set_font("Helvetica", "", 7)
-    for line in [
-        "*PRESUPUESTO SUJETO A VARIACION DE PRECIO",
-        "*MATERIALES IMPORTADOS SEGUN COTIZACION DOLAR VENTA BANCO NACION AL MOMENTO DE LA CONFIRMACION",
-        "*LOS PRECIOS INCLUYEN IVA",
-    ]:
-        pdf.cell(0, 3, line, new_x="LMARGIN", new_y="NEXT")
+    if co["conditions_general"]:
+        for line in co["conditions_general"].split("\n"):
+            if line.strip():
+                pdf.cell(0, 3, line.strip(), new_x="LMARGIN", new_y="NEXT")
 
     pdf.output(str(pdf_path))
