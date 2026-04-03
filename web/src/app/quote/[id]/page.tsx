@@ -539,8 +539,8 @@ function IconBtn({ onClick, children, primary, disabled, title }: { onClick: () 
   return (
     <button onClick={onClick} disabled={disabled} title={title} className={clsx(
       "w-8 h-8 rounded-full flex items-center justify-center transition-all duration-100",
-      primary ? "border-none bg-acc text-white" : "border border-b1 bg-transparent text-t2",
-      disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer",
+      primary && !disabled ? "border-none bg-acc text-white" : primary && disabled ? "border-none bg-white/[0.06] text-t4" : "border border-b1 bg-transparent text-t2",
+      disabled ? "cursor-not-allowed" : "cursor-pointer",
     )}>
       {children}
     </button>

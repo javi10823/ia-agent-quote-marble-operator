@@ -4,9 +4,9 @@ import { useCallback, useMemo, useRef } from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { json, jsonParseLinter } from "@codemirror/lang-json";
 import { linter } from "@codemirror/lint";
-import { search } from "@codemirror/search";
+import { search, searchKeymap } from "@codemirror/search";
 import { bracketMatching, foldGutter } from "@codemirror/language";
-import { highlightActiveLine, lineNumbers, EditorView } from "@codemirror/view";
+import { highlightActiveLine, lineNumbers, EditorView, keymap } from "@codemirror/view";
 import { catalogEditorTheme, catalogHighlighting } from "./catalog-theme";
 
 interface Props {
@@ -29,6 +29,7 @@ export default function CatalogEditor({ value, onChange, loading, loadError, onR
       highlightActiveLine(),
       lineNumbers(),
       search(),
+      keymap.of(searchKeymap),
       catalogHighlighting,
       EditorView.lineWrapping,
     ],
