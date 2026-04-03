@@ -27,6 +27,7 @@ SCOPES = [
 _credentials_cache = None
 _drive_service_cache = None
 _sheets_service_cache = None
+_folder_id_cache: dict[str, str] = {}  # "parent_id/name" → folder_id
 
 
 def _get_credentials():
@@ -62,7 +63,12 @@ def _get_sheets_service():
 # ── Sync internals (run in thread pool) ──────────────────────────────────────
 
 def _get_or_create_folder(service, name: str, parent_id: str) -> str:
-    """Get folder by name under parent, or create it. Supports Shared Drives."""
+    """Get folder by name under parent, or create it. Supports Shared Drives.
+    Results are cached in memory to avoid repeated API calls for the same folder."""
+    cache_key = f"{parent_id}/{name}"
+    if cache_key in _folder_id_cache:
+        return _folder_id_cache[cache_key]
+
     query = (
         f"name='{name}' and "
         f"'{parent_id}' in parents and "
@@ -77,6 +83,7 @@ def _get_or_create_folder(service, name: str, parent_id: str) -> str:
     ).execute()
     files = results.get("files", [])
     if files:
+        _folder_id_cache[cache_key] = files[0]["id"]
         return files[0]["id"]
 
     folder = service.files().create(
@@ -88,6 +95,7 @@ def _get_or_create_folder(service, name: str, parent_id: str) -> str:
         fields="id",
         supportsAllDrives=True,
     ).execute()
+    _folder_id_cache[cache_key] = folder["id"]
     return folder["id"]
 
 
