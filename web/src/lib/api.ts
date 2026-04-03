@@ -21,6 +21,7 @@ export interface Quote {
   parent_quote_id: string | null;
   source: string | null;
   is_read: boolean;
+  notes: string | null;
   created_at: string;
 }
 

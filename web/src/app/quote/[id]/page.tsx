@@ -261,6 +261,12 @@ function DetailView({ quote, breakdown, onSwitchToChat }: { quote: QuoteDetail |
         </div>
       </Section>
 
+      {quote.notes && (
+        <Section title="Notas del cliente">
+          <p className="text-[13px] text-t2 leading-[1.65] whitespace-pre-wrap">{quote.notes}</p>
+        </Section>
+      )}
+
       {quote.source_files && quote.source_files.length > 0 && (
         <Section title="Archivos Fuente">
           <div className="flex flex-col gap-2">
