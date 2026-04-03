@@ -4,6 +4,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Any
 
+from app.modules.agent.tools.catalog_tool import invalidate_catalog_cache
+
 BASE_DIR = Path(__file__).parent.parent.parent.parent
 CATALOG_DIR = BASE_DIR / "catalog"
 
@@ -86,6 +88,8 @@ async def update_catalog(catalog_name: str, body: CatalogUpdateRequest):
         json.dumps(body.content, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+    invalidate_catalog_cache(catalog_name)
 
     return {"ok": True, "catalog": catalog_name}
 

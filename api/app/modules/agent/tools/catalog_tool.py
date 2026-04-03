@@ -5,15 +5,27 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.parent.parent.parent.parent
 CATALOG_DIR = BASE_DIR / "catalog"
 
+_catalog_cache: dict[str, list] = {}
+
 
 def _load_catalog(name: str) -> list:
+    if name in _catalog_cache:
+        return _catalog_cache[name]
     path = CATALOG_DIR / f"{name}.json"
     if not path.exists():
         return []
     data = json.loads(path.read_text(encoding="utf-8"))
-    if isinstance(data, list):
-        return data
-    return data.get("items", [])
+    items = data if isinstance(data, list) else data.get("items", [])
+    _catalog_cache[name] = items
+    return items
+
+
+def invalidate_catalog_cache(name: str | None = None):
+    """Invalidate cached catalog data. If name is None, clears all."""
+    if name is None:
+        _catalog_cache.clear()
+    else:
+        _catalog_cache.pop(name, None)
 
 
 def catalog_lookup(catalog: str, sku: str) -> dict:
