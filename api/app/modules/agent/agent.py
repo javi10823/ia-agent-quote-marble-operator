@@ -33,7 +33,8 @@ def _validate_quote_data(qdata: dict) -> tuple[list[str], list[str]]:
     if not qdata.get("material_name"):
         errors.append("Falta material")
     if not qdata.get("delivery_days"):
-        errors.append("Falta plazo de entrega")
+        # Default from config.json instead of blocking
+        qdata["delivery_days"] = "40 dias desde la toma de medidas"
     if not qdata.get("total_ars") and not qdata.get("total_usd"):
         errors.append("Totales en $0 — verificar cálculo")
     sectors = qdata.get("sectors", [])

@@ -143,9 +143,9 @@ NUNCA usar backticks `` ` `` alrededor de los paths. NUNCA poner el path como te
 **⛔ FLUJO DE GENERACIÓN — 3 pasos obligatorios:**
 
 **Paso 1: Recolectar TODOS los datos requeridos**
-NO avanzar al paso 2 si falta: nombre del cliente, plazo, confirmación de pileta.
+NO avanzar al paso 2 si falta: nombre del cliente, confirmación de pileta.
 Preguntar lo que falta AL FINAL del mensaje (nunca al principio).
-**Cuando falta el plazo, preguntar así:** "¿Cuántos días de demora?" — NO decir "confirmar el plazo" ni "necesitás confirmar". Es una pregunta directa al operador.
+**Plazo de entrega:** si el operador lo indica en el enunciado, usar ese valor. Si NO lo menciona, usar el valor por defecto de config.json (actualmente 40 días desde la toma de medidas). NO preguntar por el plazo si no fue mencionado.
 
 **Paso 2: Mostrar validación completa**
 Solo cuando tenés TODOS los datos. Usar el formato de tablas (ver abajo).
