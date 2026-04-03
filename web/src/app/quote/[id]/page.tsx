@@ -449,7 +449,7 @@ function ChatInput({ input, setInput, files, setFiles, dragActive, setDragActive
         "flex items-end gap-2 bg-s3 rounded-xl px-4 py-2.5 transition-[border-color,box-shadow] duration-150",
         dragActive ? "border border-acc shadow-[0_0_20px_rgba(79,143,255,0.15)]" : "border border-b2",
       )}>
-        <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKey} rows={1} disabled={sending}
+        <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKey} rows={1} disabled={sending} autoFocus
           placeholder={`Escrib${I} el enunciado o arrastr${A} el plano ac${A}...`}
           className="flex-1 bg-transparent border-none outline-none font-sans text-[13px] text-t1 resize-none leading-[1.5] max-h-[110px] overflow-hidden placeholder:text-t4"
         />
