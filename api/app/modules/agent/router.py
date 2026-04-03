@@ -5,6 +5,7 @@ from sqlalchemy import select, update
 from pydantic import BaseModel
 from typing import Optional, List
 import json
+import logging
 import uuid
 
 # File upload constants
@@ -325,22 +326,28 @@ async def chat(
 
     async def event_stream():
         full_response = ""
-        async for chunk in agent_service.stream_chat(
-            quote_id=quote_id,
-            messages=quote.messages,
-            user_message=message,
-            plan_bytes=plan_bytes,
-            plan_filename=plan_filename,
-            db=db,
-        ):
-            if chunk["type"] == "text":
-                full_response += chunk["content"]
-                yield f"data: {json.dumps(chunk)}\n\n"
-            elif chunk["type"] == "action":
-                # Tool use event (generating docs, uploading, etc.)
-                yield f"data: {json.dumps(chunk)}\n\n"
-            elif chunk["type"] == "done":
-                yield f"data: {json.dumps(chunk)}\n\n"
+        try:
+            async for chunk in agent_service.stream_chat(
+                quote_id=quote_id,
+                messages=quote.messages,
+                user_message=message,
+                plan_bytes=plan_bytes,
+                plan_filename=plan_filename,
+                db=db,
+            ):
+                if chunk["type"] == "text":
+                    full_response += chunk["content"]
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                elif chunk["type"] == "action":
+                    # Tool use event (generating docs, uploading, etc.)
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                elif chunk["type"] == "done":
+                    yield f"data: {json.dumps(chunk)}\n\n"
+        except Exception as e:
+            logging.error(f"SSE stream error for quote {quote_id}: {e}", exc_info=True)
+            error_chunk = {"type": "action", "content": f"⚠️ Error inesperado: {str(e)[:200]}. Intentá de nuevo."}
+            yield f"data: {json.dumps(error_chunk)}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'content': ''})}\n\n"
 
     return StreamingResponse(
         event_stream(),

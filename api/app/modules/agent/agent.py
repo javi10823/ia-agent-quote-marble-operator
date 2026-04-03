@@ -806,18 +806,29 @@ class AgentService:
             for tool_use in tool_use_blocks:
                 yield {"type": "action", "content": f"⚙️ Ejecutando: {tool_use.name}..."}
 
-                result = await self._execute_tool(
-                    tool_use.name,
-                    tool_use.input,
-                    quote_id=quote_id,
-                    db=db,
-                    conversation_history=messages,
-                    current_user_message=user_message,
-                )
+                try:
+                    result = await self._execute_tool(
+                        tool_use.name,
+                        tool_use.input,
+                        quote_id=quote_id,
+                        db=db,
+                        conversation_history=messages,
+                        current_user_message=user_message,
+                    )
+                except Exception as e:
+                    logging.error(f"Tool execution error ({tool_use.name}): {e}", exc_info=True)
+                    result = {"ok": False, "error": f"Error ejecutando {tool_use.name}: {str(e)}"}
+
+                try:
+                    result_json = json.dumps(result)
+                except (TypeError, ValueError) as e:
+                    logging.error(f"JSON serialization error for tool {tool_use.name}: {e}")
+                    result_json = json.dumps({"ok": False, "error": f"Error serializando resultado de {tool_use.name}"})
+
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": tool_use.id,
-                    "content": json.dumps(result),
+                    "content": result_json,
                 })
 
             assistant_messages.append({"role": "assistant", "content": _serialize_content(final_message.content)})
@@ -827,26 +838,29 @@ class AgentService:
             await asyncio.sleep(0.1)
 
         # Save updated messages to DB
-        updated_messages = new_messages + assistant_messages
-        save_values = {"messages": updated_messages}
+        try:
+            updated_messages = new_messages + assistant_messages
+            save_values = {"messages": updated_messages}
 
-        # Try to extract client_name and material from conversation if not yet set
-        # This ensures the dashboard shows useful info before PDF generation
-        result = await db.execute(select(Quote).where(Quote.id == quote_id))
-        current_quote = result.scalar_one_or_none()
-        if current_quote and not current_quote.client_name:
-            extracted = _extract_quote_info(user_message)
-            if extracted.get("client_name"):
-                save_values["client_name"] = extracted["client_name"]
-            if extracted.get("material"):
-                save_values["material"] = extracted["material"]
+            # Try to extract client_name and material from conversation if not yet set
+            # This ensures the dashboard shows useful info before PDF generation
+            result = await db.execute(select(Quote).where(Quote.id == quote_id))
+            current_quote = result.scalar_one_or_none()
+            if current_quote and not current_quote.client_name:
+                extracted = _extract_quote_info(user_message)
+                if extracted.get("client_name"):
+                    save_values["client_name"] = extracted["client_name"]
+                if extracted.get("material"):
+                    save_values["material"] = extracted["material"]
 
-        await db.execute(
-            update(Quote)
-            .where(Quote.id == quote_id)
-            .values(**save_values)
-        )
-        await db.commit()
+            await db.execute(
+                update(Quote)
+                .where(Quote.id == quote_id)
+                .values(**save_values)
+            )
+            await db.commit()
+        except Exception as e:
+            logging.error(f"Error saving conversation to DB: {e}", exc_info=True)
 
         yield {"type": "done", "content": ""}
 
