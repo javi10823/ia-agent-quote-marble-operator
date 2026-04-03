@@ -9,12 +9,12 @@ import clsx from "clsx";
 type Section = "usuarios" | "arquitectas" | "descuentos" | "plazos" | "empresa" | "condiciones";
 
 const SECTIONS: { key: Section; label: string; icon: string }[] = [
-  { key: "usuarios", label: "Usuarios", icon: "\uD83D\uDC64" },
-  { key: "arquitectas", label: "Arquitectas", icon: "\uD83C\uDFE2" },
-  { key: "descuentos", label: "Descuentos", icon: "\uD83C\uDFF7\uFE0F" },
-  { key: "plazos", label: "Plazos", icon: "\uD83D\uDCC5" },
-  { key: "empresa", label: "Empresa", icon: "\uD83C\uDFE0" },
-  { key: "condiciones", label: "Condiciones", icon: "\uD83D\uDCDC" },
+  { key: "usuarios", label: "Usuarios", icon: "👤" },
+  { key: "arquitectas", label: "Arquitectas", icon: "🏢" },
+  { key: "descuentos", label: "Descuentos", icon: "🏷️" },
+  { key: "plazos", label: "Plazos", icon: "📅" },
+  { key: "empresa", label: "Empresa", icon: "🏠" },
+  { key: "condiciones", label: "Condiciones", icon: "📜" },
 ];
 
 export default function SettingsPage() {
@@ -30,8 +30,8 @@ export default function SettingsPage() {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
           <div>
-            <div className="text-lg font-medium -tracking-[0.03em]">Configuraci\u00F3n</div>
-            <div className="text-[11px] text-t3 mt-0.5">Par\u00E1metros del sistema y datos operativos</div>
+            <div className="text-lg font-medium -tracking-[0.03em]">Configuración</div>
+            <div className="text-[11px] text-t3 mt-0.5">Parámetros del sistema y datos operativos</div>
           </div>
         </div>
       </div>
@@ -90,7 +90,7 @@ function UsersSection({ toast }: { toast: (m: string, v?: "error" | "success" | 
   }
 
   async function handleDelete(id: string, name: string) {
-    if (!window.confirm(`\u00BFEliminar usuario "${name}"?`)) return;
+    if (!window.confirm(`¿Eliminar usuario "${name}"?`)) return;
     try {
       await deleteUser(id);
       toast("Usuario eliminado", "success");
@@ -114,7 +114,7 @@ function UsersSection({ toast }: { toast: (m: string, v?: "error" | "success" | 
             {users.map(u => (
               <tr key={u.id} className="hover:bg-white/[0.02]">
                 <td className="px-3 py-2.5 text-[13px] font-medium text-t1">{u.username}</td>
-                <td className="px-3 py-2.5 text-xs text-t3">{u.created_at ? new Date(u.created_at).toLocaleDateString("es-AR") : "\u2014"}</td>
+                <td className="px-3 py-2.5 text-xs text-t3">{u.created_at ? new Date(u.created_at).toLocaleDateString("es-AR") : "—"}</td>
                 <td className="px-3 py-2.5 text-right">
                   <button onClick={() => handleDelete(u.id, u.username)} className="px-2.5 py-1 rounded-md text-[11px] font-medium border border-err/30 bg-transparent text-err cursor-pointer hover:bg-err/[0.08] transition">Eliminar</button>
                 </td>
@@ -132,7 +132,7 @@ function UsersSection({ toast }: { toast: (m: string, v?: "error" | "success" | 
             <input value={username} onChange={e => setUsername(e.target.value)} placeholder="nombre de usuario" className="w-full px-3 py-2 bg-s3 border border-b1 rounded-lg text-t1 text-[13px] font-sans outline-none focus:border-acc placeholder:text-t4" />
           </div>
           <div>
-            <label className="block text-[11px] font-medium text-t3 uppercase tracking-wide mb-1">Contrase\u00F1a</label>
+            <label className="block text-[11px] font-medium text-t3 uppercase tracking-wide mb-1">Contraseña</label>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="min. 6 caracteres" className="w-full px-3 py-2 bg-s3 border border-b1 rounded-lg text-t1 text-[13px] font-sans outline-none focus:border-acc placeholder:text-t4" />
           </div>
         </div>
@@ -167,7 +167,7 @@ function ArchitectsSection({ toast }: { toast: (m: string, v?: "error" | "succes
 
   async function handleRemove(idx: number) {
     const a = architects[idx];
-    if (!window.confirm(`\u00BFQuitar a "${a.name}"?`)) return;
+    if (!window.confirm(`¿Quitar a "${a.name}"?`)) return;
     const updated = architects.filter((_, i) => i !== idx);
     try {
       await updateCatalog("architects", updated);
@@ -179,7 +179,7 @@ function ArchitectsSection({ toast }: { toast: (m: string, v?: "error" | "succes
   return (
     <>
       <div className="text-[15px] font-semibold text-t1 mb-1">Arquitectas con descuento</div>
-      <div className="text-xs text-t3 mb-5">Clientes registrados como arquitectos. El descuento se aplica autom\u00E1ticamente al detectar el nombre.</div>
+      <div className="text-xs text-t3 mb-5">Clientes registrados como arquitectos. El descuento se aplica automáticamente al detectar el nombre.</div>
 
       <div className="bg-s1 border border-b1 rounded-[10px] p-[18px] mb-4">
         <table className="w-full border-collapse">
@@ -193,8 +193,8 @@ function ArchitectsSection({ toast }: { toast: (m: string, v?: "error" | "succes
             {architects.map((a: any, i: number) => (
               <tr key={i} className="hover:bg-white/[0.02]">
                 <td className="px-3 py-2.5 text-[13px] font-medium text-t1">{a.name}</td>
-                <td className="px-3 py-2.5 text-xs text-t3">{a.firm || "\u2014"}</td>
-                <td className="px-3 py-2.5 text-xs text-t3">{a.notes || "\u2014"}</td>
+                <td className="px-3 py-2.5 text-xs text-t3">{a.firm || "—"}</td>
+                <td className="px-3 py-2.5 text-xs text-t3">{a.notes || "—"}</td>
                 <td className="px-3 py-2.5 text-right">
                   <button onClick={() => handleRemove(i)} className="px-2.5 py-1 rounded-md text-[11px] font-medium border border-err/30 bg-transparent text-err cursor-pointer hover:bg-err/[0.08] transition">Quitar</button>
                 </td>
@@ -260,15 +260,15 @@ function DiscountsSection({ toast }: { toast: (m: string, v?: "error" | "success
 
   return (
     <>
-      <div className="text-[15px] font-semibold text-t1 mb-1">Par\u00E1metros de descuento</div>
-      <div className="text-xs text-t3 mb-5">Porcentajes y umbrales que Valentina usa al calcular descuentos autom\u00E1ticos.</div>
+      <div className="text-[15px] font-semibold text-t1 mb-1">Parámetros de descuento</div>
+      <div className="text-xs text-t3 mb-5">Porcentajes y umbrales que Valentina usa al calcular descuentos automáticos.</div>
 
       <div className="bg-s1 border border-b1 rounded-[10px] p-[18px] mb-4">
         <div className="text-[13px] font-semibold text-t1 mb-3 pb-2 border-b border-b1">Descuento arquitecta</div>
         <div className="grid grid-cols-3 gap-3">
           <Field label="% Material importado (USD)" type="number" value={d.imported_percentage} onChange={v => upd("imported_percentage", +v)} />
           <Field label="% Material nacional (ARS)" type="number" value={d.national_percentage} onChange={v => upd("national_percentage", +v)} />
-          <Field label="Umbral m\u00EDnimo m\u00B2" type="number" value={d.min_m2_threshold} onChange={v => upd("min_m2_threshold", +v)} />
+          <Field label="Umbral mínimo m²" type="number" value={d.min_m2_threshold} onChange={v => upd("min_m2_threshold", +v)} />
         </div>
       </div>
 
@@ -276,7 +276,7 @@ function DiscountsSection({ toast }: { toast: (m: string, v?: "error" | "success
         <div className="text-[13px] font-semibold text-t1 mb-3 pb-2 border-b border-b1">Descuento edificio</div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="% Descuento edificio" type="number" value={d.building_percentage} onChange={v => upd("building_percentage", +v)} />
-          <Field label="Umbral m\u00EDnimo m\u00B2" type="number" value={d.building_min_m2_threshold} onChange={v => upd("building_min_m2_threshold", +v)} />
+          <Field label="Umbral mínimo m²" type="number" value={d.building_min_m2_threshold} onChange={v => upd("building_min_m2_threshold", +v)} />
         </div>
       </div>
 
@@ -299,11 +299,11 @@ function DeliverySection({ toast }: { toast: (m: string, v?: "error" | "success"
   return (
     <>
       <div className="text-[15px] font-semibold text-t1 mb-1">Plazo de entrega</div>
-      <div className="text-xs text-t3 mb-5">D\u00EDas y texto que aparecen como default en los presupuestos.</div>
+      <div className="text-xs text-t3 mb-5">Días y texto que aparecen como default en los presupuestos.</div>
 
       <div className="bg-s1 border border-b1 rounded-[10px] p-[18px] mb-4">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="D\u00EDas default" type="number" value={dd.default} onChange={v => upd("default", +v)} />
+          <Field label="Días default" type="number" value={dd.default} onChange={v => upd("default", +v)} />
           <Field label="Texto para presupuesto" value={dd.display} onChange={v => upd("display", v)} />
         </div>
       </div>
@@ -327,16 +327,16 @@ function CompanySection({ toast }: { toast: (m: string, v?: "error" | "success" 
   return (
     <>
       <div className="text-[15px] font-semibold text-t1 mb-1">Datos de la empresa</div>
-      <div className="text-xs text-t3 mb-5">Informaci\u00F3n que aparece en el encabezado de cada PDF generado.</div>
+      <div className="text-xs text-t3 mb-5">Información que aparece en el encabezado de cada PDF generado.</div>
 
       <div className="bg-s1 border border-b1 rounded-[10px] p-[18px] mb-4">
         <div className="grid grid-cols-2 gap-3 mb-3">
           <Field label="Nombre" value={c.name} onChange={v => upd("name", v)} />
-          <Field label="Subt\u00EDtulo" value={c.subtitle} onChange={v => upd("subtitle", v)} />
+          <Field label="Subtítulo" value={c.subtitle} onChange={v => upd("subtitle", v)} />
         </div>
         <div className="grid grid-cols-2 gap-3 mb-3">
-          <Field label="Direcci\u00F3n" value={c.address} onChange={v => upd("address", v)} />
-          <Field label="Tel\u00E9fono" value={c.phone} onChange={v => upd("phone", v)} />
+          <Field label="Dirección" value={c.address} onChange={v => upd("address", v)} />
+          <Field label="Teléfono" value={c.phone} onChange={v => upd("phone", v)} />
         </div>
         <Field label="Email" value={c.email} onChange={v => upd("email", v)} />
       </div>
