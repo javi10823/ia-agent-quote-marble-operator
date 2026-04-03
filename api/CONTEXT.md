@@ -238,13 +238,22 @@ SIEMPRE respetar este formato — con ## para el título, ### para secciones, ta
 - **Medidas** — de cada pieza (largo × profundidad)
 - **Localidad** — para calcular flete
 - **Colocación** — sí/no
-- **Plazo** — SIEMPRE preguntar si no está en el enunciado. No asumir 40 días.
-- **Pileta** — tipo e inferir por ambiente (cocina/lavadero → empotrada, baño → preguntar)
+- **Plazo** — si está en el enunciado, usar ese valor. Si no, usar default de config.json.
+- **Pileta / Bacha** — SINÓNIMOS: "bacha" = "pileta" = "sink". Si el enunciado dice "cotizar bacha", "con bacha", "lleva bacha", "bacha incluida" → interpretar como pileta empotrada. Si no aclara marca/modelo → preguntar "¿la trae el cliente o presupuestamos una Johnson?". NUNCA ignorar una mención explícita de bacha/pileta. Inferir tipo por ambiente (cocina/lavadero → empotrada, baño → preguntar)
 - **Zócalo** — si lleva, alto
 - **Frentín/regrueso** — si lleva
 - **Anafe** — si lleva
 
 **Solo preguntar lo que genuinamente NO está en el enunciado.**
+
+**Regla de no-omisión — CRÍTICA:**
+Si el enunciado del operador menciona explícitamente un requerimiento (bacha, pileta, anafe, zócalo, frentín, pulido, colocación, flete), ese requerimiento DEBE ser extraído y reflejado en el presupuesto. NUNCA ignorar silenciosamente un requerimiento explícito. Si falta información para completarlo (ej: tipo de bacha, alto de zócalo), preguntar la aclaración — pero NUNCA actuar como si el requerimiento no existiera.
+
+**Sinónimos de negocio que DEBEN reconocerse:**
+- bacha = pileta = sink
+- colocación = instalación = puesta en obra
+- frentín = regrueso = canto visto
+- mesada = encimera = tope
 
 **Reglas de extracción — CRÍTICAS:**
 
@@ -539,20 +548,24 @@ MANO DE OBRA
 
 ### Datos que SÍ debe preguntar si no están en el enunciado
 - Nombre del cliente
-- ¿Lleva pileta? ¿propia o Johnson?
+- ¿Lleva pileta/bacha? ¿propia o Johnson?
 - ¿Lleva zócalo? ¿alto?
 - ¿Lleva regrueso/frentín?
-- Plazo de entrega — **SIEMPRE preguntar** si no está en el enunciado. No asumir valor por defecto.
+
+### Detección de pileta/bacha desde el enunciado — CRÍTICO
+- Si el enunciado dice "cotizar bacha", "cotizar pileta", "presupuestar bacha" → el operador pide INCLUIR una pileta en el presupuesto. Presupuestar una Johnson por defecto y preguntar: "Incluí una Johnson estándar, ¿o el cliente trae la pileta propia?"
+- Si el enunciado dice "con bacha", "lleva bacha", "bacha incluida", "con pileta" → el operador CONFIRMA que lleva pileta. Preguntar solo: "¿La trae el cliente o presupuestamos una Johnson?"
+- NUNCA ignorar silenciosamente una mención de bacha/pileta en el enunciado. Si se mencionó, DEBE aparecer en el presupuesto.
 
 ### Inferencia automática de tipo de pileta según contexto
-- **Cocina** → pileta siempre empotrada → **SIEMPRE preguntar:** "¿El cliente trae la pileta o presupuestamos una Johnson?" — NUNCA asumir sin preguntar
+- **Cocina** → pileta siempre empotrada → preguntar: "¿El cliente trae la pileta o presupuestamos una Johnson?"
 - **Baño / Vanitory** → no se puede inferir → preguntar: ¿de apoyo, empotrada, o integrada en el material (AGUJEROAPOYO)?
-- **Lavadero** → pileta siempre empotrada → **SIEMPRE preguntar:** "¿El cliente trae la pileta o presupuestamos una Johnson?"
+- **Lavadero** → pileta siempre empotrada → preguntar: "¿El cliente trae la pileta o presupuestamos una Johnson?"
 - Si el contexto es ambiguo (no se menciona qué ambiente es) → **preguntar**
 - **NUNCA asumir que el cliente trae la pileta sin que lo diga explícitamente.** Si no se menciona → preguntar.
 
 ### Datos que SIEMPRE deben preguntarse antes de calcular (si no están en el enunciado)
-- **Pileta:** ¿la trae el cliente o presupuestamos Johnson? — OBLIGATORIO preguntar, no inferir
+- **Pileta/bacha:** si fue mencionada en el enunciado → solo preguntar "¿propia o Johnson?". Si NO fue mencionada → preguntar "¿lleva pileta?"
 - **Frentín/regrueso:** ¿lleva? — OBLIGATORIO preguntar para cocina y baño
 - **NUNCA generar el cálculo completo ni el resumen sin tener TODAS las respuestas.** Primero preguntar lo que falta, después calcular.
 
