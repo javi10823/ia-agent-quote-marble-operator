@@ -276,8 +276,8 @@ class TestRequiredDataValidation:
         assert "client" in result["error"].lower() or "nombre" in result["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_rejects_missing_delivery_days(self, db_session, sample_quote_data):
-        """Cannot generate without plazo de entrega."""
+    async def test_accepts_missing_delivery_days_with_default(self, db_session, sample_quote_data):
+        """Delivery days has a default from config.json — no longer required."""
         qid = await _create_quote(db_session)
         sample_quote_data.pop("delivery_days", None)
 
@@ -289,8 +289,8 @@ class TestRequiredDataValidation:
             db=db_session,
         )
 
-        assert result["ok"] is False
-        assert "delivery" in result["error"].lower() or "plazo" in result["error"].lower() or "entrega" in result["error"].lower()
+        # Should succeed because delivery_days falls back to config.json default
+        assert result["ok"] is True
 
     @pytest.mark.asyncio
     async def test_rejects_missing_material_name(self, db_session, sample_quote_data):
