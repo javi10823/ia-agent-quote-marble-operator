@@ -398,6 +398,7 @@ function ChatInput({ input, setInput, files, setFiles, dragActive, setDragActive
   }, [input]);
 
   const addFiles = (newFiles: FileList | File[]) => {
+    if (sending) return;
     const arr = Array.from(newFiles);
     for (const f of arr) {
       if (!VALID_TYPES.some(t => f.type.includes(t.split("/")[1]))) { setFileError(`"${f.name}" ${DASH} tipo no soportado`); setTimeout(() => setFileError(null), 3000); continue; }
@@ -455,7 +456,7 @@ function ChatInput({ input, setInput, files, setFiles, dragActive, setDragActive
         />
         <div className="flex items-center gap-[5px] shrink-0">
           <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" multiple className="hidden" onChange={e => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
-          <IconBtn onClick={() => fileRef.current?.click()} title="Adjuntar plano">
+          <IconBtn onClick={() => fileRef.current?.click()} title="Adjuntar plano" disabled={sending}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" /></svg>
           </IconBtn>
           <IconBtn onClick={send} primary disabled={sending || (!input.trim() && files.length === 0)}>
