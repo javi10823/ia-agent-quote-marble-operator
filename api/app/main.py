@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -16,12 +17,49 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# ── PROMPT CACHE KEEP-ALIVE ─────────────────────────────────────────────────
+# Anthropic prompt cache has a 5-min TTL. A minimal ping every 4 min keeps
+# the ~19,500 token stable block cached, paying 10% instead of 125% (write).
+
+async def _cache_keepalive_loop():
+    """Ping Anthropic API every 4 min with cached system prompt to keep it warm."""
+    import anthropic
+    from app.modules.agent.agent import build_system_prompt
+
+    if not settings.ANTHROPIC_API_KEY:
+        return
+
+    client = anthropic.AsyncAnthropic(
+        api_key=settings.ANTHROPIC_API_KEY,
+        default_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+    )
+
+    await asyncio.sleep(60)  # Wait 1 min after startup before first ping
+
+    while True:
+        try:
+            system = build_system_prompt()  # Stable block only
+            await client.messages.create(
+                model=settings.ANTHROPIC_MODEL,
+                max_tokens=1,
+                system=system,
+                messages=[{"role": "user", "content": "ping"}],
+            )
+            logger.info("Cache keep-alive ping sent")
+        except Exception as e:
+            logger.warning(f"Cache keep-alive failed: {e}")
+        await asyncio.sleep(240)  # 4 minutes
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     await cleanup_empty_drafts()
     logger.info(f"CORS_ORIGINS: {settings.CORS_ORIGINS}")
+    # Start cache keep-alive background task
+    keepalive_task = asyncio.create_task(_cache_keepalive_loop())
     yield
+    keepalive_task.cancel()
 
 
 app = FastAPI(

@@ -164,18 +164,24 @@ def _load_example_index() -> list:
 _EXAMPLE_INDEX = _load_example_index()
 
 
-def select_examples(user_message: str, is_building: bool, max_examples: int = 3) -> list:
+# Examples already included in the cached stable block — skip them in dynamic selection
+_CACHED_EXAMPLE_IDS = {"quote-013", "quote-003", "quote-004", "quote-010", "quote-030"}
+
+
+def select_examples(user_message: str, is_building: bool, max_examples: int = 2) -> list:
     """
     Select the most relevant examples based on tag overlap with the current case.
+    Skips examples already in the cached stable block.
     Returns list of example file paths (sorted by relevance, most relevant first).
-    Always includes at least 1 example (fallback: quote-030).
     """
     features = _extract_features(user_message, is_building)
     examples_dir = BASE_DIR / "examples"
 
-    # Score each example by tag overlap
+    # Score each example by tag overlap — skip cached ones
     scored = []
     for entry in _EXAMPLE_INDEX:
+        if entry["id"] in _CACHED_EXAMPLE_IDS:
+            continue  # Already in stable cache, don't pay twice
         entry_tags = set(entry.get("tags", []))
         overlap = len(features & entry_tags)
         # Bonus: exact material match
@@ -194,14 +200,9 @@ def select_examples(user_message: str, is_building: bool, max_examples: int = 3)
         if len(selected) >= max_examples:
             break
         mat = entry.get("material", "")
-        # Allow first 2 freely, then require material diversity
-        if len(selected) < 2 or mat not in seen_materials:
+        if len(selected) < 1 or mat not in seen_materials:
             selected.append(eid)
             seen_materials.add(mat)
-
-    # Fallback: always at least quote-030 (comprehensive residential example)
-    if not selected:
-        selected = ["quote-030"]
 
     # Resolve to file paths
     paths = []
@@ -292,8 +293,18 @@ def _get_stable_text() -> str:
         path = rules_dir / name
         if path.exists():
             core_rules.append(f"## {path.stem}\n\n{path.read_text(encoding='utf-8')}")
+
+    # OPT-01: Include top 5 most universal examples in the cached block
+    # These cover ~80% of cases and pay 10% price when cached vs full price as conditional
+    _CACHED_EXAMPLES = ["quote-013", "quote-003", "quote-004", "quote-010", "quote-030"]
+    examples_dir = BASE_DIR / "examples"
+    for eid in _CACHED_EXAMPLES:
+        matches = list(examples_dir.glob(f"{eid}*.md"))
+        if matches:
+            core_rules.append(f"## Ejemplo: {matches[0].stem}\n\n{matches[0].read_text(encoding='utf-8')}")
+
     _stable_text_cache = "\n\n---\n\n".join([context] + core_rules)
-    logging.info(f"System prompt stable text cached ({len(_stable_text_cache)} chars)")
+    logging.info(f"System prompt stable text cached ({len(_stable_text_cache)} chars, includes 5 core examples)")
     return _stable_text_cache
 
 
@@ -650,6 +661,93 @@ def _serialize_content(content) -> list:
     return result
 
 
+# ── TOOL RESULT COMPACTION ────────────────────────────────────────────────────
+# After the agent processes a tool result, we don't need the full JSON in
+# subsequent iterations. Compact it to save ~3,000-5,000 tokens per quote.
+
+_COMPACT_KEYS = {
+    "calculate_quote": ["ok", "material_name", "material_m2", "material_total", "material_currency",
+                        "total_ars", "total_usd", "discount_pct", "merma"],
+    "catalog_batch_lookup": None,  # Already compact, keep as-is
+    "generate_documents": ["ok", "generated", "results"],
+}
+
+
+def _compact_tool_results(assistant_messages: list) -> list:
+    """Compact old tool results in assistant_messages to reduce context size.
+    Only compacts messages before the last assistant+user pair (keeps the most recent full)."""
+    if len(assistant_messages) < 4:
+        return assistant_messages  # Not enough history to compact
+
+    compacted = []
+    # Keep last 2 messages (latest assistant response + tool results) intact
+    to_compact = assistant_messages[:-2]
+    to_keep = assistant_messages[-2:]
+
+    for msg in to_compact:
+        if msg.get("role") == "user" and isinstance(msg.get("content"), list):
+            new_content = []
+            for block in msg["content"]:
+                if block.get("type") == "tool_result":
+                    try:
+                        result = json.loads(block["content"])
+                        # Compact known large results
+                        compacted_result = _compact_single_result(result)
+                        new_content.append({
+                            **block,
+                            "content": json.dumps(compacted_result),
+                        })
+                    except (json.JSONDecodeError, TypeError):
+                        new_content.append(block)
+                else:
+                    new_content.append(block)
+            compacted.append({**msg, "content": new_content})
+        else:
+            compacted.append(msg)
+
+    return compacted + to_keep
+
+
+def _compact_single_result(result: dict) -> dict:
+    """Reduce a tool result to essential fields."""
+    if not isinstance(result, dict):
+        return result
+
+    # For calculate_quote results (largest: ~2000 tokens)
+    if result.get("ok") and result.get("piece_details"):
+        return {
+            "ok": True,
+            "_compacted": True,
+            "material_name": result.get("material_name"),
+            "material_m2": result.get("material_m2"),
+            "material_total": result.get("material_total"),
+            "material_currency": result.get("material_currency"),
+            "total_ars": result.get("total_ars"),
+            "total_usd": result.get("total_usd"),
+            "discount_pct": result.get("discount_pct"),
+            "mo_count": len(result.get("mo_items", [])),
+            "sinks_count": len(result.get("sinks", [])),
+        }
+
+    # For batch lookup results (moderate)
+    if result.get("results") and result.get("count"):
+        compact = {"count": result["count"], "results": {}}
+        for k, v in result["results"].items():
+            if isinstance(v, dict) and v.get("found"):
+                compact["results"][k] = {
+                    "found": True,
+                    "sku": v.get("sku"),
+                    "name": v.get("name", "")[:30],
+                    "price": v.get("price_usd") or v.get("price_ars"),
+                    "currency": v.get("currency"),
+                }
+            else:
+                compact["results"][k] = v
+        return compact
+
+    return result
+
+
 # ── RETRY CONFIG ─────────────────────────────────────────────────────────────
 
 MAX_RETRIES = 3
@@ -729,6 +827,12 @@ class AgentService:
 
         # Agentic loop with tool use
         assistant_messages = []
+        # OPT-05: Per-quote cost tracking
+        _total_input_tokens = 0
+        _total_output_tokens = 0
+        _total_cache_read = 0
+        _total_cache_write = 0
+        _loop_iterations = 0
         yield {"type": "action", "content": "Leyendo catálogos y calculando..."}
 
         while True:
@@ -742,7 +846,7 @@ class AgentService:
                         model=settings.ANTHROPIC_MODEL,
                         max_tokens=8096,
                         system=system_prompt,
-                        messages=new_messages + assistant_messages,
+                        messages=new_messages + _compact_tool_results(assistant_messages),
                         tools=TOOLS,
                     ) as stream:
                         async for event in stream:
@@ -761,13 +865,18 @@ class AgentService:
 
                         final_message = await stream.get_final_message()
 
-                    # Log cache usage if available
+                    # Log and accumulate token usage
+                    _loop_iterations += 1
                     if hasattr(final_message, "usage"):
                         usage = final_message.usage
                         cache_read = getattr(usage, "cache_read_input_tokens", 0)
                         cache_create = getattr(usage, "cache_creation_input_tokens", 0)
+                        _total_input_tokens += usage.input_tokens
+                        _total_output_tokens += usage.output_tokens
+                        _total_cache_read += cache_read
+                        _total_cache_write += cache_create
                         logging.info(
-                            f"Token usage — input: {usage.input_tokens}, "
+                            f"Token usage [iter {_loop_iterations}] — input: {usage.input_tokens}, "
                             f"cache_read: {cache_read}, "
                             f"cache_create: {cache_create}, "
                             f"output: {usage.output_tokens}"
@@ -874,6 +983,17 @@ class AgentService:
             await db.commit()
         except Exception as e:
             logging.error(f"Error saving conversation to DB: {e}", exc_info=True)
+
+        # OPT-05: Per-quote cost summary
+        logging.info(
+            f"QUOTE COST SUMMARY [{quote_id}] — "
+            f"iterations: {_loop_iterations}, "
+            f"total_input: {_total_input_tokens}, "
+            f"total_output: {_total_output_tokens}, "
+            f"cache_read: {_total_cache_read}, "
+            f"cache_write: {_total_cache_write}, "
+            f"effective_tokens: {_total_input_tokens + _total_output_tokens}"
+        )
 
         yield {"type": "done", "content": ""}
 
