@@ -132,10 +132,12 @@ export default function QuotePage() {
           setActionText("");
           // Final flush with complete content + streaming=false
           setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc, isStreaming: false } : m));
-          const updated = await fetchQuote(quoteId);
+          const [updated] = await Promise.all([
+            fetchQuote(quoteId),
+            refreshQuotes(),
+            fetchQuoteComparison(quoteId).then(c => setComparison(c)).catch(() => {}),
+          ]);
           setQuote(updated);
-          refreshQuotes();
-          fetchQuoteComparison(quoteId).then(c => setComparison(c)).catch(() => {});
         }
       }
       if (!gotDone) {
