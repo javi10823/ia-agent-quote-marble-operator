@@ -43,6 +43,9 @@ class Quote(Base):
     # Structured quote breakdown (pieces, MO, merma, discount)
     quote_breakdown: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # Notes from web client for the operator
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Source files (plans, images uploaded by operator)
     source_files: Mapped[list | None] = mapped_column(JSON, nullable=True)
 

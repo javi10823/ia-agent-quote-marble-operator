@@ -18,6 +18,7 @@ class QuoteListResponse(BaseModel):
     parent_quote_id: Optional[str] = None
     source: Optional[str] = "operator"
     is_read: bool = True
+    notes: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

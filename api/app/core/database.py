@@ -44,6 +44,7 @@ async def init_db():
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS drive_file_id VARCHAR(200)",
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS quote_breakdown JSON",
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS source_files JSON",
+            "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS notes TEXT",
         ]:
             try:
                 await conn.execute(__import__("sqlalchemy").text(col_sql))

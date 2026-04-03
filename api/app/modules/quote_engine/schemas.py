@@ -32,6 +32,7 @@ class QuoteInput(BaseModel):
     plazo: str = Field(..., min_length=1, description="Ej: 30 días")
     discount_pct: float = Field(default=0, ge=0, le=100)
     date: Optional[str] = Field(default=None, description="DD/MM/YYYY o DD.MM.YYYY")
+    notes: Optional[str] = Field(default=None, description="Notas u observaciones del cliente para el operador")
 
 
 class MOItemOutput(BaseModel):
