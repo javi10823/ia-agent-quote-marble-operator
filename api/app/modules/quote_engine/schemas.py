@@ -22,7 +22,7 @@ class QuoteInput(BaseModel):
     client_name: str = Field(..., min_length=1)
     project: str = Field(default="")
     material: Union[str, list[str]] = Field(..., description="Material o lista de materiales")
-    pieces: list[PieceInput] = Field(..., min_length=1)
+    pieces: Optional[list[PieceInput]] = Field(default=None, description="Piezas con medidas. Opcional si se adjunta plano.")
     localidad: str = Field(..., min_length=1, description="Zona de flete (ej: Rosario)")
     colocacion: bool = Field(default=True)
     pileta: Optional[PiletaType] = Field(default=None)

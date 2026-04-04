@@ -26,6 +26,39 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
     # Normalize material to list
     materials = body.material if isinstance(body.material, list) else [body.material]
 
+    # If no pieces provided, create a draft quote for the operator to complete
+    if not body.pieces:
+        quote_id = f"web-{uuid.uuid4()}"
+        quote = Quote(
+            id=quote_id,
+            client_name=body.client_name,
+            project=body.project,
+            material=materials[0],
+            messages=[],
+            status=QuoteStatus.DRAFT,
+            source="web",
+            is_read=False,
+            notes=body.notes,
+        )
+        db.add(quote)
+        await db.commit()
+        return QuoteResponse(
+            ok=True,
+            quotes=[QuoteResultItem(
+                quote_id=quote_id,
+                material=materials[0],
+                material_m2=0,
+                material_price_unit=0,
+                material_currency="USD",
+                material_total=0,
+                mo_items=[],
+                total_ars=0,
+                total_usd=0,
+                merma=MermaOutput(aplica=False, motivo="Pendiente medidas"),
+                discount=DiscountOutput(aplica=False),
+            )],
+        )
+
     results = []
     for material_name in materials:
         # Build input for calculator
