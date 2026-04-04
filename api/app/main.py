@@ -37,7 +37,6 @@ def touch_chat_activity():
 async def _cache_keepalive_loop():
     """Ping Anthropic API every 4 min — only if there was recent chat activity."""
     import anthropic
-    from app.modules.agent.agent import build_system_prompt
 
     if not settings.ANTHROPIC_API_KEY:
         return
@@ -52,7 +51,9 @@ async def _cache_keepalive_loop():
     while True:
         try:
             if time.time() - _last_chat_activity < ACTIVITY_WINDOW:
-                system = build_system_prompt()  # Stable block only
+                # Only send the stable cached block — no conditional content or examples
+                from app.modules.agent.agent import _get_stable_text
+                system = [{"type": "text", "text": _get_stable_text(), "cache_control": {"type": "ephemeral"}}]
                 await client.messages.create(
                     model=settings.ANTHROPIC_MODEL,
                     max_tokens=1,

@@ -350,8 +350,8 @@ def build_system_prompt(has_plan: bool = False, is_building: bool = False, user_
         if plan_path.exists():
             conditional_parts.append(f"## {plan_path.stem}\n\n{_read_cached_file(plan_path)}")
 
-    # Examples — select 3 most relevant based on user message features
-    example_paths = select_examples(user_message, is_building, max_examples=3)
+    # Examples — select 2 most relevant (5 core examples already in stable block)
+    example_paths = select_examples(user_message, is_building, max_examples=2)
     for ep in example_paths:
         conditional_parts.append(f"## Ejemplo: {ep.stem}\n\n{_read_cached_file(ep)}")
 
