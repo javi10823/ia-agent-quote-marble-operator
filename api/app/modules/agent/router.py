@@ -288,6 +288,9 @@ async def chat(
     plan_files: List[UploadFile] = File([]),
     db: AsyncSession = Depends(get_db),
 ):
+    from app.main import touch_chat_activity
+    touch_chat_activity()
+
     result = await db.execute(select(Quote).where(Quote.id == quote_id))
     quote = result.scalar_one_or_none()
     if not quote:
