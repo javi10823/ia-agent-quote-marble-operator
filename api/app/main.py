@@ -5,11 +5,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
+from fastapi import Depends
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import settings
-from app.core.database import init_db, cleanup_empty_drafts
-from app.core.static import mount_static_files
+from app.core.database import init_db, cleanup_empty_drafts, get_db
+# mount_static_files removed — files served via authenticated endpoint
 from app.core.auth import auth_middleware
-from app.modules.agent.router import router as agent_router
+from app.modules.agent.router import router as agent_router, files_router
 from app.modules.catalog.router import router as catalog_router
 from app.modules.quote_engine.router import router as quote_engine_router
 from app.modules.auth.router import router as auth_router
@@ -100,9 +104,18 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(agent_router, prefix="/api")
 app.include_router(catalog_router, prefix="/api")
 app.include_router(quote_engine_router, prefix="/api")
-mount_static_files(app)
+# Authenticated file serving (replaces unauthenticated StaticFiles mount)
+app.include_router(files_router)
 
 
 @app.get("/health")
-async def health():
-    return {"status": "ok", "service": "marble-operator-api"}
+async def health(db: AsyncSession = Depends(get_db)):
+    try:
+        await db.execute(text("SELECT 1"))
+        return {"status": "ok", "service": "marble-operator-api", "db": "connected"}
+    except Exception:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "service": "marble-operator-api", "db": "unreachable"},
+        )

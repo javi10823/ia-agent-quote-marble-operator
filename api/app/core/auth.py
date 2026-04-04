@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import Request, Response, HTTPException
+from fastapi.responses import JSONResponse
 from jose import jwt, JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,34 @@ logger = logging.getLogger(__name__)
 ALGORITHM = "HS256"
 TOKEN_EXPIRY_HOURS = 72  # 3 days
 COOKIE_NAME = "auth_token"
+
+
+# ── Rate Limiter (in-memory, no Redis) ─────────────────────────────────────
+
+import time as _time
+
+class InMemoryRateLimiter:
+    """Simple sliding-window rate limiter. Thread-safe enough for single-process."""
+    def __init__(self, max_requests: int, window_seconds: int):
+        self._max = max_requests
+        self._window = window_seconds
+        self._hits: dict[str, list[float]] = {}
+
+    def is_allowed(self, key: str) -> bool:
+        now = _time.monotonic()
+        hits = self._hits.get(key, [])
+        # Prune old entries
+        hits = [t for t in hits if now - t < self._window]
+        if len(hits) >= self._max:
+            self._hits[key] = hits
+            return False
+        hits.append(now)
+        self._hits[key] = hits
+        return True
+
+
+_login_limiter = InMemoryRateLimiter(10, 60)   # 10 req/min per IP
+_chat_limiter = InMemoryRateLimiter(20, 60)     # 20 req/min per IP
 
 # Routes that don't require authentication
 PUBLIC_ROUTES = {
@@ -139,6 +168,13 @@ async def auth_middleware(request: Request, call_next):
     Public routes are whitelisted.
     """
     path = request.url.path
+    client_ip = request.client.host if request.client else "unknown"
+
+    # Rate limiting on sensitive endpoints
+    if path == "/api/auth/login" and not _login_limiter.is_allowed(client_ip):
+        return JSONResponse(status_code=429, content={"detail": "Demasiados intentos. Esperá un minuto."})
+    if "/chat" in path and path.startswith("/api/quotes/") and not _chat_limiter.is_allowed(client_ip):
+        return JSONResponse(status_code=429, content={"detail": "Demasiadas solicitudes. Esperá un minuto."})
 
     # Allow public routes
     if path in PUBLIC_ROUTES or path.startswith(PUBLIC_PREFIXES):
@@ -147,11 +183,11 @@ async def auth_middleware(request: Request, call_next):
     # Check cookie
     token = request.cookies.get(COOKIE_NAME)
     if not token:
-        raise HTTPException(status_code=401, detail="No autenticado")
+        return JSONResponse(status_code=401, content={"detail": "No autenticado"})
 
     payload = decode_token(token)
     if not payload:
-        raise HTTPException(status_code=401, detail="Sesión expirada")
+        return JSONResponse(status_code=401, content={"detail": "Sesión expirada"})
 
     # Attach user info to request state
     request.state.user_email = payload.get("sub")

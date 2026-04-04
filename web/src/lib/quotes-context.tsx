@@ -61,7 +61,11 @@ export function QuotesProvider({ children }: { children: ReactNode }) {
     }
   }, [toast]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+    const iv = setInterval(refresh, 30_000);
+    return () => clearInterval(iv);
+  }, [refresh]);
 
   // Smart polling: check for changes every 15s, only fetch if something changed
   const silentRefresh = useCallback(async () => {
@@ -110,7 +114,10 @@ export function QuotesProvider({ children }: { children: ReactNode }) {
     }
   }, [toast]);
 
+  const deletingRef = useRef(false);
   const removeQuote = useCallback(async (id: string) => {
+    if (deletingRef.current) return;
+    deletingRef.current = true;
     const backup = quotes;
     setQuotes(prev => prev.filter(q => q.id !== id));
     try {
@@ -119,6 +126,8 @@ export function QuotesProvider({ children }: { children: ReactNode }) {
       setQuotes(backup); // rollback
       toast(err.message || "Error al eliminar presupuesto");
       throw err;
+    } finally {
+      deletingRef.current = false;
     }
   }, [quotes, toast]);
 

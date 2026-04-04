@@ -186,12 +186,24 @@ def _upload_to_drive_sync(
                 "mimeType": "application/vnd.google-apps.spreadsheet",
             }
             media = MediaFileUpload(str(file_path), mimetype=mime, resumable=True)
-            uploaded = service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields="id, webViewLink",
-                supportsAllDrives=True,
-            ).execute()
+            # Retry once on transient failure
+            for _attempt in range(2):
+                try:
+                    uploaded = service.files().create(
+                        body=file_metadata,
+                        media_body=media,
+                        fields="id, webViewLink",
+                        supportsAllDrives=True,
+                    ).execute()
+                    break
+                except Exception as upload_err:
+                    if _attempt == 0:
+                        import time
+                        logging.warning(f"Drive upload failed, retrying in 2s: {upload_err}")
+                        time.sleep(2)
+                        media = MediaFileUpload(str(file_path), mimetype=mime, resumable=True)
+                    else:
+                        raise
             logging.info(f"Uploaded to Drive: {file_path.name} → {uploaded.get('webViewLink')}")
 
             # Set Argentine locale via Sheets API

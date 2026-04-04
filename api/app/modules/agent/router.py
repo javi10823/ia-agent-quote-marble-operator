@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Query
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from pydantic import BaseModel
@@ -22,18 +22,45 @@ from app.modules.agent.schemas import (
     QuoteCompareItem,
     QuoteCompareResponse,
     QuoteStatusUpdate,
+    QuotePatchRequest,
 )
 
 router = APIRouter(tags=["agent"])
 agent_service = AgentService()
+
+# Valid status transitions
+VALID_TRANSITIONS: dict[str, set[str]] = {
+    "draft": {"validated"},
+    "validated": {"sent", "draft"},
+    "sent": {"validated"},
+}
+
+
+# ── AUTHENTICATED FILE SERVING ───────────────────────────────────────────────
+# Separate router mounted at /files (not /api/files) to match existing URLs in DB
+
+files_router = APIRouter(tags=["files"])
+
+@files_router.get("/files/{file_path:path}")
+async def serve_file(file_path: str):
+    """Serve generated files (PDFs, Excel, sources) with auth protection."""
+    from app.core.static import OUTPUT_DIR
+    import mimetypes
+    full_path = (OUTPUT_DIR / file_path).resolve()
+    if not full_path.is_relative_to(OUTPUT_DIR.resolve()):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    if not full_path.exists() or not full_path.is_file():
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    media_type = mimetypes.guess_type(str(full_path))[0] or "application/octet-stream"
+    return FileResponse(full_path, media_type=media_type)
 
 
 # ── LIST QUOTES ──────────────────────────────────────────────────────────────
 
 @router.get("/quotes", response_model=list[QuoteListResponse])
 async def list_quotes(
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
     from sqlalchemy.orm import defer
@@ -195,6 +222,17 @@ async def update_status(
     body: QuoteStatusUpdate,
     db: AsyncSession = Depends(get_db),
 ):
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+
+    current = quote.status.value if hasattr(quote.status, "value") else quote.status
+    target = body.status.value if hasattr(body.status, "value") else body.status
+    allowed = VALID_TRANSITIONS.get(current, set())
+    if target not in allowed:
+        raise HTTPException(status_code=400, detail=f"Transición inválida: {current} → {target}")
+
     await db.execute(
         update(Quote)
         .where(Quote.id == quote_id)
@@ -209,11 +247,10 @@ async def update_status(
 @router.patch("/quotes/{quote_id}")
 async def patch_quote(
     quote_id: str,
-    body: dict,
+    body: QuotePatchRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    allowed = {"client_name", "project", "material", "parent_quote_id"}
-    updates = {k: v for k, v in body.items() if k in allowed}
+    updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update")
     await db.execute(update(Quote).where(Quote.id == quote_id).values(**updates))
@@ -232,6 +269,84 @@ async def mark_as_read(quote_id: str, db: AsyncSession = Depends(get_db)):
     return {"ok": True}
 
 
+# ── GENERATE DOCUMENTS (for web quotes without docs) ─────────────────────────
+
+@router.post("/quotes/{quote_id}/generate")
+async def generate_quote_documents(quote_id: str, db: AsyncSession = Depends(get_db)):
+    """Generate PDF/Excel/Drive for a quote that has quote_breakdown but no documents yet."""
+    from app.modules.agent.tools.document_tool import generate_documents
+    from app.modules.agent.tools.drive_tool import upload_to_drive
+
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+
+    bd = quote.quote_breakdown
+    if not bd:
+        raise HTTPException(status_code=400, detail="Este presupuesto no tiene datos de cálculo (quote_breakdown)")
+
+    # Build doc_data from breakdown (same structure as quote_engine/router.py)
+    doc_data = {
+        "client_name": bd.get("client_name", quote.client_name),
+        "project": bd.get("project", quote.project),
+        "date": bd.get("date", ""),
+        "delivery_days": bd.get("delivery_days", ""),
+        "material_name": bd.get("material_name", quote.material or ""),
+        "material_m2": bd.get("material_m2", 0),
+        "material_price_unit": bd.get("material_price_unit", 0),
+        "material_currency": bd.get("material_currency", "USD"),
+        "discount_pct": bd.get("discount_pct", 0),
+        "sectors": bd.get("sectors", []),
+        "sinks": bd.get("sinks", []),
+        "mo_items": bd.get("mo_items", []),
+        "total_ars": bd.get("total_ars", 0),
+        "total_usd": bd.get("total_usd", 0),
+    }
+
+    # Generate PDF + Excel
+    doc_result = await generate_documents(quote_id, doc_data)
+    if not doc_result.get("ok"):
+        raise HTTPException(status_code=500, detail=doc_result.get("error", "Error generando documentos"))
+
+    pdf_url = doc_result.get("pdf_url")
+    excel_url = doc_result.get("excel_url")
+
+    # Upload to Drive
+    drive_url = None
+    drive_file_id = None
+    drive_result = await upload_to_drive(
+        quote_id,
+        doc_data["client_name"],
+        doc_data["material_name"],
+        doc_data["date"],
+    )
+    if drive_result.get("ok"):
+        drive_url = drive_result.get("drive_url")
+        drive_file_id = drive_result.get("drive_file_id")
+
+    # Update quote with file URLs + status
+    await db.execute(
+        update(Quote).where(Quote.id == quote_id).values(
+            pdf_url=pdf_url,
+            excel_url=excel_url,
+            drive_url=drive_url,
+            drive_file_id=drive_file_id,
+            status=QuoteStatus.VALIDATED.value,
+        )
+    )
+    await db.commit()
+
+    logging.info(f"Generated documents for quote {quote_id}: pdf={pdf_url}, drive={drive_url}")
+
+    return {
+        "ok": True,
+        "pdf_url": pdf_url,
+        "excel_url": excel_url,
+        "drive_url": drive_url,
+    }
+
+
 # ── DELETE QUOTE ──────────────────────────────────────────────────────────────
 
 @router.delete("/quotes/{quote_id}")
@@ -241,17 +356,25 @@ async def delete_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
     if not quote:
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
 
-    # Delete Drive file if exists
+    logging.info(f"Deleting quote {quote_id}: client={quote.client_name}, status={quote.status}")
+
+    # Delete Drive file if exists (best-effort)
     if quote.drive_file_id:
-        from app.modules.agent.tools.drive_tool import delete_drive_file
-        await delete_drive_file(quote.drive_file_id)
+        try:
+            from app.modules.agent.tools.drive_tool import delete_drive_file
+            await delete_drive_file(quote.drive_file_id)
+        except Exception as e:
+            logging.warning(f"Failed to delete Drive file {quote.drive_file_id}: {e}")
 
     # Delete local files
     import shutil
     from app.core.static import OUTPUT_DIR
     output_dir = OUTPUT_DIR / quote_id
     if output_dir.exists():
-        shutil.rmtree(output_dir, ignore_errors=True)
+        try:
+            shutil.rmtree(output_dir)
+        except Exception as e:
+            logging.warning(f"Failed to delete local files for {quote_id}: {e}")
 
     await db.delete(quote)
     await db.commit()
@@ -378,9 +501,9 @@ async def chat(
                     yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as e:
             logging.error(f"SSE stream error for quote {quote_id}: {e}", exc_info=True)
-            error_chunk = {"type": "action", "content": f"⚠️ Error inesperado: {str(e)[:200]}. Intentá de nuevo."}
+            error_chunk = {"type": "error", "content": f"⚠️ Error inesperado: {str(e)[:200]}. Intentá de nuevo."}
             yield f"data: {json.dumps(error_chunk)}\n\n"
-            yield f"data: {json.dumps({'type': 'done', 'content': ''})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'content': '', 'error': True})}\n\n"
 
     return StreamingResponse(
         event_stream(),

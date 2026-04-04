@@ -5,7 +5,7 @@ export const fmtARS = (n: number | null | undefined) => {
 
 export const fmtUSD = (n: number | null | undefined) => {
   if (n == null || isNaN(n)) return "—";
-  return `USD ${Math.round(n).toLocaleString("es-AR")}`;
+  return `USD ${Math.round(n).toLocaleString("en-US")}`;
 };
 
 export const fmtQty = (n: number | null | undefined) => {

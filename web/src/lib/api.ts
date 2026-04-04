@@ -167,6 +167,18 @@ export async function fetchQuoteComparison(id: string): Promise<QuoteCompareResp
   return res.json();
 }
 
+// ── Generate Documents ───────────────────────────────────────────────────────
+
+export async function generateQuoteDocuments(id: string): Promise<{ ok: boolean; pdf_url?: string; excel_url?: string; drive_url?: string }> {
+  const res = await fetch(`${API_BASE}/api/quotes/${id}/generate`, { method: "POST", credentials: "include" });
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al generar documentos");
+  }
+  return res.json();
+}
+
 // ── Chat SSE ──────────────────────────────────────────────────────────────────
 
 export interface ChatChunk {
@@ -177,7 +189,8 @@ export interface ChatChunk {
 export async function* streamChat(
   quoteId: string,
   message: string,
-  files?: File[]
+  files?: File[],
+  signal?: AbortSignal
 ): AsyncGenerator<ChatChunk> {
   const formData = new FormData();
   formData.append("message", message);
@@ -190,6 +203,8 @@ export async function* streamChat(
   // Abort if no response within 60s (connection timeout)
   const controller = new AbortController();
   const connectTimeout = setTimeout(() => controller.abort(), 60_000);
+  // Forward external abort signal if provided
+  if (signal) signal.addEventListener("abort", () => controller.abort(), { once: true });
 
   let res: Response;
   try {
@@ -254,7 +269,9 @@ export async function* streamChat(
           try {
             const chunk: ChatChunk = JSON.parse(line.slice(6));
             yield chunk;
-          } catch {}
+          } catch (e) {
+            console.warn("SSE parse error:", line, e);
+          }
         }
       }
     }

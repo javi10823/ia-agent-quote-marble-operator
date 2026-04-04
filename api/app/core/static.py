@@ -1,8 +1,11 @@
+import logging
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_output_dir() -> Path:
@@ -21,6 +24,7 @@ def _resolve_output_dir() -> Path:
     except PermissionError:
         d = Path("/tmp/output")
         d.mkdir(parents=True, exist_ok=True)
+        logger.warning(f"OUTPUT_DIR fallback to /tmp/output — files will be lost on container restart")
     return d
 
 

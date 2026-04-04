@@ -1,7 +1,7 @@
 """Auth endpoints — login, logout, create user."""
 
-from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Response, Request
+from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
 
@@ -23,6 +23,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def strip_username(cls, v):
+        return v.strip() if isinstance(v, str) else v
 
 
 class LoginResponse(BaseModel):
@@ -55,21 +60,23 @@ async def logout(response: Response):
 
 
 @router.post("/create-user")
-async def create_user_endpoint(body: CreateUserRequest, db: AsyncSession = Depends(get_db)):
+async def create_user_endpoint(body: CreateUserRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """
     Create a new user. Allowed if:
     - No users exist yet (initial setup), OR
-    - Caller is already authenticated
+    - Caller is already authenticated (valid JWT cookie)
     """
     # Check if any users exist
     count = await db.scalar(select(func.count()).select_from(User))
 
     if count > 0:
-        # Require auth — not the initial setup
-        # (middleware already blocks unauthenticated requests,
-        #  but this endpoint is in PUBLIC_ROUTES for initial setup)
-        # We just need to verify manually here
-        pass  # If they got past middleware with a valid cookie, they're authorized
+        # Not initial setup — require valid JWT cookie
+        token = request.cookies.get(COOKIE_NAME)
+        if not token:
+            raise HTTPException(status_code=401, detail="No autenticado")
+        payload = decode_token(token)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Sesión expirada")
 
     # Check username not taken
     existing = await db.execute(select(User).where(User.username == body.username.strip()))

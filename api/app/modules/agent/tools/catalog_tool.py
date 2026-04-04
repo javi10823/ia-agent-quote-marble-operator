@@ -1,4 +1,5 @@
 import json
+import logging
 import math
 from pathlib import Path
 
@@ -14,7 +15,11 @@ def _load_catalog(name: str) -> list:
     path = CATALOG_DIR / f"{name}.json"
     if not path.exists():
         return []
-    data = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        logging.error(f"Malformed catalog JSON: {name}.json — {e}")
+        return []
     items = data if isinstance(data, list) else data.get("items", [])
     _catalog_cache[name] = items
     return items
@@ -38,16 +43,17 @@ def catalog_lookup(catalog: str, sku: str) -> dict:
         if item_sku == sku_upper:
             result = {"found": True, "sku": item.get("sku"), "name": item.get("name", "")}
 
-            # Price with IVA
+            # Price with IVA (21%)
+            # Business rule: USD uses floor(), ARS uses round() — intentional
             if "price_usd" in item:
                 price_base = item["price_usd"]
-                price_with_iva = math.floor(price_base * 1.21)
+                price_with_iva = math.floor(price_base * 1.21)  # USD: floor per business rule
                 result["price_usd"] = price_with_iva
                 result["price_usd_base"] = price_base
                 result["currency"] = "USD"
             elif "price_ars" in item:
                 price_base = item["price_ars"]
-                price_with_iva = round(price_base * 1.21)
+                price_with_iva = round(price_base * 1.21)  # ARS: round per business rule
                 result["price_ars"] = price_with_iva
                 result["price_ars_base"] = price_base
                 result["currency"] = "ARS"

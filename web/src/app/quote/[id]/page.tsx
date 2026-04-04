@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { fetchQuote, streamChat, markQuoteAsRead, fetchQuoteComparison, type QuoteDetail, type QuoteCompareResponse } from "@/lib/api";
+import { fetchQuote, streamChat, markQuoteAsRead, fetchQuoteComparison, generateQuoteDocuments, type QuoteDetail, type QuoteCompareResponse } from "@/lib/api";
 import { useQuotes } from "@/lib/quotes-context";
 import MessageBubble from "@/components/chat/MessageBubble";
 import CompareView from "@/components/quote/CompareView";
@@ -25,7 +25,7 @@ const fmtARS = (n: number | null | undefined) => {
 };
 const fmtUSD = (n: number | null | undefined) => {
   if (n == null || isNaN(n)) return DASH;
-  return `USD ${Math.round(n).toLocaleString("es-AR")}`;
+  return `USD ${Math.round(n).toLocaleString("en-US")}`;
 };
 const fmtQty = (n: number | null | undefined) => {
   if (n == null || isNaN(n)) return DASH;
@@ -58,10 +58,12 @@ export default function QuotePage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionText, setActionText] = useState("");
+  const [generating, setGenerating] = useState(false);
   const { refresh: refreshQuotes, markRead } = useQuotes();
 
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     fetchQuote(quoteId).then(q => {
@@ -77,7 +79,7 @@ export default function QuotePage() {
             : (m.content as any[]).filter(c => c.type === "text").map(c => c.text || "").join(""),
         }));
       setMessages(uiMsgs);
-      if (q.status === "validated" || q.status === "sent") setTab("detail");
+      if (q.status === "validated" || q.status === "sent" || q.source === "web") setTab("detail");
     }).catch((err: any) => {
       setLoadError(err.message || "Error al cargar presupuesto");
     }).finally(() => setLoading(false));
@@ -85,11 +87,20 @@ export default function QuotePage() {
     fetchQuoteComparison(quoteId).then(c => setComparison(c)).catch(() => {});
   }, [quoteId]);
 
+  // Abort SSE stream on unmount or quoteId change
+  useEffect(() => {
+    return () => { abortRef.current?.abort(); };
+  }, [quoteId]);
+
   useEffect(() => {
     const prevent = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); };
     document.addEventListener("dragover", prevent);
     document.addEventListener("drop", prevent);
-    return () => { document.removeEventListener("dragover", prevent); document.removeEventListener("drop", prevent); };
+    return () => {
+      document.removeEventListener("dragover", prevent);
+      document.removeEventListener("drop", prevent);
+      dragCounter.current = 0;
+    };
   }, []);
 
   useEffect(() => {
@@ -112,6 +123,11 @@ export default function QuotePage() {
     if (tab !== "chat") setTab("chat");
 
     try {
+      // Abort previous stream if any
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       let acc = "";
       let gotDone = false;
       let rafPending = false;
@@ -119,7 +135,7 @@ export default function QuotePage() {
         rafPending = false;
         setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc } : m));
       };
-      for await (const chunk of streamChat(quoteId, text, filesToSend.length > 0 ? filesToSend : undefined)) {
+      for await (const chunk of streamChat(quoteId, text, filesToSend.length > 0 ? filesToSend : undefined, controller.signal)) {
         if (chunk.type === "text") {
           acc += chunk.content;
           setActionText("");
@@ -152,6 +168,21 @@ export default function QuotePage() {
       setSending(false);
     }
   }, [input, attachedFiles, sending, quoteId, tab]);
+
+  const handleGenerate = useCallback(async () => {
+    if (generating) return;
+    setGenerating(true);
+    try {
+      await generateQuoteDocuments(quoteId);
+      const updated = await fetchQuote(quoteId);
+      setQuote(updated);
+      refreshQuotes();
+    } catch {
+      // Error handled by toast in api.ts
+    } finally {
+      setGenerating(false);
+    }
+  }, [quoteId, generating]);
 
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
@@ -196,7 +227,7 @@ export default function QuotePage() {
 
       {/* Tabs */}
       <div className="flex border-b border-b1 bg-s1 pl-7">
-        <TabBtn active={tab === "detail"} onClick={() => setTab("detail")} disabled={!quote || quote.status === "draft"}>Detalle</TabBtn>
+        <TabBtn active={tab === "detail"} onClick={() => setTab("detail")} disabled={!quote || (quote.status === "draft" && quote.source !== "web")}>Detalle</TabBtn>
         <TabBtn active={tab === "chat"} onClick={() => setTab("chat")}>Chat</TabBtn>
         {comparison && <TabBtn active={tab === "compare"} onClick={() => setTab("compare")}>Comparar</TabBtn>}
       </div>
@@ -208,7 +239,7 @@ export default function QuotePage() {
         </div>
       ) : tab === "detail" ? (
         <div className="flex-1 overflow-y-auto px-7 py-6">
-          <DetailView quote={quote} breakdown={bd} onSwitchToChat={() => setTab("chat")} />
+          <DetailView quote={quote} breakdown={bd} onSwitchToChat={() => setTab("chat")} onGenerate={quote?.source === "web" ? handleGenerate : undefined} generating={generating} />
           <Section title="Modificaciones" className="mt-5">
             <div className="text-xs text-t3 mb-2.5">{`Escrib${I} un cambio y Valentina regenera los documentos autom${A}ticamente.`}</div>
             <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
@@ -238,7 +269,7 @@ export default function QuotePage() {
 
 // ── DETAIL VIEW ─────────────────────────────────────────────────────────────
 
-function DetailView({ quote, breakdown, onSwitchToChat }: { quote: QuoteDetail | null; breakdown: Record<string, any> | null; onSwitchToChat: () => void }) {
+function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }: { quote: QuoteDetail | null; breakdown: Record<string, any> | null; onSwitchToChat: () => void; onGenerate?: () => void; generating?: boolean }) {
   if (!quote) return null;
 
   const pieces = breakdown?.sectors?.flatMap((s: any) => s.pieces || []) || [];
@@ -365,6 +396,36 @@ function DetailView({ quote, breakdown, onSwitchToChat }: { quote: QuoteDetail |
                 {quote.total_ars ? <div className="text-lg font-bold text-t1">{fmtARS(quote.total_ars)} <span className="text-t3 font-normal text-[13px]">mano de obra</span></div> : null}
                 {quote.total_usd ? <div className="text-[15px] font-semibold text-acc mt-0.5">+ {fmtUSD(quote.total_usd)} <span className="text-t3 font-normal text-[13px]">material</span></div> : null}
               </div>
+            </div>
+          )}
+
+          {/* CTA: Generate documents for web quotes without docs */}
+          {onGenerate && !quote.pdf_url && (
+            <div className="mt-6 p-5 rounded-[10px] text-center border border-dashed border-acc/30" style={{ background: "linear-gradient(135deg, rgba(124,110,240,0.08), rgba(124,110,240,0.03))" }}>
+              <div className="text-sm font-semibold text-t1 mb-1.5">{`Presupuesto listo para generar`}</div>
+              <div className="text-xs text-t3 mb-4">{`Revis${A} el desglose de arriba. Al confirmar se genera el PDF, Excel y se sube a Drive.`}</div>
+              <button
+                onClick={onGenerate}
+                disabled={generating}
+                className={clsx(
+                  "inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-[13px] font-semibold text-white border-none cursor-pointer transition-all",
+                  generating ? "bg-acc/50 cursor-wait" : "bg-acc hover:brightness-110",
+                )}
+              >
+                {generating ? (
+                  <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Generando...</>
+                ) : (
+                  <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Generar PDF y Excel</>
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* Success banner after generation */}
+          {onGenerate && quote.pdf_url && (
+            <div className="mt-6 px-5 py-3.5 rounded-[10px] bg-grn/10 border border-grn/20 flex items-center gap-3">
+              <span className="text-lg">{CIRCLE}</span>
+              <span className="text-[13px] font-medium text-grn">Documentos generados y subidos a Drive</span>
             </div>
           )}
         </Section>

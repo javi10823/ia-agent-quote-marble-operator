@@ -2,11 +2,20 @@
 
 import uuid
 import logging
-from fastapi import APIRouter, Depends, UploadFile, File
-from typing import List
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Header
+from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
+
+
+async def verify_api_key(x_api_key: Optional[str] = Header(None)):
+    """Verify API key for public quote endpoints. Skips if QUOTE_API_KEY is empty (dev mode)."""
+    if not settings.QUOTE_API_KEY:
+        return  # No API key configured — skip check (dev backward compat)
+    if not x_api_key or x_api_key != settings.QUOTE_API_KEY:
+        raise HTTPException(status_code=401, detail="API key inválida o faltante")
 from app.models.quote import Quote, QuoteStatus
 from app.modules.quote_engine.schemas import QuoteInput, QuoteResponse, QuoteResultItem, MOItemOutput, MermaOutput, DiscountOutput
 from app.modules.quote_engine.calculator import calculate_quote
@@ -16,7 +25,7 @@ from app.modules.agent.tools.drive_tool import upload_to_drive
 router = APIRouter(tags=["quote-engine"])
 
 
-@router.post("/v1/quote", response_model=QuoteResponse)
+@router.post("/v1/quote", response_model=QuoteResponse, dependencies=[Depends(verify_api_key)])
 async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db)):
     """
     Generate one or more quotes from complete input data.
@@ -93,7 +102,7 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
             total_ars=calc_result["total_ars"],
             total_usd=calc_result["total_usd"],
             quote_breakdown=calc_result,
-            messages=[],
+            messages=body.conversation or [],
             status=QuoteStatus.VALIDATED,
             source="web",
             is_read=False,
@@ -179,7 +188,7 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
     return QuoteResponse(ok=True, quotes=results)
 
 
-@router.post("/v1/quote/{quote_id}/files")
+@router.post("/v1/quote/{quote_id}/files", dependencies=[Depends(verify_api_key)])
 async def upload_source_files(
     quote_id: str,
     files: List[UploadFile] = File(...),
