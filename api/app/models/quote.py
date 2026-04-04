@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from sqlalchemy import String, Float, Boolean, DateTime, JSON, Enum, Text
+from sqlalchemy import String, Float, Boolean, DateTime, JSON, Enum, Text, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -59,3 +59,6 @@ class Quote(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+    # Optimistic locking — increment on each update to detect concurrent edits
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False, server_default="1")

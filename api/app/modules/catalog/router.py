@@ -1,8 +1,11 @@
 import json
+import os
+import tempfile
+import logging
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Any
+from pydantic import BaseModel, field_validator
+from typing import Union
 
 from app.modules.agent.tools.catalog_tool import invalidate_catalog_cache
 from app.modules.agent.tools.document_tool import invalidate_company_config_cache
@@ -32,7 +35,14 @@ ALLOWED_CATALOGS = [
 
 
 class CatalogUpdateRequest(BaseModel):
-    content: Any  # JSON content to save
+    content: Union[list, dict]
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def validate_content(cls, v):
+        if v is None:
+            raise ValueError("content cannot be null")
+        return v
 
 
 @router.get("/")
@@ -69,7 +79,11 @@ async def get_catalog(catalog_name: str):
     if not path.exists():
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
 
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        logging.error(f"Malformed catalog JSON: {catalog_name} — {e}")
+        raise HTTPException(status_code=500, detail="Error leyendo catálogo (JSON corrupto)")
 
 
 @router.put("/{catalog_name}")
@@ -85,10 +99,20 @@ async def update_catalog(catalog_name: str, body: CatalogUpdateRequest):
     if path.exists():
         backup_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
 
-    path.write_text(
-        json.dumps(body.content, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    # Atomic write: temp file + os.replace (POSIX atomic)
+    content_str = json.dumps(body.content, ensure_ascii=False, indent=2)
+    fd, tmp_path = tempfile.mkstemp(dir=str(CATALOG_DIR), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content_str)
+        os.replace(tmp_path, str(path))
+    except Exception:
+        # Clean up temp file on failure
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
     invalidate_catalog_cache(catalog_name)
     if catalog_name == "config":

@@ -9,7 +9,7 @@ _engine_kwargs = {
 }
 # Pool config only for PostgreSQL (SQLite doesn't support it)
 if "sqlite" not in settings.DATABASE_URL:
-    _engine_kwargs.update(pool_size=5, max_overflow=10, pool_timeout=30)
+    _engine_kwargs.update(pool_size=5, max_overflow=10, pool_timeout=30, pool_recycle=600)
 
 engine = create_async_engine(settings.DATABASE_URL, **_engine_kwargs)
 
@@ -29,6 +29,11 @@ async def init_db():
         from app.models import quote, user  # noqa - ensures models are registered
         await conn.run_sync(Base.metadata.create_all)
 
+        # Migrations only needed for PostgreSQL (existing deploys)
+        # SQLite creates tables fresh via create_all above
+        if "sqlite" in settings.DATABASE_URL:
+            return
+
         # Migrate: expand varchar columns + add parent_quote_id
         await conn.execute(
             __import__("sqlalchemy").text(
@@ -44,13 +49,18 @@ async def init_db():
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS drive_file_id VARCHAR(200)",
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS quote_breakdown JSON",
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS source_files JSON",
+            "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1 NOT NULL",
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS notes TEXT",
         ]:
             try:
                 await conn.execute(__import__("sqlalchemy").text(col_sql))
             except Exception as e:
-                if "already exists" not in str(e).lower() and "duplicate" not in str(e).lower():
-                    logging.warning(f"Migration: {col_sql[:60]}... → {e}")
+                err_lower = str(e).lower()
+                if "already exists" in err_lower or "duplicate" in err_lower:
+                    pass  # Idempotent — column already exists
+                else:
+                    logging.error(f"Migration FAILED: {col_sql[:60]}... → {e}")
+                    raise
 
 
 async def get_db():

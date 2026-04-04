@@ -12,6 +12,7 @@ os.environ.setdefault("GOOGLE_SERVICE_ACCOUNT_FILE", "test-sa.json")
 os.environ.setdefault("GOOGLE_DRIVE_FOLDER_ID", "test-folder-id")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-12345")
 os.environ.setdefault("APP_ENV", "test")
+os.environ.setdefault("QUOTE_API_KEY", "")
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from httpx import AsyncClient, ASGITransport
@@ -57,6 +58,22 @@ async def client(db_engine):
     # Create a test JWT token so auth middleware doesn't block requests
     test_token = create_token("test@test.com")
     async with AsyncClient(transport=transport, base_url="http://test", cookies={COOKIE_NAME: test_token}) as ac:
+        yield ac
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def client_no_auth(db_engine):
+    """FastAPI test client WITHOUT auth cookie — for testing unauthenticated access."""
+    session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def override_get_db():
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
 

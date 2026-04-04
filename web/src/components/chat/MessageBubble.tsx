@@ -204,6 +204,15 @@ const MarkdownTable = memo(function MarkdownTable({ lines }: { lines: string[] }
   );
 });
 
+function isSafeHref(href: string): boolean {
+  try {
+    const url = new URL(href, window.location.origin);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return href.startsWith("/");
+  }
+}
+
 const INLINE_REGEX = /\[([^\]]+)\]\(([^)]+)\)|\*\*(.*?)\*\*|(https?:\/\/[^\s,)]+)|`(\/files\/[^`]+)`/g;
 
 const InlineFormat = memo(function InlineFormat({ text }: { text: string }) {
@@ -216,9 +225,13 @@ const InlineFormat = memo(function InlineFormat({ text }: { text: string }) {
     if (match.index > lastIndex) elements.push(text.slice(lastIndex, match.index));
 
     if (match[1] && match[2]) {
-      elements.push(
-        <a key={match.index} href={match[2]} target="_blank" rel="noopener noreferrer" className="text-acc no-underline border-b border-acc/30">{match[1]}</a>
-      );
+      if (isSafeHref(match[2])) {
+        elements.push(
+          <a key={match.index} href={match[2]} target="_blank" rel="noopener noreferrer" className="text-acc no-underline border-b border-acc/30">{match[1]}</a>
+        );
+      } else {
+        elements.push(<span key={match.index}>{match[1]}</span>);
+      }
     } else if (match[3]) {
       elements.push(<strong key={match.index} className="font-medium text-t1">{match[3]}</strong>);
     } else if (match[4]) {

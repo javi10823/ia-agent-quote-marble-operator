@@ -12,26 +12,27 @@ class PiletaType(str, Enum):
 
 
 class PieceInput(BaseModel):
-    description: str = Field(..., description="Ej: Mesada cocina, Zócalo trasero")
-    largo: float = Field(..., gt=0, description="Largo en metros")
-    prof: Optional[float] = Field(None, gt=0, description="Profundidad en metros (para mesadas)")
-    alto: Optional[float] = Field(None, gt=0, description="Alto en metros (para zócalos/alzas)")
+    description: str = Field(..., max_length=200, description="Ej: Mesada cocina, Zócalo trasero")
+    largo: float = Field(..., gt=0, le=20, description="Largo en metros (max 20m)")
+    prof: Optional[float] = Field(None, gt=0, le=5, description="Profundidad en metros (max 5m)")
+    alto: Optional[float] = Field(None, gt=0, le=5, description="Alto en metros (max 5m)")
 
 
 class QuoteInput(BaseModel):
-    client_name: str = Field(..., min_length=1)
-    project: str = Field(default="")
+    client_name: str = Field(..., min_length=1, max_length=200)
+    project: str = Field(default="", max_length=200)
     material: Union[str, list[str]] = Field(..., description="Material o lista de materiales")
     pieces: Optional[list[PieceInput]] = Field(default=None, description="Piezas con medidas. Opcional si se adjunta plano.")
-    localidad: str = Field(..., min_length=1, description="Zona de flete (ej: Rosario)")
+    localidad: str = Field(..., min_length=1, max_length=100, description="Zona de flete (ej: Rosario)")
     colocacion: bool = Field(default=True)
     pileta: Optional[PiletaType] = Field(default=None)
     anafe: bool = Field(default=False)
     frentin: bool = Field(default=False)
     pulido: bool = Field(default=False)
-    plazo: str = Field(..., min_length=1, description="Ej: 30 días")
+    plazo: str = Field(..., min_length=1, max_length=100, description="Ej: 30 días")
     discount_pct: float = Field(default=0, ge=0, le=100)
     date: Optional[str] = Field(default=None, description="DD/MM/YYYY o DD.MM.YYYY")
+    conversation: Optional[list[dict]] = Field(default=None, description="Chat history from web chatbot [{role, content}]")
     notes: Optional[str] = Field(default=None, description="Notas u observaciones del cliente para el operador")
 
 

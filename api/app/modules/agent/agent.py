@@ -765,6 +765,7 @@ def _compact_single_result(result: dict) -> dict:
 
 MAX_RETRIES = 3
 RETRY_DELAYS = [5, 10, 15]
+MAX_ITERATIONS = 25  # Safety limit — prevent infinite tool loops
 
 
 # ── AGENT SERVICE ─────────────────────────────────────────────────────────────
@@ -849,6 +850,11 @@ class AgentService:
         yield {"type": "action", "content": "Leyendo catálogos y calculando..."}
 
         while True:
+            if _loop_iterations >= MAX_ITERATIONS:
+                logging.error(f"Agent exceeded MAX_ITERATIONS ({MAX_ITERATIONS}) for quote {quote_id}")
+                yield {"type": "action", "content": f"⚠️ Se alcanzó el límite de iteraciones ({MAX_ITERATIONS}). Intentá con un enunciado más simple."}
+                break
+
             full_text = ""
             tool_uses = []
 
@@ -996,6 +1002,10 @@ class AgentService:
             await db.commit()
         except Exception as e:
             logging.error(f"Error saving conversation to DB: {e}", exc_info=True)
+            try:
+                await db.rollback()
+            except Exception:
+                pass
 
         # OPT-05: Per-quote cost summary
         logging.info(
@@ -1086,7 +1096,7 @@ class AgentService:
                         update(Quote).where(Quote.id == target_qid).values(
                             pdf_url=result.get("pdf_url"),
                             excel_url=result.get("excel_url"),
-                            status="validated",
+                            status=QuoteStatus.VALIDATED.value,
                         )
                     )
 
@@ -1116,7 +1126,15 @@ class AgentService:
                         )
 
                 # Single atomic commit per quote — all DB changes together
-                await db.commit()
+                try:
+                    await db.commit()
+                except Exception as e:
+                    logging.error(f"Failed to commit quote {target_qid}: {e}", exc_info=True)
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
+                    return {"ok": False, "error": f"Error guardando quote: {str(e)[:200]}"}
 
                 all_results.append({
                     "quote_id": target_qid,

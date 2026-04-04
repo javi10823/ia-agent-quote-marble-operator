@@ -22,9 +22,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const addToast = useCallback((message: string, variant: ToastVariant = "error") => {
-    const id = ++nextId;
-    setToasts(prev => [...prev, { id, message, variant }]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+    setToasts(prev => {
+      if (prev.some(t => t.message === message && t.variant === variant)) return prev;
+      const id = ++nextId;
+      setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 5000);
+      return [...prev, { id, message, variant }];
+    });
   }, []);
 
   return (

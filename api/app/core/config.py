@@ -13,9 +13,18 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     CORS_ORIGINS: List[str] = ["http://localhost:3000"]
     SECRET_KEY: str
+    QUOTE_API_KEY: str = ""
     OPERATOR_EMAIL: str = ""
     OPERATOR_PASSWORD_HASH: str = ""
     OUTPUT_DIR: str = ""
+    SERVICE_ACCOUNT_BASE64: str = ""
+
+    @field_validator("SECRET_KEY", mode="after")
+    @classmethod
+    def validate_secret_key(cls, v):
+        if len(v) < 16:
+            raise ValueError("SECRET_KEY must be at least 16 characters")
+        return v
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

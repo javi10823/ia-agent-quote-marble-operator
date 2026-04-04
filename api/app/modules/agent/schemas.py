@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 from app.models.quote import QuoteStatus
@@ -51,3 +51,10 @@ class QuoteCompareResponse(BaseModel):
 
 class QuoteStatusUpdate(BaseModel):
     status: QuoteStatus
+
+
+class QuotePatchRequest(BaseModel):
+    client_name: Optional[str] = Field(None, max_length=500)
+    project: Optional[str] = Field(None, max_length=500)
+    material: Optional[str] = Field(None, max_length=500)
+    parent_quote_id: Optional[str] = Field(None, max_length=200)
