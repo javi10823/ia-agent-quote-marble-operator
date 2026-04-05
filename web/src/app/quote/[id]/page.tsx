@@ -273,10 +273,9 @@ export default function QuotePage() {
           {bd && (
             <Section title="Modificaciones" className="mt-5">
               <div className="text-xs text-t3 mb-2.5">{quote?.pdf_url ? `Escrib${I} un cambio y Valentina regenera los documentos autom${A}ticamente.` : `Escrib${I} un cambio y Valentina ajusta el presupuesto.`}</div>
-              <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
-              {/* Inline response from Valentina */}
+              {/* Inline response from Valentina (above input so operator can reply below) */}
               {(sending && sentFromDetail.current) && !lastInlineResponse?.content && (
-                <div className="mt-3.5 px-5 py-4 bg-s2 border border-b1 rounded-xl flex items-center gap-2.5">
+                <div className="mb-3.5 px-5 py-4 bg-s2 border border-b1 rounded-xl flex items-center gap-2.5">
                   <div className="w-[26px] h-[26px] rounded-full bg-acc flex items-center justify-center text-[11px] font-bold text-white shrink-0">V</div>
                   {inlineActionText ? (
                     <span className="text-xs text-t3 italic">{inlineActionText}</span>
@@ -290,10 +289,11 @@ export default function QuotePage() {
                 </div>
               )}
               {lastInlineResponse && lastInlineResponse.content && (
-                <div className="mt-3.5 animate-[fadeIn_0.3s_ease]">
+                <div className="mb-3.5 animate-[fadeIn_0.3s_ease]">
                   <MessageBubble message={lastInlineResponse} actionText={lastInlineResponse.isStreaming ? inlineActionText : undefined} />
                 </div>
               )}
+              <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
               <div ref={inlineEndRef} />
               <button onClick={() => setTab("chat")} className="mt-2 bg-transparent border-none text-acc text-xs cursor-pointer font-sans p-0">{`Ver historial completo ${ARROW}`}</button>
             </Section>
