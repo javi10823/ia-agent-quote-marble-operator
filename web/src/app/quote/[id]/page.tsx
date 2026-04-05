@@ -290,14 +290,8 @@ export default function QuotePage() {
                 </div>
               )}
               {lastInlineResponse && lastInlineResponse.content && (
-                <div className="mt-3.5 px-5 py-4 bg-s2 border border-b1 rounded-xl animate-[fadeIn_0.3s_ease]">
-                  <div className="flex items-center gap-2.5 mb-2.5">
-                    <div className="w-[26px] h-[26px] rounded-full bg-acc flex items-center justify-center text-[11px] font-bold text-white shrink-0">V</div>
-                    <span className="text-xs font-semibold text-t2">Valentina</span>
-                  </div>
-                  <div className="text-sm leading-[1.7] text-t2">
-                    <MessageBubble message={lastInlineResponse} />
-                  </div>
+                <div className="mt-3.5 animate-[fadeIn_0.3s_ease]">
+                  <MessageBubble message={lastInlineResponse} actionText={lastInlineResponse.isStreaming ? inlineActionText : undefined} />
                 </div>
               )}
               <div ref={inlineEndRef} />
