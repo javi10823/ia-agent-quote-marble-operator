@@ -247,7 +247,7 @@ export default function QuotePage() {
           {/* Show modifications section only when quote has breakdown (already calculated) */}
           {bd && (
             <Section title="Modificaciones" className="mt-5">
-              <div className="text-xs text-t3 mb-2.5">{`Escrib${I} un cambio y Valentina regenera los documentos autom${A}ticamente.`}</div>
+              <div className="text-xs text-t3 mb-2.5">{quote?.pdf_url ? `Escrib${I} un cambio y Valentina regenera los documentos autom${A}ticamente.` : `Escrib${I} un cambio y Valentina ajusta el presupuesto.`}</div>
               <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
               <button onClick={() => setTab("chat")} className="mt-2 bg-transparent border-none text-acc text-xs cursor-pointer font-sans p-0">{`Ver historial completo ${ARROW}`}</button>
             </Section>
