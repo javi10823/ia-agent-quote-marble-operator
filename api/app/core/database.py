@@ -62,6 +62,17 @@ async def init_db():
                     logging.error(f"Migration FAILED: {col_sql[:60]}... → {e}")
                     raise
 
+        # Add 'pending' value to quotestatus enum if not present
+        try:
+            await conn.execute(
+                __import__("sqlalchemy").text(
+                    "ALTER TYPE quotestatus ADD VALUE IF NOT EXISTS 'PENDING'"
+                )
+            )
+        except Exception as e:
+            if "already exists" not in str(e).lower() and "duplicate" not in str(e).lower():
+                logging.error(f"Migration FAILED: add PENDING to quotestatus → {e}")
+
 
 async def get_db():
     async with AsyncSessionLocal() as session:

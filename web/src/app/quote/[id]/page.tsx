@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { fetchQuote, streamChat, markQuoteAsRead, fetchQuoteComparison, generateQuoteDocuments, type QuoteDetail, type QuoteCompareResponse } from "@/lib/api";
+import { fetchQuote, streamChat, markQuoteAsRead, fetchQuoteComparison, validateQuote, type QuoteDetail, type QuoteCompareResponse } from "@/lib/api";
 import { useQuotes } from "@/lib/quotes-context";
 import MessageBubble from "@/components/chat/MessageBubble";
 import CompareView from "@/components/quote/CompareView";
@@ -35,6 +35,7 @@ const fmtQty = (n: number | null | undefined) => {
 
 const STATUS_CLASS: Record<string, { label: string; cls: string }> = {
   draft:     { label: "Borrador",  cls: "bg-amb-bg text-amb" },
+  pending:   { label: "Pendiente", cls: "bg-acc-bg text-acc" },
   validated: { label: "Validado",  cls: "bg-grn-bg text-grn" },
   sent:      { label: "Enviado",   cls: "bg-acc-bg text-acc" },
 };
@@ -79,7 +80,7 @@ export default function QuotePage() {
             : (m.content as any[]).filter(c => c.type === "text").map(c => c.text || "").join(""),
         }));
       setMessages(uiMsgs);
-      if (q.status === "validated" || q.status === "sent" || q.source === "web") setTab("detail");
+      if (q.status === "validated" || q.status === "sent" || q.status === "pending" || q.source === "web") setTab("detail");
     }).catch((err: any) => {
       setLoadError(err.message || "Error al cargar presupuesto");
     }).finally(() => setLoading(false));
@@ -173,7 +174,7 @@ export default function QuotePage() {
     if (generating) return;
     setGenerating(true);
     try {
-      await generateQuoteDocuments(quoteId);
+      await validateQuote(quoteId);
       const updated = await fetchQuote(quoteId);
       setQuote(updated);
       refreshQuotes();
@@ -239,7 +240,7 @@ export default function QuotePage() {
         </div>
       ) : tab === "detail" ? (
         <div className="flex-1 overflow-y-auto px-7 py-6">
-          <DetailView quote={quote} breakdown={bd} onSwitchToChat={() => setTab("chat")} onGenerate={quote?.source === "web" ? handleGenerate : undefined} generating={generating} />
+          <DetailView quote={quote} breakdown={bd} onSwitchToChat={() => setTab("chat")} onGenerate={quote?.status === "pending" || quote?.status === "draft" ? handleGenerate : undefined} generating={generating} />
           {/* Show modifications section only when quote has breakdown (already calculated) */}
           {bd && (
             <Section title="Modificaciones" className="mt-5">
@@ -416,9 +417,9 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
                 )}
               >
                 {generating ? (
-                  <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Generando...</>
+                  <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Validando...</>
                 ) : (
-                  <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Generar PDF y Excel</>
+                  <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg> Validar presupuesto</>
                 )}
               </button>
             </div>

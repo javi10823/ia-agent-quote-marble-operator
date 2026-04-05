@@ -9,17 +9,18 @@ import { es } from "date-fns/locale";
 import clsx from "clsx";
 
 const STATUS_LABEL: Record<Quote["status"], string> = {
-  draft: "Borrador", validated: "Validado", sent: "Enviado",
+  draft: "Borrador", pending: "Pendiente", validated: "Validado", sent: "Enviado",
 };
 
 const BADGE_CLASS: Record<Quote["status"], string> = {
   draft:     "bg-amb-bg text-amb",
+  pending:   "bg-acc-bg text-acc",
   validated: "bg-grn-bg text-grn",
   sent:      "bg-acc-bg text-acc",
 };
 
 const STATUS_NEXT: Record<Quote["status"], Quote["status"] | null> = {
-  draft: "validated", validated: "sent", sent: null,
+  draft: "validated", pending: "validated", validated: "sent", sent: null,
 };
 
 export default function DashboardPage() {
@@ -61,6 +62,7 @@ export default function DashboardPage() {
   const statusCounts = useMemo(() => ({
     todos: quotes.length,
     draft: quotes.filter(q => q.status === "draft").length,
+    pending: quotes.filter(q => q.status === "pending").length,
     validated: quotes.filter(q => q.status === "validated").length,
     sent: quotes.filter(q => q.status === "sent").length,
     web: quotes.filter(q => q.source === "web").length,
@@ -149,6 +151,7 @@ export default function DashboardPage() {
                 {([
                   { key: "todos", label: "Todos" },
                   { key: "draft", label: "Borrador" },
+                  { key: "pending", label: "Pendiente" },
                   { key: "validated", label: "Validado" },
                   { key: "sent", label: "Enviado" },
                   { key: "web", label: "Web" },

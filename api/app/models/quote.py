@@ -8,6 +8,7 @@ from app.core.database import Base
 
 class QuoteStatus(str, enum.Enum):
     DRAFT = "draft"
+    PENDING = "pending"
     VALIDATED = "validated"
     SENT = "sent"
 

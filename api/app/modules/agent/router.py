@@ -30,7 +30,8 @@ agent_service = AgentService()
 
 # Valid status transitions
 VALID_TRANSITIONS: dict[str, set[str]] = {
-    "draft": {"validated"},
+    "draft": {"validated", "pending"},
+    "pending": {"validated", "draft"},
     "validated": {"sent", "draft"},
     "sent": {"validated"},
 }
@@ -240,6 +241,79 @@ async def update_status(
     )
     await db.commit()
     return {"ok": True}
+
+
+# ── VALIDATE QUOTE (generate docs + change status) ──────────────────────────
+
+@router.post("/quotes/{quote_id}/validate")
+async def validate_quote(
+    quote_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate PDF/Excel/Drive from existing breakdown and set status to validated."""
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+
+    bd = quote.quote_breakdown
+    if not bd:
+        raise HTTPException(status_code=400, detail="El presupuesto no tiene desglose calculado")
+
+    from app.modules.agent.tools.document_tool import generate_documents
+    from app.modules.agent.tools.drive_tool import upload_to_drive
+
+    doc_data = {
+        "client_name": bd.get("client_name", quote.client_name),
+        "project": bd.get("project", quote.project),
+        "date": bd.get("date"),
+        "delivery_days": bd.get("delivery_days"),
+        "material_name": bd.get("material_name", quote.material),
+        "material_m2": bd.get("material_m2"),
+        "material_price_unit": bd.get("material_price_unit"),
+        "material_currency": bd.get("material_currency"),
+        "discount_pct": bd.get("discount_pct", 0),
+        "sectors": bd.get("sectors", []),
+        "sinks": bd.get("sinks", []),
+        "mo_items": bd.get("mo_items", []),
+        "total_ars": bd.get("total_ars", quote.total_ars),
+        "total_usd": bd.get("total_usd", quote.total_usd),
+    }
+
+    doc_result = await generate_documents(quote_id, doc_data)
+    pdf_url = doc_result.get("pdf_url") if doc_result.get("ok") else None
+    excel_url = doc_result.get("excel_url") if doc_result.get("ok") else None
+
+    drive_url = None
+    drive_file_id = None
+    if doc_result.get("ok"):
+        drive_result = await upload_to_drive(
+            quote_id,
+            doc_data["client_name"],
+            doc_data["material_name"],
+            doc_data.get("date"),
+        )
+        if drive_result.get("ok"):
+            drive_url = drive_result.get("drive_url")
+            drive_file_id = drive_result.get("drive_file_id")
+
+    await db.execute(
+        update(Quote).where(Quote.id == quote_id).values(
+            status=QuoteStatus.VALIDATED,
+            pdf_url=pdf_url,
+            excel_url=excel_url,
+            drive_url=drive_url,
+            drive_file_id=drive_file_id,
+        )
+    )
+    await db.commit()
+
+    return {
+        "ok": True,
+        "pdf_url": pdf_url,
+        "excel_url": excel_url,
+        "drive_url": drive_url,
+    }
 
 
 # ── PATCH QUOTE (admin) ──────────────────────────────────────────────────────

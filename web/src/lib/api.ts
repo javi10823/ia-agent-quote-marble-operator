@@ -14,7 +14,7 @@ export interface Quote {
   material: string | null;
   total_ars: number | null;
   total_usd: number | null;
-  status: "draft" | "validated" | "sent";
+  status: "draft" | "pending" | "validated" | "sent";
   pdf_url: string | null;
   excel_url: string | null;
   drive_url: string | null;
@@ -175,6 +175,16 @@ export async function generateQuoteDocuments(id: string): Promise<{ ok: boolean;
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "Error al generar documentos");
+  }
+  return res.json();
+}
+
+export async function validateQuote(id: string): Promise<{ ok: boolean; pdf_url?: string; excel_url?: string; drive_url?: string }> {
+  const res = await fetch(`${API_BASE}/api/quotes/${id}/validate`, { method: "POST", credentials: "include" });
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al validar presupuesto");
   }
   return res.json();
 }

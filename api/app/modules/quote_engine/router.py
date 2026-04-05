@@ -128,7 +128,7 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
             total_usd=calc_result["total_usd"],
             quote_breakdown=calc_result,
             messages=body.conversation or [],
-            status=QuoteStatus.DRAFT if getattr(body, "_parsed_from_notes", False) else QuoteStatus.VALIDATED,
+            status=QuoteStatus.PENDING,
             source="web",
             is_read=False,
             notes=body.notes,
@@ -136,56 +136,7 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
         db.add(quote)
         await db.commit()
 
-        # For parsed quotes (DRAFT), skip doc generation — operator confirms first
-        # For quotes with explicit pieces (VALIDATED), generate docs immediately
-        pdf_url = None
-        excel_url = None
-        drive_url = None
-        was_parsed = getattr(body, "_parsed_from_notes", False)
-
-        if not was_parsed:
-            doc_data = {
-                "client_name": calc_result["client_name"],
-                "project": calc_result["project"],
-                "date": calc_result["date"],
-                "delivery_days": calc_result["delivery_days"],
-                "material_name": calc_result["material_name"],
-                "filename_prefix": "WEB_",
-                "material_m2": calc_result["material_m2"],
-                "material_price_unit": calc_result["material_price_unit"],
-                "material_currency": calc_result["material_currency"],
-                "discount_pct": calc_result["discount_pct"],
-                "sectors": calc_result["sectors"],
-                "sinks": calc_result["sinks"],
-                "mo_items": calc_result["mo_items"],
-                "total_ars": calc_result["total_ars"],
-                "total_usd": calc_result["total_usd"],
-            }
-
-            doc_result = await generate_documents(quote_id, doc_data)
-            pdf_url = doc_result.get("pdf_url") if doc_result.get("ok") else None
-            excel_url = doc_result.get("excel_url") if doc_result.get("ok") else None
-
-            if doc_result.get("ok"):
-                drive_result = await upload_to_drive(
-                    quote_id,
-                    calc_result["client_name"],
-                    calc_result["material_name"],
-                    calc_result["date"],
-                )
-                if drive_result.get("ok"):
-                    drive_url = drive_result.get("drive_url")
-
-                from sqlalchemy import update
-                await db.execute(
-                    update(Quote).where(Quote.id == quote_id).values(
-                        pdf_url=pdf_url,
-                        excel_url=excel_url,
-                        drive_url=drive_url,
-                        drive_file_id=drive_result.get("drive_file_id") if drive_result.get("ok") else None,
-                    )
-                )
-                await db.commit()
+        # No doc generation here — operator validates via POST /quotes/{id}/validate
 
         merma = calc_result["merma"]
         results.append(QuoteResultItem(
@@ -209,9 +160,9 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
                 porcentaje=calc_result["discount_pct"],
                 monto=calc_result.get("discount_amount", 0),
             ),
-            pdf_url=pdf_url,
-            excel_url=excel_url,
-            drive_url=drive_url,
+            pdf_url=None,
+            excel_url=None,
+            drive_url=None,
         ))
 
     return QuoteResponse(ok=True, quotes=results)
