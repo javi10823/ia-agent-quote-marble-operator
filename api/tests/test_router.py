@@ -141,3 +141,132 @@ class TestUpdateStatus:
 
         detail = await client.get(f"/api/quotes/{quote_id}")
         assert detail.json()["status"] == "sent"
+
+
+# ── PATCH /api/quotes/:id — partial update ──────────────────────────────────
+
+class TestPatchQuote:
+    @pytest.mark.asyncio
+    async def test_patch_client_name(self, client):
+        qid = (await client.post("/api/quotes")).json()["id"]
+        resp = await client.patch(f"/api/quotes/{qid}", json={"client_name": "Juan"})
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["client_name"] == "Juan"
+
+    @pytest.mark.asyncio
+    async def test_patch_client_contact(self, client):
+        qid = (await client.post("/api/quotes")).json()["id"]
+        await client.patch(f"/api/quotes/{qid}", json={
+            "client_phone": "341-1234567",
+            "client_email": "juan@test.com",
+        })
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["client_phone"] == "341-1234567"
+        assert detail["client_email"] == "juan@test.com"
+
+    @pytest.mark.asyncio
+    async def test_patch_localidad_colocacion(self, client):
+        qid = (await client.post("/api/quotes")).json()["id"]
+        await client.patch(f"/api/quotes/{qid}", json={
+            "localidad": "Rosario",
+            "colocacion": True,
+        })
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["localidad"] == "Rosario"
+        assert detail["colocacion"] is True
+
+    @pytest.mark.asyncio
+    async def test_patch_pileta_anafe(self, client):
+        qid = (await client.post("/api/quotes")).json()["id"]
+        await client.patch(f"/api/quotes/{qid}", json={
+            "pileta": "empotrada_cliente",
+            "anafe": True,
+        })
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["pileta"] == "empotrada_cliente"
+        assert detail["anafe"] is True
+
+    @pytest.mark.asyncio
+    async def test_patch_conversation_id(self, client):
+        qid = (await client.post("/api/quotes")).json()["id"]
+        await client.patch(f"/api/quotes/{qid}", json={
+            "conversation_id": "DA-1712300000-ABCD",
+        })
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["conversation_id"] == "DA-1712300000-ABCD"
+
+    @pytest.mark.asyncio
+    async def test_patch_origin_maps_to_source(self, client):
+        qid = (await client.post("/api/quotes")).json()["id"]
+        resp = await client.patch(f"/api/quotes/{qid}", json={"origin": "web"})
+        assert resp.status_code == 200
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["source"] == "web"
+
+    @pytest.mark.asyncio
+    async def test_patch_material_string(self, client):
+        qid = (await client.post("/api/quotes")).json()["id"]
+        await client.patch(f"/api/quotes/{qid}", json={"material": "Silestone Blanco"})
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["material"] == "Silestone Blanco"
+
+    @pytest.mark.asyncio
+    async def test_patch_material_array(self, client):
+        qid = (await client.post("/api/quotes")).json()["id"]
+        await client.patch(f"/api/quotes/{qid}", json={
+            "material": ["Silestone Blanco", "Dekton Kelya"],
+        })
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["material"] == "Silestone Blanco, Dekton Kelya"
+
+    @pytest.mark.asyncio
+    async def test_patch_pieces(self, client):
+        qid = (await client.post("/api/quotes")).json()["id"]
+        pieces = [
+            {"description": "Mesada cocina", "largo": 2.5, "prof": 0.6},
+            {"description": "Zocalo", "largo": 2.5},
+        ]
+        await client.patch(f"/api/quotes/{qid}", json={"pieces": pieces})
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert len(detail["pieces"]) == 2
+        assert detail["pieces"][0]["description"] == "Mesada cocina"
+        assert detail["pieces"][0]["largo"] == 2.5
+        assert detail["pieces"][0]["prof"] == 0.6
+        assert detail["pieces"][1]["prof"] is None
+
+    @pytest.mark.asyncio
+    async def test_patch_status_free(self, client):
+        """Status via PATCH sets freely without transition validation."""
+        qid = (await client.post("/api/quotes")).json()["id"]
+        await client.patch(f"/api/quotes/{qid}", json={"status": "sent"})
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["status"] == "sent"
+
+    @pytest.mark.asyncio
+    async def test_patch_accumulative(self, client):
+        """Multiple PATCHes accumulate fields without overwriting others."""
+        qid = (await client.post("/api/quotes")).json()["id"]
+        await client.patch(f"/api/quotes/{qid}", json={"client_name": "Juan"})
+        await client.patch(f"/api/quotes/{qid}", json={"project": "Cocina"})
+        await client.patch(f"/api/quotes/{qid}", json={"material": "Silestone"})
+
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["client_name"] == "Juan"
+        assert detail["project"] == "Cocina"
+        assert detail["material"] == "Silestone"
+
+    @pytest.mark.asyncio
+    async def test_patch_nonexistent_404(self, client):
+        resp = await client.patch(
+            "/api/quotes/nonexistent-id-12345",
+            json={"client_name": "Test"},
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_patch_empty_body_400(self, client):
+        qid = (await client.post("/api/quotes")).json()["id"]
+        resp = await client.patch(f"/api/quotes/{qid}", json={})
+        assert resp.status_code == 400

@@ -8,6 +8,8 @@ import json
 import logging
 import uuid
 
+logger = logging.getLogger(__name__)
+
 # File upload constants
 ALLOWED_MIME_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
@@ -325,11 +327,31 @@ async def patch_quote(
     body: QuotePatchRequest,
     db: AsyncSession = Depends(get_db),
 ):
+    # Verify quote exists
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    if not result.scalars().first():
+        raise HTTPException(status_code=404, detail="Quote not found")
+
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update")
+
+    # Map origin -> source
+    if "origin" in updates:
+        updates["source"] = updates.pop("origin")
+
+    # Serialize material array to comma-separated string
+    if "material" in updates and isinstance(updates["material"], list):
+        updates["material"] = ", ".join(updates["material"])
+
+    # Serialize pieces to list of dicts for JSON column
+    if "pieces" in updates and updates["pieces"] is not None:
+        updates["pieces"] = [p.model_dump() for p in body.pieces]
+
     await db.execute(update(Quote).where(Quote.id == quote_id).values(**updates))
     await db.commit()
+
+    logger.info("[patch] Quote %s updated: %s", quote_id, list(updates.keys()))
     return {"ok": True, "updated": list(updates.keys())}
 
 

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Union
 from datetime import datetime
 from app.models.quote import QuoteStatus
 
@@ -18,6 +18,14 @@ class QuoteListResponse(BaseModel):
     parent_quote_id: Optional[str] = None
     source: Optional[str] = "operator"
     is_read: bool = True
+    client_phone: Optional[str] = None
+    client_email: Optional[str] = None
+    localidad: Optional[str] = None
+    colocacion: Optional[bool] = None
+    pileta: Optional[str] = None
+    anafe: Optional[bool] = None
+    pieces: Optional[list] = None
+    conversation_id: Optional[str] = None
     notes: Optional[str] = None
     created_at: datetime
 
@@ -57,8 +65,26 @@ class QuoteStatusUpdate(BaseModel):
     status: QuoteStatus
 
 
+class PatchPieceInput(BaseModel):
+    description: str = Field(..., max_length=200)
+    largo: float = Field(..., gt=0, le=20)
+    prof: Optional[float] = Field(None, gt=0, le=5)
+    alto: Optional[float] = Field(None, gt=0, le=5)
+
+
 class QuotePatchRequest(BaseModel):
+    status: Optional[QuoteStatus] = None
     client_name: Optional[str] = Field(None, max_length=500)
+    client_phone: Optional[str] = Field(None, max_length=100)
+    client_email: Optional[str] = Field(None, max_length=200)
     project: Optional[str] = Field(None, max_length=500)
-    material: Optional[str] = Field(None, max_length=500)
+    material: Optional[Union[str, list[str]]] = None
+    pieces: Optional[list[PatchPieceInput]] = None
+    localidad: Optional[str] = Field(None, max_length=200)
+    colocacion: Optional[bool] = None
+    pileta: Optional[str] = Field(None, max_length=50)
+    anafe: Optional[bool] = None
+    conversation_id: Optional[str] = Field(None, max_length=100)
+    origin: Optional[str] = Field(None, pattern=r"^(web|operator)$")
+    notes: Optional[str] = None
     parent_quote_id: Optional[str] = Field(None, max_length=200)

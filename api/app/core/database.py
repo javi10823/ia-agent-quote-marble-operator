@@ -51,6 +51,14 @@ async def init_db():
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS source_files JSON",
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1 NOT NULL",
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS notes TEXT",
+            "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS client_phone VARCHAR(100)",
+            "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS client_email VARCHAR(200)",
+            "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS localidad VARCHAR(200)",
+            "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS colocacion BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS pileta VARCHAR(50)",
+            "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS anafe BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS pieces JSON",
+            "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS conversation_id VARCHAR(100)",
         ]:
             try:
                 await conn.execute(__import__("sqlalchemy").text(col_sql))

@@ -44,6 +44,22 @@ class Quote(Base):
     # Structured quote breakdown (pieces, MO, merma, discount)
     quote_breakdown: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # Client contact info
+    client_phone: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    client_email: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    # Quote details
+    localidad: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    colocacion: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=False)
+    pileta: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    anafe: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=False)
+
+    # Raw pieces input (as submitted, before calculation)
+    pieces: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+    # Conversation link (web sessions)
+    conversation_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
     # Notes from web client for the operator
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
