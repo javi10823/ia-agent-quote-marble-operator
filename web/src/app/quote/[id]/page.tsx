@@ -293,7 +293,7 @@ export default function QuotePage() {
                   <MessageBubble message={lastInlineResponse} actionText={lastInlineResponse.isStreaming ? inlineActionText : undefined} />
                 </div>
               )}
-              <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
+              <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} placeholder={`Ej: cambiar material a Granito Negro Brasil...`} />
               <div ref={inlineEndRef} />
               <button onClick={() => setTab("chat")} className="mt-2 bg-transparent border-none text-acc text-xs cursor-pointer font-sans p-0">{`Ver historial completo ${ARROW}`}</button>
             </Section>
@@ -516,13 +516,14 @@ const VALID_TYPES = ["application/pdf", "image/jpeg", "image/jpg", "image/png", 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const MAX_FILES = 5;
 
-function ChatInput({ input, setInput, files, setFiles, dragActive, setDragActive, dragCounterRef, sending, send, onKey, fileRef }: {
+function ChatInput({ input, setInput, files, setFiles, dragActive, setDragActive, dragCounterRef, sending, send, onKey, fileRef, placeholder: customPlaceholder }: {
   input: string; setInput: (v: string) => void;
   files: File[]; setFiles: (f: File[]) => void;
   dragActive: boolean; setDragActive: (v: boolean) => void;
   dragCounterRef: React.MutableRefObject<number>;
   sending: boolean; send: () => void; onKey: (e: React.KeyboardEvent) => void;
   fileRef: React.RefObject<HTMLInputElement>;
+  placeholder?: string;
 }) {
   const [fileError, setFileError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -591,7 +592,7 @@ function ChatInput({ input, setInput, files, setFiles, dragActive, setDragActive
         dragActive ? "border border-acc shadow-[0_0_20px_rgba(79,143,255,0.15)]" : "border border-b2",
       )}>
         <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKey} rows={1} disabled={sending} autoFocus
-          placeholder={`Escrib${I} el enunciado o arrastr${A} el plano ac${A}...`}
+          placeholder={customPlaceholder || `Escrib${I} el enunciado o arrastr${A} el plano ac${A}...`}
           className="flex-1 bg-transparent border-none outline-none font-sans text-[13px] text-t1 resize-none leading-[1.5] max-h-[110px] overflow-hidden placeholder:text-t4"
         />
         <div className="flex items-center gap-[5px] shrink-0">
