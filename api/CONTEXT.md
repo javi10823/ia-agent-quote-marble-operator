@@ -559,7 +559,7 @@ MANO DE OBRA
 - Cotización dólar: **dólar venta BNA** al momento de confirmación
 - Forma de pago: siempre **"Contado"** — NUNCA preguntar al operador, se asume sin excepción
 - Seña: **80%** | Saldo: **20%** contra entrega
-- Plazo: **preguntar siempre al operador**. No asumir 40 días — el operador define el plazo.
+- Plazo: si el operador lo indica, usar ese valor. Si NO lo menciona, usar el default de config.json (`delivery_days.display`). NO preguntar por el plazo si no fue mencionado. NUNCA inventar un valor — leer el config.
 
 ---
 
