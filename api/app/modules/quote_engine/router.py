@@ -38,22 +38,27 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
     # If no pieces provided, try to parse from notes using Claude
     if not body.pieces:
         if body.notes:
-            from app.modules.quote_engine.text_parser import parse_measurements
-            parsed = await parse_measurements(body.notes, materials[0], body.project)
-            if parsed and parsed.get("pieces"):
-                # Successfully parsed — use extracted pieces and parameters
-                body.pieces = [PieceInput(**p) for p in parsed["pieces"]]
-                if parsed.get("pileta") and not body.pileta:
-                    body.pileta = PiletaType(parsed["pileta"])
-                if parsed.get("anafe"):
-                    body.anafe = True
-                if parsed.get("frentin"):
-                    body.frentin = True
-                if parsed.get("colocacion") is False:
-                    body.colocacion = False
-                logging.info(f"Parsed {len(body.pieces)} pieces from notes for {body.client_name}")
-                body._parsed_from_notes = True  # type: ignore[attr-defined]
-                # Fall through to normal calculation below
+            try:
+                from app.modules.quote_engine.text_parser import parse_measurements
+                parsed = await parse_measurements(body.notes, materials[0], body.project)
+                if parsed and parsed.get("pieces"):
+                    body.pieces = [PieceInput(**{k: v for k, v in p.items() if k in ("description", "largo", "prof", "alto")}) for p in parsed["pieces"]]
+                    if parsed.get("pileta") and not body.pileta:
+                        try:
+                            body.pileta = PiletaType(parsed["pileta"])
+                        except ValueError:
+                            pass
+                    if parsed.get("anafe"):
+                        body.anafe = True
+                    if parsed.get("frentin"):
+                        body.frentin = True
+                    if parsed.get("colocacion") is False:
+                        body.colocacion = False
+                    logging.info(f"Parsed {len(body.pieces)} pieces from notes for {body.client_name}")
+                    body._parsed_from_notes = True  # type: ignore[attr-defined]
+            except Exception as e:
+                logging.error(f"Failed to parse notes for {body.client_name}: {e}")
+                # Fall through to empty draft
 
         # If still no pieces (no notes, or parse failed) → create empty draft
         if not body.pieces:
