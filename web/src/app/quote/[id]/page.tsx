@@ -65,6 +65,7 @@ export default function QuotePage() {
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const initialLoadDone = useRef(false);
 
   useEffect(() => {
     fetchQuote(quoteId).then(q => {
@@ -105,6 +106,10 @@ export default function QuotePage() {
   }, []);
 
   useEffect(() => {
+    if (!initialLoadDone.current) {
+      initialLoadDone.current = true;
+      return;
+    }
     if (tab === "chat") endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, tab]);
 
