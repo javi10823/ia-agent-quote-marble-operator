@@ -65,7 +65,7 @@ export default function QuotePage() {
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const initialLoadDone = useRef(false);
+  const userInteracted = useRef(false);
 
   useEffect(() => {
     fetchQuote(quoteId).then(q => {
@@ -106,15 +106,13 @@ export default function QuotePage() {
   }, []);
 
   useEffect(() => {
-    if (!initialLoadDone.current) {
-      initialLoadDone.current = true;
-      return;
-    }
+    if (!userInteracted.current) return;
     if (tab === "chat") endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, tab]);
 
   const send = useCallback(async () => {
     if ((!input.trim() && attachedFiles.length === 0) || sending) return;
+    userInteracted.current = true;
     const text = input.trim();
     const filesToSend = [...attachedFiles];
     const fileNames = filesToSend.map(f => f.name).join(", ");
