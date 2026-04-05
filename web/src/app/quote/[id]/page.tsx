@@ -240,11 +240,14 @@ export default function QuotePage() {
       ) : tab === "detail" ? (
         <div className="flex-1 overflow-y-auto px-7 py-6">
           <DetailView quote={quote} breakdown={bd} onSwitchToChat={() => setTab("chat")} onGenerate={quote?.source === "web" ? handleGenerate : undefined} generating={generating} />
-          <Section title="Modificaciones" className="mt-5">
-            <div className="text-xs text-t3 mb-2.5">{`Escrib${I} un cambio y Valentina regenera los documentos autom${A}ticamente.`}</div>
-            <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
-            <button onClick={() => setTab("chat")} className="mt-2 bg-transparent border-none text-acc text-xs cursor-pointer font-sans p-0">{`Ver historial completo ${ARROW}`}</button>
-          </Section>
+          {/* Show modifications section only when quote has breakdown (already calculated) */}
+          {bd && (
+            <Section title="Modificaciones" className="mt-5">
+              <div className="text-xs text-t3 mb-2.5">{`Escrib${I} un cambio y Valentina regenera los documentos autom${A}ticamente.`}</div>
+              <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
+              <button onClick={() => setTab("chat")} className="mt-2 bg-transparent border-none text-acc text-xs cursor-pointer font-sans p-0">{`Ver historial completo ${ARROW}`}</button>
+            </Section>
+          )}
         </div>
       ) : tab === "chat" ? (
         <>
@@ -429,6 +432,18 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
             </div>
           )}
         </Section>
+      ) : quote.source === "web" ? (
+        <div className="p-5 rounded-[10px] text-center border border-dashed border-acc/30" style={{ background: "linear-gradient(135deg, rgba(124,110,240,0.08), rgba(124,110,240,0.03))" }}>
+          <div className="text-sm font-semibold text-t1 mb-1.5">{`Presupuesto pendiente de medidas`}</div>
+          <div className="text-xs text-t3 mb-4">{`Pas${A} al chat y dale a Valentina el enunciado o plano. Ella calcula y genera PDF, Excel y Drive.`}</div>
+          <button
+            onClick={onSwitchToChat}
+            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-[13px] font-semibold text-white bg-acc border-none cursor-pointer hover:brightness-110 transition-all"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            Completar con Valentina
+          </button>
+        </div>
       ) : (
         <Section title="Desglose">
           <div className="text-[13px] text-t3">{`Este presupuesto no tiene datos de desglose estructurados. Consult${A} el historial de chat para ver los detalles.`}</div>
