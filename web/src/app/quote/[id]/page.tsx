@@ -7,7 +7,7 @@ import { useQuotes } from "@/lib/quotes-context";
 import MessageBubble from "@/components/chat/MessageBubble";
 import CompareView from "@/components/quote/CompareView";
 import clsx from "clsx";
-import { A, I, O, DOT, SUP2, DASH, ITEM, WARN, CIRCLE, ARROW, XMARK, CLOUD, WAVE, PAGE, PICTURE, CLIP, RULER, TAG, FOLDER, CHART } from "@/lib/chars";
+import { A, I, O, N, DOT, SUP2, DASH, ITEM, WARN, CIRCLE, ARROW, XMARK, CLOUD, WAVE, PAGE, PICTURE, CLIP, RULER, TAG, FOLDER, CHART } from "@/lib/chars";
 
 export interface UIMessage {
   id: string;
@@ -60,9 +60,13 @@ export default function QuotePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionText, setActionText] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [lastInlineResponse, setLastInlineResponse] = useState<UIMessage | null>(null);
+  const [inlineActionText, setInlineActionText] = useState("");
+  const sentFromDetail = useRef(false);
   const { refresh: refreshQuotes, markRead } = useQuotes();
 
   const endRef = useRef<HTMLDivElement>(null);
+  const inlineEndRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const userInteracted = useRef(false);
@@ -110,6 +114,12 @@ export default function QuotePage() {
     if (tab === "chat") endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, tab]);
 
+  useEffect(() => {
+    if (lastInlineResponse && tab === "detail") {
+      inlineEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [lastInlineResponse, tab]);
+
   const send = useCallback(async () => {
     if ((!input.trim() && attachedFiles.length === 0) || sending) return;
     userInteracted.current = true;
@@ -119,12 +129,21 @@ export default function QuotePage() {
     const uid = `u-${Date.now()}`;
     const aid = `a-${Date.now()}`;
 
+    const isFromDetail = tab === "detail";
+    sentFromDetail.current = isFromDetail;
+
     setMessages(p => [...p,
       { id: uid, role: "user", content: text, attachmentName: fileNames || undefined },
       { id: aid, role: "assistant", content: "", isStreaming: true },
     ]);
-    setInput(""); setAttachedFiles([]); setSending(true); setActionText("");
-    if (tab !== "chat") setTab("chat");
+    setInput(""); setAttachedFiles([]); setSending(true);
+
+    if (isFromDetail) {
+      setLastInlineResponse({ id: aid, role: "assistant", content: "", isStreaming: true });
+      setInlineActionText("");
+    } else {
+      setActionText("");
+    }
 
     try {
       // Abort previous stream if any
@@ -135,23 +154,26 @@ export default function QuotePage() {
       let acc = "";
       let gotDone = false;
       let rafPending = false;
+      const fromDetail = sentFromDetail.current;
       const flushAcc = () => {
         rafPending = false;
         setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc } : m));
+        if (fromDetail) setLastInlineResponse(prev => prev ? { ...prev, content: acc } : prev);
       };
       for await (const chunk of streamChat(quoteId, text, filesToSend.length > 0 ? filesToSend : undefined, controller.signal)) {
         if (chunk.type === "text") {
           acc += chunk.content;
-          setActionText("");
+          if (fromDetail) setInlineActionText(""); else setActionText("");
           // Throttle state updates to 1 per animation frame
           if (!rafPending) { rafPending = true; requestAnimationFrame(flushAcc); }
         } else if (chunk.type === "action") {
-          setActionText(chunk.content);
+          if (fromDetail) setInlineActionText(chunk.content); else setActionText(chunk.content);
         } else if (chunk.type === "done") {
           gotDone = true;
-          setActionText("");
+          if (fromDetail) setInlineActionText(""); else setActionText("");
           // Final flush with complete content + streaming=false
           setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc, isStreaming: false } : m));
+          if (fromDetail) setLastInlineResponse({ id: aid, role: "assistant", content: acc, isStreaming: false });
           const [updated] = await Promise.all([
             fetchQuote(quoteId),
             refreshQuotes(),
@@ -161,13 +183,16 @@ export default function QuotePage() {
         }
       }
       if (!gotDone) {
-        setActionText("");
+        if (fromDetail) setInlineActionText(""); else setActionText("");
         const errorMsg = acc ? acc + `\n\n${WARN} _La conexi${O}n se interrumpi${O}._` : `${WARN} La conexi${O}n se interrumpi${O}. Intent${A} de nuevo.`;
         setMessages(p => p.map(m => m.id === aid ? { ...m, content: errorMsg, isStreaming: false } : m));
+        if (fromDetail) setLastInlineResponse({ id: aid, role: "assistant", content: errorMsg, isStreaming: false });
       }
     } catch {
-      setActionText("");
-      setMessages(p => p.map(m => m.id === aid ? { ...m, content: `${WARN} Error de conexi${O}n. Intent${A} de nuevo.`, isStreaming: false } : m));
+      if (sentFromDetail.current) setInlineActionText(""); else setActionText("");
+      const errContent = `${WARN} Error de conexi${O}n. Intent${A} de nuevo.`;
+      setMessages(p => p.map(m => m.id === aid ? { ...m, content: errContent, isStreaming: false } : m));
+      if (sentFromDetail.current) setLastInlineResponse({ id: aid, role: "assistant", content: errContent, isStreaming: false });
     } finally {
       setSending(false);
     }
@@ -249,6 +274,33 @@ export default function QuotePage() {
             <Section title="Modificaciones" className="mt-5">
               <div className="text-xs text-t3 mb-2.5">{quote?.pdf_url ? `Escrib${I} un cambio y Valentina regenera los documentos autom${A}ticamente.` : `Escrib${I} un cambio y Valentina ajusta el presupuesto.`}</div>
               <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
+              {/* Inline response from Valentina */}
+              {(sending && sentFromDetail.current) && !lastInlineResponse?.content && (
+                <div className="mt-3.5 px-5 py-4 bg-s2 border border-b1 rounded-xl flex items-center gap-2.5">
+                  <div className="w-[26px] h-[26px] rounded-full bg-acc flex items-center justify-center text-[11px] font-bold text-white shrink-0">V</div>
+                  {inlineActionText ? (
+                    <span className="text-xs text-t3 italic">{inlineActionText}</span>
+                  ) : (
+                    <div className="flex gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-t3 animate-pulse" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-t3 animate-pulse [animation-delay:200ms]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-t3 animate-pulse [animation-delay:400ms]" />
+                    </div>
+                  )}
+                </div>
+              )}
+              {lastInlineResponse && lastInlineResponse.content && (
+                <div className="mt-3.5 px-5 py-4 bg-s2 border border-b1 rounded-xl animate-[fadeIn_0.3s_ease]">
+                  <div className="flex items-center gap-2.5 mb-2.5">
+                    <div className="w-[26px] h-[26px] rounded-full bg-acc flex items-center justify-center text-[11px] font-bold text-white shrink-0">V</div>
+                    <span className="text-xs font-semibold text-t2">Valentina</span>
+                  </div>
+                  <div className="text-sm leading-[1.7] text-t2">
+                    <MessageBubble message={lastInlineResponse} />
+                  </div>
+                </div>
+              )}
+              <div ref={inlineEndRef} />
               <button onClick={() => setTab("chat")} className="mt-2 bg-transparent border-none text-acc text-xs cursor-pointer font-sans p-0">{`Ver historial completo ${ARROW}`}</button>
             </Section>
           )}
@@ -264,10 +316,16 @@ export default function QuotePage() {
             {messages.map(msg => <MessageBubble key={msg.id} message={msg} actionText={msg.isStreaming ? actionText : undefined} />)}
             <div ref={endRef} />
           </div>
-          <div className="shrink-0 px-7 pt-3.5 pb-[18px] border-t border-b1 bg-s1">
-            <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
-            <div className="text-[10px] text-t4 text-center mt-[7px]">{`Enter para enviar ${DOT} Shift+Enter para nueva l${I}nea`}</div>
-          </div>
+          {quote?.status === "draft" ? (
+            <div className="shrink-0 px-7 pt-3.5 pb-[18px] border-t border-b1 bg-s1">
+              <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
+              <div className="text-[10px] text-t4 text-center mt-[7px]">{`Enter para enviar ${DOT} Shift+Enter para nueva l${I}nea`}</div>
+            </div>
+          ) : (
+            <div className="shrink-0 px-7 py-3 border-t border-b1 bg-s1 text-center">
+              <span className="text-xs text-t3">{`Historial de conversaci${O}n ${DOT} Us${A} Modificaciones en la pesta${N}a Detalle para hacer cambios`}</span>
+            </div>
+          )}
         </>
       ) : null}
     </div>
