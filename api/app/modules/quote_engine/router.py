@@ -35,38 +35,58 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
     # Normalize material to list
     materials = body.material if isinstance(body.material, list) else [body.material]
 
-    # If no pieces provided, create a draft quote for the operator to complete
+    # If no pieces provided, try to parse from notes using Claude
     if not body.pieces:
-        quote_id = f"web-{uuid.uuid4()}"
-        quote = Quote(
-            id=quote_id,
-            client_name=body.client_name,
-            project=body.project,
-            material=materials[0],
-            messages=body.conversation or [],
-            status=QuoteStatus.DRAFT,
-            source="web",
-            is_read=False,
-            notes=body.notes,
-        )
-        db.add(quote)
-        await db.commit()
-        return QuoteResponse(
-            ok=True,
-            quotes=[QuoteResultItem(
-                quote_id=quote_id,
+        if body.notes:
+            from app.modules.quote_engine.text_parser import parse_measurements
+            parsed = await parse_measurements(body.notes, materials[0], body.project)
+            if parsed and parsed.get("pieces"):
+                # Successfully parsed — use extracted pieces and parameters
+                body.pieces = [PieceInput(**p) for p in parsed["pieces"]]
+                if parsed.get("pileta") and not body.pileta:
+                    body.pileta = PiletaType(parsed["pileta"])
+                if parsed.get("anafe"):
+                    body.anafe = True
+                if parsed.get("frentin"):
+                    body.frentin = True
+                if parsed.get("colocacion") is False:
+                    body.colocacion = False
+                logging.info(f"Parsed {len(body.pieces)} pieces from notes for {body.client_name}")
+                body._parsed_from_notes = True  # type: ignore[attr-defined]
+                # Fall through to normal calculation below
+
+        # If still no pieces (no notes, or parse failed) → create empty draft
+        if not body.pieces:
+            quote_id = f"web-{uuid.uuid4()}"
+            quote = Quote(
+                id=quote_id,
+                client_name=body.client_name,
+                project=body.project,
                 material=materials[0],
-                material_m2=0,
-                material_price_unit=0,
-                material_currency="USD",
-                material_total=0,
-                mo_items=[],
-                total_ars=0,
-                total_usd=0,
-                merma=MermaOutput(aplica=False, motivo="Pendiente medidas"),
-                discount=DiscountOutput(aplica=False),
-            )],
-        )
+                messages=body.conversation or [],
+                status=QuoteStatus.DRAFT,
+                source="web",
+                is_read=False,
+                notes=body.notes,
+            )
+            db.add(quote)
+            await db.commit()
+            return QuoteResponse(
+                ok=True,
+                quotes=[QuoteResultItem(
+                    quote_id=quote_id,
+                    material=materials[0],
+                    material_m2=0,
+                    material_price_unit=0,
+                    material_currency="USD",
+                    material_total=0,
+                    mo_items=[],
+                    total_ars=0,
+                    total_usd=0,
+                    merma=MermaOutput(aplica=False, motivo="Pendiente medidas"),
+                    discount=DiscountOutput(aplica=False),
+                )],
+            )
 
     results = []
     for material_name in materials:
@@ -103,7 +123,7 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
             total_usd=calc_result["total_usd"],
             quote_breakdown=calc_result,
             messages=body.conversation or [],
-            status=QuoteStatus.VALIDATED,
+            status=QuoteStatus.DRAFT if getattr(body, "_parsed_from_notes", False) else QuoteStatus.VALIDATED,
             source="web",
             is_read=False,
             notes=body.notes,
@@ -111,52 +131,56 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
         db.add(quote)
         await db.commit()
 
-        # Generate PDF/Excel — WEB_ prefix only in filename, not content
-        doc_data = {
-            "client_name": calc_result["client_name"],
-            "project": calc_result["project"],
-            "date": calc_result["date"],
-            "delivery_days": calc_result["delivery_days"],
-            "material_name": calc_result["material_name"],
-            "filename_prefix": "WEB_",
-            "material_m2": calc_result["material_m2"],
-            "material_price_unit": calc_result["material_price_unit"],
-            "material_currency": calc_result["material_currency"],
-            "discount_pct": calc_result["discount_pct"],
-            "sectors": calc_result["sectors"],
-            "sinks": calc_result["sinks"],
-            "mo_items": calc_result["mo_items"],
-            "total_ars": calc_result["total_ars"],
-            "total_usd": calc_result["total_usd"],
-        }
-
-        doc_result = await generate_documents(quote_id, doc_data)
-        pdf_url = doc_result.get("pdf_url") if doc_result.get("ok") else None
-        excel_url = doc_result.get("excel_url") if doc_result.get("ok") else None
-
-        # Upload to Drive
+        # For parsed quotes (DRAFT), skip doc generation — operator confirms first
+        # For quotes with explicit pieces (VALIDATED), generate docs immediately
+        pdf_url = None
+        excel_url = None
         drive_url = None
-        if doc_result.get("ok"):
-            drive_result = await upload_to_drive(
-                quote_id,
-                calc_result["client_name"],
-                calc_result["material_name"],
-                calc_result["date"],
-            )
-            if drive_result.get("ok"):
-                drive_url = drive_result.get("drive_url")
+        was_parsed = getattr(body, "_parsed_from_notes", False)
 
-            # Update DB with file URLs + Drive file ID
-            from sqlalchemy import update
-            await db.execute(
-                update(Quote).where(Quote.id == quote_id).values(
-                    pdf_url=pdf_url,
-                    excel_url=excel_url,
-                    drive_url=drive_url,
-                    drive_file_id=drive_result.get("drive_file_id") if drive_result.get("ok") else None,
+        if not was_parsed:
+            doc_data = {
+                "client_name": calc_result["client_name"],
+                "project": calc_result["project"],
+                "date": calc_result["date"],
+                "delivery_days": calc_result["delivery_days"],
+                "material_name": calc_result["material_name"],
+                "filename_prefix": "WEB_",
+                "material_m2": calc_result["material_m2"],
+                "material_price_unit": calc_result["material_price_unit"],
+                "material_currency": calc_result["material_currency"],
+                "discount_pct": calc_result["discount_pct"],
+                "sectors": calc_result["sectors"],
+                "sinks": calc_result["sinks"],
+                "mo_items": calc_result["mo_items"],
+                "total_ars": calc_result["total_ars"],
+                "total_usd": calc_result["total_usd"],
+            }
+
+            doc_result = await generate_documents(quote_id, doc_data)
+            pdf_url = doc_result.get("pdf_url") if doc_result.get("ok") else None
+            excel_url = doc_result.get("excel_url") if doc_result.get("ok") else None
+
+            if doc_result.get("ok"):
+                drive_result = await upload_to_drive(
+                    quote_id,
+                    calc_result["client_name"],
+                    calc_result["material_name"],
+                    calc_result["date"],
                 )
-            )
-            await db.commit()
+                if drive_result.get("ok"):
+                    drive_url = drive_result.get("drive_url")
+
+                from sqlalchemy import update
+                await db.execute(
+                    update(Quote).where(Quote.id == quote_id).values(
+                        pdf_url=pdf_url,
+                        excel_url=excel_url,
+                        drive_url=drive_url,
+                        drive_file_id=drive_result.get("drive_file_id") if drive_result.get("ok") else None,
+                    )
+                )
+                await db.commit()
 
         merma = calc_result["merma"]
         results.append(QuoteResultItem(
