@@ -17,7 +17,7 @@ async def verify_api_key(x_api_key: Optional[str] = Header(None)):
     if not x_api_key or x_api_key != settings.QUOTE_API_KEY:
         raise HTTPException(status_code=401, detail="API key inválida o faltante")
 from app.models.quote import Quote, QuoteStatus
-from app.modules.quote_engine.schemas import QuoteInput, QuoteResponse, QuoteResultItem, MOItemOutput, MermaOutput, DiscountOutput
+from app.modules.quote_engine.schemas import QuoteInput, QuoteResponse, QuoteResultItem, MOItemOutput, MermaOutput, DiscountOutput, PieceInput, PiletaType
 from app.modules.quote_engine.calculator import calculate_quote
 from app.modules.agent.tools.document_tool import generate_documents
 from app.modules.agent.tools.drive_tool import upload_to_drive
