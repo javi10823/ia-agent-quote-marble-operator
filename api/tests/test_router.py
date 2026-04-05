@@ -14,6 +14,38 @@ class TestCreateQuote:
         assert "id" in data
         assert len(data["id"]) > 10  # UUID format
 
+    @pytest.mark.asyncio
+    async def test_create_without_status_defaults_to_draft(self, client):
+        resp = await client.post("/api/quotes")
+        quote_id = resp.json()["id"]
+        detail = await client.get(f"/api/quotes/{quote_id}")
+        assert detail.json()["status"] == "draft"
+
+    @pytest.mark.asyncio
+    async def test_create_with_status_draft(self, client):
+        resp = await client.post("/api/quotes", json={"status": "draft"})
+        assert resp.status_code == 200
+        quote_id = resp.json()["id"]
+        detail = await client.get(f"/api/quotes/{quote_id}")
+        assert detail.json()["status"] == "draft"
+
+    @pytest.mark.asyncio
+    async def test_create_with_status_pending(self, client):
+        resp = await client.post("/api/quotes", json={"status": "pending"})
+        assert resp.status_code == 200
+        quote_id = resp.json()["id"]
+        detail = await client.get(f"/api/quotes/{quote_id}")
+        assert detail.json()["status"] == "pending"
+
+    @pytest.mark.asyncio
+    async def test_create_with_empty_body(self, client):
+        """Empty JSON body should behave like no body — default to draft."""
+        resp = await client.post("/api/quotes", json={})
+        assert resp.status_code == 200
+        quote_id = resp.json()["id"]
+        detail = await client.get(f"/api/quotes/{quote_id}")
+        assert detail.json()["status"] == "draft"
+
 
 # ── GET /api/quotes — list ───────────────────────────────────────────────────
 

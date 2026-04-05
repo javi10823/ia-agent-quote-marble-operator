@@ -108,8 +108,18 @@ export async function fetchQuote(id: string): Promise<QuoteDetail> {
   return res.json();
 }
 
-export async function createQuote(): Promise<{ id: string }> {
-  const res = await fetch(`${API_BASE}/api/quotes`, { method: "POST", credentials: "include" });
+export async function createQuote(
+  options?: { status?: Quote["status"] }
+): Promise<{ id: string }> {
+  const hasBody = options?.status != null;
+  const res = await fetch(`${API_BASE}/api/quotes`, {
+    method: "POST",
+    credentials: "include",
+    ...(hasBody && {
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: options!.status }),
+    }),
+  });
   handleAuthError(res);
   if (!res.ok) throw new Error("Error al crear presupuesto");
   return res.json();

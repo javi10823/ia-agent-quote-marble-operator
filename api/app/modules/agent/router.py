@@ -17,6 +17,7 @@ from app.core.database import get_db
 from app.models.quote import Quote, QuoteStatus
 from app.modules.agent.agent import AgentService
 from app.modules.agent.schemas import (
+    CreateQuoteRequest,
     QuoteListResponse,
     QuoteDetailResponse,
     QuoteCompareItem,
@@ -458,7 +459,10 @@ async def delete_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
 # ── CREATE QUOTE (new chat) ───────────────────────────────────────────────────
 
 @router.post("/quotes")
-async def create_quote(db: AsyncSession = Depends(get_db)):
+async def create_quote(
+    db: AsyncSession = Depends(get_db),
+    body: Optional[CreateQuoteRequest] = None,
+):
     # Opportunistic cleanup of old empty drafts
     from app.core.database import cleanup_empty_drafts
     import asyncio
@@ -469,7 +473,7 @@ async def create_quote(db: AsyncSession = Depends(get_db)):
         client_name="",
         project="",
         messages=[],
-        status=QuoteStatus.DRAFT,
+        status=body.status if body and body.status else QuoteStatus.DRAFT,
     )
     db.add(quote)
     await db.commit()

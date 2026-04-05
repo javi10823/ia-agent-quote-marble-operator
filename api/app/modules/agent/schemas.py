@@ -49,6 +49,10 @@ class QuoteCompareResponse(BaseModel):
     quotes: list[QuoteCompareItem]
 
 
+class CreateQuoteRequest(BaseModel):
+    status: Optional[QuoteStatus] = None
+
+
 class QuoteStatusUpdate(BaseModel):
     status: QuoteStatus
 
