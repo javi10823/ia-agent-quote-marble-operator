@@ -29,7 +29,7 @@ class QuoteInput(BaseModel):
     anafe: bool = Field(default=False)
     frentin: bool = Field(default=False)
     pulido: bool = Field(default=False)
-    plazo: str = Field(..., min_length=1, max_length=100, description="Ej: 30 días")
+    plazo: Optional[str] = Field(default=None, max_length=100, description="Ej: 30 días. Si no se envía, usa default de config.json")
     discount_pct: float = Field(default=0, ge=0, le=100)
     date: Optional[str] = Field(default=None, description="DD/MM/YYYY o DD.MM.YYYY")
     conversation: Optional[list[dict]] = Field(default=None, description="Chat history from web chatbot [{role, content}]")

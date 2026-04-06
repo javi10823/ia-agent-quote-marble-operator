@@ -35,6 +35,16 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
     # Normalize material to list
     materials = body.material if isinstance(body.material, list) else [body.material]
 
+    # Default plazo from config.json if not provided
+    if not body.plazo:
+        try:
+            import json
+            from pathlib import Path as _P
+            _cfg = json.loads((_P(__file__).parent.parent.parent / "catalog" / "config.json").read_text())
+            body.plazo = _cfg.get("delivery_days", {}).get("display", "40 dias")
+        except Exception:
+            body.plazo = "40 dias"
+
     # If no pieces provided, try to parse from notes using Claude
     if not body.pieces:
         if body.notes:
@@ -60,22 +70,29 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
                 logging.error(f"Failed to parse notes for {body.client_name}: {e}")
                 # Fall through to empty draft
 
-        # If still no pieces (no notes, or parse failed) → create empty draft
+        # If still no pieces (no notes, or parse failed) → create quote
+        # PENDING if there are notes (operator has data to work with), DRAFT if empty
         if not body.pieces:
             quote_id = f"web-{uuid.uuid4()}"
+            has_notes = bool(body.notes and body.notes.strip())
             quote = Quote(
                 id=quote_id,
                 client_name=body.client_name,
                 project=body.project,
                 material=materials[0],
                 messages=body.conversation or [],
-                status=QuoteStatus.DRAFT,
+                status=QuoteStatus.PENDING if has_notes else QuoteStatus.DRAFT,
                 source="web",
                 is_read=False,
                 notes=body.notes,
+                localidad=body.localidad,
+                colocacion=body.colocacion,
+                pileta=body.pileta.value if body.pileta else None,
+                anafe=body.anafe,
             )
             db.add(quote)
             await db.commit()
+            merma_msg = "Pendiente revision por operador" if has_notes else "Pendiente medidas"
             return QuoteResponse(
                 ok=True,
                 quotes=[QuoteResultItem(
@@ -88,7 +105,7 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
                     mo_items=[],
                     total_ars=0,
                     total_usd=0,
-                    merma=MermaOutput(aplica=False, motivo="Pendiente medidas"),
+                    merma=MermaOutput(aplica=False, motivo=merma_msg),
                     discount=DiscountOutput(aplica=False),
                 )],
             )
@@ -132,6 +149,11 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
             source="web",
             is_read=False,
             notes=body.notes,
+            localidad=body.localidad,
+            colocacion=body.colocacion,
+            pileta=body.pileta.value if body.pileta else None,
+            anafe=body.anafe,
+            pieces=[p.model_dump() for p in body.pieces] if body.pieces else None,
         )
         db.add(quote)
         await db.commit()
