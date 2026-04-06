@@ -17,7 +17,7 @@
     "building_applies_to": "material_only"
   },
   "merma": {
-    "small_piece_threshold_m2": 0.5
+    "small_piece_threshold_m2": 1.0
   },
   "plate_sizes": {
     "estandar": {
