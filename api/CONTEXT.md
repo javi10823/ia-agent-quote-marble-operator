@@ -354,7 +354,7 @@ Todos los catálogos tienen precios SIN IVA. Aplicar ×1.21 al presupuestar sin 
 ### Zócalos
 - Leer cada mesada individualmente — NO asumir simetría ni generalizar
 - **ml de zócalo = dimensión REAL de cada lado** (no el máximo de la pieza)
-- Alto default = **5cm** si no hay cota explícita
+- Alto default = **5cm** SOLO si el operador pide zócalo sin especificar alto y NO hay plano. Si el plano tiene cota (ej: 0,06) → usar la cota del plano, NO el default.
 - En PDF/Excel: una sola línea `ZÓCALO X.XX ml x 0.05 m` con total de ml
 - SIEMPRE aclarar que el zócalo está incluido en el presupuesto
 - **Si el zócalo tiene más de 10cm de alto → agregar 1 agujero de toma corriente (TOMAS) en la MO automáticamente.** No preguntar — si el alto > 0.10m, va 1 TOMAS.
@@ -378,10 +378,21 @@ Todos los catálogos tienen precios SIN IVA. Aplicar ×1.21 al presupuestar sin 
 - **Frente revestido en isla** = pata frontal, NO alzada → no aplica TOMAS automático
 - **c/p** = centro de pileta → ignorar
 
-**⛔ NUNCA INVENTAR piezas, conceptos o extensiones que no estén explícitamente en el plano o enunciado.**
+**⛔⛔⛔ REGLA CRÍTICA — SOLO PIEZAS DEL PLANO ⛔⛔⛔**
+- **SOLO incluir piezas que estén EXPLÍCITAMENTE dibujadas y acotadas en el plano.**
+- Si el plano muestra 1 zócalo de 2,01 × 0,06 → incluir ESE zócalo con ESAS medidas. NO agregar otros zócalos que no estén dibujados.
+- Si el plano NO dibuja un zócalo trasero, lateral o costado → NO incluirlo. Aunque "tenga sentido" ponerlo.
+- NUNCA inventar zócalos "trasero mesada principal", "costado derecho", "trasero mesada lateral" si no están en el plano.
+- NUNCA cambiar medidas del plano: si dice 0,06 → usar 0,06, NO reemplazar por el default 0,05.
+- NUNCA redondear m² — usar las medidas exactas del plano.
 - Si el m² no te cierra, revisá las piezas del plano de nuevo — probablemente hay un zócalo u otra pieza chica que no leíste.
 - NUNCA agregar "extensión adicional", "ajuste", "complemento" ni ningún concepto que no figure en el plano.
 - Si tenés dudas sobre una pieza, preguntá al operador. No inventes.
+
+**Ejemplo de ERROR grave:**
+Plano muestra: Mesada 3,00×0,62 + Mesada 1,16×0,60 + Zócalo 2,01×0,06 + Rev pared 0,99×1,22
+MAL: agregar zócalos inventados (3,00×0,05 trasero, 0,62×0,05 costado, 1,16×0,05 lateral) = 4 m²
+BIEN: solo las 4 piezas del plano con sus medidas exactas = 3,88 m²
 
 ### Anafe — REGLA ESTRICTA
 - **SOLO cobrar ANAFE si hay evidencia explícita:** el plano muestra el símbolo de anafe/hornallas dibujado, O el operador menciona "anafe" / "c/corte anafe" en el enunciado.
