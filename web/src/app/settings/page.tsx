@@ -6,12 +6,16 @@ import { fetchUsers, apiCreateUser, deleteUser, fetchCatalog, updateCatalog, typ
 import { useToast } from "@/lib/toast-context";
 import clsx from "clsx";
 
-type Section = "usuarios" | "arquitectas" | "descuentos" | "plazos" | "empresa" | "condiciones";
+type Section = "usuarios" | "arquitectas" | "iva" | "descuentos" | "merma" | "placas" | "edificios" | "plazos" | "empresa" | "condiciones";
 
 const SECTIONS: { key: Section; label: string; icon: string }[] = [
   { key: "usuarios", label: "Usuarios", icon: "👤" },
   { key: "arquitectas", label: "Arquitectas", icon: "🏢" },
+  { key: "iva", label: "IVA", icon: "💰" },
   { key: "descuentos", label: "Descuentos", icon: "🏷️" },
+  { key: "merma", label: "Merma", icon: "📐" },
+  { key: "placas", label: "Placas y Stock", icon: "🪨" },
+  { key: "edificios", label: "Edificios", icon: "🏗️" },
   { key: "plazos", label: "Plazos", icon: "📅" },
   { key: "empresa", label: "Empresa", icon: "🏠" },
   { key: "condiciones", label: "Condiciones", icon: "📜" },
@@ -57,7 +61,11 @@ export default function SettingsPage() {
         <div className="flex-1 overflow-y-auto px-7 py-6">
           {section === "usuarios" && <UsersSection toast={toast} />}
           {section === "arquitectas" && <ArchitectsSection toast={toast} />}
+          {section === "iva" && <IvaSection toast={toast} />}
           {section === "descuentos" && <DiscountsSection toast={toast} />}
+          {section === "merma" && <MermaSection toast={toast} />}
+          {section === "placas" && <PlacasStockSection toast={toast} />}
+          {section === "edificios" && <BuildingSection toast={toast} />}
           {section === "plazos" && <DeliverySection toast={toast} />}
           {section === "empresa" && <CompanySection toast={toast} />}
           {section === "condiciones" && <ConditionsSection toast={toast} />}
@@ -380,6 +388,160 @@ function ConditionsSection({ toast }: { toast: (m: string, v?: "error" | "succes
           rows={4}
           className="w-full px-3 py-2 bg-s3 border border-b1 rounded-lg text-t2 text-xs font-sans outline-none focus:border-acc resize-y min-h-[80px] leading-[1.6]"
         />
+      </div>
+
+      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+        {saving ? "Guardando..." : "Guardar cambios"}
+      </button>
+    </>
+  );
+}
+
+// ── IVA ────────────────────────────────────────────────────────────────────
+
+function IvaSection({ toast }: { toast: (m: string, v?: "error" | "success" | "warning") => void }) {
+  const { config, setConfig, saving, save } = useConfigSection("iva", toast);
+  if (!config) return <div className="text-t3 text-[13px]">Cargando...</div>;
+
+  const iva = config.iva || {};
+  const upd = (key: string, val: number) => setConfig({ ...config, iva: { ...config.iva, [key]: val } });
+
+  return (
+    <>
+      <div className="text-[15px] font-semibold text-t1 mb-1">IVA</div>
+      <div className="text-xs text-t3 mb-5">Alícuota de IVA aplicada a todos los precios de catálogo.</div>
+
+      <div className="bg-s1 border border-b1 rounded-[10px] p-[18px] mb-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Multiplicador (ej: 1.21)" type="number" value={iva.multiplier} onChange={v => upd("multiplier", +v)} />
+          <Field label="Porcentaje (%)" type="number" value={iva.percentage} onChange={v => upd("percentage", +v)} />
+        </div>
+      </div>
+
+      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+        {saving ? "Guardando..." : "Guardar cambios"}
+      </button>
+    </>
+  );
+}
+
+// ── MERMA ──────────────────────────────────────────────────────────────────
+
+function MermaSection({ toast }: { toast: (m: string, v?: "error" | "success" | "warning") => void }) {
+  const { config, setConfig, saving, save } = useConfigSection("merma", toast);
+  if (!config) return <div className="text-t3 text-[13px]">Cargando...</div>;
+
+  const m = config.merma || {};
+  const upd = (key: string, val: number) => setConfig({ ...config, merma: { ...config.merma, [key]: val } });
+
+  return (
+    <>
+      <div className="text-[15px] font-semibold text-t1 mb-1">Merma</div>
+      <div className="text-xs text-t3 mb-5">Umbral de desperdicio para materiales sintéticos. Solo aplica a Silestone, Dekton, Neolith, Puraprima, Purastone, Laminatto.</div>
+
+      <div className="bg-s1 border border-b1 rounded-[10px] p-[18px] mb-4">
+        <Field label="Umbral pieza chica (m²)" type="number" value={m.small_piece_threshold_m2} onChange={v => upd("small_piece_threshold_m2", +v)} />
+      </div>
+
+      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+        {saving ? "Guardando..." : "Guardar cambios"}
+      </button>
+    </>
+  );
+}
+
+// ── PLACAS Y STOCK ─────────────────────────────────────────────────────────
+
+function PlacasStockSection({ toast }: { toast: (m: string, v?: "error" | "success" | "warning") => void }) {
+  const { config, setConfig, saving, save } = useConfigSection("plate_sizes", toast);
+  if (!config) return <div className="text-t3 text-[13px]">Cargando...</div>;
+
+  const ps = config.plate_sizes || {};
+  const stock = config.stock || {};
+  const updPlate = (size: string, key: string, val: number) => setConfig({
+    ...config,
+    plate_sizes: { ...config.plate_sizes, [size]: { ...config.plate_sizes[size], [key]: val } },
+  });
+  const updStock = (key: string, val: boolean) => setConfig({ ...config, stock: { ...config.stock, [key]: val } });
+
+  return (
+    <>
+      <div className="text-[15px] font-semibold text-t1 mb-1">Tamaños de placa</div>
+      <div className="text-xs text-t3 mb-5">Dimensiones de las placas estándar y especial para cálculo de merma.</div>
+
+      <div className="bg-s1 border border-b1 rounded-[10px] p-[18px] mb-4">
+        <div className="text-[13px] font-semibold text-t1 mb-3 pb-2 border-b border-b1">Placa estándar</div>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Largo (m)" type="number" value={ps.estandar?.largo} onChange={v => updPlate("estandar", "largo", +v)} />
+          <Field label="Ancho (m)" type="number" value={ps.estandar?.ancho} onChange={v => updPlate("estandar", "ancho", +v)} />
+          <Field label="m² total" type="number" value={ps.estandar?.m2} onChange={v => updPlate("estandar", "m2", +v)} />
+        </div>
+      </div>
+
+      <div className="bg-s1 border border-b1 rounded-[10px] p-[18px] mb-4">
+        <div className="text-[13px] font-semibold text-t1 mb-3 pb-2 border-b border-b1">Placa especial</div>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Largo (m)" type="number" value={ps.especial?.largo} onChange={v => updPlate("especial", "largo", +v)} />
+          <Field label="Ancho (m)" type="number" value={ps.especial?.ancho} onChange={v => updPlate("especial", "ancho", +v)} />
+          <Field label="m² total" type="number" value={ps.especial?.m2} onChange={v => updPlate("especial", "m2", +v)} />
+        </div>
+      </div>
+
+      <div className="bg-s1 border border-b1 rounded-[10px] p-[18px] mb-4">
+        <div className="text-[13px] font-semibold text-t1 mb-3 pb-2 border-b border-b1">Stock default</div>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={stock.default ?? false}
+              onChange={e => updStock("default", e.target.checked)}
+              className="w-4 h-4 accent-acc"
+            />
+            <span className="text-[13px] text-t2">Material en stock por defecto (si está en stock, NO aplica merma)</span>
+          </label>
+        </div>
+      </div>
+
+      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+        {saving ? "Guardando..." : "Guardar cambios"}
+      </button>
+    </>
+  );
+}
+
+// ── EDIFICIOS ──────────────────────────────────────────────────────────────
+
+function BuildingSection({ toast }: { toast: (m: string, v?: "error" | "success" | "warning") => void }) {
+  const { config, setConfig, saving, save } = useConfigSection("building", toast);
+  if (!config) return <div className="text-t3 text-[13px]">Cargando...</div>;
+
+  const b = config.building || {};
+  const upd = (key: string, val: any) => setConfig({ ...config, building: { ...config.building, [key]: val } });
+
+  return (
+    <>
+      <div className="text-[15px] font-semibold text-t1 mb-1">Reglas para edificios</div>
+      <div className="text-xs text-t3 mb-5">Parámetros especiales cuando el trabajo es en un edificio/obra.</div>
+
+      <div className="bg-s1 border border-b1 rounded-[10px] p-[18px] mb-4">
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <Field label="% Descuento edificio" type="number" value={b.discount_percentage} onChange={v => upd("discount_percentage", +v)} />
+          <Field label="Mínimo m² para descuento" type="number" value={b.discount_min_m2} onChange={v => upd("discount_min_m2", +v)} />
+        </div>
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <Field label="Mesadas por viaje (flete)" type="number" value={b.flete_mesadas_per_trip} onChange={v => upd("flete_mesadas_per_trip", +v)} />
+          <div className="mb-1 flex items-end">
+            <label className="flex items-center gap-2 cursor-pointer pb-2">
+              <input
+                type="checkbox"
+                checked={b.colocacion ?? false}
+                onChange={e => upd("colocacion", e.target.checked)}
+                className="w-4 h-4 accent-acc"
+              />
+              <span className="text-[13px] text-t2">Con colocación</span>
+            </label>
+          </div>
+        </div>
       </div>
 
       <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
