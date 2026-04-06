@@ -453,29 +453,44 @@ async def delete_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
     if not quote:
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
 
-    logging.info(f"Deleting quote {quote_id}: client={quote.client_name}, status={quote.status}")
+    # Resolve the family root and collect all related quotes
+    root_id = quote.parent_quote_id or quote.id
+    family_result = await db.execute(
+        select(Quote).where(
+            (Quote.id == root_id) | (Quote.parent_quote_id == root_id)
+        )
+    )
+    family = list(family_result.scalars().all())
 
-    # Delete Drive file if exists (best-effort)
-    if quote.drive_file_id:
-        try:
-            from app.modules.agent.tools.drive_tool import delete_drive_file
-            await delete_drive_file(quote.drive_file_id)
-        except Exception as e:
-            logging.warning(f"Failed to delete Drive file {quote.drive_file_id}: {e}")
+    logging.info(
+        f"Cascade-deleting quote family root={root_id}: "
+        f"{[q.id for q in family]} (triggered by {quote_id})"
+    )
 
-    # Delete local files
     import shutil
     from app.core.static import OUTPUT_DIR
-    output_dir = OUTPUT_DIR / quote_id
-    if output_dir.exists():
-        try:
-            shutil.rmtree(output_dir)
-        except Exception as e:
-            logging.warning(f"Failed to delete local files for {quote_id}: {e}")
 
-    await db.delete(quote)
+    for q in family:
+        # Delete Drive file if exists (best-effort)
+        if q.drive_file_id:
+            try:
+                from app.modules.agent.tools.drive_tool import delete_drive_file
+                await delete_drive_file(q.drive_file_id)
+            except Exception as e:
+                logging.warning(f"Failed to delete Drive file {q.drive_file_id}: {e}")
+
+        # Delete local files
+        output_dir = OUTPUT_DIR / q.id
+        if output_dir.exists():
+            try:
+                shutil.rmtree(output_dir)
+            except Exception as e:
+                logging.warning(f"Failed to delete local files for {q.id}: {e}")
+
+        await db.delete(q)
+
     await db.commit()
-    return {"ok": True}
+    return {"ok": True, "deleted": [q.id for q in family]}
 
 
 # ── CREATE QUOTE (new chat) ───────────────────────────────────────────────────
