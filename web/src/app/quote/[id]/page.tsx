@@ -329,9 +329,17 @@ export default function QuotePage() {
             )}
             {messages.map((msg, idx) => {
               const isLast = idx === messages.length - 1;
-              const needsConfirm = isLast && msg.role === "assistant" && !msg.isStreaming && !sending && (
-                msg.content.includes("Confirm") || msg.content.includes("confirm")
-              );
+              // Show confirm buttons only when Valentina's LAST line is a confirmation
+              // question and there are no other pending questions in the message
+              const needsConfirm = isLast && msg.role === "assistant" && !msg.isStreaming && !sending && (() => {
+                const text = msg.content;
+                // Must contain a confirmation question
+                const hasConfirmQ = /confirm[aá]s.*\?/i.test(text);
+                if (!hasConfirmQ) return false;
+                // Count question marks — if more than 1, there are pending questions
+                const questionMarks = (text.match(/\?/g) || []).length;
+                return questionMarks <= 1;
+              })();
               return (
                 <div key={msg.id}>
                   <MessageBubble message={msg} actionText={msg.isStreaming ? actionText : undefined} />
