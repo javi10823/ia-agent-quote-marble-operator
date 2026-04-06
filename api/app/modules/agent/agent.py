@@ -942,6 +942,31 @@ class AgentService:
                         yield {"type": "done", "content": ""}
                         return
 
+            # ── Plan verification with Opus (after first iteration with plan) ──
+            if has_plan and _loop_iterations == 1 and full_text and len(full_text) > 50:
+                try:
+                    from app.modules.agent.plan_verifier import verify_plan_reading
+                    yield {"type": "action", "content": "🔍 Verificando lectura del plano..."}
+                    corrections = await verify_plan_reading(plan_bytes, plan_filename, full_text)
+                    if corrections and corrections.get("discrepancias"):
+                        # Inject corrections as user message so Valentina corrects herself
+                        correction_text = "⚠️ CORRECCIÓN DE MEDIDAS — un revisor encontró errores en tu lectura del plano:\n\n"
+                        for d in corrections["discrepancias"]:
+                            correction_text += f"- {d.get('pieza', '?')} {d.get('dimension', '?')}: leíste {d.get('valor_valentina')}, pero el plano dice {d.get('valor_plano')}. {d.get('correccion', '')}\n"
+                        if corrections.get("medidas_correctas"):
+                            correction_text += f"\nMedidas correctas verificadas: {json.dumps(corrections['medidas_correctas'], ensure_ascii=False)}"
+                        correction_text += "\n\nCORREGÍ tus medidas con estos valores ANTES de calcular. Usá las medidas del revisor, no las tuyas."
+                        # Add as assistant ack + user correction
+                        assistant_messages.append({"role": "assistant", "content": _serialize_content(final_message.content)})
+                        assistant_messages.append({"role": "user", "content": [{"type": "text", "text": correction_text}]})
+                        yield {"type": "text", "content": f"\n\n_Corrección de medidas aplicada por el revisor._\n"}
+                        logging.info(f"[plan-verifier] Injected {len(corrections['discrepancias'])} corrections for {quote_id}")
+                        # Continue loop — Valentina will process the correction
+                        await asyncio.sleep(0.1)
+                        continue
+                except Exception as e:
+                    logging.warning(f"[plan-verifier] Verification skipped: {e}")
+
             # Check if we need to handle tool calls
             tool_use_blocks = [b for b in final_message.content if b.type == "tool_use"]
 
