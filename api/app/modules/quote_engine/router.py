@@ -261,6 +261,8 @@ async def upload_source_files(
     if saved and not quote.quote_breakdown:
         import asyncio
 
+        _default_plazo = body.plazo or "40 dias"
+
         async def _process_plan_background(qid: str, q: Quote, first_file: dict):
             """Run Valentina in background to read plan, extract pieces, calculate quote."""
             try:
@@ -309,6 +311,46 @@ async def upload_source_files(
                         db=bg_db,
                     ):
                         pass  # Consume stream — only care about side effects (DB updates)
+
+                # Verify breakdown was saved — if Valentina extracted pieces
+                # but didn't call calculate_quote, call it explicitly
+                async with AsyncSessionLocal() as verify_db:
+                    from sqlalchemy import select as _sel
+                    _r = await verify_db.execute(_sel(Quote).where(Quote.id == qid))
+                    _updated = _r.scalar_one_or_none()
+                    if _updated and not _updated.quote_breakdown:
+                        logging.warning(f"Breakdown not saved after stream_chat for {qid} — attempting fallback calculate")
+                        # Try to build calc input from quote data + any pieces in messages
+                        try:
+                            # Extract pieces from Valentina's messages if available
+                            pieces_from_msgs = _updated.pieces  # raw pieces if saved
+                            if pieces_from_msgs:
+                                calc_input = {
+                                    "client_name": _updated.client_name,
+                                    "project": _updated.project,
+                                    "material": _updated.material,
+                                    "pieces": pieces_from_msgs,
+                                    "localidad": getattr(_updated, "localidad", "rosario"),
+                                    "colocacion": getattr(_updated, "colocacion", True),
+                                    "pileta": getattr(_updated, "pileta", None),
+                                    "anafe": getattr(_updated, "anafe", False),
+                                    "plazo": _default_plazo,
+                                }
+                                from app.modules.quote_engine.calculator import calculate_quote as _calc
+                                fallback_result = _calc(calc_input)
+                                if fallback_result.get("ok"):
+                                    from sqlalchemy import update as _upd
+                                    await verify_db.execute(
+                                        _upd(Quote).where(Quote.id == qid).values(
+                                            quote_breakdown=fallback_result,
+                                            total_ars=fallback_result.get("total_ars"),
+                                            total_usd=fallback_result.get("total_usd"),
+                                        )
+                                    )
+                                    await verify_db.commit()
+                                    logging.info(f"Fallback calculate_quote succeeded for {qid}")
+                        except Exception as fb_err:
+                            logging.error(f"Fallback calculate failed for {qid}: {fb_err}")
 
                 logging.info(f"Auto-processed plan for web quote {qid}")
             except Exception as e:
