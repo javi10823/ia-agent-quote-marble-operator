@@ -252,9 +252,13 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
             pdf.cell(w[0], rh, piece, fill=f)
             if is_first_piece:
                 pdf.set_font("Helvetica", "B", 8)
-                pdf.cell(w[1], rh, "", fill=f)
-                pdf.cell(w[2], rh, f"TOTAL {currency}", align="R", fill=f)
-                pdf.cell(w[3], rh, total_mat_fmt, align="R", fill=f)
+                if currency == "USD":
+                    # Only show material subtotal for imported (USD) materials
+                    pdf.cell(w[1], rh, "", fill=f)
+                    pdf.cell(w[2], rh, f"TOTAL {currency}", align="R", fill=f)
+                    pdf.cell(w[3], rh, total_mat_fmt, align="R", fill=f)
+                else:
+                    pdf.cell(w[1] + w[2] + w[3], rh, "", fill=f)
                 is_first_piece = False
             else:
                 pdf.cell(w[1] + w[2] + w[3], rh, "", fill=f)
@@ -433,11 +437,9 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     # Row 24: second piece + TOTAL USD (template has TOTAL in E24)
     if len(all_pieces) > 1:
         ws.cell(24, 1).value = all_pieces[1]
-    ws.cell(24, 5).value = f"TOTAL {currency}"
     if currency == "USD":
+        ws.cell(24, 5).value = f"TOTAL {currency}"
         ws.cell(24, 6).value = f"USD{total_mat_net}"
-    else:
-        ws.cell(24, 6).value = total_mat_net
     # Row 25+: remaining pieces
     for i, piece in enumerate(all_pieces[2:], start=25):
         ws.cell(i, 1).value = piece
@@ -538,7 +540,7 @@ def _inject_locale(xlsx_path: str):
 def _format_grand_total(total_ars: float, total_usd: float, currency: str) -> str:
     if currency == "USD" and total_usd:
         return f"PRESUPUESTO TOTAL: {_fmt_ars(total_ars)} mano de obra + {_fmt_usd(total_usd)} material"
-    return f"PRESUPUESTO TOTAL: {_fmt_ars(total_ars)} mano de obra + material"
+    return f"PRESUPUESTO TOTAL: {_fmt_ars(total_ars)}"
 
 
 def generate_comparison_pdf(pdf_path: Path, client_name: str, project: str, quotes_data: list[dict]) -> None:
