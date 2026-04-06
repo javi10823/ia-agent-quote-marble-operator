@@ -139,10 +139,11 @@ export default function QuotePage() {
     }
   }, [lastInlineResponse, tab]);
 
-  const send = useCallback(async () => {
-    if ((!input.trim() && attachedFiles.length === 0) || sending) return;
+  const send = useCallback(async (overrideText?: string) => {
+    const rawText = overrideText ?? input;
+    if ((!rawText.trim() && attachedFiles.length === 0) || sending) return;
     userInteracted.current = true;
-    const text = input.trim();
+    const text = rawText.trim();
     const filesToSend = [...attachedFiles];
     const fileNames = filesToSend.map(f => f.name).join(", ");
     const uid = `u-${Date.now()}`;
@@ -326,7 +327,33 @@ export default function QuotePage() {
                 {`Hola ${WAVE} Soy Valentina. Pasame el enunciado del trabajo y/o el plano.`}
               </div>
             )}
-            {messages.map(msg => <MessageBubble key={msg.id} message={msg} actionText={msg.isStreaming ? actionText : undefined} />)}
+            {messages.map((msg, idx) => {
+              const isLast = idx === messages.length - 1;
+              const needsConfirm = isLast && msg.role === "assistant" && !msg.isStreaming && !sending && (
+                msg.content.includes("Confirm") || msg.content.includes("confirm")
+              );
+              return (
+                <div key={msg.id}>
+                  <MessageBubble message={msg} actionText={msg.isStreaming ? actionText : undefined} />
+                  {needsConfirm && (
+                    <div className="flex gap-2 mt-2 ml-[42px]">
+                      <button
+                        onClick={() => send("Confirmo")}
+                        className="px-4 py-2 rounded-lg text-[13px] font-medium bg-grn text-white border-none cursor-pointer hover:brightness-110 transition"
+                      >
+                        Confirmar
+                      </button>
+                      <button
+                        onClick={() => { const ta = document.querySelector("textarea"); if (ta) ta.focus(); }}
+                        className="px-4 py-2 rounded-lg text-[13px] font-medium bg-transparent border border-b2 text-t2 cursor-pointer hover:text-t1 hover:border-b3 transition"
+                      >
+                        Corregir
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             <div ref={endRef} />
           </div>
           {quote?.status === "draft" ? (
