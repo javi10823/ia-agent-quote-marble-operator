@@ -270,3 +270,179 @@ class TestPatchQuote:
         qid = (await client.post("/api/quotes")).json()["id"]
         resp = await client.patch(f"/api/quotes/{qid}", json={})
         assert resp.status_code == 400
+
+
+# ── X-API-Key auth fallback ─────────────────────────────────────────────────
+
+class TestApiKeyAuth:
+    @pytest.mark.asyncio
+    async def test_no_auth_returns_401(self, client_no_auth):
+        resp = await client_no_auth.get("/api/quotes")
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_api_key_header_grants_access(self, client_no_auth, monkeypatch):
+        monkeypatch.setenv("QUOTE_API_KEY", "test-key-123")
+        # Reload settings to pick up env var
+        from app.core.config import Settings
+        import app.core.config
+        app.core.config.settings = Settings()
+        import app.core.auth
+        # Also reload auth module's reference
+        from importlib import reload
+        reload(app.core.auth)
+
+        resp = await client_no_auth.get(
+            "/api/quotes",
+            headers={"X-API-Key": "test-key-123"},
+        )
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_wrong_api_key_returns_401(self, client_no_auth, monkeypatch):
+        monkeypatch.setenv("QUOTE_API_KEY", "correct-key")
+        from app.core.config import Settings
+        import app.core.config
+        app.core.config.settings = Settings()
+
+        resp = await client_no_auth.get(
+            "/api/quotes",
+            headers={"X-API-Key": "wrong-key"},
+        )
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_api_key_works_for_post_quotes(self, client_no_auth, monkeypatch):
+        monkeypatch.setenv("QUOTE_API_KEY", "test-key-123")
+        from app.core.config import Settings
+        import app.core.config
+        app.core.config.settings = Settings()
+
+        resp = await client_no_auth.post(
+            "/api/quotes",
+            headers={"X-API-Key": "test-key-123"},
+        )
+        assert resp.status_code == 200
+        assert "id" in resp.json()
+
+    @pytest.mark.asyncio
+    async def test_api_key_works_for_patch_quotes(self, client_no_auth, monkeypatch):
+        monkeypatch.setenv("QUOTE_API_KEY", "test-key-123")
+        from app.core.config import Settings
+        import app.core.config
+        app.core.config.settings = Settings()
+
+        # Create quote first
+        create_resp = await client_no_auth.post(
+            "/api/quotes",
+            headers={"X-API-Key": "test-key-123"},
+        )
+        qid = create_resp.json()["id"]
+
+        # Patch it
+        resp = await client_no_auth.patch(
+            f"/api/quotes/{qid}",
+            json={"client_name": "API Key User"},
+            headers={"X-API-Key": "test-key-123"},
+        )
+        assert resp.status_code == 200
+
+
+# ── POST /v1/quote — quote engine ──────────────────────────────────────────
+
+class TestQuoteEngine:
+    @pytest.mark.asyncio
+    async def test_create_without_pieces_and_notes_is_draft(self, client):
+        """No pieces, no notes → DRAFT."""
+        resp = await client.post("/api/v1/quote", json={
+            "client_name": "Test",
+            "material": "Silestone Blanco Norte",
+            "localidad": "Rosario",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        qid = data["quotes"][0]["quote_id"]
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["status"] == "draft"
+
+    @pytest.mark.asyncio
+    async def test_create_with_notes_no_pieces_is_pending(self, client):
+        """Notes present but no pieces → PENDING (operator has data)."""
+        resp = await client.post("/api/v1/quote", json={
+            "client_name": "Test",
+            "material": "Silestone Blanco Norte",
+            "localidad": "Rosario",
+            "notes": "Plano adjunto: Marmoleria.pdf. Zócalo de 5cm.",
+        })
+        assert resp.status_code == 200
+        qid = resp.json()["quotes"][0]["quote_id"]
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["status"] == "pending"
+
+    @pytest.mark.asyncio
+    async def test_create_with_notes_has_contextual_merma_message(self, client):
+        """With notes → merma motivo should say 'revision por operador'."""
+        resp = await client.post("/api/v1/quote", json={
+            "client_name": "Test",
+            "material": "Silestone Blanco Norte",
+            "localidad": "Rosario",
+            "notes": "Plano adjunto",
+        })
+        merma = resp.json()["quotes"][0]["merma"]
+        assert "operador" in merma["motivo"].lower()
+
+    @pytest.mark.asyncio
+    async def test_create_without_notes_has_medidas_message(self, client):
+        """Without notes → merma motivo should say 'medidas'."""
+        resp = await client.post("/api/v1/quote", json={
+            "client_name": "Test",
+            "material": "Silestone Blanco Norte",
+            "localidad": "Rosario",
+        })
+        merma = resp.json()["quotes"][0]["merma"]
+        assert "medidas" in merma["motivo"].lower()
+
+    @pytest.mark.asyncio
+    async def test_plazo_optional_does_not_error(self, client):
+        """Plazo not provided should not cause validation error."""
+        resp = await client.post("/api/v1/quote", json={
+            "client_name": "Test",
+            "material": "Silestone Blanco Norte",
+            "localidad": "Rosario",
+            "notes": "Solo un test",
+        })
+        # Should succeed (200) — plazo defaults from config.json
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_saves_localidad_colocacion_pileta(self, client):
+        """New fields should be saved in quote creation."""
+        resp = await client.post("/api/v1/quote", json={
+            "client_name": "Test",
+            "material": "Silestone Blanco Norte",
+            "localidad": "Rosario",
+            "colocacion": True,
+            "pileta": "empotrada_cliente",
+            "anafe": True,
+            "notes": "Con anafe y pileta",
+        })
+        qid = resp.json()["quotes"][0]["quote_id"]
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["localidad"] == "Rosario"
+        assert detail["colocacion"] is True
+        assert detail["pileta"] == "empotrada_cliente"
+        assert detail["anafe"] is True
+
+    @pytest.mark.asyncio
+    async def test_web_quote_has_source_web(self, client):
+        """Web quotes should have source=web."""
+        resp = await client.post("/api/v1/quote", json={
+            "client_name": "Test",
+            "material": "Silestone Blanco Norte",
+            "localidad": "Rosario",
+            "notes": "test quote",
+        })
+        qid = resp.json()["quotes"][0]["quote_id"]
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["source"] == "web"
