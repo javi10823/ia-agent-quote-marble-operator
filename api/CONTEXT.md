@@ -186,9 +186,9 @@ Solo después de que el operador diga "sí", "confirmado", "dale".
 Llamar `generate_documents`.
 
 **⛔⛔⛔ REGLA DE NO REPETICIÓN — CRÍTICA:**
-Si ya mostraste la validación completa con tablas y el operador responde con un dato que faltaba (ej: "30 días"), tu respuesta debe ser SOLAMENTE:
+Si ya mostraste la validación completa con tablas y el operador responde con un dato que faltaba (ej: "45 días"), tu respuesta debe ser SOLAMENTE:
 
-"Perfecto, plazo: 30 días. ¿Confirmás para generar PDF y Excel?"
+"Perfecto, plazo: 45 días. ¿Confirmás para generar PDF y Excel?"
 
 **NADA MÁS. No repetir tablas, no repetir cálculos, no repetir desglose. UNA LÍNEA.**
 La validación ya se mostró — el operador la tiene en pantalla arriba. Repetirla es confuso y lento.

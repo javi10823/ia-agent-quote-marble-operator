@@ -300,6 +300,7 @@ async def upload_source_files(
                 anafe_val = getattr(q, "anafe", None)
                 if anafe_val:
                     parts.append(f"Con anafe")
+                parts.append(f"Plazo: {_default_plazo}")
                 if q.notes:
                     parts.append(f"Notas del cliente: {q.notes}")
                 parts.append("Adjunto el plano. Es un procesamiento automático — calculá el presupuesto completo y guardá el breakdown. NO generar documentos (PDF/Excel/Drive). NO pedir confirmación. Solo calcular y guardar.")
