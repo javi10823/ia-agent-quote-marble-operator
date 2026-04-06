@@ -1092,12 +1092,19 @@ class AgentService:
 
                 drive_result: dict = {}
                 if result.get("ok"):
+                    # Only promote status to VALIDATED on first generation
+                    # (draft/pending). On regeneration (already validated/sent),
+                    # preserve current status — operator controls transitions.
+                    doc_values: dict = {
+                        "pdf_url": result.get("pdf_url"),
+                        "excel_url": result.get("excel_url"),
+                    }
+                    if current_quote and current_quote.status in (
+                        QuoteStatus.DRAFT, QuoteStatus.PENDING
+                    ):
+                        doc_values["status"] = QuoteStatus.VALIDATED.value
                     await db.execute(
-                        update(Quote).where(Quote.id == target_qid).values(
-                            pdf_url=result.get("pdf_url"),
-                            excel_url=result.get("excel_url"),
-                            status=QuoteStatus.VALIDATED.value,
-                        )
+                        update(Quote).where(Quote.id == target_qid).values(**doc_values)
                     )
 
                     # Delete old Drive file if exists (prevents duplicates)

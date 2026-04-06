@@ -269,8 +269,8 @@ export default function QuotePage() {
       ) : tab === "detail" ? (
         <div className="flex-1 overflow-y-auto px-7 py-6">
           <DetailView quote={quote} breakdown={bd} onSwitchToChat={() => setTab("chat")} onGenerate={quote?.status === "pending" || quote?.status === "draft" ? handleGenerate : undefined} generating={generating} />
-          {/* Show modifications section only when quote has breakdown (already calculated) */}
-          {bd && (
+          {/* Show modifications section only when quote has breakdown and is not sent */}
+          {bd && quote?.status !== "sent" && (
             <Section title="Modificaciones" className="mt-5">
               <div className="text-xs text-t3 mb-2.5">{quote?.pdf_url ? `Escrib${I} un cambio y Valentina regenera los documentos autom${A}ticamente.` : `Escrib${I} un cambio y Valentina ajusta el presupuesto.`}</div>
               {/* Inline response from Valentina (above input so operator can reply below) */}
