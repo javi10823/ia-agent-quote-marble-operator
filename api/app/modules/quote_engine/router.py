@@ -233,7 +233,8 @@ async def upload_source_files(
             continue
 
         # Save to disk
-        sources_dir = Path(__file__).parent.parent.parent.parent / "output" / quote_id / "sources"
+        from app.core.static import OUTPUT_DIR
+        sources_dir = OUTPUT_DIR / quote_id / "sources"
         sources_dir.mkdir(parents=True, exist_ok=True)
         (sources_dir / safe_name).write_bytes(data)
 
@@ -293,7 +294,8 @@ async def upload_source_files(
                 auto_message = "\n".join(parts)
 
                 # Read file from disk
-                file_path = Path(__file__).parent.parent.parent.parent / "output" / qid / "sources" / first_file["filename"]
+                from app.core.static import OUTPUT_DIR as _OUTDIR
+                file_path = _OUTDIR / qid / "sources" / first_file["filename"]
                 plan_data = file_path.read_bytes() if file_path.exists() else None
 
                 agent = AgentService()

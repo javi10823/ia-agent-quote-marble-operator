@@ -108,6 +108,8 @@ async def cleanup_empty_drafts():
                 Quote.created_at < cutoff,
                 # Only delete if missing client OR material (incomplete)
                 (Quote.client_name == "") | (Quote.client_name.is_(None)) | (Quote.material.is_(None)),
+                # Never delete web-originated quotes — they may be in progress
+                (Quote.source != "web") | (Quote.source.is_(None)),
             )
         )
         if result.rowcount > 0:
