@@ -98,6 +98,25 @@ export default function QuotePage() {
     return () => { abortRef.current?.abort(); };
   }, [quoteId]);
 
+  // Poll for breakdown when web quote has files but no breakdown yet (background processing)
+  useEffect(() => {
+    if (!quote || quote.source !== "web") return;
+    if (quote.quote_breakdown) return;
+    if (!quote.source_files || quote.source_files.length === 0) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const updated = await fetchQuote(quoteId);
+        if (updated.quote_breakdown) {
+          setQuote(updated);
+          clearInterval(interval);
+        }
+      } catch { /* ignore */ }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [quote?.quote_breakdown, quote?.source, quote?.source_files, quoteId]);
+
   useEffect(() => {
     const prevent = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); };
     document.addEventListener("dragover", prevent);
@@ -488,10 +507,22 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
             </div>
           )}
         </Section>
+      ) : quote.source === "web" && quote.source_files && quote.source_files.length > 0 ? (
+        <div className="p-5 rounded-[10px] text-center border border-dashed border-acc/30" style={{ background: "linear-gradient(135deg, rgba(79,143,255,0.08), rgba(79,143,255,0.03))" }}>
+          <div className="flex justify-center mb-3">
+            <div className="flex gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-acc animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-acc animate-pulse [animation-delay:200ms]" />
+              <span className="w-2 h-2 rounded-full bg-acc animate-pulse [animation-delay:400ms]" />
+            </div>
+          </div>
+          <div className="text-sm font-semibold text-t1 mb-1.5">{`Analizando plano...`}</div>
+          <div className="text-xs text-t3">{`Valentina est${A} extrayendo las piezas y calculando el presupuesto. Se actualiza autom${A}ticamente.`}</div>
+        </div>
       ) : quote.source === "web" ? (
         <div className="p-5 rounded-[10px] text-center border border-dashed border-acc/30" style={{ background: "linear-gradient(135deg, rgba(124,110,240,0.08), rgba(124,110,240,0.03))" }}>
-          <div className="text-sm font-semibold text-t1 mb-1.5">{quote.notes || (quote.source_files && quote.source_files.length > 0) ? `Presupuesto pendiente de revisi${O}n` : `Presupuesto pendiente de medidas`}</div>
-          <div className="text-xs text-t3 mb-4">{quote.notes || (quote.source_files && quote.source_files.length > 0) ? `El cliente envi${O} datos y/o plano. Pas${A} al chat para que Valentina calcule.` : `Pas${A} al chat y dale a Valentina el enunciado o plano. Ella calcula y genera PDF, Excel y Drive.`}</div>
+          <div className="text-sm font-semibold text-t1 mb-1.5">{quote.notes ? `Presupuesto pendiente de revisi${O}n` : `Presupuesto pendiente de medidas`}</div>
+          <div className="text-xs text-t3 mb-4">{quote.notes ? `El cliente envi${O} datos y/o plano. Pas${A} al chat para que Valentina calcule.` : `Pas${A} al chat y dale a Valentina el enunciado o plano. Ella calcula y genera PDF, Excel y Drive.`}</div>
           <button
             onClick={onSwitchToChat}
             className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-[13px] font-semibold text-white bg-acc border-none cursor-pointer hover:brightness-110 transition-all"
