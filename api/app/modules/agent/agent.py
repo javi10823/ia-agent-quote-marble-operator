@@ -316,6 +316,16 @@ def _get_stable_text() -> str:
         if matches:
             core_rules.append(f"## Ejemplo: {matches[0].stem}\n\n{matches[0].read_text(encoding='utf-8')}")
 
+    # Inject config.json values so Valentina has the real defaults (not hardcoded)
+    try:
+        import json as _json
+        _config = _json.loads((BASE_DIR / "catalog" / "config.json").read_text(encoding="utf-8"))
+        _delivery = _config.get("delivery_days", {}).get("display", "40 dias")
+        config_block = f"## Valores actuales de config.json\n\n- **Plazo de entrega default:** {_delivery}\n- SIEMPRE usar este valor cuando el operador no especifica plazo. NUNCA inventar otro."
+        core_rules.append(config_block)
+    except Exception:
+        pass
+
     _stable_text_cache = "\n\n---\n\n".join([context] + core_rules)
     logging.info(f"System prompt stable text cached ({len(_stable_text_cache)} chars, includes 5 core examples)")
     return _stable_text_cache
