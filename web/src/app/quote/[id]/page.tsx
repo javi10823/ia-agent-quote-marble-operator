@@ -83,7 +83,13 @@ export default function QuotePage() {
           content: typeof m.content === "string"
             ? m.content
             : (m.content as any[]).filter(c => c.type === "text").map(c => c.text || "").join(""),
-        }));
+        }))
+        .filter(m => {
+          const text = m.content.trim();
+          // Hide empty messages, dots, and tool result placeholders
+          if (!text || text === "." || text === "..") return false;
+          return true;
+        });
       setMessages(uiMsgs);
       if (q.status === "validated" || q.status === "sent" || q.status === "pending" || q.source === "web") setTab("detail");
     }).catch((err: any) => {
@@ -340,9 +346,20 @@ export default function QuotePage() {
                 const questionMarks = (text.match(/\?/g) || []).length;
                 return questionMarks <= 1;
               })();
+              // Short confirmation messages render as compact badges
+              const isShortConfirm = msg.role === "user" && /^(confirmo|sí|si|dale|ok|listo)$/i.test(msg.content.trim());
+
               return (
                 <div key={msg.id}>
-                  <MessageBubble message={msg} actionText={msg.isStreaming ? actionText : undefined} />
+                  {isShortConfirm ? (
+                    <div className="flex justify-end">
+                      <span className="px-3 py-1 rounded-full text-[11px] font-medium bg-grn/20 text-grn border border-grn/30">
+                        {msg.content.trim()}
+                      </span>
+                    </div>
+                  ) : (
+                    <MessageBubble message={msg} actionText={msg.isStreaming ? actionText : undefined} />
+                  )}
                   {needsConfirm && (
                     <div className="flex gap-2 mt-2 ml-[42px]">
                       <button
