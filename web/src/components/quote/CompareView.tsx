@@ -35,6 +35,8 @@ export default function CompareView({ data }: Props) {
         totalArs: q.total_ars || bd.total_ars || 0,
         totalUsd: q.total_usd || bd.total_usd || 0,
         pdfUrl: q.pdf_url,
+        excelUrl: q.excel_url,
+        driveUrl: q.drive_url,
       };
     });
   }, [data]);
@@ -171,13 +173,24 @@ export default function CompareView({ data }: Props) {
         </a>
         {variants.map((v) => v.pdfUrl && (
           <a
-            key={v.id}
+            key={`pdf-${v.id}`}
             href={`${v.pdfUrl}`}
             target="_blank"
             rel="noopener noreferrer"
             style={{ ...btnStyle, background: "transparent", border: "1px solid var(--b2)" }}
           >
             PDF {v.material}
+          </a>
+        ))}
+        {variants.map((v) => v.driveUrl && (
+          <a
+            key={`drive-${v.id}`}
+            href={v.driveUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ ...btnStyle, background: "transparent", border: "1px solid rgba(79,143,255,0.3)", color: "var(--acc)" }}
+          >
+            Drive {v.material}
           </a>
         ))}
       </div>

@@ -45,6 +45,8 @@ class QuoteCompareItem(BaseModel):
     total_usd: Optional[float]
     status: QuoteStatus
     pdf_url: Optional[str]
+    excel_url: Optional[str] = None
+    drive_url: Optional[str] = None
     quote_breakdown: Optional[dict] = None
 
     model_config = {"from_attributes": True}
