@@ -364,7 +364,7 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
           <MetaItem label="Cliente" value={quote.client_name || DASH} />
           <MetaItem label="Proyecto" value={quote.project || DASH} />
           <MetaItem label="Material" value={quote.material || DASH} />
-          <MetaItem label="Fecha" value={new Date(quote.created_at).toLocaleDateString("es-AR")} />
+          <MetaItem label="Fecha" value={new Date(quote.created_at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })} />
           <MetaItem label="Demora" value={breakdown?.delivery_days || DASH} />
           <MetaItem label="Origen" value={quote.source === "web" ? "Web (chatbot)" : "Operador"} />
           <MetaItem label="Total ARS" value={quote.total_ars ? fmtARS(quote.total_ars) : DASH} highlight />
