@@ -403,7 +403,7 @@ Todos los catálogos tienen precios SIN IVA. Aplicar ×1.21 al presupuestar sin 
 ### Zócalos
 - Leer cada mesada individualmente — NO asumir simetría ni generalizar
 - **ml de zócalo = dimensión REAL de cada lado** (no el máximo de la pieza)
-- Alto default = **5cm** SOLO si el operador pide zócalo sin especificar alto y NO hay plano. Si el plano tiene cota (ej: 0,06) → usar la cota del plano, NO el default.
+- Alto default = **5cm** cuando no hay cota de alto explícita. Si el plano tiene cota de alto (ej: 0,06) → usar la cota del plano. Si el plano NO tiene cota de alto → usar 5cm sin preguntar. NUNCA preguntar al operador por el alto del zócalo.
 - En PDF/Excel: una sola línea `ZÓCALO X.XX ml x 0.05 m` con total de ml
 - SIEMPRE aclarar que el zócalo está incluido en el presupuesto
 - **Si el zócalo tiene más de 10cm de alto → agregar 1 agujero de toma corriente (TOMAS) en la MO automáticamente.** No preguntar — si el alto > 0.10m, va 1 TOMAS.

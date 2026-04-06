@@ -229,6 +229,7 @@ Siempre que haya una cota vertical en el frente → calcular frentin frente.
 > Si la F aparece solo en el frente → frentin únicamente en el frente. No asumir laterales.
 > **Regla absoluta: donde dice Z → lleva zócalo.** Sin excepciones, aunque parezca que va contra pared.
 > Si la Z aparece en varios lados → sumar todos los ml de zócalo de cada lado.
+> **Alto del zócalo:** si el plano no tiene cota de alto → usar **5cm (0,05m)** por defecto. NUNCA preguntar al operador.
 
 ### Profundidad de mesada
 - Si no hay cota de profundidad en el plano → usar **0.60m** como estándar.
