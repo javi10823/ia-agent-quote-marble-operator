@@ -1194,6 +1194,22 @@ class AgentService:
                 if any(kw in all_text for kw in ["bacha", "pileta", "cotizar bacha", "con bacha"]):
                     inputs["pileta"] = "empotrada_johnson"
                     logging.warning(f"Auto-injected pileta=empotrada_johnson — detected in conversation but missing from calculate_quote call")
-            return calculate_quote(inputs)
+            calc_result = calculate_quote(inputs)
+            # Persist breakdown to DB immediately (don't wait for generate_documents)
+            if calc_result.get("ok"):
+                try:
+                    await db.execute(
+                        update(Quote).where(Quote.id == quote_id).values(
+                            quote_breakdown=calc_result,
+                            total_ars=calc_result.get("total_ars"),
+                            total_usd=calc_result.get("total_usd"),
+                            material=calc_result.get("material_name"),
+                        )
+                    )
+                    await db.commit()
+                    logging.info(f"Saved breakdown for {quote_id} after calculate_quote")
+                except Exception as e:
+                    logging.warning(f"Could not save breakdown for {quote_id}: {e}")
+            return calc_result
         else:
             return {"error": f"Tool desconocida: {name}"}
