@@ -117,6 +117,8 @@ async def update_catalog(catalog_name: str, body: CatalogUpdateRequest):
     invalidate_catalog_cache(catalog_name)
     if catalog_name == "config":
         invalidate_company_config_cache()
+        from app.core.company_config import invalidate_config_cache
+        invalidate_config_cache()
 
     return {"ok": True, "catalog": catalog_name}
 

@@ -543,9 +543,7 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
 
 // ── CHAT INPUT ──────────────────────────────────────────────────────────────
 
-const VALID_TYPES = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp"];
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const MAX_FILES = 5;
+import { VALID_FILE_TYPES as VALID_TYPES, MAX_FILE_SIZE, MAX_FILES } from "@/lib/constants";
 
 function ChatInput({ input, setInput, files, setFiles, dragActive, setDragActive, dragCounterRef, sending, send, onKey, fileRef, placeholder: customPlaceholder }: {
   input: string; setInput: (v: string) => void;

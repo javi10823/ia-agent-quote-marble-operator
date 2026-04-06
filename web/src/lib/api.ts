@@ -222,7 +222,8 @@ export async function* streamChat(
 
   // Abort if no response within 60s (connection timeout)
   const controller = new AbortController();
-  const connectTimeout = setTimeout(() => controller.abort(), 60_000);
+  const { CONNECT_TIMEOUT } = await import("@/lib/constants");
+  const connectTimeout = setTimeout(() => controller.abort(), CONNECT_TIMEOUT);
   // Forward external abort signal if provided
   if (signal) signal.addEventListener("abort", () => controller.abort(), { once: true });
 
@@ -264,13 +265,14 @@ export async function* streamChat(
   const decoder = new TextDecoder();
   let buffer = "";
 
-  // Stall timeout: abort if no data received for 90s during streaming
+  // Stall timeout: abort if no data received during streaming
+  const { STALL_TIMEOUT } = await import("@/lib/constants");
   let stallTimer: ReturnType<typeof setTimeout> | null = null;
   const resetStallTimer = () => {
     if (stallTimer) clearTimeout(stallTimer);
     stallTimer = setTimeout(() => {
       reader.cancel();
-    }, 90_000);
+    }, STALL_TIMEOUT);
   };
 
   try {

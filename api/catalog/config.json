@@ -20,6 +20,33 @@
     "building_min_m2_threshold": 15,
     "building_applies_to": "material_only"
   },
+  "materials": {
+    "_comment": "Clasificacion de materiales por familia",
+    "sinteticos": ["silestone", "dekton", "neolith", "puraprima", "purastone", "laminatto"],
+    "sinterizados": ["dekton", "neolith", "puraprima", "laminatto"],
+    "merma_media_placa": ["silestone"],
+    "merma_placa_entera": ["purastone", "puraprima", "dekton", "neolith", "laminatto"],
+    "plate_material_map": {
+      "silestone": "estandar",
+      "purastone": "estandar",
+      "dekton": "especial",
+      "neolith": "especial",
+      "puraprima": "especial",
+      "laminatto": "especial"
+    }
+  },
+  "measurements": {
+    "default_depth": 0.60,
+    "default_zocalo_height": 0.05,
+    "tall_zocalo_threshold": 0.10
+  },
+  "colocacion": {
+    "min_quantity": 1.0
+  },
+  "pricing": {
+    "usd_rounding": "floor",
+    "ars_rounding": "round"
+  },
   "merma": {
     "small_piece_threshold_m2": 1.0
   },

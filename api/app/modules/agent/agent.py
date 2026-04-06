@@ -19,7 +19,8 @@ from app.modules.quote_engine.calculator import calculate_quote
 BASE_DIR = Path(__file__).parent.parent.parent.parent
 
 # Materials that MUST have merma
-_SYNTHETIC_MATERIALS = ["silestone", "dekton", "neolith", "puraprima", "purastone", "laminatto"]
+from app.core.company_config import get as _cfg
+_SYNTHETIC_MATERIALS = _cfg("materials.sinteticos", ["silestone", "dekton", "neolith", "puraprima", "purastone", "laminatto"])
 
 
 def _validate_quote_data(qdata: dict) -> tuple[list[str], list[str]]:

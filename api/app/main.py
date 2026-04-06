@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import os
 import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -69,7 +70,8 @@ async def _cache_keepalive_loop():
                 logger.debug("Cache keep-alive skipped — no recent activity")
         except Exception as e:
             logger.warning(f"Cache keep-alive failed: {e}")
-        await asyncio.sleep(240)  # 4 minutes
+        interval = int(os.environ.get("CACHE_KEEPALIVE_SECONDS", "240"))
+        await asyncio.sleep(interval)
 
 
 @asynccontextmanager

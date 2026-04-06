@@ -5,26 +5,29 @@ import logging
 from datetime import datetime
 
 from app.modules.agent.tools.catalog_tool import catalog_lookup
+from app.core.company_config import get as cfg
 
-# Materials that are sinterized (12mm) — use different MO SKUs
-SINTERIZADOS = {"dekton", "neolith", "puraprima", "laminatto"}
+# Material classifications — read from config.json, fallback to defaults
+def _set(path: str, default: list) -> set:
+    val = cfg(path)
+    return set(val) if val else set(default)
 
-# Synthetic materials that have merma
-SINTETICOS = {"silestone", "dekton", "neolith", "puraprima", "purastone", "laminatto"}
+SINTERIZADOS = _set("materials.sinterizados", ["dekton", "neolith", "puraprima", "laminatto"])
+SINTETICOS = _set("materials.sinteticos", ["silestone", "dekton", "neolith", "puraprima", "purastone", "laminatto"])
+MERMA_MEDIA_PLACA = _set("materials.merma_media_placa", ["silestone"])
+MERMA_PLACA_ENTERA = _set("materials.merma_placa_entera", ["purastone", "puraprima", "dekton", "neolith", "laminatto"])
 
-# Merma reference sizes (m2)
-MERMA_MEDIA_PLACA = {"silestone"}  # reference = half plate 2.10 m2
-MERMA_PLACA_ENTERA = {"purastone", "puraprima", "dekton", "neolith", "laminatto"}
+def _build_plate_sizes() -> dict[str, float]:
+    """Build material→m2 map from config plate_sizes + material_map."""
+    plate_sizes = cfg("plate_sizes", {})
+    mat_map = cfg("materials.plate_material_map", {})
+    result = {}
+    for material, plate_type in mat_map.items():
+        plate = plate_sizes.get(plate_type, {})
+        result[material] = plate.get("m2", 4.20)
+    return result
 
-# Plate sizes
-PLATE_SIZES = {
-    "silestone": 4.20,    # 3.00 × 1.40
-    "purastone": 4.20,    # 3.00 × 1.40
-    "dekton": 5.12,       # 3.20 × 1.60
-    "neolith": 5.12,      # 3.20 × 1.60
-    "puraprima": 5.12,    # 3.20 × 1.60
-    "laminatto": 5.12,    # 3.20 × 1.60
-}
+PLATE_SIZES = _build_plate_sizes()
 
 # Common zone name → SKU mapping
 ZONE_SKUS = {
@@ -173,12 +176,13 @@ def calculate_merma(m2_needed: float, material_type: str) -> dict:
 
     desperdicio = round(m2_ref_total - m2_needed, 2)
 
-    if desperdicio < 1.0:
+    merma_threshold = cfg("merma.small_piece_threshold_m2", 1.0)
+    if desperdicio < merma_threshold:
         return {
             "aplica": False,
             "desperdicio": desperdicio,
             "sobrante_m2": 0,
-            "motivo": f"Desperdicio {desperdicio} m² < 1.0 → sin sobrante (ref: {ref_label})",
+            "motivo": f"Desperdicio {desperdicio} m² < {merma_threshold} → sin sobrante (ref: {ref_label})",
         }
     else:
         sobrante = round(desperdicio / 2, 2)
@@ -186,7 +190,7 @@ def calculate_merma(m2_needed: float, material_type: str) -> dict:
             "aplica": True,
             "desperdicio": desperdicio,
             "sobrante_m2": sobrante,
-            "motivo": f"Desperdicio {desperdicio} m² ≥ 1.0 → sobrante {sobrante} m² (ref: {ref_label})",
+            "motivo": f"Desperdicio {desperdicio} m² ≥ {merma_threshold} → sobrante {sobrante} m² (ref: {ref_label})",
         }
 
 
@@ -265,7 +269,7 @@ def calculate_quote(input_data: dict) -> dict:
     if colocacion:
         sku = "COLOCACIONDEKTON/NEOLITH" if is_sint else "COLOCACION"
         price, base = _get_mo_price(sku)
-        qty = max(total_m2, 1.0)
+        qty = max(total_m2, cfg("colocacion.min_quantity", 1.0))
         mo_items.append({"description": "Colocación", "quantity": round(qty, 2), "unit_price": price, "base_price": base, "total": round(price * qty)})
 
     # Flete
@@ -279,7 +283,7 @@ def calculate_quote(input_data: dict) -> dict:
 
     # Toma de corriente — si algún zócalo tiene alto > 10cm O hay revestimiento de pared
     has_tall_zocalo = any(
-        (p.get("alto") or 0) > 0.10
+        (p.get("alto") or 0) > cfg("measurements.tall_zocalo_threshold", 0.10)
         for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
     )
     has_revestimiento = any(

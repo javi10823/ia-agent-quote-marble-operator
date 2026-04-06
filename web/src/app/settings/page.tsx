@@ -6,7 +6,7 @@ import { fetchUsers, apiCreateUser, deleteUser, fetchCatalog, updateCatalog, typ
 import { useToast } from "@/lib/toast-context";
 import clsx from "clsx";
 
-type Section = "usuarios" | "arquitectas" | "iva" | "descuentos" | "merma" | "placas" | "edificios" | "plazos" | "empresa" | "condiciones";
+type Section = "usuarios" | "arquitectas" | "iva" | "descuentos" | "merma" | "placas" | "edificios" | "plazos" | "medidas" | "colocacion" | "empresa" | "condiciones";
 
 const SECTIONS: { key: Section; label: string; icon: string }[] = [
   { key: "usuarios", label: "Usuarios", icon: "👤" },
@@ -17,6 +17,8 @@ const SECTIONS: { key: Section; label: string; icon: string }[] = [
   { key: "placas", label: "Placas y Stock", icon: "🪨" },
   { key: "edificios", label: "Edificios", icon: "🏗️" },
   { key: "plazos", label: "Plazos", icon: "📅" },
+  { key: "medidas", label: "Medidas", icon: "📏" },
+  { key: "colocacion", label: "Colocación", icon: "🔧" },
   { key: "empresa", label: "Empresa", icon: "🏠" },
   { key: "condiciones", label: "Condiciones", icon: "📜" },
 ];
@@ -67,6 +69,8 @@ export default function SettingsPage() {
           {section === "placas" && <PlacasStockSection toast={toast} />}
           {section === "edificios" && <BuildingSection toast={toast} />}
           {section === "plazos" && <DeliverySection toast={toast} />}
+          {section === "medidas" && <MeasurementsSection toast={toast} />}
+          {section === "colocacion" && <ColocacionSection toast={toast} />}
           {section === "empresa" && <CompanySection toast={toast} />}
           {section === "condiciones" && <ConditionsSection toast={toast} />}
         </div>
@@ -388,6 +392,62 @@ function ConditionsSection({ toast }: { toast: (m: string, v?: "error" | "succes
           rows={4}
           className="w-full px-3 py-2 bg-s3 border border-b1 rounded-lg text-t2 text-xs font-sans outline-none focus:border-acc resize-y min-h-[80px] leading-[1.6]"
         />
+      </div>
+
+      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+        {saving ? "Guardando..." : "Guardar cambios"}
+      </button>
+    </>
+  );
+}
+
+// ── MEDIDAS (defaults) ─────────────────────────────────────────────────────
+
+function MeasurementsSection({ toast }: { toast: (m: string, v?: "error" | "success" | "warning") => void }) {
+  const { config, setConfig, saving, save } = useConfigSection("measurements", toast);
+  if (!config) return <div className="text-t3 text-[13px]">Cargando...</div>;
+
+  const m = config.measurements || {};
+  const upd = (key: string, val: number) => setConfig({ ...config, measurements: { ...config.measurements, [key]: val } });
+
+  return (
+    <>
+      <div className="text-[15px] font-semibold text-t1 mb-1">Medidas por defecto</div>
+      <div className="text-xs text-t3 mb-5">Valores que Valentina usa cuando el operador no especifica una medida.</div>
+
+      <div className="bg-s1 border border-b1 rounded-[10px] p-[18px] mb-4">
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Profundidad mesada (m)" type="number" value={m.default_depth} onChange={v => upd("default_depth", +v)} />
+          <Field label="Alto zócalo (m)" type="number" value={m.default_zocalo_height} onChange={v => upd("default_zocalo_height", +v)} />
+          <Field label="Umbral zócalo alto (m)" type="number" value={m.tall_zocalo_threshold} onChange={v => upd("tall_zocalo_threshold", +v)} />
+        </div>
+        <div className="text-[11px] text-t4 mt-2">Umbral zócalo alto: si el alto supera este valor, se agrega 1 toma de corriente automáticamente.</div>
+      </div>
+
+      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+        {saving ? "Guardando..." : "Guardar cambios"}
+      </button>
+    </>
+  );
+}
+
+// ── COLOCACIÓN ─────────────────────────────────────────────────────────────
+
+function ColocacionSection({ toast }: { toast: (m: string, v?: "error" | "success" | "warning") => void }) {
+  const { config, setConfig, saving, save } = useConfigSection("colocacion", toast);
+  if (!config) return <div className="text-t3 text-[13px]">Cargando...</div>;
+
+  const c = config.colocacion || {};
+  const upd = (key: string, val: number) => setConfig({ ...config, colocacion: { ...config.colocacion, [key]: val } });
+
+  return (
+    <>
+      <div className="text-[15px] font-semibold text-t1 mb-1">Colocación</div>
+      <div className="text-xs text-t3 mb-5">Parámetros de cálculo de mano de obra por colocación.</div>
+
+      <div className="bg-s1 border border-b1 rounded-[10px] p-[18px] mb-4">
+        <Field label="Cantidad mínima m²" type="number" value={c.min_quantity} onChange={v => upd("min_quantity", +v)} />
+        <div className="text-[11px] text-t4 mt-2">Si el total de m² es menor a este valor, se cobra este mínimo.</div>
       </div>
 
       <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">

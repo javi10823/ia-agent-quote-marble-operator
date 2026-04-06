@@ -1,5 +1,14 @@
 import type React from "react";
 
+// ── File upload limits ─────────────────────────────────────────────────────
+export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+export const MAX_FILES = 5;
+export const VALID_FILE_TYPES = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp"];
+
+// ── Timeouts (ms) ──────────────────────────────────────────────────────────
+export const CONNECT_TIMEOUT = 60_000;
+export const STALL_TIMEOUT = 90_000;
+
 export const STATUS: Record<string, { label: string; bg: string; color: string }> = {
   draft: { label: "Borrador", bg: "var(--amb2)", color: "var(--amb)" },
   validated: { label: "Validado", bg: "var(--grn2)", color: "var(--grn)" },
