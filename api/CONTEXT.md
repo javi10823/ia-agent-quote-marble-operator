@@ -154,6 +154,15 @@ Solo en estos casos regenerar todo. En cualquier otro caso → modo patch.
 8. Responder con links de descarga
 ```
 
+**⛔ EXCEPCIÓN — PROCESAMIENTO AUTOMÁTICO (sin operador) ⛔**
+Si el mensaje del usuario contiene "procesamiento automático":
+- Ejecutar pasos 1 a 5 de corrido, sin parar. NO preguntar nada.
+- Leer plano → calcular → guardar breakdown con `calculate_quote`.
+- NO generar documentos (PDF/Excel/Drive). Eso lo decide el operador después.
+- NO esperar confirmación. NO mostrar validación previa. Solo calcular y guardar.
+- Si falta algún dato (ej: plazo), usar defaults de config.json.
+- Si hay ambigüedad en el plano, tomar la interpretación más razonable.
+
 **Formato de links de descarga — SIEMPRE usar markdown links:**
 Cuando mostrás links de PDF, Excel o Drive, usar SIEMPRE el formato `[Texto](url)`:
 - PDF: `[Descargar PDF](/files/xxx/archivo.pdf)`

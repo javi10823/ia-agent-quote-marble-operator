@@ -289,7 +289,7 @@ async def upload_source_files(
                     parts.append(f"Con anafe")
                 if q.notes:
                     parts.append(f"Notas del cliente: {q.notes}")
-                parts.append("Adjunto el plano. Calculá el presupuesto completo.")
+                parts.append("Adjunto el plano. Es un procesamiento automático — calculá el presupuesto completo y guardá el breakdown. NO generar documentos (PDF/Excel/Drive). NO pedir confirmación. Solo calcular y guardar.")
 
                 auto_message = "\n".join(parts)
 
