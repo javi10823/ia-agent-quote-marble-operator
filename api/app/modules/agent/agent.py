@@ -648,12 +648,20 @@ def _extract_quote_info(user_message: str) -> dict:
         r"|\s+pulido\s|\s+descuento\s|\s+consultar\s"
     )
     match = re.search(
-        rf"(?:cliente|clienta)\s+(.+?)(?:{_DELIMITERS}|$)",
+        rf"(?:cliente|clienta)[:\s]+(.+?)(?:{_DELIMITERS}|\n|$)",
         user_message, re.IGNORECASE,
     )
     if match:
         name = match.group(1).strip()
         info["client_name"] = name.title()
+
+    # Try to find project name
+    proj_match = re.search(
+        r"(?:proyecto)[:\s]+(.+?)(?:\n|$)",
+        user_message, re.IGNORECASE,
+    )
+    if proj_match:
+        info["project"] = proj_match.group(1).strip().title()
 
     # Try to find material name
     material_keywords = [
@@ -1052,12 +1060,14 @@ class AgentService:
             # This ensures the dashboard shows useful info before PDF generation
             result = await db.execute(select(Quote).where(Quote.id == quote_id))
             current_quote = result.scalar_one_or_none()
-            if current_quote and not current_quote.client_name:
+            if current_quote:
                 extracted = _extract_quote_info(user_message)
-                if extracted.get("client_name"):
+                if not current_quote.client_name and extracted.get("client_name"):
                     save_values["client_name"] = extracted["client_name"]
-                if extracted.get("material"):
+                if not current_quote.material and extracted.get("material"):
                     save_values["material"] = extracted["material"]
+                if not current_quote.project and extracted.get("project"):
+                    save_values["project"] = extracted["project"]
 
             await db.execute(
                 update(Quote)
