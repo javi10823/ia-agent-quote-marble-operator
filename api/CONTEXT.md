@@ -258,14 +258,18 @@ Cuando mostrás el resumen para validación del operador, usar EXACTAMENTE este 
 
 **Precio unitario:**
 - Sin IVA: {currency} {material_price_base}
-- IVA 21%: {material_price_base} × 1,21
-- **Con IVA: {currency} {material_price_unit}**
-- **Total material: {currency} {material_total}** ({total_m2} m² × {material_price_unit} con IVA)
+- **Con IVA: {currency} {material_price_unit}** (= {material_price_base} × 1,21)
+- **Total material: {currency} {material_total}**
 
-> **⛔ CRÍTICO:** El total material se calcula con el precio CON IVA (material_price_unit), NUNCA con el precio base (material_price_base).
-> Ejemplo: si price_base=275, price_unit=332 (con IVA), m²=0.26 → total = 0.26 × 332 = 86, NO 0.26 × 275 = 72.
-> Usar SIEMPRE `material_total` del resultado de `calculate_quote` — NO recalcular manualmente.
-> Datos de `calculate_quote`: `material_price_base`, `material_price_unit`, `material_total`. Mostrar SIEMPRE — el operador necesita validar visualmente el precio.
+> **⛔⛔⛔ CRÍTICO — NO RECALCULAR PRECIOS ⛔⛔⛔**
+> `material_price_unit` del resultado de `calculate_quote` YA TIENE IVA INCLUIDO. NUNCA multiplicar por 1.21 de nuevo.
+> `material_total` del resultado de `calculate_quote` YA ESTÁ CALCULADO CORRECTAMENTE. NUNCA recalcular manualmente.
+> Solo mostrar los valores que devuelve `calculate_quote` tal cual. NO hacer cuentas propias.
+> Ejemplo: si calculate_quote devuelve price_base=228, price_unit=275, material_total=72 → mostrar:
+>   Sin IVA: USD 228
+>   Con IVA: USD 275 (= 228 × 1,21)
+>   Total material: USD 72
+> NUNCA hacer 275 × 1.21 = 333 — eso sería aplicar IVA dos veces.
 
 ### MERMA — {APLICA / NO APLICA}
 - Si APLICA: "Referencia: {tipo placa} ({m2_placa} m²). Desperdicio: {m2_placa} - {m2_trabajo} = {desperdicio} m² (≥ 1.0 → sobrante: {sobrante_m2} m² a USD {precio})"
