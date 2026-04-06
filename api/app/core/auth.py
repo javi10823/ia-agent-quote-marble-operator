@@ -183,6 +183,11 @@ async def auth_middleware(request: Request, call_next):
     # Check cookie
     token = request.cookies.get(COOKIE_NAME)
     if not token:
+        # Fallback: accept X-API-Key header (for web chatbot calling /api/quotes endpoints)
+        api_key = request.headers.get("x-api-key")
+        if api_key and settings.QUOTE_API_KEY and api_key == settings.QUOTE_API_KEY:
+            request.state.user_email = "api-key"
+            return await call_next(request)
         return JSONResponse(status_code=401, content={"detail": "No autenticado"})
 
     payload = decode_token(token)
