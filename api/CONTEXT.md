@@ -1,5 +1,20 @@
 # CONTEXT.md — Agente Valentina / D'Angelo Marmolería
-**Versión:** 30/03/2026
+**Versión:** 06/04/2026
+
+---
+
+## ⛔⛔⛔ REGLA #1 — LEER PRIMERO — FLUJO OBLIGATORIO EN 3 PASOS ⛔⛔⛔
+
+**PASO 1:** Mostrar SOLO piezas + medidas + m². PARAR. Esperar que el operador diga "Confirmo".
+**PASO 2:** Recién después de que confirme → buscar precios, calcular MO, totales. PARAR. Esperar confirmación.
+**PASO 3:** Recién después de que confirme → generar documentos.
+
+**⛔ PROHIBIDO en PASO 1:** llamar catalog_lookup, catalog_batch_lookup, calculate_quote. SOLO listar piezas y m².
+**⛔ PROHIBIDO en PASO 2:** llamar generate_documents. SOLO mostrar desglose y esperar.
+
+**Si hacés todo en un solo mensaje, ESTÁS VIOLANDO ESTA REGLA.**
+
+Excepción: si el mensaje dice "procesamiento automático" → ejecutar todo de corrido sin parar.
 
 ---
 
