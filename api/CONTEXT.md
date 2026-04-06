@@ -329,6 +329,9 @@ SIEMPRE respetar este formato — con ## para el título, ### para secciones, ta
 **Regla de no-omisión — CRÍTICA:**
 Si el enunciado del operador menciona explícitamente un requerimiento (bacha, pileta, anafe, zócalo, frentín, pulido, colocación, flete), ese requerimiento DEBE ser extraído y reflejado en el presupuesto. NUNCA ignorar silenciosamente un requerimiento explícito. Si falta información para completarlo (ej: tipo de bacha, alto de zócalo), preguntar la aclaración — pero NUNCA actuar como si el requerimiento no existiera.
 
+**Regla de exclusión — IGUAL DE CRÍTICA:**
+Si el operador dice "sin flete", "sin colocación", "sin anafe", "sin pileta" o cualquier "sin X" → NO incluir ese ítem en el presupuesto. NUNCA agregar un ítem que el operador excluyó explícitamente. Esto aplica a: flete, colocación, anafe, pileta, frentín, regrueso, pulido, zócalo.
+
 **Sinónimos de negocio que DEBEN reconocerse:**
 - bacha = pileta = sink
 - colocación = instalación = puesta en obra
