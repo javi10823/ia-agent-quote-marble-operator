@@ -440,6 +440,10 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     if currency == "USD":
         ws.cell(24, 5).value = f"TOTAL {currency}"
         ws.cell(24, 6).value = f"USD{total_mat_net}"
+    else:
+        # ARS-only: clear template's hardcoded "TOTAL USD" from E24/F24
+        ws.cell(24, 5).value = None
+        ws.cell(24, 6).value = None
     # Row 25+: remaining pieces
     for i, piece in enumerate(all_pieces[2:], start=25):
         ws.cell(i, 1).value = piece
