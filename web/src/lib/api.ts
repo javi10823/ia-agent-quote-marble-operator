@@ -159,6 +159,8 @@ export interface QuoteCompareItem {
   total_usd: number | null;
   status: string;
   pdf_url: string | null;
+  excel_url: string | null;
+  drive_url: string | null;
   quote_breakdown: QuoteBreakdown | null;
 }
 

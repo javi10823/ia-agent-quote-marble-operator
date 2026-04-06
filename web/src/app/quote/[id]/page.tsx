@@ -273,10 +273,13 @@ export default function QuotePage() {
             </div>
           </div>
         </div>
-        <div className="flex gap-2">
-          {quote?.pdf_url && <FileLink href={quote.pdf_url} label="PDF" cls="border-red-400/20 text-red-400" />}
-          {quote?.excel_url && <FileLink href={quote.excel_url} label="Excel" cls="border-grn/20 text-grn" />}
-          {quote?.drive_url && <FileLink href={quote.drive_url} label="Drive" cls="border-acc/20 text-acc" />}
+        <div className="flex gap-2 flex-wrap">
+          {quote?.pdf_url && <FileLink href={quote.pdf_url} label={comparison ? `PDF ${quote.material?.split(" ")[0] || ""}` : "PDF"} cls="border-red-400/20 text-red-400" />}
+          {quote?.excel_url && <FileLink href={quote.excel_url} label={comparison ? `Excel ${quote.material?.split(" ")[0] || ""}` : "Excel"} cls="border-grn/20 text-grn" />}
+          {quote?.drive_url && <FileLink href={quote.drive_url} label={comparison ? `Drive ${quote.material?.split(" ")[0] || ""}` : "Drive"} cls="border-acc/20 text-acc" />}
+          {comparison && comparison.quotes.filter(q => q.id !== quote?.id && q.pdf_url).map(q => (
+            <FileLink key={q.id} href={q.pdf_url!} label={`PDF ${q.material?.split(" ")[0] || ""}`} cls="border-red-400/20 text-red-400" />
+          ))}
         </div>
       </div>
 
