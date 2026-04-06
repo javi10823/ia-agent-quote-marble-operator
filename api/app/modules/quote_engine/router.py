@@ -267,7 +267,12 @@ async def upload_source_files(
     if saved and not quote.quote_breakdown:
         import asyncio
 
-        _default_plazo = body.plazo or "40 dias"
+        try:
+            import json as _json
+            _cfg = _json.loads((Path(__file__).parent.parent.parent / "catalog" / "config.json").read_text())
+            _default_plazo = _cfg.get("delivery_days", {}).get("display", "40 dias")
+        except Exception:
+            _default_plazo = "40 dias"
 
         async def _process_plan_background(qid: str, q: Quote, first_file: dict):
             """Run Valentina in background to read plan, extract pieces, calculate quote."""
