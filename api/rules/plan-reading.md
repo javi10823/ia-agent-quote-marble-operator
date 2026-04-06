@@ -107,14 +107,36 @@ Leer cada cota explícita del plano para cada lado de cada pieza. Si una medida 
 **Pasada 4 — Verificación y validación cruzada**
 Cruzar todo: ¿las cotas suman correctamente? ¿Hay elementos que no son mesada (columnas, ventanas, proyecciones)? ¿Hay vistas auxiliares que agregan o contradicen lo de la planta? ¿Algún lado marcado como libre que en realidad va contra algo?
 
-**⛔ VALIDACIÓN OBLIGATORIA — hacer ANTES de calcular:**
-1. **Releer cada cota del plano una por una** y verificar que el valor que anotaste coincide exactamente con lo que dice el plano. Si el plano dice "60 CM" → es 0,60m, NO 1,00m.
-2. **Verificar que TODAS las cotas visibles del plano están en tu inventario.** Si el plano muestra una cota que no usaste → revisarla.
-3. **Chequear coherencia dimensional:** si una pieza tiene largo 0,60m y profundidad 0,38m → el m² es ~0,23. Si tu cálculo da 0,38 m² o 0,60 m², hay un error.
-4. **Si el plano dice "60 CM" → es el largo O la profundidad.** No inventar un "1,00m" que no está en el plano.
-5. **Contar la cantidad de cotas en el plano y la cantidad de medidas en tu inventario.** Deben coincidir. Si no coinciden → hay un error.
+**⛔ PASADA 4 — AUTO-REVISIÓN OBLIGATORIA (actuar como revisor) ⛔**
 
-**Recién después de las 4 pasadas + validación → calcular m².**
+Después de las pasadas 1-3, ANTES de calcular, ponete en modo revisor.
+Olvidate de lo que anotaste. Volvé al plano con ojos frescos y hacé estas verificaciones:
+
+**4a. Releer cada cota del plano:**
+- Mirá cada número escrito en el plano y anotá qué dice. No mires tus notas — mirá solo el plano.
+- Compará lo que leíste ahora con lo que habías anotado en la pasada 3.
+- Si hay diferencia → el valor del plano manda. Corregir.
+- Ejemplo de error común: plano dice "60 CM" y anotaste 1,00m → CORREGIR a 0,60m.
+
+**4b. Verificar que no sobran ni faltan piezas:**
+- Contar piezas en el plano vs piezas en tu inventario. Deben coincidir.
+- Contar cotas en el plano vs medidas en tu inventario. Deben coincidir.
+- Si hay una cota que no usaste → falta una pieza o medida.
+- Si hay una medida que no tiene cota en el plano → inventaste algo. ELIMINAR.
+
+**4c. Chequeo de coherencia dimensional:**
+- Para cada pieza, verificar: largo × prof = m². Si no da → hay un error.
+- Ejemplo: pieza de 0,60m × 0,38m = 0,228 m². Si tu cálculo dice 0,38 m² → el largo está mal.
+- Ejemplo: pieza de 1,00m × 0,38m = 0,38 m². Si el plano dice 60cm no 100cm → corregir.
+
+**4d. Validación de sentido común:**
+- ¿Una mesada de lavadero de 1m de largo tiene sentido si el plano muestra algo chico?
+- ¿Un zócalo de 3m tiene sentido en una mesada de 0,60m?
+- Si algo no tiene sentido → volver al plano y releer.
+
+**Recién después de la auto-revisión completa → calcular m².**
+
+**⚠️ Si encontrás un error en la auto-revisión, corregirlo ANTES de calcular. NUNCA avanzar con datos que no verificaste.**
 
 ---
 
