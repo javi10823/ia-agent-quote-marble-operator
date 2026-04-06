@@ -943,27 +943,41 @@ class AgentService:
                         return
 
             # ── Plan verification with Opus (after first iteration with plan) ──
-            if has_plan and _loop_iterations == 1 and full_text and len(full_text) > 50:
+            if has_plan and _loop_iterations == 1:
                 try:
-                    from app.modules.agent.plan_verifier import verify_plan_reading
-                    yield {"type": "action", "content": "🔍 Verificando lectura del plano..."}
-                    corrections = await verify_plan_reading(plan_bytes, plan_filename, full_text)
-                    if corrections and corrections.get("discrepancias"):
-                        # Inject corrections as user message so Valentina corrects herself
-                        correction_text = "⚠️ CORRECCIÓN DE MEDIDAS — un revisor encontró errores en tu lectura del plano:\n\n"
-                        for d in corrections["discrepancias"]:
-                            correction_text += f"- {d.get('pieza', '?')} {d.get('dimension', '?')}: leíste {d.get('valor_valentina')}, pero el plano dice {d.get('valor_plano')}. {d.get('correccion', '')}\n"
-                        if corrections.get("medidas_correctas"):
-                            correction_text += f"\nMedidas correctas verificadas: {json.dumps(corrections['medidas_correctas'], ensure_ascii=False)}"
-                        correction_text += "\n\nCORREGÍ tus medidas con estos valores ANTES de calcular. Usá las medidas del revisor, no las tuyas."
-                        # Add as assistant ack + user correction
-                        assistant_messages.append({"role": "assistant", "content": _serialize_content(final_message.content)})
-                        assistant_messages.append({"role": "user", "content": [{"type": "text", "text": correction_text}]})
-                        yield {"type": "text", "content": f"\n\n_Corrección de medidas aplicada por el revisor._\n"}
-                        logging.info(f"[plan-verifier] Injected {len(corrections['discrepancias'])} corrections for {quote_id}")
-                        # Continue loop — Valentina will process the correction
-                        await asyncio.sleep(0.1)
-                        continue
+                    # Gather all text Valentina produced (from text blocks + tool inputs)
+                    verify_text = full_text
+                    # Also extract measurements from any tool call inputs (catalog_batch_lookup, calculate_quote)
+                    for block in final_message.content:
+                        if block.type == "tool_use" and block.input:
+                            verify_text += f"\n{json.dumps(block.input, ensure_ascii=False)}"
+
+                    if verify_text and len(verify_text) > 30:
+                        from app.modules.agent.plan_verifier import verify_plan_reading
+                        yield {"type": "action", "content": "Verificando lectura del plano..."}
+                        corrections = await verify_plan_reading(plan_bytes, plan_filename, verify_text)
+                        if corrections and corrections.get("discrepancias"):
+                            # Discard Valentina's tool calls — she had wrong measurements
+                            correction_text = "CORRECCIÓN DE MEDIDAS — un revisor encontró errores en tu lectura del plano:\n\n"
+                            for d in corrections["discrepancias"]:
+                                correction_text += f"- {d.get('pieza', '?')} {d.get('dimension', '?')}: leíste {d.get('valor_valentina')}, pero el plano dice {d.get('valor_plano')}. {d.get('correccion', '')}\n"
+                            if corrections.get("medidas_correctas"):
+                                correction_text += f"\nMedidas correctas verificadas: {json.dumps(corrections['medidas_correctas'], ensure_ascii=False)}"
+                            correction_text += "\n\nCORREGÍ tus medidas con estos valores y recalculá todo desde cero. Usá SOLO las medidas del revisor."
+                            # Add Valentina's response + correction as new messages
+                            assistant_messages.append({"role": "assistant", "content": _serialize_content(final_message.content)})
+                            # If there were tool calls, add fake results so message history is valid
+                            tool_use_blocks_verify = [b for b in final_message.content if b.type == "tool_use"]
+                            if tool_use_blocks_verify:
+                                fake_results = [{"type": "tool_result", "tool_use_id": b.id, "content": '{"ok": false, "error": "Medidas incorrectas — revisor corrigió, recalcular"}'} for b in tool_use_blocks_verify]
+                                assistant_messages.append({"role": "user", "content": fake_results})
+                            assistant_messages.append({"role": "user", "content": [{"type": "text", "text": correction_text}]})
+                            yield {"type": "text", "content": "\n\n_Corrección de medidas aplicada por el revisor._\n"}
+                            logging.info(f"[plan-verifier] Injected {len(corrections['discrepancias'])} corrections for {quote_id}")
+                            await asyncio.sleep(0.1)
+                            continue  # Restart loop — Valentina recalculates with correct measurements
+                        else:
+                            logging.info(f"[plan-verifier] No discrepancies found for {quote_id}")
                 except Exception as e:
                     logging.warning(f"[plan-verifier] Verification skipped: {e}")
 
