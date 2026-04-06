@@ -310,6 +310,13 @@ def _get_stable_text() -> str:
 
     # OPT-01: Include top 5 most universal examples in the cached block
     # These cover ~80% of cases and pay 10% price when cached vs full price as conditional
+    core_rules.append(
+        "## ⛔ NOTA SOBRE LOS EJEMPLOS ⛔\n\n"
+        "Los ejemplos que siguen muestran SOLO el formato de salida correcto (tablas, estructura, orden de secciones). "
+        "NO muestran el flujo de confirmación. **El flujo de 3 pasos de la REGLA #1 SIEMPRE aplica** — "
+        "nunca calcular todo en un solo mensaje como muestran estos ejemplos. "
+        "Primero piezas + m² → esperar confirmación → después precios + MO → esperar confirmación → después generar docs."
+    )
     _CACHED_EXAMPLES = ["quote-013", "quote-003", "quote-004", "quote-010", "quote-030"]
     examples_dir = BASE_DIR / "examples"
     for eid in _CACHED_EXAMPLES:
