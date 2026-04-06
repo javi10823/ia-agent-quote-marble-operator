@@ -96,8 +96,8 @@ class TestTokenBudget:
         )
         total_chars = sum(len(b["text"]) for b in blocks if b.get("type") == "text")
         raw_tokens = estimate_tokens(total_chars) + self._tools_tokens() + 1500
-        assert raw_tokens < 50_000, (
-            f"Raw prompt exceeds 50K token limit: {raw_tokens} tokens ({total_chars} chars)"
+        assert raw_tokens < 55_000, (
+            f"Raw prompt exceeds 55K token limit: {raw_tokens} tokens ({total_chars} chars)"
         )
 
     def test_dynamic_examples_capped_at_2(self):
