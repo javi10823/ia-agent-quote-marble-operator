@@ -876,11 +876,19 @@ class AgentService:
             full_text = ""
             tool_uses = []
 
+            # Use Opus for first iteration with plan (accurate measurement reading)
+            # Sonnet for everything else (prices, MO, docs — doesn't need vision accuracy)
+            OPUS_MODEL = "claude-opus-4-20250514"
+            use_opus = has_plan and _loop_iterations == 0
+            current_model = OPUS_MODEL if use_opus else settings.ANTHROPIC_MODEL
+            if use_opus:
+                logging.info(f"Using Opus for plan reading (iteration {_loop_iterations + 1})")
+
             # Retry loop for rate limit errors
             for attempt in range(MAX_RETRIES + 1):
                 try:
                     async with self.client.messages.stream(
-                        model=settings.ANTHROPIC_MODEL,
+                        model=current_model,
                         max_tokens=8096,
                         system=system_prompt,
                         messages=new_messages + _compact_tool_results(assistant_messages),
@@ -949,8 +957,8 @@ class AgentService:
                         yield {"type": "done", "content": ""}
                         return
 
-            # ── Plan verification with Opus (after first iteration with plan) ──
-            if has_plan and _loop_iterations == 1:
+            # ── Plan verification (skip — Opus reads the plan directly now) ──
+            if False and has_plan and _loop_iterations == 1:
                 try:
                     # Gather all text Valentina produced (from text blocks + tool inputs)
                     verify_text = full_text
