@@ -378,8 +378,10 @@ Todos los catálogos tienen precios SIN IVA. Aplicar ×1.21 al presupuestar sin 
 - **Frente revestido en isla** = pata frontal, NO alzada → no aplica TOMAS automático
 - **c/p** = centro de pileta → ignorar
 
-**⛔⛔⛔ REGLA CRÍTICA — SOLO PIEZAS DEL PLANO ⛔⛔⛔**
+**⛔⛔⛔ REGLA CRÍTICA — SOLO PIEZAS Y MEDIDAS DEL PLANO ⛔⛔⛔**
 - **SOLO incluir piezas que estén EXPLÍCITAMENTE dibujadas y acotadas en el plano.**
+- **SOLO usar medidas que estén escritas en el plano.** Si el plano dice "60 CM" → usar 0,60m. NUNCA inventar un "1,00m" que no está en ninguna cota.
+- **Después de leer el plano, RELEER cada cota y verificar que la anotaste bien.** Este paso es OBLIGATORIO.
 - Si el plano muestra 1 zócalo de 2,01 × 0,06 → incluir ESE zócalo con ESAS medidas. NO agregar otros zócalos que no estén dibujados.
 - Si el plano NO dibuja un zócalo trasero, lateral o costado → NO incluirlo. Aunque "tenga sentido" ponerlo.
 - NUNCA inventar zócalos "trasero mesada principal", "costado derecho", "trasero mesada lateral" si no están en el plano.

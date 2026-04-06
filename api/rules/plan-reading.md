@@ -104,10 +104,17 @@ Para cada pieza, identificar qué lados van contra pared (hatching/rayado) y cu�
 **Pasada 3 — Medidas**
 Leer cada cota explícita del plano para cada lado de cada pieza. Si una medida no está en el plano → decirlo al operador, no asumir ningún valor.
 
-**Pasada 4 — Verificación**
+**Pasada 4 — Verificación y validación cruzada**
 Cruzar todo: ¿las cotas suman correctamente? ¿Hay elementos que no son mesada (columnas, ventanas, proyecciones)? ¿Hay vistas auxiliares que agregan o contradicen lo de la planta? ¿Algún lado marcado como libre que en realidad va contra algo?
 
-**Recién después de las 4 pasadas → calcular m².**
+**⛔ VALIDACIÓN OBLIGATORIA — hacer ANTES de calcular:**
+1. **Releer cada cota del plano una por una** y verificar que el valor que anotaste coincide exactamente con lo que dice el plano. Si el plano dice "60 CM" → es 0,60m, NO 1,00m.
+2. **Verificar que TODAS las cotas visibles del plano están en tu inventario.** Si el plano muestra una cota que no usaste → revisarla.
+3. **Chequear coherencia dimensional:** si una pieza tiene largo 0,60m y profundidad 0,38m → el m² es ~0,23. Si tu cálculo da 0,38 m² o 0,60 m², hay un error.
+4. **Si el plano dice "60 CM" → es el largo O la profundidad.** No inventar un "1,00m" que no está en el plano.
+5. **Contar la cantidad de cotas en el plano y la cantidad de medidas en tu inventario.** Deben coincidir. Si no coinciden → hay un error.
+
+**Recién después de las 4 pasadas + validación → calcular m².**
 
 ---
 
