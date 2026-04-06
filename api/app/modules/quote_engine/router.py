@@ -256,56 +256,62 @@ async def upload_source_files(
     await db.commit()
 
     # If quote has no breakdown yet and we just saved files, trigger agent processing
-    # so Valentina reads the plan, extracts pieces, and calculates the quote
+    # in the background so the API responds immediately to the chatbot
     if saved and not quote.quote_breakdown:
-        try:
-            from app.modules.agent.agent import AgentService
+        import asyncio
 
-            # Build context message from quote data for Valentina
-            parts = []
-            if quote.client_name:
-                parts.append(f"Cliente: {quote.client_name}")
-            if quote.project:
-                parts.append(f"Proyecto: {quote.project}")
-            if quote.material:
-                parts.append(f"Material: {quote.material}")
-            localidad = getattr(quote, "localidad", None)
-            if localidad:
-                parts.append(f"Localidad: {localidad}")
-            colocacion = getattr(quote, "colocacion", None)
-            if colocacion is not None:
-                parts.append(f"{'Con' if colocacion else 'Sin'} colocación")
-            pileta = getattr(quote, "pileta", None)
-            if pileta:
-                parts.append(f"Pileta: {pileta}")
-            anafe = getattr(quote, "anafe", None)
-            if anafe:
-                parts.append(f"Con anafe")
-            if quote.notes:
-                parts.append(f"Notas del cliente: {quote.notes}")
-            parts.append("Adjunto el plano. Calculá el presupuesto completo.")
+        async def _process_plan_background(qid: str, q: Quote, first_file: dict):
+            """Run Valentina in background to read plan, extract pieces, calculate quote."""
+            try:
+                from app.modules.agent.agent import AgentService
+                from app.core.database import AsyncSessionLocal
 
-            auto_message = "\n".join(parts)
+                # Build context message from quote data
+                parts = []
+                if q.client_name:
+                    parts.append(f"Cliente: {q.client_name}")
+                if q.project:
+                    parts.append(f"Proyecto: {q.project}")
+                if q.material:
+                    parts.append(f"Material: {q.material}")
+                localidad = getattr(q, "localidad", None)
+                if localidad:
+                    parts.append(f"Localidad: {localidad}")
+                colocacion = getattr(q, "colocacion", None)
+                if colocacion is not None:
+                    parts.append(f"{'Con' if colocacion else 'Sin'} colocación")
+                pileta_val = getattr(q, "pileta", None)
+                if pileta_val:
+                    parts.append(f"Pileta: {pileta_val}")
+                anafe_val = getattr(q, "anafe", None)
+                if anafe_val:
+                    parts.append(f"Con anafe")
+                if q.notes:
+                    parts.append(f"Notas del cliente: {q.notes}")
+                parts.append("Adjunto el plano. Calculá el presupuesto completo.")
 
-            # Read first saved file for Claude
-            first_file = saved[0]
-            file_path = Path(__file__).parent.parent.parent.parent / "output" / quote_id / "sources" / first_file["filename"]
-            plan_bytes = file_path.read_bytes() if file_path.exists() else None
+                auto_message = "\n".join(parts)
 
-            agent = AgentService()
-            async for chunk in agent.stream_chat(
-                quote_id=quote_id,
-                messages=quote.messages or [],
-                user_message=auto_message,
-                plan_bytes=plan_bytes,
-                plan_filename=first_file["filename"] if plan_bytes else None,
-                db=db,
-            ):
-                pass  # Consume stream — we only care about side effects (DB updates)
+                # Read file from disk
+                file_path = Path(__file__).parent.parent.parent.parent / "output" / qid / "sources" / first_file["filename"]
+                plan_data = file_path.read_bytes() if file_path.exists() else None
 
-            logging.info(f"Auto-processed plan for web quote {quote_id}")
-        except Exception as e:
-            logging.error(f"Failed to auto-process plan for {quote_id}: {e}", exc_info=True)
-            # Non-fatal — operator can still process manually via chat
+                agent = AgentService()
+                async with AsyncSessionLocal() as bg_db:
+                    async for _ in agent.stream_chat(
+                        quote_id=qid,
+                        messages=q.messages or [],
+                        user_message=auto_message,
+                        plan_bytes=plan_data,
+                        plan_filename=first_file["filename"] if plan_data else None,
+                        db=bg_db,
+                    ):
+                        pass  # Consume stream — only care about side effects (DB updates)
+
+                logging.info(f"Auto-processed plan for web quote {qid}")
+            except Exception as e:
+                logging.error(f"Failed to auto-process plan for {qid}: {e}", exc_info=True)
+
+        asyncio.create_task(_process_plan_background(quote_id, quote, saved[0]))
 
     return {"ok": True, "saved": len(saved), "errors": errors, "files": existing}
