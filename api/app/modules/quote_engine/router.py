@@ -232,11 +232,17 @@ async def upload_source_files(
             errors.append(f"'{safe_name}' — exceeds 10MB")
             continue
 
-        # Save to disk
+        # Save to disk — try OUTPUT_DIR first, fallback to /tmp/output
         from app.core.static import OUTPUT_DIR
         sources_dir = OUTPUT_DIR / quote_id / "sources"
-        sources_dir.mkdir(parents=True, exist_ok=True)
-        (sources_dir / safe_name).write_bytes(data)
+        try:
+            sources_dir.mkdir(parents=True, exist_ok=True)
+            (sources_dir / safe_name).write_bytes(data)
+        except PermissionError:
+            sources_dir = Path("/tmp/output") / quote_id / "sources"
+            sources_dir.mkdir(parents=True, exist_ok=True)
+            (sources_dir / safe_name).write_bytes(data)
+            logging.warning(f"Wrote {safe_name} to /tmp fallback for {quote_id}")
 
         saved.append({
             "filename": safe_name,
@@ -295,9 +301,11 @@ async def upload_source_files(
 
                 auto_message = "\n".join(parts)
 
-                # Read file from disk
+                # Read file from disk — check both OUTPUT_DIR and /tmp fallback
                 from app.core.static import OUTPUT_DIR as _OUTDIR
                 file_path = _OUTDIR / qid / "sources" / first_file["filename"]
+                if not file_path.exists():
+                    file_path = Path("/tmp/output") / qid / "sources" / first_file["filename"]
                 plan_data = file_path.read_bytes() if file_path.exists() else None
 
                 agent = AgentService()
