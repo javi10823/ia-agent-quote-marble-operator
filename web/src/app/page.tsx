@@ -29,6 +29,8 @@ export default function DashboardPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [statusTarget, setStatusTarget] = useState<{ id: string; current: Quote["status"]; next: Quote["status"] } | null>(null);
+  const [changingStatus, setChangingStatus] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -68,14 +70,21 @@ export default function DashboardPage() {
     web: quotes.filter(q => q.source === "web").length,
   }), [quotes]);
 
-  async function toggleStatus(e: React.MouseEvent, id: string, current: Quote["status"]) {
+  function toggleStatus(e: React.MouseEvent, id: string, current: Quote["status"]) {
     e.stopPropagation();
     const next = STATUS_NEXT[current];
     if (!next) return;
-    if (!window.confirm(`¿Cambiar estado de "${STATUS_LABEL[current]}" a "${STATUS_LABEL[next]}"?`)) return;
+    setStatusTarget({ id, current, next });
+  }
+
+  async function confirmStatusChange() {
+    if (!statusTarget) return;
+    setChangingStatus(true);
     try {
-      await setStatus(id, next);
+      await setStatus(statusTarget.id, statusTarget.next);
     } catch { /* toast already shown by context */ }
+    setChangingStatus(false);
+    setStatusTarget(null);
   }
 
   function askDelete(e: React.MouseEvent, id: string, clientName: string) {
@@ -367,6 +376,45 @@ export default function DashboardPage() {
                 )}
               >
                 {deleting ? "Eliminando..." : "Eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Status change modal */}
+      {statusTarget && (
+        <div
+          onClick={() => setStatusTarget(null)}
+          className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-[4px] flex items-center justify-center"
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="bg-s2 border border-b2 rounded-[14px] px-8 py-7 w-[380px] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
+          >
+            <div className="text-[15px] font-medium text-t1 mb-2">Cambiar estado</div>
+            <div className="text-[13px] text-t2 leading-relaxed mb-1.5">
+              {`¿Cambiar de `}<strong className="text-t1">{STATUS_LABEL[statusTarget.current]}</strong>{` a `}<strong className="text-t1">{STATUS_LABEL[statusTarget.next]}</strong>?
+            </div>
+            {statusTarget.next === "sent" && (
+              <div className="text-[12px] text-amb mb-4">Esta acci{"\u00F3"}n no se puede deshacer.</div>
+            )}
+            <div className={clsx("flex gap-2.5 justify-end", statusTarget.next !== "sent" && "mt-5")}>
+              <button
+                onClick={() => setStatusTarget(null)}
+                className="px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans cursor-pointer border border-b2 bg-transparent text-t2 hover:text-t1 hover:border-b3 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmStatusChange}
+                disabled={changingStatus}
+                className={clsx(
+                  "px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans border-none text-white transition",
+                  changingStatus ? "bg-acc/60 cursor-wait" : "bg-acc cursor-pointer hover:bg-blue-500",
+                )}
+              >
+                {changingStatus ? "Cambiando..." : "Confirmar"}
               </button>
             </div>
           </div>
