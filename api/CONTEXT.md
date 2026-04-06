@@ -400,6 +400,13 @@ BIEN: solo las 4 piezas del plano con sus medidas exactas = 3,88 m²
 - **Si hay duda sobre si el plano muestra anafe → preguntar al operador.** No asumir.
 - Referencia: quote-034 (Alejandro Gavilán) — cocina sin anafe en plano → no se cobró ANAFE.
 
+### Islas — REGLA ESTRICTA
+**La isla NUNCA tiene zócalos ni alzada.**
+- Una isla es una pieza centrada, sin apoyo contra pared → no hay pared donde poner zócalo ni alzada.
+- El despiece de una isla es: tapa (largo × prof) + patas laterales/frontales si las tiene.
+- NUNCA agregar zócalos traseros, laterales, ni alzadas a una isla.
+- Si el enunciado dice "isla con zócalo" → preguntar al operador porque es contradictorio.
+
 ### CORTE45 en islas con patas
 Por cada junta entre piezas × 2ml:
 - Tapa → pata frontal: `largo × 2`
