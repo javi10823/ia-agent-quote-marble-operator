@@ -1099,7 +1099,9 @@ class AgentService:
                         "pdf_url": result.get("pdf_url"),
                         "excel_url": result.get("excel_url"),
                     }
-                    if current_quote and current_quote.status in (
+                    _qr = await db.execute(select(Quote).where(Quote.id == target_qid))
+                    _cur = _qr.scalar_one_or_none()
+                    if not _cur or _cur.status in (
                         QuoteStatus.DRAFT, QuoteStatus.PENDING
                     ):
                         doc_values["status"] = QuoteStatus.VALIDATED.value
