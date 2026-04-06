@@ -246,7 +246,7 @@ export default function DashboardPage() {
                   return (
                     <tr
                       key={q.id}
-                      onClick={() => { setSelectedId(q.id); router.push(`/quote/${q.parent_quote_id || q.id}`); }}
+                      onClick={() => { setSelectedId(q.id); router.push(`/quote/${q.id}`); }}
                       className={clsx(
                         "border-b border-white/[0.045] cursor-pointer transition-[background] duration-75",
                         isSelected
