@@ -25,6 +25,9 @@ google-api-python-client==2.154.0
 google-auth==2.36.0
 google-auth-httplib2==0.2.0
 
+# Fuzzy matching
+thefuzz==0.22.1
+
 # Utils
 python-dotenv==1.0.1
 pydantic==2.10.3

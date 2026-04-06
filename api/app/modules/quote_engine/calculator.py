@@ -75,18 +75,83 @@ def _detect_material_type(catalog_result: dict) -> str:
     return mat_type or "granito"
 
 
+MATERIAL_CATALOGS = [
+    "materials-silestone", "materials-purastone",
+    "materials-granito-nacional", "materials-granito-importado",
+    "materials-dekton", "materials-neolith",
+    "materials-marmol", "materials-puraprima", "materials-laminatto",
+]
+
+# Common name normalizations (user typos / spacing)
+_NORMALIZE_MAP = {
+    "pura stone": "purastone",
+    "pura prima": "puraprima",
+    "negro brasil extra": "granito negro brasil extra",
+}
+
+
+def _normalize_material_name(name: str) -> str:
+    """Normalize common variations in material names."""
+    lower = name.lower().strip()
+    # Apply known normalizations
+    for pattern, replacement in _NORMALIZE_MAP.items():
+        lower = lower.replace(pattern, replacement)
+    # Remove extra spaces
+    lower = " ".join(lower.split())
+    return lower
+
+
 def _find_material(material_name: str) -> dict:
-    """Search for material across all catalogs."""
-    catalogs = [
-        "materials-silestone", "materials-purastone",
-        "materials-granito-nacional", "materials-granito-importado",
-        "materials-dekton", "materials-neolith",
-        "materials-marmol", "materials-puraprima", "materials-laminatto",
-    ]
-    for cat in catalogs:
+    """Search for material across all catalogs with fuzzy fallback."""
+    from app.modules.agent.tools.catalog_tool import _load_catalog
+
+    # 1. Exact match (case-insensitive via catalog_lookup)
+    for cat in MATERIAL_CATALOGS:
         result = catalog_lookup(cat, material_name)
         if result.get("found"):
             return result
+
+    # 2. Try normalized name
+    normalized = _normalize_material_name(material_name)
+    if normalized != material_name.lower().strip():
+        for cat in MATERIAL_CATALOGS:
+            result = catalog_lookup(cat, normalized)
+            if result.get("found"):
+                logging.info(f"[normalize] '{material_name}' → '{result.get('name')}' (normalized)")
+                result["fuzzy_corrected_from"] = material_name
+                return result
+
+    # 3. Fuzzy match across all material catalogs
+    try:
+        from thefuzz import process as fuzz_process
+
+        # Build list of all material names with their catalog
+        all_materials: list[tuple[str, str]] = []  # (name, catalog)
+        for cat in MATERIAL_CATALOGS:
+            items = _load_catalog(cat)
+            for item in items:
+                name = item.get("name", "")
+                if name:
+                    all_materials.append((name, cat))
+
+        if not all_materials:
+            return {"found": False, "error": f"Material '{material_name}' no encontrado — catálogos vacíos"}
+
+        names = [m[0] for m in all_materials]
+        match = fuzz_process.extractOne(material_name, names, score_cutoff=70)
+
+        if match:
+            matched_name, score = match[0], match[1]
+            # Find which catalog it belongs to
+            matched_cat = next(cat for name, cat in all_materials if name == matched_name)
+            result = catalog_lookup(matched_cat, matched_name)
+            if result.get("found"):
+                logging.info(f"[fuzzy] '{material_name}' → '{matched_name}' (score={score})")
+                result["fuzzy_corrected_from"] = material_name
+                return result
+    except ImportError:
+        logging.warning("thefuzz not installed — fuzzy matching disabled")
+
     return {"found": False, "error": f"Material '{material_name}' no encontrado en ningún catálogo"}
 
 
@@ -357,4 +422,5 @@ def calculate_quote(input_data: dict) -> dict:
         "total_usd": total_usd,
         "sectors": sectors,
         "sinks": sinks,
+        **({"fuzzy_corrected_from": mat_result["fuzzy_corrected_from"]} if "fuzzy_corrected_from" in mat_result else {}),
     }

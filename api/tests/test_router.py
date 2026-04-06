@@ -435,6 +435,47 @@ class TestQuoteEngine:
         assert detail["anafe"] is True
 
     @pytest.mark.asyncio
+    async def test_fuzzy_material_match(self, client):
+        """Fuzzy match should correct typos in material name."""
+        resp = await client.post("/api/v1/quote", json={
+            "client_name": "Test",
+            "material": "Sileston Blanco Nort",  # typo
+            "localidad": "Rosario",
+            "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        # Should have matched to the real material
+        assert "BLANCO NORTE" in data["quotes"][0]["material"].upper()
+
+    @pytest.mark.asyncio
+    async def test_fuzzy_adds_correction_note(self, client):
+        """Fuzzy match should add correction note to quote."""
+        resp = await client.post("/api/v1/quote", json={
+            "client_name": "Test",
+            "material": "Sileston Blanco Nort",
+            "localidad": "Rosario",
+            "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
+        })
+        qid = resp.json()["quotes"][0]["quote_id"]
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert "Material corregido" in (detail["notes"] or "")
+
+    @pytest.mark.asyncio
+    async def test_exact_match_no_fuzzy(self, client):
+        """Exact match should not trigger fuzzy or add correction note."""
+        resp = await client.post("/api/v1/quote", json={
+            "client_name": "Test",
+            "material": "Silestone Blanco Norte",
+            "localidad": "Rosario",
+            "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
+        })
+        qid = resp.json()["quotes"][0]["quote_id"]
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert "corregido" not in (detail["notes"] or "").lower()
+
+    @pytest.mark.asyncio
     async def test_web_quote_has_source_web(self, client):
         """Web quotes should have source=web."""
         resp = await client.post("/api/v1/quote", json={

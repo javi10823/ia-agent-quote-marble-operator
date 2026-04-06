@@ -134,6 +134,12 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
         if not calc_result.get("ok"):
             return QuoteResponse(ok=False, error=calc_result.get("error"))
 
+        # Append fuzzy correction note if material was auto-corrected
+        quote_notes = body.notes or ""
+        if calc_result.get("fuzzy_corrected_from"):
+            correction = f"Material corregido: '{calc_result['fuzzy_corrected_from']}' → '{calc_result['material_name']}'"
+            quote_notes = f"{quote_notes}\n{correction}".strip() if quote_notes else correction
+
         # Create quote record in DB
         quote_id = f"web-{uuid.uuid4()}"
         quote = Quote(
@@ -148,7 +154,7 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
             status=QuoteStatus.PENDING,
             source="web",
             is_read=False,
-            notes=body.notes,
+            notes=quote_notes,
             localidad=body.localidad,
             colocacion=body.colocacion,
             pileta=body.pileta.value if body.pileta else None,
