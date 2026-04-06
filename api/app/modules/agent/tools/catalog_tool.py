@@ -7,6 +7,18 @@ BASE_DIR = Path(__file__).parent.parent.parent.parent.parent
 CATALOG_DIR = BASE_DIR / "catalog"
 
 _catalog_cache: dict[str, list] = {}
+_config_cache: dict | None = None
+
+
+def _get_iva_multiplier() -> float:
+    """Read IVA multiplier from config.json."""
+    global _config_cache
+    if _config_cache is None:
+        try:
+            _config_cache = json.loads((CATALOG_DIR / "config.json").read_text(encoding="utf-8"))
+        except Exception:
+            _config_cache = {}
+    return _config_cache.get("iva", {}).get("multiplier", 1.21)
 
 
 def _load_catalog(name: str) -> list:
@@ -43,17 +55,18 @@ def catalog_lookup(catalog: str, sku: str) -> dict:
         if item_sku == sku_upper:
             result = {"found": True, "sku": item.get("sku"), "name": item.get("name", "")}
 
-            # Price with IVA (21%)
+            # Price with IVA (from config.json)
             # Business rule: USD uses floor(), ARS uses round() — intentional
+            iva = _get_iva_multiplier()
             if "price_usd" in item:
                 price_base = item["price_usd"]
-                price_with_iva = math.floor(price_base * 1.21)  # USD: floor per business rule
+                price_with_iva = math.floor(price_base * iva)  # USD: floor per business rule
                 result["price_usd"] = price_with_iva
                 result["price_usd_base"] = price_base
                 result["currency"] = "USD"
             elif "price_ars" in item:
                 price_base = item["price_ars"]
-                price_with_iva = round(price_base * 1.21)  # ARS: round per business rule
+                price_with_iva = round(price_base * iva)  # ARS: round per business rule
                 result["price_ars"] = price_with_iva
                 result["price_ars_base"] = price_base
                 result["currency"] = "ARS"
@@ -84,15 +97,16 @@ def catalog_lookup(catalog: str, sku: str) -> dict:
         item = name_matches[0]
         result = {"found": True, "sku": item.get("sku"), "name": item.get("name", ""), "matched_by": "name"}
 
+        iva = _get_iva_multiplier()
         if "price_usd" in item:
             price_base = item["price_usd"]
-            price_with_iva = math.floor(price_base * 1.21)
+            price_with_iva = math.floor(price_base * iva)
             result["price_usd"] = price_with_iva
             result["price_usd_base"] = price_base
             result["currency"] = "USD"
         elif "price_ars" in item:
             price_base = item["price_ars"]
-            price_with_iva = round(price_base * 1.21)
+            price_with_iva = round(price_base * iva)
             result["price_ars"] = price_with_iva
             result["price_ars_base"] = price_base
             result["currency"] = "ARS"

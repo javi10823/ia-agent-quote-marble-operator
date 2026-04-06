@@ -1,4 +1,8 @@
 {
+  "iva": {
+    "multiplier": 1.21,
+    "percentage": 21
+  },
   "delivery_days": {
     "_comment": "Plazo de entrega desde toma de medidas. Puede ser un número fijo o un rango.",
     "default": 40,
