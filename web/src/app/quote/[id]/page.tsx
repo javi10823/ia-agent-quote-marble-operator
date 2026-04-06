@@ -490,8 +490,8 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
         </Section>
       ) : quote.source === "web" ? (
         <div className="p-5 rounded-[10px] text-center border border-dashed border-acc/30" style={{ background: "linear-gradient(135deg, rgba(124,110,240,0.08), rgba(124,110,240,0.03))" }}>
-          <div className="text-sm font-semibold text-t1 mb-1.5">{`Presupuesto pendiente de medidas`}</div>
-          <div className="text-xs text-t3 mb-4">{`Pas${A} al chat y dale a Valentina el enunciado o plano. Ella calcula y genera PDF, Excel y Drive.`}</div>
+          <div className="text-sm font-semibold text-t1 mb-1.5">{quote.notes || (quote.source_files && quote.source_files.length > 0) ? `Presupuesto pendiente de revisi${O}n` : `Presupuesto pendiente de medidas`}</div>
+          <div className="text-xs text-t3 mb-4">{quote.notes || (quote.source_files && quote.source_files.length > 0) ? `El cliente envi${O} datos y/o plano. Pas${A} al chat para que Valentina calcule.` : `Pas${A} al chat y dale a Valentina el enunciado o plano. Ella calcula y genera PDF, Excel y Drive.`}</div>
           <button
             onClick={onSwitchToChat}
             className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-[13px] font-semibold text-white bg-acc border-none cursor-pointer hover:brightness-110 transition-all"

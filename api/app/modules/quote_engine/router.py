@@ -255,4 +255,57 @@ async def upload_source_files(
     await db.execute(upd(Quote).where(Quote.id == quote_id).values(source_files=existing))
     await db.commit()
 
+    # If quote has no breakdown yet and we just saved files, trigger agent processing
+    # so Valentina reads the plan, extracts pieces, and calculates the quote
+    if saved and not quote.quote_breakdown:
+        try:
+            from app.modules.agent.agent import AgentService
+
+            # Build context message from quote data for Valentina
+            parts = []
+            if quote.client_name:
+                parts.append(f"Cliente: {quote.client_name}")
+            if quote.project:
+                parts.append(f"Proyecto: {quote.project}")
+            if quote.material:
+                parts.append(f"Material: {quote.material}")
+            localidad = getattr(quote, "localidad", None)
+            if localidad:
+                parts.append(f"Localidad: {localidad}")
+            colocacion = getattr(quote, "colocacion", None)
+            if colocacion is not None:
+                parts.append(f"{'Con' if colocacion else 'Sin'} colocación")
+            pileta = getattr(quote, "pileta", None)
+            if pileta:
+                parts.append(f"Pileta: {pileta}")
+            anafe = getattr(quote, "anafe", None)
+            if anafe:
+                parts.append(f"Con anafe")
+            if quote.notes:
+                parts.append(f"Notas del cliente: {quote.notes}")
+            parts.append("Adjunto el plano. Calculá el presupuesto completo.")
+
+            auto_message = "\n".join(parts)
+
+            # Read first saved file for Claude
+            first_file = saved[0]
+            file_path = Path(__file__).parent.parent.parent.parent / "output" / quote_id / "sources" / first_file["filename"]
+            plan_bytes = file_path.read_bytes() if file_path.exists() else None
+
+            agent = AgentService()
+            async for chunk in agent.stream_chat(
+                quote_id=quote_id,
+                messages=quote.messages or [],
+                user_message=auto_message,
+                plan_bytes=plan_bytes,
+                plan_filename=first_file["filename"] if plan_bytes else None,
+                db=db,
+            ):
+                pass  # Consume stream — we only care about side effects (DB updates)
+
+            logging.info(f"Auto-processed plan for web quote {quote_id}")
+        except Exception as e:
+            logging.error(f"Failed to auto-process plan for {quote_id}: {e}", exc_info=True)
+            # Non-fatal — operator can still process manually via chat
+
     return {"ok": True, "saved": len(saved), "errors": errors, "files": existing}
