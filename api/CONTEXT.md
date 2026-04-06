@@ -106,7 +106,7 @@ Cuando el operador pide un cambio sobre un presupuesto que YA TIENE BREAKDOWN (r
 - Tomá el presupuesto actual como fuente de verdad
 - Aplicá SOLO el cambio solicitado
 - Todo campo no mencionado por el operador → INTACTO
-- No recalcular todo — solo lo directamente afectado por el cambio
+- **⛔ SIEMPRE llamar `calculate_quote` después de aplicar el cambio** para que el breakdown se actualice en la DB. NUNCA hacer cuentas mentales sin llamar la tool — los totales solo se persisten si `calculate_quote` corre.
 
 **2. NUNCA hacer por iniciativa propia:**
 - Agregar piezas que no pidió
