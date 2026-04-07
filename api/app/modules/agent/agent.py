@@ -1394,25 +1394,63 @@ class AgentService:
                 if existing_quote and existing_quote.quote_breakdown:
                     ebd = existing_quote.quote_breakdown
                     msg_lower = current_user_message.lower()
+
+                    # Detect pileta from breakdown field OR from mo_items descriptions
+                    existing_pileta = ebd.get("pileta")
+                    if not existing_pileta:
+                        # Infer from MO items if breakdown was saved without pileta field
+                        for mo in ebd.get("mo_items", []):
+                            desc = (mo.get("description") or "").lower()
+                            if "pegado pileta" in desc or "pegadopileta" in desc:
+                                existing_pileta = "empotrada_johnson"
+                                break
+                            elif "pileta apoyo" in desc or "agujero apoyo" in desc:
+                                existing_pileta = "apoyo"
+                                break
+                            elif "pileta" in desc and "agujero" in desc:
+                                existing_pileta = "empotrada_cliente"
+                                break
+
+                    # Detect anafe from breakdown field OR from mo_items
+                    existing_anafe = ebd.get("anafe", False)
+                    if not existing_anafe:
+                        for mo in ebd.get("mo_items", []):
+                            if "anafe" in (mo.get("description") or "").lower():
+                                existing_anafe = True
+                                break
+
                     # Check if operator is explicitly removing something
-                    removing_pileta = any(kw in msg_lower for kw in ["sin pileta", "sacar pileta", "quitar pileta", "remover pileta", "sin agujero"])
+                    removing_pileta = any(kw in msg_lower for kw in ["sin pileta", "sacar pileta", "quitar pileta", "remover pileta", "sin agujero", "sacar agujero"])
                     removing_anafe = any(kw in msg_lower for kw in ["sin anafe", "sacar anafe", "quitar anafe", "remover anafe"])
 
-                    # Auto-inject pileta if breakdown had it and operator didn't remove it
-                    if not inputs.get("pileta") and ebd.get("pileta") and not removing_pileta:
-                        inputs["pileta"] = ebd["pileta"]
-                        logging.info(f"Auto-preserved pileta={ebd['pileta']} from existing breakdown for {save_to_qid}")
+                    # Auto-inject pileta if it existed and operator didn't remove it
+                    if not inputs.get("pileta") and existing_pileta and not removing_pileta:
+                        inputs["pileta"] = existing_pileta
+                        logging.info(f"Auto-preserved pileta={existing_pileta} from existing breakdown for {save_to_qid}")
 
-                    # Auto-inject anafe if breakdown had it and operator didn't remove it
-                    if not inputs.get("anafe") and ebd.get("anafe") and not removing_anafe:
-                        inputs["anafe"] = ebd["anafe"]
-                        logging.info(f"Auto-preserved anafe={ebd['anafe']} from existing breakdown for {save_to_qid}")
+                    # Auto-inject anafe if it existed and operator didn't remove it
+                    if not inputs.get("anafe") and existing_anafe and not removing_anafe:
+                        inputs["anafe"] = existing_anafe
+                        logging.info(f"Auto-preserved anafe={existing_anafe} from existing breakdown for {save_to_qid}")
 
                     # Auto-inject frentin/pulido
-                    if not inputs.get("frentin") and ebd.get("frentin"):
-                        inputs["frentin"] = ebd["frentin"]
-                    if not inputs.get("pulido") and ebd.get("pulido"):
-                        inputs["pulido"] = ebd["pulido"]
+                    existing_frentin = ebd.get("frentin", False)
+                    if not existing_frentin:
+                        for mo in ebd.get("mo_items", []):
+                            if "frentin" in (mo.get("description") or "").lower() or "regrueso" in (mo.get("description") or "").lower():
+                                existing_frentin = True
+                                break
+                    if not inputs.get("frentin") and existing_frentin:
+                        inputs["frentin"] = True
+
+                    existing_pulido = ebd.get("pulido", False)
+                    if not existing_pulido:
+                        for mo in ebd.get("mo_items", []):
+                            if "pulido" in (mo.get("description") or "").lower():
+                                existing_pulido = True
+                                break
+                    if not inputs.get("pulido") and existing_pulido:
+                        inputs["pulido"] = True
             except Exception as e:
                 logging.warning(f"Could not check existing breakdown for {save_to_qid}: {e}")
 
