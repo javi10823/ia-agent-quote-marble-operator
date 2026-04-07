@@ -861,6 +861,26 @@ class AgentService:
                         "data": base64.b64encode(plan_bytes).decode(),
                     },
                 })
+                # Also send a 90° rotated version to catch margin text
+                try:
+                    from PIL import Image
+                    import io
+                    img = Image.open(io.BytesIO(plan_bytes))
+                    rotated = img.rotate(90, expand=True)
+                    buf = io.BytesIO()
+                    rotated.save(buf, format="JPEG", quality=85)
+                    content.append({"type": "text", "text": "El siguiente es el MISMO plano rotado 90° para facilitar la lectura del texto en los márgenes laterales. Leé el texto de esta versión rotada (material, zócalo, frentín, etc.):"})
+                    content.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/jpeg",
+                            "data": base64.b64encode(buf.getvalue()).decode(),
+                        },
+                    })
+                    logging.info(f"Added 90° rotated version of plan for margin text reading")
+                except Exception as e:
+                    logging.warning(f"Could not create rotated plan version: {e}")
         # Always include a text block — Anthropic rejects empty text content blocks
         text = user_message.strip() if user_message.strip() else "(adjunto plano)"
         content.append({"type": "text", "text": text})
