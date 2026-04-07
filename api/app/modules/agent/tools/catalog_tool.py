@@ -154,14 +154,19 @@ def check_architect(client_name: str) -> dict:
         if name_lower == item_name or name_lower == item_firm:
             return {"found": True, "exact": True, "name": item["name"], "firm": item.get("firm"), "discount": item.get("discount", True)}
 
-    # Partial / fuzzy match — check if client name appears in architect name or vice versa
+    # Fuzzy match — require at least 2 words to match (name + surname, not just first name)
     partial = []
+    name_words = set(name_lower.split())
     for item in items:
         item_name = (item.get("name") or "").lower()
         item_firm = (item.get("firm") or "").lower()
-        # Check bidirectional containment (handles "Nadia" matching "ARQ. NADIA")
-        if (name_lower in item_name or item_name in name_lower or
-            (item_firm and (name_lower in item_firm or item_firm in name_lower))):
+        item_words = set(item_name.replace("arq.", "").replace("arq ", "").strip().split())
+        # Match if at least 2 words overlap (e.g. "luciana pacor" matches "ARQ. LUCIANA PACOR")
+        # Single word like "luciana" alone does NOT match
+        common_words = name_words & item_words
+        if len(common_words) >= 2:
+            partial.append({"name": item["name"], "firm": item.get("firm")})
+        elif item_firm and (name_lower == item_firm or item_firm == name_lower):
             partial.append({"name": item["name"], "firm": item.get("firm")})
 
     if partial:

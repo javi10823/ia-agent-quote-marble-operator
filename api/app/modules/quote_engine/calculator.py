@@ -274,6 +274,7 @@ def calculate_quote(input_data: dict) -> dict:
     pileta_sku = input_data.get("pileta_sku")  # Specific sink product SKU from sinks.json
     anafe = input_data.get("anafe", False)
     frentin = input_data.get("frentin", False)
+    inglete = input_data.get("inglete", False)
     pulido = input_data.get("pulido", False)
     plazo = input_data["plazo"]
     discount_pct = input_data.get("discount_pct", 0)
@@ -336,6 +337,17 @@ def calculate_quote(input_data: dict) -> dict:
         price, base = _get_mo_price(sku)
         qty = max(total_m2, cfg("colocacion.min_quantity", 1.0))
         mo_items.append({"description": "Colocación", "quantity": round(qty, 2), "unit_price": price, "base_price": base, "total": round(price * qty)})
+
+    # Frentín/faldón recto
+    if frentin:
+        sku = "FALDONDEKTON/NEOLITH" if is_sint else "FALDON"
+        price, base = _get_mo_price(sku)
+        mo_items.append({"description": "Armado frentín recto", "quantity": 1, "unit_price": price, "base_price": base, "total": price})
+        # Corte a 45° (inglete) — adicional al faldón
+        if inglete:
+            sku_45 = "CORTE45DEKTON/NEOLITH" if is_sint else "CORTE45"
+            price_45, base_45 = _get_mo_price(sku_45)
+            mo_items.append({"description": "Corte a 45°", "quantity": 1, "unit_price": price_45, "base_price": base_45, "total": price_45})
 
     # Flete
     flete_result = _find_flete(localidad)
@@ -428,6 +440,7 @@ def calculate_quote(input_data: dict) -> dict:
         "pileta": pileta,
         "anafe": anafe,
         "frentin": frentin,
+        "inglete": inglete,
         "pulido": pulido,
         **({"fuzzy_corrected_from": mat_result["fuzzy_corrected_from"]} if "fuzzy_corrected_from" in mat_result else {}),
     }

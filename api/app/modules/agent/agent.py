@@ -618,7 +618,8 @@ TOOLS = [
                     "description": "SKU del modelo de pileta en sinks.json (ej: QUADRAQ71A). Solo para empotrada_johnson. Si no se conoce el modelo, omitir y se usará Johnson default.",
                 },
                 "anafe": {"type": "boolean", "description": "SOLO true si hay evidencia de anafe en plano o enunciado. Cocina ≠ anafe automático."},
-                "frentin": {"type": "boolean", "description": "Si lleva frentin/regrueso"},
+                "frentin": {"type": "boolean", "description": "Si lleva frentin/regrueso (faldón recto)"},
+                "inglete": {"type": "boolean", "description": "Si el frentín lleva corte a 45° (inglete). Solo aplica si frentin=true."},
                 "pulido": {"type": "boolean", "description": "Si lleva pulido de cantos"},
                 "plazo": {"type": "string", "description": "Plazo de entrega"},
                 "discount_pct": {"type": "number", "description": "Porcentaje de descuento (0-100)"},
@@ -1489,6 +1490,10 @@ class AgentService:
                                 break
                     if not inputs.get("pulido") and existing_pulido:
                         inputs["pulido"] = True
+
+                    # Auto-inject inglete
+                    if not inputs.get("inglete") and ebd.get("inglete"):
+                        inputs["inglete"] = True
             except Exception as e:
                 logging.warning(f"Could not check existing breakdown for {save_to_qid}: {e}")
 
