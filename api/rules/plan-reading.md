@@ -135,6 +135,7 @@ Ejemplos:
 **NO intentar leer las medidas del plano general. SIEMPRE pedir capturas individuales.**
 **Ejemplo: "Veo 6 solías en el plano, cada una en su propio cuadro. Para leer bien las medidas de cada una sin errores, necesito que me mandes una captura/foto de cada cuadro por separado."**
 **Esta regla es OBLIGATORIA — no opcional. No importa si "creés" que podés leerlas del plano general.**
+**Si ya pediste capturas separadas y el operador vuelve a mandar el mismo plano completo → RECHAZAR y volver a pedir las capturas. NO procesar el plano general. Decir: "Necesito las capturas individuales de cada pieza, no el plano completo. ¿Podés mandarme una foto/captura de cada cuadro por separado?"**
 
 ## Protocolo de lectura — 5 pasadas obligatorias
 
