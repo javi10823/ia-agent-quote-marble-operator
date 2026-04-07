@@ -41,10 +41,31 @@ Guía para analizar planos arquitectónicos y extraer correctamente todas las me
 - Si no figura → decirlo al operador, no asumir
 
 ### Convenciones de texto en plano
+
+**Material y espesor:**
+- **"Granito Gris Mara"** / **"Silestone X"** / **"Dekton X"** / **"Neolith X"** → material del presupuesto. Usar directamente, NO preguntar.
+- **"e= 2,5cm"** / **"e= 2cm"** / **"20mm"** → espesor. Generalmente 2-2,5cm para granito, 20mm para sintéticos.
+- **"c/ménsula"** → con ménsula/soporte (info técnica, no afecta precio)
+
+**Zócalos:**
+- **"Zócalo en U de X cm"** → zócalo en 3 lados (trasero + ambos laterales), alto = X cm
+- **"Zócalo en L"** → zócalo en 2 lados (trasero + 1 lateral)
+- **"Zócalo trasero"** → solo lado contra pared
+- **"Z de X cm"** → zócalo de X cm de alto
+
+**Frentín/regrueso:**
+- **"Frentín Xcm"** / **"F de Xcm"** → frentín/regrueso de X cm de alto en bordes visibles
+- **"Frentín [material] Xcm e= Y"** → frentín con material y espesor específico
+
+**Otros:**
 - **"INGLETE"** → unión a 45° → cobrar CORTE45 en MO
 - **"Bordes pulidos" / "Cantos pulidos"** → cobrar PUL en MO — es explícito del plano, no hace falta que lo diga el operador
 - **"Frente revestido"** en isla → es la **pata frontal**, NO una alzada → no aplica TOMAS automático
 - **"Tomas (X)"** → cobrar X unidades de TOMAS en MO
+
+**Cuadro de datos (tabla en el plano):**
+- Campos comunes: Tipo (MESADA, ISLA), Ubicación (Office, Cocina), Cantidad, m²
+- Extraer TODA la info del cuadro — puede tener datos que no están en las cotas
 
 
 - Cota **ARRIBA** del borde de la mesada → **ZÓCALO** (sube por la pared)
@@ -91,9 +112,24 @@ img.crop((x3,y3,x4,y4)).save('/tmp/m02.jpg')
 
 **Nunca confiar en la vista general del plano completo.**
 
-## Protocolo de lectura — 4 pasadas obligatorias
+## Protocolo de lectura — 5 pasadas obligatorias
 
-Ante cualquier plano, ejecutar SIEMPRE estas 4 pasadas en orden. **No calcular hasta completar la pasada 4.**
+Ante cualquier plano, ejecutar SIEMPRE estas 5 pasadas en orden. **No calcular hasta completar la pasada 4.**
+
+**Pasada 0 — Texto y anotaciones del plano (ANTES de contar piezas)**
+Leer TODO el texto escrito en el plano, incluyendo:
+- **Material:** nombre completo (ej: "Granito Gris Mara", "Silestone Blanco Norte", "Dekton Kelya")
+- **Espesor:** "e= 2,5cm", "e= 2cm", "20mm"
+- **Zócalo:** "Zócalo en U de 5cm" = zócalo en 3 lados (trasero + 2 laterales). "Zócalo trasero" = solo trasero
+- **Frentín/regrueso:** "Frentín 8cm", "F de 5cm", "Frentín Granito Gris Mara 8cm" = regrueso en el borde visible
+- **Bordes:** "c/ménsula", "inglete", "bordes pulidos"
+- **Ubicación:** "Office", "Cocina", "Baño", "Lavadero"
+- **Cuadro de datos:** tabla con Tipo, Ubicación, Cantidad, m² → extraer toda la info
+- **Cualquier otra nota:** especificaciones de pileta, grifería, cortes especiales
+
+**⛔ Si el plano especifica el material → usarlo directamente. NO preguntar al operador.**
+**⛔ Si el plano especifica zócalo en U / frentín → incluirlo automáticamente. NO preguntar.**
+**⛔ Anotar TODO. Esta info es tan importante como las cotas numéricas.**
 
 **Pasada 1 — Inventario**
 Solo contar y nombrar las piezas presentes. No medir, no calcular. ¿Cuántas mesadas? ¿Hay isla, alzada, zócalos?
