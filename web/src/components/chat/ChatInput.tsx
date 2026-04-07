@@ -11,6 +11,8 @@ export interface ChatInputProps {
   setInput: (v: string) => void;
   files: File[];
   setFiles: (f: File[]) => void;
+  multiPiece: boolean;
+  setMultiPiece: (v: boolean) => void;
   dragActive: boolean;
   setDragActive: (v: boolean) => void;
   dragCounterRef: React.MutableRefObject<number>;
@@ -20,7 +22,7 @@ export interface ChatInputProps {
   fileRef: React.RefObject<HTMLInputElement>;
 }
 
-export default function ChatInput({ input, setInput, files, setFiles, dragActive, setDragActive, dragCounterRef, sending, send, onKey, fileRef }: ChatInputProps) {
+export default function ChatInput({ input, setInput, files, setFiles, multiPiece, setMultiPiece, dragActive, setDragActive, dragCounterRef, sending, send, onKey, fileRef }: ChatInputProps) {
   const [fileError, setFileError] = useState<string | null>(null);
 
   const addFiles = (newFiles: FileList | File[]) => {
@@ -121,6 +123,19 @@ export default function ChatInput({ input, setInput, files, setFiles, dragActive
             </div>
           )}
         </div>
+      )}
+
+      {/* Multi-piece checkbox — shown when files are attached */}
+      {files.length > 0 && (
+        <label style={{
+          display: "flex", alignItems: "center", gap: 6,
+          marginBottom: 8, cursor: "pointer", fontSize: 11,
+          color: multiPiece ? "var(--acc)" : "var(--t3)",
+        }}>
+          <input type="checkbox" checked={multiPiece} onChange={e => setMultiPiece(e.target.checked)}
+            style={{ accentColor: "var(--acc)", cursor: "pointer" }} />
+          Plano con m{A}s de 3 piezas (pedir capturas individuales)
+        </label>
       )}
 
       {/* Input row */}

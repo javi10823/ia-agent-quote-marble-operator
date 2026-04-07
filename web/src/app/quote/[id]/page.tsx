@@ -54,6 +54,7 @@ export default function QuotePage() {
   const [dragActive, setDragActive] = useState(false);
   const dragCounter = useRef(0);
   const [sending, setSending] = useState(false);
+  const [multiPiece, setMultiPiece] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionText, setActionText] = useState("");
@@ -148,6 +149,38 @@ export default function QuotePage() {
     const rawText = overrideText ?? input;
     if ((!rawText.trim() && attachedFiles.length === 0) || sending) return;
     userInteracted.current = true;
+
+    // Multi-piece mode: don't send files, ask Valentina to request individual captures
+    if (multiPiece && attachedFiles.length > 0) {
+      const fileCount = attachedFiles.length;
+      const text = (rawText.trim() || "") + `\n[SISTEMA: El operador adjuntó ${fileCount} archivo(s) pero marcó "múltiples piezas". NO proceses los archivos adjuntos. Respondé EXACTAMENTE: "Veo que el plano tiene múltiples piezas. Para leer las medidas correctamente, necesito que me mandes una captura/foto de CADA pieza por separado (una imagen por cuadro/box). Así evitamos errores en las cotas."]`;
+      const uid = `u-${Date.now()}`;
+      const aid = `a-${Date.now()}`;
+      setMessages(p => [...p,
+        { id: uid, role: "user", content: rawText.trim() || "(plano adjunto)", attachmentName: attachedFiles.map(f => f.name).join(", ") },
+        { id: aid, role: "assistant", content: "", isStreaming: true },
+      ]);
+      setInput(""); setAttachedFiles([]); setMultiPiece(false); setSending(true);
+      const isFromDetail = tab === "detail";
+      sentFromDetail.current = isFromDetail;
+      if (isFromDetail) { setLastInlineResponse({ id: aid, role: "assistant", content: "", isStreaming: true }); setInlineActionText(""); }
+      else { setActionText(""); }
+      try {
+        abortRef.current?.abort();
+        const controller = new AbortController();
+        abortRef.current = controller;
+        let acc = "";
+        let gotDone = false;
+        for await (const chunk of streamChat(quoteId, text, undefined, controller.signal)) {
+          if (chunk.type === "text") { acc += chunk.content; setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc } : m)); }
+          else if (chunk.type === "done") { gotDone = true; setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc, isStreaming: false } : m)); }
+        }
+        if (!gotDone) setMessages(p => p.map(m => m.id === aid ? { ...m, content: "Veo que el plano tiene m\u00faltiples piezas. Para leer las medidas correctamente, necesito que me mandes una captura/foto de CADA pieza por separado (una imagen por cuadro/box). As\u00ed evitamos errores en las cotas.", isStreaming: false } : m));
+      } catch { setMessages(p => p.map(m => m.id === aid ? { ...m, content: "Veo que el plano tiene m\u00faltiples piezas. Para leer las medidas correctamente, necesito que me mandes una captura/foto de CADA pieza por separado (una imagen por cuadro/box). As\u00ed evitamos errores en las cotas.", isStreaming: false } : m)); }
+      finally { setSending(false); }
+      return;
+    }
+
     const text = rawText.trim();
     const filesToSend = [...attachedFiles];
     const fileNames = filesToSend.map(f => f.name).join(", ");
@@ -315,7 +348,7 @@ export default function QuotePage() {
                   <MessageBubble message={lastInlineResponse} actionText={lastInlineResponse.isStreaming ? inlineActionText : undefined} />
                 </div>
               )}
-              <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} placeholder={`Ej: cambiar material a Granito Negro Brasil...`} />
+              <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} multiPiece={multiPiece} setMultiPiece={setMultiPiece} placeholder={`Ej: cambiar material a Granito Negro Brasil...`} />
               <div ref={inlineEndRef} />
               <button onClick={() => setTab("chat")} className="mt-2 bg-transparent border-none text-acc text-xs cursor-pointer font-sans p-0">{`Ver historial completo ${ARROW}`}</button>
             </Section>
@@ -402,7 +435,7 @@ export default function QuotePage() {
           </div>
           {quote?.status === "draft" ? (
             <div className="shrink-0 px-7 pt-3.5 pb-[18px] border-t border-b1 bg-s1">
-              <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
+              <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} multiPiece={multiPiece} setMultiPiece={setMultiPiece} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
               <div className="text-[10px] text-t4 text-center mt-[7px]">{`Enter para enviar ${DOT} Shift+Enter para nueva l${I}nea`}</div>
             </div>
           ) : (
@@ -616,9 +649,10 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
 
 import { VALID_FILE_TYPES as VALID_TYPES, MAX_FILE_SIZE, MAX_FILES } from "@/lib/constants";
 
-function ChatInput({ input, setInput, files, setFiles, dragActive, setDragActive, dragCounterRef, sending, send, onKey, fileRef, placeholder: customPlaceholder }: {
+function ChatInput({ input, setInput, files, setFiles, multiPiece, setMultiPiece, dragActive, setDragActive, dragCounterRef, sending, send, onKey, fileRef, placeholder: customPlaceholder }: {
   input: string; setInput: (v: string) => void;
   files: File[]; setFiles: (f: File[]) => void;
+  multiPiece: boolean; setMultiPiece: (v: boolean) => void;
   dragActive: boolean; setDragActive: (v: boolean) => void;
   dragCounterRef: React.MutableRefObject<number>;
   sending: boolean; send: () => void; onKey: (e: React.KeyboardEvent) => void;
@@ -685,6 +719,13 @@ function ChatInput({ input, setInput, files, setFiles, dragActive, setDragActive
             </div>
           )}
         </div>
+      )}
+
+      {files.length > 0 && (
+        <label className={clsx("flex items-center gap-1.5 mb-2 cursor-pointer text-[11px]", multiPiece ? "text-acc" : "text-t3")}>
+          <input type="checkbox" checked={multiPiece} onChange={e => setMultiPiece(e.target.checked)} className="accent-acc cursor-pointer" />
+          {`Plano con m${A}s de 3 piezas (pedir capturas individuales)`}
+        </label>
       )}
 
       <div className={clsx(
