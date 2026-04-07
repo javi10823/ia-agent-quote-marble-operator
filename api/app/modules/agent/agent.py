@@ -864,25 +864,43 @@ class AgentService:
                 clean_messages.append(msg)
 
         # Inject variant info for multi-material quotes (mode patch needs this)
+        # Works from ANY quote (root or child) — always resolves full family
         try:
             root_id = quote_id
             root_result = await db.execute(select(Quote).where(Quote.id == quote_id))
             root_quote = root_result.scalar_one_or_none()
             if root_quote and root_quote.parent_quote_id:
                 root_id = root_quote.parent_quote_id
+            # Load all children
             variant_result = await db.execute(
                 select(Quote.id, Quote.material, Quote.total_ars, Quote.total_usd)
                 .where(Quote.parent_quote_id == root_id)
             )
-            variants = variant_result.all()
-            if variants:
-                variant_lines = [f"\n[SISTEMA — VARIANTES DEL PRESUPUESTO]"]
-                variant_lines.append(f"Quote raíz: {root_id}")
-                for v in variants:
-                    variant_lines.append(f"  Variante: quote_id={v.id}, material={v.material}, total_ars={v.total_ars}, total_usd={v.total_usd}")
-                variant_lines.append("Si el operador pide un cambio que afecta a todas las variantes (ej: agregar flete), llamá calculate_quote una vez por cada quote_id listado arriba.")
+            children = variant_result.all()
+            if children:
+                # Load root quote info too
+                root_info = await db.execute(
+                    select(Quote.id, Quote.material, Quote.total_ars, Quote.total_usd)
+                    .where(Quote.id == root_id)
+                )
+                root_row = root_info.first()
+                # Build full family list: root + all children
+                all_quotes = []
+                if root_row:
+                    all_quotes.append(f"  quote_id={root_row.id}, material={root_row.material}, total_ars={root_row.total_ars}, total_usd={root_row.total_usd} (RAÍZ)")
+                for v in children:
+                    all_quotes.append(f"  quote_id={v.id}, material={v.material}, total_ars={v.total_ars}, total_usd={v.total_usd}")
+
+                variant_lines = [f"\n[SISTEMA — PRESUPUESTO MULTI-MATERIAL]"]
+                variant_lines.append(f"Este presupuesto tiene {len(all_quotes)} variantes. Estás chateando desde quote_id={quote_id}.")
+                variant_lines.append(f"Familia completa:")
+                variant_lines.extend(all_quotes)
+                variant_lines.append("REGLAS:")
+                variant_lines.append("- Cambio que afecta a TODAS (flete, pieza, MO): llamar calculate_quote con target_quote_id para CADA una.")
+                variant_lines.append("- Cambio de material: solo afecta ESA variante.")
+                variant_lines.append("- Después de recalcular, llamar generate_documents para regenerar PDFs.")
+                variant_lines.append("- NUNCA crear quotes nuevos — usar los quote_ids listados arriba.")
                 variant_info = "\n".join(variant_lines)
-                # Append to the text block in the user content
                 if isinstance(content, list):
                     for block in content:
                         if isinstance(block, dict) and block.get("type") == "text":
@@ -1160,43 +1178,55 @@ class AgentService:
             all_results = []
 
             # Pre-load existing child variants to avoid duplicates
+            # Resolve root_id first (in case we're chatting from a child quote)
             existing_variants = {}
             try:
+                cur_q = await db.execute(select(Quote).where(Quote.id == quote_id))
+                cur_quote = cur_q.scalar_one_or_none()
+                family_root = quote_id
+                if cur_quote and cur_quote.parent_quote_id:
+                    family_root = cur_quote.parent_quote_id
                 variant_result = await db.execute(
-                    select(Quote).where(Quote.parent_quote_id == quote_id)
+                    select(Quote).where(Quote.parent_quote_id == family_root)
                 )
                 for v in variant_result.scalars().all():
                     if v.material:
                         existing_variants[v.material.strip().upper()] = v.id
+                # Also include root's material so we can match it
+                if cur_quote and family_root != quote_id:
+                    root_q = await db.execute(select(Quote).where(Quote.id == family_root))
+                    root_quote = root_q.scalar_one_or_none()
+                    if root_quote and root_quote.material:
+                        existing_variants[root_quote.material.strip().upper()] = family_root
                 if existing_variants:
-                    logging.info(f"Found {len(existing_variants)} existing variants for {quote_id}: {list(existing_variants.keys())}")
+                    logging.info(f"Found {len(existing_variants)} existing variants for family {family_root}: {list(existing_variants.keys())}")
             except Exception as e:
                 logging.warning(f"Could not load existing variants: {e}")
 
             for idx, qdata in enumerate(quotes_data):
-                # First material uses current quote_id, rest reuse existing variants or create new
-                if idx == 0:
+                mat_key = (qdata.get("material_name") or "").strip().upper()
+                # Try to match an existing quote by material name
+                existing_id = existing_variants.get(mat_key)
+                if idx == 0 and not existing_id:
+                    # First material defaults to current quote_id if no match found
                     target_qid = quote_id
+                elif existing_id:
+                    target_qid = existing_id
+                    logging.info(f"Reusing existing quote {target_qid} for material: {mat_key}")
                 else:
-                    mat_key = (qdata.get("material_name") or "").strip().upper()
-                    existing_id = existing_variants.get(mat_key)
-                    if existing_id:
-                        target_qid = existing_id
-                        logging.info(f"Reusing existing variant {target_qid} for material: {mat_key}")
-                    else:
-                        target_qid = str(uuid_mod.uuid4())
-                        new_quote = Quote(
-                            id=target_qid,
-                            client_name=qdata.get("client_name", ""),
-                            project=qdata.get("project", ""),
-                            material=qdata.get("material_name"),
-                            parent_quote_id=quote_id,
-                            messages=[],
-                            status=QuoteStatus.DRAFT,
-                        )
-                        db.add(new_quote)
-                        await db.flush()
-                        logging.info(f"Created NEW variant {target_qid} for material: {qdata.get('material_name')}")
+                    target_qid = str(uuid_mod.uuid4())
+                    new_quote = Quote(
+                        id=target_qid,
+                        client_name=qdata.get("client_name", ""),
+                        project=qdata.get("project", ""),
+                        material=qdata.get("material_name"),
+                        parent_quote_id=family_root,
+                        messages=[],
+                        status=QuoteStatus.DRAFT,
+                    )
+                    db.add(new_quote)
+                    await db.flush()
+                    logging.info(f"Created NEW variant {target_qid} for material: {qdata.get('material_name')}")
 
                 # Save quote data + breakdown to DB
                 save_vals = {
