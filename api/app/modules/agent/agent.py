@@ -1159,24 +1159,44 @@ class AgentService:
 
             all_results = []
 
+            # Pre-load existing child variants to avoid duplicates
+            existing_variants = {}
+            try:
+                variant_result = await db.execute(
+                    select(Quote).where(Quote.parent_quote_id == quote_id)
+                )
+                for v in variant_result.scalars().all():
+                    if v.material:
+                        existing_variants[v.material.strip().upper()] = v.id
+                if existing_variants:
+                    logging.info(f"Found {len(existing_variants)} existing variants for {quote_id}: {list(existing_variants.keys())}")
+            except Exception as e:
+                logging.warning(f"Could not load existing variants: {e}")
+
             for idx, qdata in enumerate(quotes_data):
-                # First material uses current quote_id, rest get new ones
+                # First material uses current quote_id, rest reuse existing variants or create new
                 if idx == 0:
                     target_qid = quote_id
                 else:
-                    target_qid = str(uuid_mod.uuid4())
-                    new_quote = Quote(
-                        id=target_qid,
-                        client_name=qdata.get("client_name", ""),
-                        project=qdata.get("project", ""),
-                        material=qdata.get("material_name"),
-                        parent_quote_id=quote_id,
-                        messages=[],
-                        status=QuoteStatus.DRAFT,
-                    )
-                    db.add(new_quote)
-                    await db.flush()  # get ID without committing
-                    logging.info(f"Created additional quote {target_qid} for material: {qdata.get('material_name')}")
+                    mat_key = (qdata.get("material_name") or "").strip().upper()
+                    existing_id = existing_variants.get(mat_key)
+                    if existing_id:
+                        target_qid = existing_id
+                        logging.info(f"Reusing existing variant {target_qid} for material: {mat_key}")
+                    else:
+                        target_qid = str(uuid_mod.uuid4())
+                        new_quote = Quote(
+                            id=target_qid,
+                            client_name=qdata.get("client_name", ""),
+                            project=qdata.get("project", ""),
+                            material=qdata.get("material_name"),
+                            parent_quote_id=quote_id,
+                            messages=[],
+                            status=QuoteStatus.DRAFT,
+                        )
+                        db.add(new_quote)
+                        await db.flush()
+                        logging.info(f"Created NEW variant {target_qid} for material: {qdata.get('material_name')}")
 
                 # Save quote data + breakdown to DB
                 save_vals = {
