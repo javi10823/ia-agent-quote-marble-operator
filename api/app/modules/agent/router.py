@@ -591,7 +591,10 @@ async def chat(
                 plan_filename=plan_filename,
                 db=db,
             ):
-                if chunk["type"] == "text":
+                if chunk["type"] == "ping":
+                    # SSE keepalive comment — prevents proxy timeout
+                    yield ": keepalive\n\n"
+                elif chunk["type"] == "text":
                     full_response += chunk["content"]
                     yield f"data: {json.dumps(chunk)}\n\n"
                 elif chunk["type"] == "action":

@@ -1038,7 +1038,10 @@ class AgentService:
                     delay = RETRY_DELAYS[attempt]
                     logging.warning(f"Rate limit hit, retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
                     yield {"type": "action", "content": f"⏳ Esperando disponibilidad... ({delay}s)"}
-                    await asyncio.sleep(delay)
+                    # Sleep with keepalive pings to prevent proxy timeout
+                    for _ in range(delay):
+                        await asyncio.sleep(1)
+                        yield {"type": "ping", "content": ""}
 
                 except anthropic.APIStatusError as e:
                     is_overloaded = e.status_code == 529 or "overloaded" in str(e).lower()
@@ -1050,7 +1053,10 @@ class AgentService:
                         delay = RETRY_DELAYS[attempt]
                         logging.warning(f"API overloaded, retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
                         yield {"type": "action", "content": f"⏳ Servicio ocupado, reintentando... ({delay}s)"}
-                        await asyncio.sleep(delay)
+                        # Sleep with keepalive pings to prevent proxy timeout
+                        for _ in range(delay):
+                            await asyncio.sleep(1)
+                            yield {"type": "ping", "content": ""}
                     else:
                         logging.error(f"Anthropic API error: {e}")
                         yield {"type": "action", "content": f"⚠️ Error del servicio. Intentá de nuevo en unos segundos."}
