@@ -939,7 +939,7 @@ class AgentService:
 
         # If plan attached, inject instruction to request separate images when multiple pieces detected
         if has_plan:
-            multi_hint = "\n\n[SISTEMA — INSTRUCCIÓN SOBRE PLANOS CON MÚLTIPLES PIEZAS]\nSi al ver el plano detectás 3 o más piezas dibujadas en cuadros/boxes separados (ej: varias solías, varias mesadas, etc.), NO leas las medidas del plano general — vas a mezclar cotas entre piezas. En ese caso, PEDILE AL OPERADOR que te mande una captura/imagen de CADA pieza por separado. Decile: 'Veo X piezas en cuadros separados. Para no mezclar medidas, necesito que me mandes una captura de cada cuadro por separado.' NO procedas a calcular hasta tener las imágenes individuales. Si son 1-2 piezas, podés leerlas del plano directamente."
+            multi_hint = "\n\n[SISTEMA — INSTRUCCIÓN OBLIGATORIA SOBRE PLANOS]\n⛔ ANTES de leer medidas, contá cuántas piezas hay en cuadros/boxes separados.\n⛔ Si hay 3 o más piezas en cuadros separados: PARAR. NO leer medidas. Pedir al operador capturas individuales de cada cuadro.\n⛔ Decir EXACTAMENTE: 'Veo [N] piezas en cuadros separados. Para leer bien las medidas, necesito que me mandes una captura de cada cuadro por separado.'\n⛔ NO usar read_plan, NO intentar leer del plano general, NO calcular. Solo pedir las capturas y esperar.\n⛔ Si son 1-2 piezas, podés leerlas directo."
             if isinstance(content, list):
                 for block in content:
                     if isinstance(block, dict) and block.get("type") == "text":
