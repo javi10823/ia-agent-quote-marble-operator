@@ -880,10 +880,28 @@ class AgentService:
             else:
                 clean_messages.append(msg)
 
-        # No injection needed — each quote is independent
+        # Save clean content before injection
+        import copy
+        clean_user_content = copy.deepcopy(content)
 
-        # Append user message to history
+        # Inject minimal patch mode context if quote already has a breakdown
+        try:
+            _ctx_q = await db.execute(select(Quote).where(Quote.id == quote_id))
+            _ctx_quote = _ctx_q.scalar_one_or_none()
+            if _ctx_quote and _ctx_quote.quote_breakdown:
+                bd = _ctx_quote.quote_breakdown
+                patch_hint = f"\n[SISTEMA — MODO PATCH ACTIVO]\nEste presupuesto YA tiene un breakdown calculado (material: {bd.get('material_name')}, total_ars: {bd.get('total_ars')}, total_usd: {bd.get('total_usd')}). Estás en MODO PATCH. Usá patch_quote_mo para cambios de MO (flete, colocación). NO volver a preguntar datos ni piezas. NO usar calculate_quote para cambios de MO."
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            block["text"] = block["text"] + patch_hint
+                            break
+        except Exception:
+            pass
+
+        # Append user message to history (injected for Claude, clean for DB)
         new_messages = clean_messages + [{"role": "user", "content": content}]
+        db_messages = clean_messages + [{"role": "user", "content": clean_user_content}]
 
         # Agentic loop with tool use
         assistant_messages = []
@@ -1099,7 +1117,7 @@ class AgentService:
 
         # Save updated messages to DB
         try:
-            updated_messages = new_messages + assistant_messages
+            updated_messages = db_messages + assistant_messages
             save_values = {"messages": updated_messages}
 
             # Try to extract client_name and material from conversation if not yet set
