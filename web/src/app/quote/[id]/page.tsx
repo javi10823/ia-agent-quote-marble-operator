@@ -91,16 +91,7 @@ export default function QuotePage() {
       setQuote(q);
       if (!q.is_read) { markQuoteAsRead(quoteId).catch(() => {}); markRead(quoteId); }
 
-      // If this is a child quote (variant), load chat from the parent
-      let msgs = q.messages;
-      if ((!msgs || msgs.length === 0) && q.parent_quote_id) {
-        try {
-          const parent = await fetchQuote(q.parent_quote_id);
-          msgs = parent.messages;
-        } catch {}
-      }
-
-      setMessages(parseMessages(msgs));
+      setMessages(parseMessages(q.messages));
       if (q.status === "validated" || q.status === "sent" || q.status === "pending" || q.source === "web") setTab("detail");
     }).catch((err: any) => {
       setLoadError(err.message || "Error al cargar presupuesto");

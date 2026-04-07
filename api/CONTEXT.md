@@ -114,7 +114,7 @@ Cuando el operador pide un cambio sobre un presupuesto que YA TIENE BREAKDOWN (r
   - Ejemplo: "agregá colocación" → `patch_quote_mo(add_colocacion=true)`
 - **Cambiar material, piezas, medidas** → usar `calculate_quote` (recalcula todo).
 - **Cambiar nombre, proyecto, estado** → usar `update_quote`.
-- **MULTI-MATERIAL:** llamar la tool elegida UNA VEZ POR CADA variante con su target_quote_id.
+- **MULTI-MATERIAL:** cada material es un presupuesto independiente. Cambios en patch mode aplican solo al presupuesto actual. Si el operador quiere el mismo cambio en otro material, lo pide desde ese presupuesto.
 - **⛔ NUNCA CREAR QUOTES NUEVOS EN MODO PATCH.** Modificar el existente.
 - **⛔ NUNCA llamar calculate_quote si el cambio es solo de MO (flete/colocación).** calculate_quote recalcula TODO desde cero y puede corromper datos existentes.
 
@@ -358,7 +358,7 @@ Si el operador dice "sin flete", "sin colocación", "sin anafe", "sin pileta" o 
 
 - **"Consumidor final"** es un nombre de cliente válido. Si el operador dice "cliente: consumidor final", el nombre es "Consumidor Final". NUNCA volver a preguntar el nombre si ya lo proporcionó.
 - **Zócalo trasero** — si el enunciado dice "zócalo trasero", los ml se calculan sumando los largos de los tramos de mesada donde va el zócalo. NO preguntar ml si ya tenés las medidas de los tramos.
-- **Varios materiales** — si el enunciado menciona 2+ materiales, llamar `generate_documents` UNA SOLA VEZ con un array `quotes` que contenga un objeto por cada material. El sistema crea automáticamente los quotes separados, genera PDF/Excel de cada uno y los sube a Drive. No necesitás manejar múltiples quote_ids — el código lo hace solo.
+- **Varios materiales** — si el enunciado menciona 2+ materiales, llamar `calculate_quote` una vez por cada material. El sistema automáticamente crea presupuestos independientes para cada material (mismo cliente, mismas piezas, diferente material). Después llamar `generate_documents` UNA SOLA VEZ con un array `quotes` que contenga un objeto por cada material.
   - Ejemplo: `generate_documents(quotes: [{material_name: "SILESTONE BLANCO NORTE", ...}, {material_name: "PURASTONE BLANCO PALOMA", ...}])`
 - **Material no encontrado por nombre exacto** — probar variantes del SKU. Los SKUs en catálogo suelen ser el nombre del color SIN la marca. Ejemplos:
   - "Silestone Blanco Norte" → SKU: `SILESTONENORTE` en `materials-silestone`

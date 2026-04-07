@@ -622,7 +622,6 @@ TOOLS = [
                 "pulido": {"type": "boolean", "description": "Si lleva pulido de cantos"},
                 "plazo": {"type": "string", "description": "Plazo de entrega"},
                 "discount_pct": {"type": "number", "description": "Porcentaje de descuento (0-100)"},
-                "target_quote_id": {"type": "string", "description": "ID del quote donde guardar el resultado. Usar SOLO en modo patch con múltiples variantes — pasar el quote_id de la variante que se está recalculando. Si no se especifica, se guarda en el quote actual."},
             },
             "required": ["client_name", "material", "pieces", "localidad", "plazo"],
         },
@@ -633,7 +632,6 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "target_quote_id": {"type": "string", "description": "ID del quote a modificar. Si no se especifica, usa el quote actual."},
                 "remove_items": {
                     "type": "array",
                     "description": "Palabras clave de ítems de MO a ELIMINAR (ej: ['flete', 'colocación']). Se busca por coincidencia parcial en la descripción.",
@@ -882,98 +880,10 @@ class AgentService:
             else:
                 clean_messages.append(msg)
 
-        # Save clean user content for DB persistence (before injection)
-        import copy
-        clean_user_content = copy.deepcopy(content)
-
-        # Inject quote context: breakdown params + variant info (for patch mode)
-        try:
-            root_id = quote_id
-            root_result = await db.execute(select(Quote).where(Quote.id == quote_id))
-            root_quote = root_result.scalar_one_or_none()
-            if root_quote and root_quote.parent_quote_id:
-                root_id = root_quote.parent_quote_id
-
-            # ── Inject current breakdown params so Valentina preserves them in calculate_quote ──
-            if root_quote and root_quote.quote_breakdown:
-                bd = root_quote.quote_breakdown
-                # Extract the calculate_quote input params from the saved breakdown
-                calc_params = {
-                    "client_name": bd.get("client_name", root_quote.client_name or ""),
-                    "material": bd.get("material_name", root_quote.material or ""),
-                    "localidad": bd.get("localidad", ""),
-                    "colocacion": bd.get("colocacion", True),
-                    "plazo": bd.get("delivery_days", ""),
-                    "pileta": bd.get("pileta"),
-                    "anafe": bd.get("anafe", False),
-                    "frentin": bd.get("frentin", False),
-                    "pulido": bd.get("pulido", False),
-                    "discount_pct": bd.get("discount_pct", 0),
-                }
-                # Reconstruct pieces from piece_details
-                pieces_list = []
-                for p in bd.get("piece_details", []):
-                    piece = {"description": p.get("description", ""), "largo": p.get("largo", 0)}
-                    if p.get("prof"): piece["prof"] = p["prof"]
-                    if p.get("alto"): piece["alto"] = p["alto"]
-                    pieces_list.append(piece)
-                calc_params["pieces"] = pieces_list
-
-                # Clean None values
-                calc_params = {k: v for k, v in calc_params.items() if v is not None}
-
-                import json as _json
-                breakdown_context = f"\n[SISTEMA — PARÁMETROS ACTUALES DEL PRESUPUESTO (quote_id={quote_id})]\n"
-                breakdown_context += f"Estos son los parámetros con los que se calculó este presupuesto. Cuando llames calculate_quote en modo patch, SIEMPRE incluí TODOS estos parámetros + el cambio solicitado. Si omitís alguno (ej: pileta, anafe), se pierde del presupuesto.\n"
-                breakdown_context += f"```json\n{_json.dumps(calc_params, ensure_ascii=False, indent=2)}\n```"
-
-                if isinstance(content, list):
-                    for block in content:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            block["text"] = block["text"] + breakdown_context
-                            break
-
-            # ── Inject variant info for multi-material quotes ──
-            variant_result = await db.execute(
-                select(Quote.id, Quote.material, Quote.total_ars, Quote.total_usd)
-                .where(Quote.parent_quote_id == root_id)
-            )
-            children = variant_result.all()
-            if children:
-                root_info = await db.execute(
-                    select(Quote.id, Quote.material, Quote.total_ars, Quote.total_usd)
-                    .where(Quote.id == root_id)
-                )
-                root_row = root_info.first()
-                all_quotes = []
-                if root_row:
-                    all_quotes.append(f"  quote_id={root_row.id}, material={root_row.material}, total_ars={root_row.total_ars}, total_usd={root_row.total_usd} (RAÍZ)")
-                for v in children:
-                    all_quotes.append(f"  quote_id={v.id}, material={v.material}, total_ars={v.total_ars}, total_usd={v.total_usd}")
-
-                variant_lines = [f"\n[SISTEMA — PRESUPUESTO MULTI-MATERIAL]"]
-                variant_lines.append(f"Este presupuesto tiene {len(all_quotes)} variantes. Estás chateando desde quote_id={quote_id}.")
-                variant_lines.append(f"Familia completa:")
-                variant_lines.extend(all_quotes)
-                variant_lines.append("REGLAS:")
-                variant_lines.append("- Cambio que afecta a TODAS (flete, pieza, MO): llamar calculate_quote con target_quote_id para CADA una, incluyendo TODOS los parámetros del breakdown actual.")
-                variant_lines.append("- Cambio de material: solo afecta ESA variante.")
-                variant_lines.append("- Después de recalcular, llamar generate_documents para regenerar PDFs.")
-                variant_lines.append("- NUNCA crear quotes nuevos — usar los quote_ids listados arriba.")
-                variant_info = "\n".join(variant_lines)
-                if isinstance(content, list):
-                    for block in content:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            block["text"] = block["text"] + variant_info
-                            break
-        except Exception as e:
-            logging.warning(f"Could not inject quote context for {quote_id}: {e}")
+        # No injection needed — each quote is independent
 
         # Append user message to history
-        # Use injected content for Claude, clean content for DB persistence
         new_messages = clean_messages + [{"role": "user", "content": content}]
-        # Build DB-safe messages (without injected system context)
-        db_messages = clean_messages + [{"role": "user", "content": clean_user_content}]
 
         # Agentic loop with tool use
         assistant_messages = []
@@ -1189,7 +1099,7 @@ class AgentService:
 
         # Save updated messages to DB
         try:
-            updated_messages = db_messages + assistant_messages
+            updated_messages = new_messages + assistant_messages
             save_values = {"messages": updated_messages}
 
             # Try to extract client_name and material from conversation if not yet set
@@ -1266,73 +1176,60 @@ class AgentService:
 
             all_results = []
 
-            # Pre-load existing child variants to avoid duplicates
-            # Resolve root_id first (in case we're chatting from a child quote)
-            existing_variants = {}
-            try:
-                cur_q = await db.execute(select(Quote).where(Quote.id == quote_id))
-                cur_quote = cur_q.scalar_one_or_none()
-                family_root = quote_id
-                if cur_quote and cur_quote.parent_quote_id:
-                    family_root = cur_quote.parent_quote_id
-                variant_result = await db.execute(
-                    select(Quote).where(Quote.parent_quote_id == family_root)
-                )
-                for v in variant_result.scalars().all():
-                    if v.material:
-                        existing_variants[v.material.strip().upper()] = v.id
-                # Also include root's material so we can match it
-                if cur_quote and family_root != quote_id:
-                    root_q = await db.execute(select(Quote).where(Quote.id == family_root))
-                    root_quote = root_q.scalar_one_or_none()
-                    if root_quote and root_quote.material:
-                        existing_variants[root_quote.material.strip().upper()] = family_root
-                if existing_variants:
-                    logging.info(f"Found {len(existing_variants)} existing variants for family {family_root}: {list(existing_variants.keys())}")
-            except Exception as e:
-                logging.warning(f"Could not load existing variants: {e}")
+            # Load current quote for context
+            cur_q = await db.execute(select(Quote).where(Quote.id == quote_id))
+            cur_quote = cur_q.scalar_one_or_none()
 
             for idx, qdata in enumerate(quotes_data):
                 mat_key = (qdata.get("material_name") or "").strip().upper()
-                # Try to match an existing quote by material name
-                existing_id = existing_variants.get(mat_key)
-                if idx == 0 and not existing_id:
-                    # First material defaults to current quote_id if no match found
-                    target_qid = quote_id
-                elif existing_id:
-                    target_qid = existing_id
-                    logging.info(f"Reusing existing quote {target_qid} for material: {mat_key}")
-                else:
-                    target_qid = str(uuid_mod.uuid4())
-                    new_quote = Quote(
-                        id=target_qid,
-                        client_name=qdata.get("client_name", ""),
-                        project=qdata.get("project", ""),
-                        material=qdata.get("material_name"),
-                        parent_quote_id=family_root,
-                        messages=[],
-                        status=QuoteStatus.DRAFT,
-                    )
-                    db.add(new_quote)
-                    await db.flush()
-                    logging.info(f"Created NEW variant {target_qid} for material: {qdata.get('material_name')}")
 
-                # If quote already has a breakdown in DB (e.g. from patch_quote_mo),
-                # use THAT instead of what Valentina sends — she often fabricates data.
-                # BUT only if the material matches! During initial generation, calculate_quote
-                # for multiple materials all save to the same quote_id, so the DB may have
-                # a different material's breakdown.
+                # Find existing quote for this material (by client + material match)
+                from sqlalchemy import and_
+                target_qid = None
+                try:
+                    client = qdata.get("client_name", cur_quote.client_name if cur_quote else "")
+                    match_result = await db.execute(
+                        select(Quote).where(
+                            and_(
+                                Quote.client_name == client,
+                                Quote.material == qdata.get("material_name"),
+                            )
+                        )
+                    )
+                    for mq in match_result.scalars().all():
+                        target_qid = mq.id
+                        logging.info(f"Reusing existing quote {target_qid} for material: {mat_key}")
+                        break
+                except Exception as e:
+                    logging.warning(f"Could not search for existing quote: {e}")
+
+                if not target_qid:
+                    if idx == 0:
+                        target_qid = quote_id
+                    else:
+                        # Create independent quote (no parent_quote_id)
+                        target_qid = str(uuid_mod.uuid4())
+                        new_quote = Quote(
+                            id=target_qid,
+                            client_name=qdata.get("client_name", ""),
+                            project=qdata.get("project", ""),
+                            material=qdata.get("material_name"),
+                            messages=list(cur_quote.messages or []) if cur_quote else [],
+                            status=QuoteStatus.DRAFT,
+                        )
+                        db.add(new_quote)
+                        await db.flush()
+                        logging.info(f"Created independent quote {target_qid} for material: {qdata.get('material_name')}")
+
+                # Use DB breakdown if it exists and material matches (from calculate_quote)
                 existing_bd_result = await db.execute(select(Quote).where(Quote.id == target_qid))
                 existing_bd_quote = existing_bd_result.scalar_one_or_none()
-                if existing_bd_quote and existing_bd_quote.quote_breakdown and existing_bd_quote.quote_breakdown.get("mo_items"):
+                if existing_bd_quote and existing_bd_quote.quote_breakdown:
                     db_bd = existing_bd_quote.quote_breakdown
                     db_material = (db_bd.get("material_name") or "").strip().upper()
-                    valentina_material = (qdata.get("material_name") or "").strip().upper()
-                    if db_material == valentina_material:
-                        logging.info(f"Using DB breakdown for {target_qid} (material match: {db_material}, total_ars={db_bd.get('total_ars')})")
+                    if db_material == mat_key:
+                        logging.info(f"Using DB breakdown for {target_qid} (material: {db_material})")
                         qdata = db_bd
-                    else:
-                        logging.warning(f"DB breakdown material mismatch for {target_qid}: DB={db_material}, Valentina={valentina_material} — using Valentina's data")
 
                 # Save quote data + breakdown to DB
                 save_vals = {
@@ -1437,8 +1334,56 @@ class AgentService:
             await db.commit()
             return {"ok": True, "updated_fields": list(clean.keys())}
         elif name == "calculate_quote":
-            # Support target_quote_id for multi-material patch mode
             save_to_qid = inputs.pop("target_quote_id", None) or quote_id
+
+            # ── Auto-create independent quote for different material ──
+            # If this quote already has a breakdown with a DIFFERENT material,
+            # create a new independent quote instead of overwriting.
+            try:
+                check_q = await db.execute(select(Quote).where(Quote.id == save_to_qid))
+                check_quote = check_q.scalar_one_or_none()
+                if check_quote and check_quote.quote_breakdown:
+                    existing_mat = (check_quote.quote_breakdown.get("material_name") or "").strip().upper()
+                    new_mat = (inputs.get("material") or "").strip().upper()
+                    if existing_mat and new_mat and existing_mat != new_mat:
+                        # Check if an independent quote for this material already exists
+                        # (same client + project + material)
+                        from sqlalchemy import and_
+                        existing_result = await db.execute(
+                            select(Quote).where(
+                                and_(
+                                    Quote.client_name == (check_quote.client_name or ""),
+                                    Quote.material == inputs.get("material"),
+                                )
+                            )
+                        )
+                        existing_match = None
+                        for eq in existing_result.scalars().all():
+                            if eq.id != save_to_qid:
+                                existing_match = eq
+                                break
+
+                        if existing_match:
+                            save_to_qid = existing_match.id
+                            logging.info(f"Reusing existing independent quote {save_to_qid} for material {new_mat}")
+                        else:
+                            import uuid as _uuid
+                            new_qid = str(_uuid.uuid4())
+                            # Copy messages from original quote
+                            new_quote = Quote(
+                                id=new_qid,
+                                client_name=check_quote.client_name,
+                                project=check_quote.project,
+                                material=inputs.get("material"),
+                                messages=list(check_quote.messages or []),
+                                status=QuoteStatus.DRAFT,
+                            )
+                            db.add(new_quote)
+                            await db.flush()
+                            save_to_qid = new_qid
+                            logging.info(f"Created independent quote {new_qid} for material {new_mat} (original: {quote_id})")
+            except Exception as e:
+                logging.warning(f"Could not check material conflict for {save_to_qid}: {e}")
 
             # ── Defensive: preserve params from existing breakdown ──
             # If Valentina omits pileta/anafe/etc but the existing breakdown
@@ -1559,10 +1504,11 @@ class AgentService:
                     logging.info(f"Saved breakdown for {save_to_qid} after calculate_quote | ARS: {change_entry['total_ars_before']} → {change_entry['total_ars_after']}")
                 except Exception as e:
                     logging.warning(f"Could not save breakdown for {save_to_qid}: {e}")
+            calc_result["quote_id"] = save_to_qid
             return calc_result
         elif name == "patch_quote_mo":
             # ── Modify MO items directly without recalculating everything ──
-            target_qid = inputs.get("target_quote_id") or quote_id
+            target_qid = quote_id
             remove_keywords = [kw.lower() for kw in inputs.get("remove_items", [])]
             add_colocacion = inputs.get("add_colocacion", False)
             add_flete_localidad = inputs.get("add_flete")
