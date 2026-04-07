@@ -841,32 +841,51 @@ class AgentService:
         # Build user message content
         content = []
         if plan_bytes and plan_filename:
-            # Attach plan as image or document
             ext = Path(plan_filename).suffix.lower()
-            if ext == ".pdf":
-                content.append({
-                    "type": "document",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "application/pdf",
-                        "data": base64.b64encode(plan_bytes).decode(),
-                    },
-                })
-            else:
-                media_type = "image/jpeg" if ext in [".jpg", ".jpeg"] else "image/webp" if ext == ".webp" else "image/png"
+
+            # Convert plan to high-res image (300 DPI for PDFs, original for images)
+            plan_image_bytes = None
+            try:
+                from PIL import Image
+                import io
+
+                if ext == ".pdf":
+                    # Rasterize PDF to 300 DPI JPEG for better text/cota reading
+                    from pdf2image import convert_from_bytes
+                    pages = convert_from_bytes(plan_bytes, dpi=300, fmt="jpeg")
+                    if pages:
+                        buf = io.BytesIO()
+                        pages[0].save(buf, format="JPEG", quality=90)
+                        plan_image_bytes = buf.getvalue()
+                        logging.info(f"Rasterized PDF to 300 DPI JPEG ({len(plan_image_bytes)} bytes, {pages[0].size})")
+                else:
+                    plan_image_bytes = plan_bytes
+            except Exception as e:
+                logging.warning(f"Could not rasterize PDF: {e}")
+                # Fallback: send PDF as document
+                if ext == ".pdf":
+                    content.append({
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": base64.b64encode(plan_bytes).decode(),
+                        },
+                    })
+
+            if plan_image_bytes:
+                media_type = "image/jpeg"
                 content.append({
                     "type": "image",
                     "source": {
                         "type": "base64",
                         "media_type": media_type,
-                        "data": base64.b64encode(plan_bytes).decode(),
+                        "data": base64.b64encode(plan_image_bytes).decode(),
                     },
                 })
                 # Also send a 90° rotated version to catch margin text
                 try:
-                    from PIL import Image
-                    import io
-                    img = Image.open(io.BytesIO(plan_bytes))
+                    img = Image.open(io.BytesIO(plan_image_bytes))
                     rotated = img.rotate(90, expand=True)
                     buf = io.BytesIO()
                     rotated.save(buf, format="JPEG", quality=85)
@@ -879,7 +898,7 @@ class AgentService:
                             "data": base64.b64encode(buf.getvalue()).decode(),
                         },
                     })
-                    logging.info(f"Added 90° rotated version of plan for margin text reading")
+                    logging.info(f"Added 90° rotated version for margin text reading")
                 except Exception as e:
                     logging.warning(f"Could not create rotated plan version: {e}")
         # Always include a text block — Anthropic rejects empty text content blocks
