@@ -3,6 +3,7 @@ import asyncio
 import json
 import base64
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -863,28 +864,65 @@ class AgentService:
             else:
                 clean_messages.append(msg)
 
-        # Inject variant info for multi-material quotes (mode patch needs this)
-        # Works from ANY quote (root or child) — always resolves full family
+        # Inject quote context: breakdown params + variant info (for patch mode)
         try:
             root_id = quote_id
             root_result = await db.execute(select(Quote).where(Quote.id == quote_id))
             root_quote = root_result.scalar_one_or_none()
             if root_quote and root_quote.parent_quote_id:
                 root_id = root_quote.parent_quote_id
-            # Load all children
+
+            # ── Inject current breakdown params so Valentina preserves them in calculate_quote ──
+            if root_quote and root_quote.quote_breakdown:
+                bd = root_quote.quote_breakdown
+                # Extract the calculate_quote input params from the saved breakdown
+                calc_params = {
+                    "client_name": bd.get("client_name", root_quote.client_name or ""),
+                    "material": bd.get("material_name", root_quote.material or ""),
+                    "localidad": bd.get("localidad", ""),
+                    "colocacion": bd.get("colocacion", True),
+                    "plazo": bd.get("delivery_days", ""),
+                    "pileta": bd.get("pileta"),
+                    "anafe": bd.get("anafe", False),
+                    "frentin": bd.get("frentin", False),
+                    "pulido": bd.get("pulido", False),
+                    "discount_pct": bd.get("discount_pct", 0),
+                }
+                # Reconstruct pieces from piece_details
+                pieces_list = []
+                for p in bd.get("piece_details", []):
+                    piece = {"description": p.get("description", ""), "largo": p.get("largo", 0)}
+                    if p.get("prof"): piece["prof"] = p["prof"]
+                    if p.get("alto"): piece["alto"] = p["alto"]
+                    pieces_list.append(piece)
+                calc_params["pieces"] = pieces_list
+
+                # Clean None values
+                calc_params = {k: v for k, v in calc_params.items() if v is not None}
+
+                import json as _json
+                breakdown_context = f"\n[SISTEMA — PARÁMETROS ACTUALES DEL PRESUPUESTO (quote_id={quote_id})]\n"
+                breakdown_context += f"Estos son los parámetros con los que se calculó este presupuesto. Cuando llames calculate_quote en modo patch, SIEMPRE incluí TODOS estos parámetros + el cambio solicitado. Si omitís alguno (ej: pileta, anafe), se pierde del presupuesto.\n"
+                breakdown_context += f"```json\n{_json.dumps(calc_params, ensure_ascii=False, indent=2)}\n```"
+
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            block["text"] = block["text"] + breakdown_context
+                            break
+
+            # ── Inject variant info for multi-material quotes ──
             variant_result = await db.execute(
                 select(Quote.id, Quote.material, Quote.total_ars, Quote.total_usd)
                 .where(Quote.parent_quote_id == root_id)
             )
             children = variant_result.all()
             if children:
-                # Load root quote info too
                 root_info = await db.execute(
                     select(Quote.id, Quote.material, Quote.total_ars, Quote.total_usd)
                     .where(Quote.id == root_id)
                 )
                 root_row = root_info.first()
-                # Build full family list: root + all children
                 all_quotes = []
                 if root_row:
                     all_quotes.append(f"  quote_id={root_row.id}, material={root_row.material}, total_ars={root_row.total_ars}, total_usd={root_row.total_usd} (RAÍZ)")
@@ -896,7 +934,7 @@ class AgentService:
                 variant_lines.append(f"Familia completa:")
                 variant_lines.extend(all_quotes)
                 variant_lines.append("REGLAS:")
-                variant_lines.append("- Cambio que afecta a TODAS (flete, pieza, MO): llamar calculate_quote con target_quote_id para CADA una.")
+                variant_lines.append("- Cambio que afecta a TODAS (flete, pieza, MO): llamar calculate_quote con target_quote_id para CADA una, incluyendo TODOS los parámetros del breakdown actual.")
                 variant_lines.append("- Cambio de material: solo afecta ESA variante.")
                 variant_lines.append("- Después de recalcular, llamar generate_documents para regenerar PDFs.")
                 variant_lines.append("- NUNCA crear quotes nuevos — usar los quote_ids listados arriba.")
@@ -907,7 +945,7 @@ class AgentService:
                             block["text"] = block["text"] + variant_info
                             break
         except Exception as e:
-            logging.warning(f"Could not inject variant info for {quote_id}: {e}")
+            logging.warning(f"Could not inject quote context for {quote_id}: {e}")
 
         # Append user message to history
         new_messages = clean_messages + [{"role": "user", "content": content}]
@@ -1351,21 +1389,39 @@ class AgentService:
             # Support target_quote_id for multi-material patch mode
             save_to_qid = inputs.pop("target_quote_id", None) or quote_id
             calc_result = calculate_quote(inputs)
-            # Persist breakdown to DB immediately (don't wait for generate_documents)
+            # Persist breakdown + change history to DB
             if calc_result.get("ok"):
                 try:
+                    # Build change log entry
+                    old_q = await db.execute(select(Quote).where(Quote.id == save_to_qid))
+                    old_quote = old_q.scalar_one_or_none()
+                    change_entry = {
+                        "timestamp": datetime.now().isoformat(),
+                        "action": "calculate_quote",
+                        "material": calc_result.get("material_name"),
+                        "total_ars_before": old_quote.total_ars if old_quote else None,
+                        "total_usd_before": old_quote.total_usd if old_quote else None,
+                        "total_ars_after": calc_result.get("total_ars"),
+                        "total_usd_after": calc_result.get("total_usd"),
+                        "user_message": current_user_message[:200],
+                    }
+                    # Append to existing history
+                    history = list(old_quote.change_history or []) if old_quote else []
+                    history.append(change_entry)
+
                     await db.execute(
                         update(Quote).where(Quote.id == save_to_qid).values(
                             quote_breakdown=calc_result,
                             total_ars=calc_result.get("total_ars"),
                             total_usd=calc_result.get("total_usd"),
                             material=calc_result.get("material_name"),
+                            change_history=history,
                         )
                     )
                     await db.commit()
-                    logging.info(f"Saved breakdown for {save_to_qid} after calculate_quote")
+                    logging.info(f"Saved breakdown for {save_to_qid} after calculate_quote | ARS: {change_entry['total_ars_before']} → {change_entry['total_ars_after']}")
                 except Exception as e:
-                    logging.warning(f"Could not save breakdown for {quote_id}: {e}")
+                    logging.warning(f"Could not save breakdown for {save_to_qid}: {e}")
             return calc_result
         else:
             return {"error": f"Tool desconocida: {name}"}

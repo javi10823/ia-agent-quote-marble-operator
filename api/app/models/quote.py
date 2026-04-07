@@ -66,6 +66,9 @@ class Quote(Base):
     # Source files (plans, images uploaded by operator)
     source_files: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
+    # Change history — log of modifications in patch mode
+    change_history: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
+
     # Full chat history as JSON array
     messages: Mapped[list] = mapped_column(JSON, default=list)
 

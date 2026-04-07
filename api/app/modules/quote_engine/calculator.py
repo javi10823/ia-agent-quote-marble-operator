@@ -422,5 +422,12 @@ def calculate_quote(input_data: dict) -> dict:
         "total_usd": total_usd,
         "sectors": sectors,
         "sinks": sinks,
+        # Persist input params for patch mode reconstruction
+        "localidad": localidad,
+        "colocacion": colocacion,
+        "pileta": pileta,
+        "anafe": anafe,
+        "frentin": frentin,
+        "pulido": pulido,
         **({"fuzzy_corrected_from": mat_result["fuzzy_corrected_from"]} if "fuzzy_corrected_from" in mat_result else {}),
     }

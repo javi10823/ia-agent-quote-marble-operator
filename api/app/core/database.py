@@ -59,6 +59,7 @@ async def init_db():
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS anafe BOOLEAN DEFAULT FALSE",
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS pieces JSON",
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS conversation_id VARCHAR(100)",
+            "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS change_history JSON DEFAULT '[]'",
         ]:
             try:
                 await conn.execute(__import__("sqlalchemy").text(col_sql))
