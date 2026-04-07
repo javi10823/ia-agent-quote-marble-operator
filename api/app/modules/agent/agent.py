@@ -864,6 +864,10 @@ class AgentService:
             else:
                 clean_messages.append(msg)
 
+        # Save clean user content for DB persistence (before injection)
+        import copy
+        clean_user_content = copy.deepcopy(content)
+
         # Inject quote context: breakdown params + variant info (for patch mode)
         try:
             root_id = quote_id
@@ -948,7 +952,10 @@ class AgentService:
             logging.warning(f"Could not inject quote context for {quote_id}: {e}")
 
         # Append user message to history
+        # Use injected content for Claude, clean content for DB persistence
         new_messages = clean_messages + [{"role": "user", "content": content}]
+        # Build DB-safe messages (without injected system context)
+        db_messages = clean_messages + [{"role": "user", "content": clean_user_content}]
 
         # Agentic loop with tool use
         assistant_messages = []
@@ -1138,7 +1145,7 @@ class AgentService:
 
         # Save updated messages to DB
         try:
-            updated_messages = new_messages + assistant_messages
+            updated_messages = db_messages + assistant_messages
             save_values = {"messages": updated_messages}
 
             # Try to extract client_name and material from conversation if not yet set
