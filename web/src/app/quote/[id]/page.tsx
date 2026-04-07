@@ -2,10 +2,9 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { fetchQuote, streamChat, markQuoteAsRead, fetchQuoteComparison, validateQuote, type QuoteDetail, type QuoteCompareResponse } from "@/lib/api";
+import { fetchQuote, streamChat, markQuoteAsRead, validateQuote, type QuoteDetail } from "@/lib/api";
 import { useQuotes } from "@/lib/quotes-context";
 import MessageBubble from "@/components/chat/MessageBubble";
-import CompareView from "@/components/quote/CompareView";
 import clsx from "clsx";
 import { A, I, O, N, DOT, SUP2, DASH, ITEM, WARN, CIRCLE, ARROW, XMARK, CLOUD, WAVE, PAGE, PICTURE, CLIP, RULER, TAG, FOLDER, CHART } from "@/lib/chars";
 
@@ -48,9 +47,8 @@ export default function QuotePage() {
   const quoteId = params.id as string;
 
   const [quote, setQuote] = useState<QuoteDetail | null>(null);
-  const [comparison, setComparison] = useState<QuoteCompareResponse | null>(null);
   const [messages, setMessages] = useState<UIMessage[]>([]);
-  const [tab, setTab] = useState<"detail" | "chat" | "compare">("chat");
+  const [tab, setTab] = useState<"detail" | "chat">("chat");
   const [input, setInput] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
@@ -71,32 +69,41 @@ export default function QuotePage() {
   const abortRef = useRef<AbortController | null>(null);
   const userInteracted = useRef(false);
 
+  const parseMessages = (rawMessages: any[]): UIMessage[] =>
+    rawMessages
+      .filter((m: any) => m.role === "user" || m.role === "assistant")
+      .map((m: any, i: number) => ({
+        id: `stored-${i}`,
+        role: m.role as "user" | "assistant",
+        content: typeof m.content === "string"
+          ? m.content
+          : (m.content as any[]).filter(c => c.type === "text").map(c => c.text || "").join(""),
+      }))
+      .filter(m => {
+        const text = m.content.trim();
+        if (!text || text === "." || text === "..") return false;
+        return true;
+      });
+
   useEffect(() => {
-    fetchQuote(quoteId).then(q => {
+    fetchQuote(quoteId).then(async (q) => {
       setQuote(q);
       if (!q.is_read) { markQuoteAsRead(quoteId).catch(() => {}); markRead(quoteId); }
-      const uiMsgs: UIMessage[] = q.messages
-        .filter((m: any) => m.role === "user" || m.role === "assistant")
-        .map((m: any, i: number) => ({
-          id: `stored-${i}`,
-          role: m.role,
-          content: typeof m.content === "string"
-            ? m.content
-            : (m.content as any[]).filter(c => c.type === "text").map(c => c.text || "").join(""),
-        }))
-        .filter(m => {
-          const text = m.content.trim();
-          // Hide empty messages, dots, and tool result placeholders
-          if (!text || text === "." || text === "..") return false;
-          return true;
-        });
-      setMessages(uiMsgs);
+
+      // If this is a child quote (variant), load chat from the parent
+      let msgs = q.messages;
+      if ((!msgs || msgs.length === 0) && q.parent_quote_id) {
+        try {
+          const parent = await fetchQuote(q.parent_quote_id);
+          msgs = parent.messages;
+        } catch {}
+      }
+
+      setMessages(parseMessages(msgs));
       if (q.status === "validated" || q.status === "sent" || q.status === "pending" || q.source === "web") setTab("detail");
     }).catch((err: any) => {
       setLoadError(err.message || "Error al cargar presupuesto");
     }).finally(() => setLoading(false));
-
-    fetchQuoteComparison(quoteId).then(c => setComparison(c)).catch(() => {});
   }, [quoteId]);
 
   // Abort SSE stream on unmount or quoteId change
@@ -203,7 +210,6 @@ export default function QuotePage() {
           const [updated] = await Promise.all([
             fetchQuote(quoteId),
             refreshQuotes(),
-            fetchQuoteComparison(quoteId).then(c => setComparison(c)).catch(() => {}),
           ]);
           setQuote(updated);
         }
@@ -274,12 +280,9 @@ export default function QuotePage() {
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
-          {quote?.pdf_url && <FileLink href={quote.pdf_url} label={comparison ? `PDF ${quote.material?.split(" ")[0] || ""}` : "PDF"} cls="border-red-400/20 text-red-400" />}
-          {quote?.excel_url && <FileLink href={quote.excel_url} label={comparison ? `Excel ${quote.material?.split(" ")[0] || ""}` : "Excel"} cls="border-grn/20 text-grn" />}
-          {quote?.drive_url && <FileLink href={quote.drive_url} label={comparison ? `Drive ${quote.material?.split(" ")[0] || ""}` : "Drive"} cls="border-acc/20 text-acc" />}
-          {comparison && comparison.quotes.filter(q => q.id !== quote?.id && q.pdf_url).map(q => (
-            <FileLink key={q.id} href={q.pdf_url!} label={`PDF ${q.material?.split(" ")[0] || ""}`} cls="border-red-400/20 text-red-400" />
-          ))}
+          {quote?.pdf_url && <FileLink href={quote.pdf_url} label="PDF" cls="border-red-400/20 text-red-400" />}
+          {quote?.excel_url && <FileLink href={quote.excel_url} label="Excel" cls="border-grn/20 text-grn" />}
+          {quote?.drive_url && <FileLink href={quote.drive_url} label="Drive" cls="border-acc/20 text-acc" />}
         </div>
       </div>
 
@@ -287,15 +290,10 @@ export default function QuotePage() {
       <div className="flex border-b border-b1 bg-s1 pl-7">
         <TabBtn active={tab === "detail"} onClick={() => setTab("detail")} disabled={!quote || (quote.status === "draft" && quote.source !== "web")}>Detalle</TabBtn>
         <TabBtn active={tab === "chat"} onClick={() => setTab("chat")}>Chat</TabBtn>
-        {comparison && <TabBtn active={tab === "compare"} onClick={() => setTab("compare")}>Comparar</TabBtn>}
       </div>
 
       {/* Content */}
-      {tab === "compare" && comparison ? (
-        <div className="flex-1 overflow-y-auto px-7 py-6">
-          <CompareView data={comparison} />
-        </div>
-      ) : tab === "detail" ? (
+      {tab === "detail" ? (
         <div className="flex-1 overflow-y-auto px-7 py-6">
           <DetailView quote={quote} breakdown={bd} onSwitchToChat={() => setTab("chat")} onGenerate={quote?.status === "pending" || quote?.status === "draft" ? handleGenerate : undefined} generating={generating} />
           {/* Show modifications section only when quote has breakdown and is not sent */}
