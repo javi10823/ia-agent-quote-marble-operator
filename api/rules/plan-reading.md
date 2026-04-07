@@ -131,9 +131,10 @@ Ejemplos:
 **⛔ NUNCA leer medidas de la vista general cuando hay múltiples piezas.**
 **⛔ NUNCA mezclar cotas entre piezas — cada crop se lee independientemente.**
 
-**Si hay 4+ piezas en un solo plano y no podés aislar bien las medidas:**
-Pedirle al operador que mande las piezas en imágenes separadas (una captura por pieza/box).
-Ejemplo: "Veo 6 solías en el plano. Para no mezclar medidas, ¿podés mandarme una captura de cada box por separado? Así leo las cotas de cada una sin errores."
+**⛔⛔⛔ Si hay 3+ piezas en boxes/cuadros separados en un solo plano → OBLIGATORIO pedir imágenes separadas. ⛔⛔⛔**
+**NO intentar leer las medidas del plano general. SIEMPRE pedir capturas individuales.**
+**Ejemplo: "Veo 6 solías en el plano, cada una en su propio cuadro. Para leer bien las medidas de cada una sin errores, necesito que me mandes una captura/foto de cada cuadro por separado."**
+**Esta regla es OBLIGATORIA — no opcional. No importa si "creés" que podés leerlas del plano general.**
 
 ## Protocolo de lectura — 5 pasadas obligatorias
 
