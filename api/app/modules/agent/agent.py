@@ -1317,6 +1317,15 @@ class AgentService:
                     await db.flush()
                     logging.info(f"Created NEW variant {target_qid} for material: {qdata.get('material_name')}")
 
+                # If quote already has a breakdown in DB (e.g. from patch_quote_mo),
+                # use THAT instead of what Valentina sends — she often fabricates data.
+                existing_bd_result = await db.execute(select(Quote).where(Quote.id == target_qid))
+                existing_bd_quote = existing_bd_result.scalar_one_or_none()
+                if existing_bd_quote and existing_bd_quote.quote_breakdown and existing_bd_quote.quote_breakdown.get("mo_items"):
+                    db_bd = existing_bd_quote.quote_breakdown
+                    logging.info(f"Using DB breakdown for {target_qid} instead of Valentina's data (material_total={db_bd.get('material_total')}, total_ars={db_bd.get('total_ars')})")
+                    qdata = db_bd
+
                 # Save quote data + breakdown to DB
                 save_vals = {
                     "client_name": qdata.get("client_name", ""),
@@ -1601,7 +1610,15 @@ class AgentService:
                 total_mo = sum(m.get("total", 0) for m in new_mo)
                 total_sinks = sum(s.get("unit_price", 0) * s.get("quantity", 1) for s in bd.get("sinks", []))
                 currency = bd.get("material_currency", "ARS")
-                material_total = bd.get("material_total", 0)
+                # material_total may not exist in breakdowns saved by generate_documents
+                material_total = bd.get("material_total")
+                if material_total is None:
+                    # Reconstruct from m2 * price_unit
+                    m2 = bd.get("material_m2", 0)
+                    price_unit = bd.get("material_price_unit", 0)
+                    material_total = round(m2 * price_unit)
+                    bd["material_total"] = material_total
+                    logging.info(f"Reconstructed material_total={material_total} from {m2} * {price_unit}")
 
                 if currency == "USD":
                     bd["total_ars"] = total_mo + total_sinks
