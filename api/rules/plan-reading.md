@@ -61,15 +61,28 @@ Guía para analizar planos arquitectónicos y extraer correctamente todas las me
   - Si el CORTE muestra el frentín con **línea diagonal a 45°** o dice **"INGLETE"** / **"a 45"** → `frentin: true, inglete: true` → MO: "Armado frentín recto" + "Corte a 45°"
   - Si no hay vista de CORTE ni indicación → asumir **recto** (el más común)
 
+**Solías (umbrales):**
+- **"Solía"** / **"Umbral"** / **"División"** → pieza de transición entre ambientes
+- Cálculo simple: largo × ancho (profundidad)
+- Ejemplo: solía de 0,80 × 0,15 = 0,12 m²
+
 **Otros:**
 - **"INGLETE"** → unión a 45° → cobrar CORTE45 en MO
 - **"Bordes pulidos" / "Cantos pulidos"** → cobrar PUL en MO — es explícito del plano, no hace falta que lo diga el operador
 - **"Frente revestido"** en isla → es la **pata frontal**, NO una alzada → no aplica TOMAS automático
 - **"Tomas (X)"** → cobrar X unidades de TOMAS en MO
 
+**⛔ Cantidad de piezas — REGLA CRÍTICA:**
+- **SIEMPRE revisar si el plano indica "Cantidad: X" o "Cant: X" o "X unidades".**
+- Si dice "Cantidad: 2" → esa pieza se presupuesta **2 veces** (duplicar m²).
+- Aplica a TODOS los tipos de trabajo: mesadas, solías, zócalos, revestimientos, etc.
+- Si el cuadro de datos dice Cantidad > 1 → multiplicar.
+- **NUNCA ignorar la cantidad.** Es tan importante como las medidas.
+
 **Cuadro de datos (tabla en el plano):**
-- Campos comunes: Tipo (MESADA, ISLA), Ubicación (Office, Cocina), Cantidad, m²
+- Campos comunes: Tipo (MESADA, ISLA, SOLÍA), Ubicación (Office, Cocina), Cantidad, m²
 - Extraer TODA la info del cuadro — puede tener datos que no están en las cotas
+- **Si hay campo "Cantidad" → usarlo para multiplicar piezas**
 
 
 - Cota **ARRIBA** del borde de la mesada → **ZÓCALO** (sube por la pared)
@@ -133,7 +146,9 @@ Leer TODO el texto escrito en el plano, incluyendo:
 - **Frentín/regrueso:** "Frentín 8cm", "F de 5cm", "Frentín Granito Gris Mara 8cm" = regrueso en el borde visible
 - **Bordes:** "c/ménsula", "inglete", "bordes pulidos"
 - **Ubicación:** "Office", "Cocina", "Baño", "Lavadero"
+- **Cantidad:** "Cantidad: 2", "Cant: 3", "X unidades" → multiplicar la pieza por esa cantidad
 - **Cuadro de datos:** tabla con Tipo, Ubicación, Cantidad, m² → extraer toda la info
+- **Solía/Umbral:** pieza de transición entre ambientes → largo × ancho
 - **Cualquier otra nota:** especificaciones de pileta, grifería, cortes especiales
 
 **⛔ Si el plano especifica el material → usarlo directamente. NO preguntar al operador.**
