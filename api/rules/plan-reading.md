@@ -48,8 +48,8 @@ Guía para analizar planos arquitectónicos y extraer correctamente todas las me
 - **"c/ménsula"** → con ménsula/soporte (info técnica, no afecta precio)
 
 **Zócalos:**
-- **"Zócalo en U de X cm"** → zócalo en 3 lados (trasero + ambos laterales), alto = X cm
-- **"Zócalo en L"** → zócalo en 2 lados (trasero + 1 lateral)
+- **"Zócalo en U de X cm"** → ⛔ OBLIGATORIO: zócalo en **3 lados** (trasero + lateral izq + lateral der), alto = X cm. Generar **3 piezas de zócalo** con las medidas correspondientes. NUNCA interpretar "en U" como solo trasero.
+- **"Zócalo en L"** → zócalo en **2 lados** (trasero + 1 lateral), alto especificado
 - **"Zócalo trasero"** → solo lado contra pared
 - **"Z de X cm"** → zócalo de X cm de alto
 
@@ -130,6 +130,16 @@ Leer TODO el texto escrito en el plano, incluyendo:
 **⛔ Si el plano especifica el material → usarlo directamente. NO preguntar al operador.**
 **⛔ Si el plano especifica zócalo en U / frentín → incluirlo automáticamente. NO preguntar.**
 **⛔ Anotar TODO. Esta info es tan importante como las cotas numéricas.**
+
+**Ejemplo concreto — plano dice "Zócalo en U de 5 cm. Frentín Granito Gris Mara 8cm":**
+- Material: Granito Gris Mara ✅ (no preguntar)
+- Zócalo en U = 3 zócalos: trasero (largo de la mesada) + lateral izquierdo (prof de la mesada) + lateral derecho (prof de la mesada), todos de 5cm de alto ✅
+- Frentín: regrueso de 8cm en el borde frontal (lado libre/visible) ✅
+- Si la mesada mide 2,22 × 0,60:
+  - Zócalo trasero: 2,22 × 0,05
+  - Zócalo lateral izq: 0,60 × 0,05
+  - Zócalo lateral der: 0,60 × 0,05
+  - Frentín frontal: 2,22 × 0,08
 
 **Pasada 1 — Inventario**
 Solo contar y nombrar las piezas presentes. No medir, no calcular. ¿Cuántas mesadas? ¿Hay isla, alzada, zócalos?
