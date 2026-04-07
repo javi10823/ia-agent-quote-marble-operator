@@ -830,7 +830,8 @@ class AgentService:
         user_message: str,
         plan_bytes: Optional[bytes],
         plan_filename: Optional[str],
-        db: AsyncSession,
+        extra_files: Optional[list] = None,
+        db: AsyncSession = None,
     ) -> AsyncGenerator[dict, None]:
 
         # Build system prompt per request with contextual loading
@@ -881,6 +882,23 @@ class AgentService:
                     logging.info(f"Added 90° rotated version of plan for margin text reading")
                 except Exception as e:
                     logging.warning(f"Could not create rotated plan version: {e}")
+        # Attach extra files (additional images sent by operator)
+        if extra_files:
+            for file_bytes, filename in extra_files:
+                ext_f = Path(filename).suffix.lower()
+                if ext_f == ".pdf":
+                    content.append({
+                        "type": "document",
+                        "source": {"type": "base64", "media_type": "application/pdf", "data": base64.b64encode(file_bytes).decode()},
+                    })
+                else:
+                    mt = "image/jpeg" if ext_f in [".jpg", ".jpeg"] else "image/webp" if ext_f == ".webp" else "image/png"
+                    content.append({
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": mt, "data": base64.b64encode(file_bytes).decode()},
+                    })
+            logging.info(f"Attached {len(extra_files)} extra files to message")
+
         # Always include a text block — Anthropic rejects empty text content blocks
         text = user_message.strip() if user_message.strip() else "(adjunto plano)"
         content.append({"type": "text", "text": text})

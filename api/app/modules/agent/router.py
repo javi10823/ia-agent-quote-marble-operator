@@ -576,9 +576,10 @@ async def chat(
     if errors:
         raise HTTPException(status_code=400, detail=" | ".join(errors))
 
-    # Use first file for Claude (primary plan) — all saved as source_files
+    # Pass ALL files to Claude (not just the first one)
     plan_bytes = validated_files[0][0] if validated_files else None
     plan_filename = validated_files[0][1] if validated_files else None
+    extra_files = validated_files[1:] if len(validated_files) > 1 else []
 
     async def event_stream():
         full_response = ""
@@ -589,6 +590,7 @@ async def chat(
                 user_message=message,
                 plan_bytes=plan_bytes,
                 plan_filename=plan_filename,
+                extra_files=extra_files,
                 db=db,
             ):
                 if chunk["type"] == "ping":
