@@ -809,9 +809,8 @@ def _compact_single_result(result: dict) -> dict:
 
 # ── RETRY CONFIG ─────────────────────────────────────────────────────────────
 
-MAX_RETRIES = 4  # 3 attempts with primary model + 1 with fallback
-RETRY_DELAYS = [5, 10, 15, 5]
-HAIKU_FALLBACK_MODEL = "claude-haiku-4-20250414"
+MAX_RETRIES = 3
+RETRY_DELAYS = [5, 10, 15]
 MAX_ITERATIONS = 25  # Safety limit — prevent infinite tool loops
 
 
@@ -1052,19 +1051,13 @@ class AgentService:
 
                 except anthropic.RateLimitError:
                     if attempt == MAX_RETRIES:
-                        logging.error("Rate limit exceeded after all retries (including Haiku fallback)")
+                        logging.error("Rate limit exceeded after all retries")
                         yield {"type": "action", "content": "⚠️ Servicio temporalmente no disponible. Intentá de nuevo en un minuto."}
                         yield {"type": "done", "content": ""}
                         return
                     delay = RETRY_DELAYS[attempt]
-                    # Switch to Haiku on last retry before giving up
-                    if attempt == MAX_RETRIES - 1:
-                        current_model = HAIKU_FALLBACK_MODEL
-                        logging.warning(f"Rate limit: switching to Haiku fallback (attempt {attempt + 1}/{MAX_RETRIES})")
-                        yield {"type": "action", "content": f"⏳ Cambiando a modelo alternativo..."}
-                    else:
-                        logging.warning(f"Rate limit hit, retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
-                        yield {"type": "action", "content": f"⏳ Esperando disponibilidad... ({delay}s)"}
+                    logging.warning(f"Rate limit hit, retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                    yield {"type": "action", "content": f"⏳ Esperando disponibilidad... ({delay}s)"}
                     for _ in range(delay):
                         await asyncio.sleep(1)
                         yield {"type": "ping", "content": ""}
@@ -1077,17 +1070,16 @@ class AgentService:
                             yield {"type": "done", "content": ""}
                             return
                         delay = RETRY_DELAYS[attempt]
-                        # Switch to Haiku on last retry before giving up
-                        if attempt == MAX_RETRIES - 1:
-                            current_model = HAIKU_FALLBACK_MODEL
-                            logging.warning(f"API overloaded: switching to Haiku fallback (attempt {attempt + 1}/{MAX_RETRIES})")
-                            yield {"type": "action", "content": f"⏳ Cambiando a modelo alternativo..."}
-                        else:
-                            logging.warning(f"API overloaded, retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
-                            yield {"type": "action", "content": f"⏳ Servicio ocupado, reintentando... ({delay}s)"}
+                        logging.warning(f"API overloaded, retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                        yield {"type": "action", "content": f"⏳ Servicio ocupado, reintentando... ({delay}s)"}
                         for _ in range(delay):
                             await asyncio.sleep(1)
                             yield {"type": "ping", "content": ""}
+                    elif "usage limits" in str(e).lower() or "reached your specified" in str(e).lower():
+                        logging.error(f"API usage limit reached: {e}")
+                        yield {"type": "action", "content": "⚠️ Se alcanzó el límite de uso de la API. Revisá los límites en console.anthropic.com."}
+                        yield {"type": "done", "content": ""}
+                        return
                     else:
                         logging.error(f"Anthropic API error: {e}")
                         yield {"type": "action", "content": f"⚠️ Error del servicio. Intentá de nuevo en unos segundos."}
