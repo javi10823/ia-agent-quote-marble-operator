@@ -25,6 +25,7 @@ export default function ChatInput({ input, setInput, files, setFiles, dragActive
 
   const addFiles = (newFiles: FileList | File[]) => {
     const arr = Array.from(newFiles);
+    const valid: File[] = [];
     for (const f of arr) {
       if (!VALID_TYPES.some(t => f.type.includes(t.split("/")[1]))) {
         setFileError(`"${f.name}" — tipo no soportado`);
@@ -36,14 +37,16 @@ export default function ChatInput({ input, setInput, files, setFiles, dragActive
         setTimeout(() => setFileError(null), 3000);
         continue;
       }
-      if (files.length >= MAX_FILES) {
+      if (files.length + valid.length >= MAX_FILES) {
         setFileError(`M${A}ximo 5 archivos`);
         setTimeout(() => setFileError(null), 3000);
         break;
       }
       if (files.some(ef => ef.name === f.name && ef.size === f.size)) continue;
-      setFiles([...files, f]);
+      if (valid.some(ef => ef.name === f.name && ef.size === f.size)) continue;
+      valid.push(f);
     }
+    if (valid.length > 0) setFiles([...files, ...valid]);
   };
 
   const removeFile = (idx: number) => setFiles(files.filter((_, i) => i !== idx));
