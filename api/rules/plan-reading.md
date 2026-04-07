@@ -56,6 +56,10 @@ Guía para analizar planos arquitectónicos y extraer correctamente todas las me
 **Frentín/regrueso:**
 - **"Frentín Xcm"** / **"F de Xcm"** → frentín/regrueso de X cm de alto en bordes visibles
 - **"Frentín [material] Xcm e= Y"** → frentín con material y espesor específico
+- **Detectar tipo de frentín desde el plano:**
+  - Si el CORTE (vista lateral) muestra el frentín con un **ángulo recto (90°)** → `frentin: true, inglete: false` → MO: "Armado frentín recto"
+  - Si el CORTE muestra el frentín con **línea diagonal a 45°** o dice **"INGLETE"** / **"a 45"** → `frentin: true, inglete: true` → MO: "Armado frentín recto" + "Corte a 45°"
+  - Si no hay vista de CORTE ni indicación → asumir **recto** (el más común)
 
 **Otros:**
 - **"INGLETE"** → unión a 45° → cobrar CORTE45 en MO
