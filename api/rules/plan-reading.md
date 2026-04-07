@@ -65,6 +65,7 @@ Guía para analizar planos arquitectónicos y extraer correctamente todas las me
 - **"Solía"** / **"Umbral"** / **"División"** → pieza de transición entre ambientes
 - Cálculo simple: largo × ancho (profundidad)
 - Ejemplo: solía de 0,80 × 0,15 = 0,12 m²
+- **⛔ Solías NUNCA llevan colocación.** Pasar `colocacion: false` en calculate_quote.
 
 **Otros:**
 - **"INGLETE"** → unión a 45° → cobrar CORTE45 en MO
