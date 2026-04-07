@@ -104,30 +104,31 @@ Ejemplos:
 
 
 
-## Renderizado individual — PRIMER PASO OBLIGATORIO ANTES DE CUALQUIER CÁLCULO
+## ⛔ Renderizado individual — OBLIGATORIO para planos multi-pieza
 
-**Sin excepción. Sin importar cuántas mesadas tenga el plano. Antes de las 4 pasadas.**
+**Si el plano tiene 2 o más piezas en cuadros/boxes separados → OBLIGATORIO usar `read_plan` con crops individuales.**
 
-Más tiempo al principio = cero regeneraciones. Un error de zócalo o medida cuesta mucho más que 2-3 minutos de renderizado.
+**¿Por qué?** Cuando hay varias piezas en un mismo plano, leer las medidas de la vista general causa **contaminación cruzada**: las cotas de una pieza se asignan a otra por error. Esto es el error más grave y frecuente.
 
-```bash
-# 1. Rasterizar a 300 DPI
-pdftoppm -jpeg -r 300 -f 1 -l 1 plano.pdf /tmp/plano
+**Protocolo:**
+1. Primero leer el plano completo para hacer la Pasada 0 (texto) y Pasada 1 (inventario)
+2. Identificar cuántas piezas/boxes hay y su ubicación aproximada en el plano
+3. Llamar `read_plan` con crop_instructions para CADA pieza individual:
+   ```json
+   {
+     "filename": "plano.pdf",
+     "crop_instructions": [
+       {"label": "S1", "x1": 700, "y1": 50, "x2": 1400, "y2": 600},
+       {"label": "S2", "x1": 700, "y1": 600, "x2": 1400, "y2": 1200},
+       {"label": "S5", "x1": 0, "y1": 50, "x2": 700, "y2": 600}
+     ]
+   }
+   ```
+4. Leer las medidas de CADA crop individual — NUNCA de la vista general
+5. Cada pieza se lee de su propio crop. Las cotas de un crop NO se aplican a otro.
 
-# 2. Crop individual por cada mesada
-python3 -c "
-from PIL import Image
-img = Image.open('/tmp/plano-1.jpg')
-# Crop de cada mesada por separado y guardar
-img.crop((x1,y1,x2,y2)).save('/tmp/m01.jpg')
-img.crop((x3,y3,x4,y4)).save('/tmp/m02.jpg')
-# etc.
-"
-
-# 3. Leer cada imagen individual antes de asignar medidas o zócalos
-```
-
-**Nunca confiar en la vista general del plano completo.**
+**⛔ NUNCA leer medidas de la vista general cuando hay múltiples piezas.**
+**⛔ NUNCA mezclar cotas entre piezas — cada crop se lee independientemente.**
 
 ## Protocolo de lectura — 5 pasadas obligatorias
 
@@ -166,7 +167,8 @@ Leer TODO el texto escrito en el plano, incluyendo:
   - Frentín frontal: 2,22 × 0,08
 
 **Pasada 1 — Inventario**
-Solo contar y nombrar las piezas presentes. No medir, no calcular. ¿Cuántas mesadas? ¿Hay isla, alzada, zócalos?
+Solo contar y nombrar las piezas presentes. No medir, no calcular. ¿Cuántas mesadas? ¿Hay isla, alzada, zócalos? ¿Cuántas solías?
+**⛔ Si hay 2+ piezas en boxes separados → OBLIGATORIO usar `read_plan` con crops individuales antes de la Pasada 3 (medidas). Ver sección "Renderizado individual".**
 
 **Pasada 2 — Paredes vs. lados libres**
 Para cada pieza, identificar qué lados van contra pared (hatching/rayado) y cuáles están libres. Sin medidas todavía. Esto determina dónde va frentin/regrueso.

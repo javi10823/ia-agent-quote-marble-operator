@@ -473,7 +473,7 @@ TOOLS = [
     },
     {
         "name": "read_plan",
-        "description": "Rasteriza un plano a 300 DPI con crop por mesada. SOLO usar si necesitás un crop específico de una zona del plano. Si el plano ya fue adjuntado como PDF/imagen en el mensaje del operador, ya lo podés ver directamente SIN llamar esta tool — leerlo del mensaje directamente es más rápido.",
+        "description": "Rasteriza un plano a 300 DPI con crop por pieza. OBLIGATORIO cuando el plano tiene 2+ piezas en boxes/cuadros separados (ej: múltiples solías, múltiples mesadas). Cropear CADA pieza individualmente para leer sus medidas sin mezclar con las de otras piezas. También útil para leer texto pequeño o cotas que no se distinguen bien en la vista general.",
         "input_schema": {
             "type": "object",
             "properties": {
