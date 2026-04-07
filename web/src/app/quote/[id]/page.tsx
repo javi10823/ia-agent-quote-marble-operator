@@ -335,10 +335,19 @@ export default function QuotePage() {
               </div>
             )}
             {messages.map((msg, idx) => {
-              const isLast = idx === messages.length - 1;
-              // Show confirm buttons only when Valentina's LAST line is a confirmation
+              // Find last REAL assistant message (not dots or empty)
+              const isLastReal = (() => {
+                for (let i = messages.length - 1; i >= 0; i--) {
+                  const m = messages[i];
+                  if (m.role === "assistant" && m.content.trim() && m.content.trim() !== "." && m.content.trim() !== "..") {
+                    return i === idx;
+                  }
+                }
+                return false;
+              })();
+              // Show confirm buttons only when Valentina's LAST real message is a confirmation
               // question and there are no other pending questions in the message
-              const needsConfirm = isLast && msg.role === "assistant" && !msg.isStreaming && !sending && (() => {
+              const needsConfirm = isLastReal && msg.role === "assistant" && !msg.isStreaming && !sending && (() => {
                 const text = msg.content;
                 // Must contain a confirmation question
                 const hasConfirmQ = /confirm[aá]s.*\?/i.test(text);
@@ -349,6 +358,10 @@ export default function QuotePage() {
               })();
               // Short confirmation messages render as compact badges
               const isShortConfirm = msg.role === "user" && /^(confirmo|sí|si|dale|ok|listo)$/i.test(msg.content.trim());
+
+              // Hide ghost messages (dots from sanitization)
+              const isDot = msg.content.trim() === "." || msg.content.trim() === "..";
+              if (isDot) return null;
 
               return (
                 <div key={msg.id}>
