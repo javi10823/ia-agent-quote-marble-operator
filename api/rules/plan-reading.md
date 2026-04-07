@@ -117,6 +117,11 @@ img.crop((x3,y3,x4,y4)).save('/tmp/m02.jpg')
 Ante cualquier plano, ejecutar SIEMPRE estas 5 pasadas en orden. **No calcular hasta completar la pasada 4.**
 
 **Pasada 0 — Texto y anotaciones del plano (ANTES de contar piezas)**
+**⛔ IMPORTANTE: los planos arquitectónicos tienen texto en TODAS las orientaciones.**
+**Buscar texto rotado 90° en los márgenes izquierdo, derecho, inferior y superior.**
+**El texto más importante (material, zócalo, frentín) suele estar ROTADO en el margen lateral.**
+**Leer CADA borde del plano cuidadosamente — no solo el centro.**
+
 Leer TODO el texto escrito en el plano, incluyendo:
 - **Material:** nombre completo (ej: "Granito Gris Mara", "Silestone Blanco Norte", "Dekton Kelya")
 - **Espesor:** "e= 2,5cm", "e= 2cm", "20mm"
