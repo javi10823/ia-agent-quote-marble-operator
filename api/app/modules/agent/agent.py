@@ -1319,12 +1319,20 @@ class AgentService:
 
                 # If quote already has a breakdown in DB (e.g. from patch_quote_mo),
                 # use THAT instead of what Valentina sends — she often fabricates data.
+                # BUT only if the material matches! During initial generation, calculate_quote
+                # for multiple materials all save to the same quote_id, so the DB may have
+                # a different material's breakdown.
                 existing_bd_result = await db.execute(select(Quote).where(Quote.id == target_qid))
                 existing_bd_quote = existing_bd_result.scalar_one_or_none()
                 if existing_bd_quote and existing_bd_quote.quote_breakdown and existing_bd_quote.quote_breakdown.get("mo_items"):
                     db_bd = existing_bd_quote.quote_breakdown
-                    logging.info(f"Using DB breakdown for {target_qid} instead of Valentina's data (material_total={db_bd.get('material_total')}, total_ars={db_bd.get('total_ars')})")
-                    qdata = db_bd
+                    db_material = (db_bd.get("material_name") or "").strip().upper()
+                    valentina_material = (qdata.get("material_name") or "").strip().upper()
+                    if db_material == valentina_material:
+                        logging.info(f"Using DB breakdown for {target_qid} (material match: {db_material}, total_ars={db_bd.get('total_ars')})")
+                        qdata = db_bd
+                    else:
+                        logging.warning(f"DB breakdown material mismatch for {target_qid}: DB={db_material}, Valentina={valentina_material} — using Valentina's data")
 
                 # Save quote data + breakdown to DB
                 save_vals = {
