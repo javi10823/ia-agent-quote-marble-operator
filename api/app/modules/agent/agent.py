@@ -627,6 +627,24 @@ TOOLS = [
             "required": ["client_name", "material", "pieces", "localidad", "plazo"],
         },
     },
+    {
+        "name": "patch_quote_mo",
+        "description": "Modifica la mano de obra de un presupuesto EXISTENTE sin recalcular todo. Usar en modo patch cuando el operador pide agregar o quitar ítems de MO (flete, colocación, etc.) sin cambiar material ni piezas. MÁS SEGURO que calculate_quote para cambios simples de MO.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "target_quote_id": {"type": "string", "description": "ID del quote a modificar. Si no se especifica, usa el quote actual."},
+                "remove_items": {
+                    "type": "array",
+                    "description": "Palabras clave de ítems de MO a ELIMINAR (ej: ['flete', 'colocación']). Se busca por coincidencia parcial en la descripción.",
+                    "items": {"type": "string"},
+                },
+                "add_colocacion": {"type": "boolean", "description": "Agregar colocación (calcula automáticamente según m² y material)"},
+                "add_flete": {"type": "string", "description": "Agregar flete para esta localidad (ej: 'Rosario'). Busca precio en catálogo."},
+            },
+            "required": [],
+        },
+    },
 ]
 
 
@@ -1505,5 +1523,114 @@ class AgentService:
                 except Exception as e:
                     logging.warning(f"Could not save breakdown for {save_to_qid}: {e}")
             return calc_result
+        elif name == "patch_quote_mo":
+            # ── Modify MO items directly without recalculating everything ──
+            target_qid = inputs.get("target_quote_id") or quote_id
+            remove_keywords = [kw.lower() for kw in inputs.get("remove_items", [])]
+            add_colocacion = inputs.get("add_colocacion", False)
+            add_flete_localidad = inputs.get("add_flete")
+
+            try:
+                q_result = await db.execute(select(Quote).where(Quote.id == target_qid))
+                target_quote = q_result.scalar_one_or_none()
+                if not target_quote or not target_quote.quote_breakdown:
+                    return {"ok": False, "error": f"Quote {target_qid} no tiene breakdown"}
+
+                bd = dict(target_quote.quote_breakdown)
+                original_mo = list(bd.get("mo_items", []))
+                new_mo = []
+                removed = []
+
+                # Remove items matching keywords
+                for item in original_mo:
+                    desc_lower = (item.get("description") or "").lower()
+                    should_remove = any(kw in desc_lower for kw in remove_keywords)
+                    if should_remove:
+                        removed.append(item["description"])
+                    else:
+                        new_mo.append(item)
+
+                # Add colocación if requested
+                if add_colocacion:
+                    # Check if already exists
+                    has_col = any("colocación" in (m.get("description") or "").lower() or "colocacion" in (m.get("description") or "").lower() for m in new_mo)
+                    if not has_col:
+                        mat_type = bd.get("material_type", "nacional")
+                        is_sint = mat_type in ("sintetico", "sintético")
+                        sku = "COLOCACIONDEKTON/NEOLITH" if is_sint else "COLOCACION"
+                        col_result = catalog_lookup("labor", sku)
+                        if col_result.get("found"):
+                            price = col_result.get("price_ars", 0)
+                            base = col_result.get("price_ars_base", price)
+                            qty = max(bd.get("material_m2", 1), 1.0)
+                            new_mo.append({"description": "Colocación", "quantity": round(qty, 2), "unit_price": price, "base_price": base, "total": round(price * qty)})
+
+                # Add flete if requested
+                if add_flete_localidad:
+                    has_flete = any("flete" in (m.get("description") or "").lower() for m in new_mo)
+                    if not has_flete:
+                        from app.modules.quote_engine.calculator import _find_flete
+                        flete_result = _find_flete(add_flete_localidad)
+                        if flete_result.get("found"):
+                            price = flete_result.get("price_ars", 0)
+                            base = flete_result.get("price_ars_base", price)
+                            new_mo.append({"description": f"Flete + toma medidas {add_flete_localidad}", "quantity": 1, "unit_price": price, "base_price": base, "total": price})
+
+                # Recalculate totals
+                bd["mo_items"] = new_mo
+                total_mo = sum(m.get("total", 0) for m in new_mo)
+                total_sinks = sum(s.get("unit_price", 0) * s.get("quantity", 1) for s in bd.get("sinks", []))
+                currency = bd.get("material_currency", "ARS")
+                material_total = bd.get("material_total", 0)
+
+                if currency == "USD":
+                    bd["total_ars"] = total_mo + total_sinks
+                    bd["total_usd"] = material_total
+                else:
+                    bd["total_ars"] = total_mo + total_sinks + material_total
+                    bd["total_usd"] = 0
+
+                # Save to DB
+                history = list(target_quote.change_history or [])
+                history.append({
+                    "timestamp": datetime.now().isoformat(),
+                    "action": "patch_quote_mo",
+                    "removed": removed,
+                    "total_ars_before": target_quote.total_ars,
+                    "total_ars_after": bd["total_ars"],
+                    "total_usd_before": target_quote.total_usd,
+                    "total_usd_after": bd["total_usd"],
+                    "user_message": current_user_message[:200],
+                })
+
+                await db.execute(
+                    update(Quote).where(Quote.id == target_qid).values(
+                        quote_breakdown=bd,
+                        total_ars=bd["total_ars"],
+                        total_usd=bd["total_usd"],
+                        change_history=history,
+                    )
+                )
+                await db.commit()
+
+                added = []
+                if add_colocacion: added.append("Colocación")
+                if add_flete_localidad: added.append(f"Flete {add_flete_localidad}")
+
+                logging.info(f"patch_quote_mo {target_qid}: removed={removed}, added={added}, total_ars={bd['total_ars']}, total_usd={bd['total_usd']}")
+
+                return {
+                    "ok": True,
+                    "quote_id": target_qid,
+                    "removed": removed,
+                    "added": added,
+                    "mo_items": [{"description": m["description"], "total": m["total"]} for m in new_mo],
+                    "total_ars": bd["total_ars"],
+                    "total_usd": bd["total_usd"],
+                    "material": bd.get("material_name"),
+                }
+            except Exception as e:
+                logging.error(f"patch_quote_mo error for {target_qid}: {e}", exc_info=True)
+                return {"ok": False, "error": str(e)[:200]}
         else:
             return {"error": f"Tool desconocida: {name}"}
