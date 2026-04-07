@@ -106,7 +106,8 @@ Cuando el operador pide un cambio sobre un presupuesto que YA TIENE BREAKDOWN (r
 - Tomá el presupuesto actual como fuente de verdad
 - Aplicá SOLO el cambio solicitado
 - Todo campo no mencionado por el operador → INTACTO
-- **⛔ SIEMPRE llamar `calculate_quote` después de aplicar el cambio** para que el breakdown se actualice en la DB. NUNCA hacer cuentas mentales sin llamar la tool — los totales solo se persisten si `calculate_quote` corre.
+- **⛔ SIEMPRE llamar `calculate_quote` después de aplicar el cambio** para que el breakdown se actualice en la DB. NUNCA hacer cuentas mentales sin llamar la tool — los totales solo se persisten si `calculate_quote` corre. Si NO llamás `calculate_quote`, el cambio NO se guarda y el PDF/Excel salen con datos viejos.
+- **⛔ MULTI-MATERIAL: si el presupuesto tiene 2+ materiales, llamar `calculate_quote` UNA VEZ POR CADA variante.** Cada variante tiene su propio quote_id — debés recalcular CADA una. No alcanza con recalcular solo la primera.
 - **⛔ NUNCA CREAR QUOTES NUEVOS EN MODO PATCH.** Modificar el existente. Si el presupuesto tiene múltiples materiales, modificar cada variante existente — NO crear variantes nuevas. Si `generate_documents` se llama, usar el quote_id existente, NUNCA generar un nuevo UUID.
 
 **2. NUNCA hacer por iniciativa propia:**

@@ -621,6 +621,7 @@ TOOLS = [
                 "pulido": {"type": "boolean", "description": "Si lleva pulido de cantos"},
                 "plazo": {"type": "string", "description": "Plazo de entrega"},
                 "discount_pct": {"type": "number", "description": "Porcentaje de descuento (0-100)"},
+                "target_quote_id": {"type": "string", "description": "ID del quote donde guardar el resultado. Usar SOLO en modo patch con múltiples variantes — pasar el quote_id de la variante que se está recalculando. Si no se especifica, se guarda en el quote actual."},
             },
             "required": ["client_name", "material", "pieces", "localidad", "plazo"],
         },
@@ -861,6 +862,34 @@ class AgentService:
                 clean_messages.append({**msg, "content": "."})
             else:
                 clean_messages.append(msg)
+
+        # Inject variant info for multi-material quotes (mode patch needs this)
+        try:
+            root_id = quote_id
+            root_result = await db.execute(select(Quote).where(Quote.id == quote_id))
+            root_quote = root_result.scalar_one_or_none()
+            if root_quote and root_quote.parent_quote_id:
+                root_id = root_quote.parent_quote_id
+            variant_result = await db.execute(
+                select(Quote.id, Quote.material, Quote.total_ars, Quote.total_usd)
+                .where(Quote.parent_quote_id == root_id)
+            )
+            variants = variant_result.all()
+            if variants:
+                variant_lines = [f"\n[SISTEMA — VARIANTES DEL PRESUPUESTO]"]
+                variant_lines.append(f"Quote raíz: {root_id}")
+                for v in variants:
+                    variant_lines.append(f"  Variante: quote_id={v.id}, material={v.material}, total_ars={v.total_ars}, total_usd={v.total_usd}")
+                variant_lines.append("Si el operador pide un cambio que afecta a todas las variantes (ej: agregar flete), llamá calculate_quote una vez por cada quote_id listado arriba.")
+                variant_info = "\n".join(variant_lines)
+                # Append to the text block in the user content
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            block["text"] = block["text"] + variant_info
+                            break
+        except Exception as e:
+            logging.warning(f"Could not inject variant info for {quote_id}: {e}")
 
         # Append user message to history
         new_messages = clean_messages + [{"role": "user", "content": content}]
@@ -1269,12 +1298,14 @@ class AgentService:
                 if any(kw in all_text for kw in ["bacha", "pileta", "cotizar bacha", "con bacha"]):
                     inputs["pileta"] = "empotrada_johnson"
                     logging.warning(f"Auto-injected pileta=empotrada_johnson — detected in conversation but missing from calculate_quote call")
+            # Support target_quote_id for multi-material patch mode
+            save_to_qid = inputs.pop("target_quote_id", None) or quote_id
             calc_result = calculate_quote(inputs)
             # Persist breakdown to DB immediately (don't wait for generate_documents)
             if calc_result.get("ok"):
                 try:
                     await db.execute(
-                        update(Quote).where(Quote.id == quote_id).values(
+                        update(Quote).where(Quote.id == save_to_qid).values(
                             quote_breakdown=calc_result,
                             total_ars=calc_result.get("total_ars"),
                             total_usd=calc_result.get("total_usd"),
@@ -1282,7 +1313,7 @@ class AgentService:
                         )
                     )
                     await db.commit()
-                    logging.info(f"Saved breakdown for {quote_id} after calculate_quote")
+                    logging.info(f"Saved breakdown for {save_to_qid} after calculate_quote")
                 except Exception as e:
                     logging.warning(f"Could not save breakdown for {quote_id}: {e}")
             return calc_result
