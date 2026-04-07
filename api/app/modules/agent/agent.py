@@ -1376,8 +1376,41 @@ class AgentService:
             await db.commit()
             return {"ok": True, "updated_fields": list(clean.keys())}
         elif name == "calculate_quote":
-            # ── Defensive injection: if conversation mentions bacha/pileta
-            # but the agent didn't include it, auto-inject it ──
+            # Support target_quote_id for multi-material patch mode
+            save_to_qid = inputs.pop("target_quote_id", None) or quote_id
+
+            # ── Defensive: preserve params from existing breakdown ──
+            # If Valentina omits pileta/anafe/etc but the existing breakdown
+            # had them, auto-inject UNLESS the operator explicitly asked to remove them.
+            try:
+                existing_q = await db.execute(select(Quote).where(Quote.id == save_to_qid))
+                existing_quote = existing_q.scalar_one_or_none()
+                if existing_quote and existing_quote.quote_breakdown:
+                    ebd = existing_quote.quote_breakdown
+                    msg_lower = current_user_message.lower()
+                    # Check if operator is explicitly removing something
+                    removing_pileta = any(kw in msg_lower for kw in ["sin pileta", "sacar pileta", "quitar pileta", "remover pileta", "sin agujero"])
+                    removing_anafe = any(kw in msg_lower for kw in ["sin anafe", "sacar anafe", "quitar anafe", "remover anafe"])
+
+                    # Auto-inject pileta if breakdown had it and operator didn't remove it
+                    if not inputs.get("pileta") and ebd.get("pileta") and not removing_pileta:
+                        inputs["pileta"] = ebd["pileta"]
+                        logging.info(f"Auto-preserved pileta={ebd['pileta']} from existing breakdown for {save_to_qid}")
+
+                    # Auto-inject anafe if breakdown had it and operator didn't remove it
+                    if not inputs.get("anafe") and ebd.get("anafe") and not removing_anafe:
+                        inputs["anafe"] = ebd["anafe"]
+                        logging.info(f"Auto-preserved anafe={ebd['anafe']} from existing breakdown for {save_to_qid}")
+
+                    # Auto-inject frentin/pulido
+                    if not inputs.get("frentin") and ebd.get("frentin"):
+                        inputs["frentin"] = ebd["frentin"]
+                    if not inputs.get("pulido") and ebd.get("pulido"):
+                        inputs["pulido"] = ebd["pulido"]
+            except Exception as e:
+                logging.warning(f"Could not check existing breakdown for {save_to_qid}: {e}")
+
+            # Fallback: check conversation for pileta keywords
             if not inputs.get("pileta"):
                 all_text = current_user_message.lower()
                 if conversation_history:
@@ -1392,9 +1425,7 @@ class AgentService:
                                         all_text += " " + blk.get("text", "").lower()
                 if any(kw in all_text for kw in ["bacha", "pileta", "cotizar bacha", "con bacha"]):
                     inputs["pileta"] = "empotrada_johnson"
-                    logging.warning(f"Auto-injected pileta=empotrada_johnson — detected in conversation but missing from calculate_quote call")
-            # Support target_quote_id for multi-material patch mode
-            save_to_qid = inputs.pop("target_quote_id", None) or quote_id
+                    logging.warning(f"Auto-injected pileta=empotrada_johnson from conversation keywords")
             calc_result = calculate_quote(inputs)
             # Persist breakdown + change history to DB
             if calc_result.get("ok"):
