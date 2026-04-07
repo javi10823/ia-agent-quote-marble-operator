@@ -168,9 +168,11 @@ Solo en estos casos regenerar todo. En cualquier otro caso → modo patch.
 2. Si hay plano → leerlo en 4 PASADAS: inventario → paredes/libres → medidas → verificación
 3. Listar TODAS las piezas con medidas: largo × prof/alto
 4. Calcular m² de cada pieza y m² total
-5. Mostrar al operador y terminar con: "¿Confirmás las piezas y medidas?"
+5. Si tenés dudas → preguntar PRIMERO. NO incluir "¿Confirmás?" en el mismo mensaje que las dudas.
+6. Recién cuando NO tenés más dudas → mostrar piezas y terminar con: "¿Confirmás las piezas y medidas?"
 ```
 **⛔ EN ESTE PASO: NO buscar precios. NO llamar catalog_lookup ni catalog_batch_lookup. NO calcular MO. Solo piezas y m².**
+**⛔ NUNCA mezclar preguntas/dudas con "¿Confirmás?". Si hay algo que no sabés, preguntá y esperá la respuesta. "¿Confirmás?" va SOLO cuando ya tenés toda la info.**
 Si el operador corrige una medida → actualizar y volver a mostrar.
 Recién cuando el operador confirma → pasar al PASO 2.
 
