@@ -1135,6 +1135,13 @@ class AgentService:
             tool_results = []
             for tool_use in tool_use_blocks:
                 yield {"type": "action", "content": f"⚙️ Ejecutando: {tool_use.name}..."}
+                # Log every tool call with full inputs for debugging
+                logging.info(f"🔧 TOOL CALL [{quote_id}]: {tool_use.name}")
+                try:
+                    import json as _dbg_json
+                    logging.info(f"🔧 TOOL INPUT [{quote_id}]: {_dbg_json.dumps(tool_use.input, ensure_ascii=False, default=str)[:2000]}")
+                except Exception:
+                    logging.info(f"🔧 TOOL INPUT [{quote_id}]: {str(tool_use.input)[:2000]}")
 
                 try:
                     result = await self._execute_tool(
@@ -1148,6 +1155,14 @@ class AgentService:
                 except Exception as e:
                     logging.error(f"Tool execution error ({tool_use.name}): {e}", exc_info=True)
                     result = {"ok": False, "error": f"Error ejecutando {tool_use.name}: {str(e)}"}
+
+                # Log result summary
+                try:
+                    if isinstance(result, dict):
+                        log_keys = {k: v for k, v in result.items() if k in ("ok", "total_ars", "total_usd", "material", "material_name", "removed", "added", "error", "quote_id")}
+                        logging.info(f"🔧 TOOL RESULT [{quote_id}] {tool_use.name}: {log_keys}")
+                except Exception:
+                    pass
 
                 try:
                     result_json = json.dumps(result)
