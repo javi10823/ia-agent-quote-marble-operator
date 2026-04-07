@@ -58,6 +58,7 @@ export default function QuotePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionText, setActionText] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [lastFailedMsg, setLastFailedMsg] = useState<string | null>(null);
   const [lastInlineResponse, setLastInlineResponse] = useState<UIMessage | null>(null);
   const [inlineActionText, setInlineActionText] = useState("");
   const sentFromDetail = useRef(false);
@@ -216,15 +217,18 @@ export default function QuotePage() {
       }
       if (!gotDone) {
         if (fromDetail) setInlineActionText(""); else setActionText("");
-        const errorMsg = acc ? acc + `\n\n${WARN} _La conexi${O}n se interrumpi${O}._` : `${WARN} La conexi${O}n se interrumpi${O}. Intent${A} de nuevo.`;
+        const friendlyErr = `${WARN} El servicio est${A} moment${A}neamente saturado. Presion${A} "Reintentar" para volver a intentar.`;
+        const errorMsg = acc ? acc + `\n\n${friendlyErr}` : friendlyErr;
         setMessages(p => p.map(m => m.id === aid ? { ...m, content: errorMsg, isStreaming: false } : m));
         if (fromDetail) setLastInlineResponse({ id: aid, role: "assistant", content: errorMsg, isStreaming: false });
+        setLastFailedMsg(text);
       }
     } catch {
       if (sentFromDetail.current) setInlineActionText(""); else setActionText("");
-      const errContent = `${WARN} Error de conexi${O}n. Intent${A} de nuevo.`;
+      const errContent = `${WARN} El servicio est${A} moment${A}neamente saturado. Presion${A} "Reintentar" para volver a intentar.`;
       setMessages(p => p.map(m => m.id === aid ? { ...m, content: errContent, isStreaming: false } : m));
       if (sentFromDetail.current) setLastInlineResponse({ id: aid, role: "assistant", content: errContent, isStreaming: false });
+      setLastFailedMsg(text);
     } finally {
       setSending(false);
     }
@@ -387,6 +391,16 @@ export default function QuotePage() {
                         className="px-4 py-2 rounded-lg text-[13px] font-medium bg-transparent border border-b2 text-t2 cursor-pointer hover:text-t1 hover:border-b3 transition"
                       >
                         Corregir
+                      </button>
+                    </div>
+                  )}
+                  {isLastReal && lastFailedMsg && !msg.isStreaming && !sending && msg.content.includes(WARN) && (
+                    <div className="flex gap-2 mt-2 ml-[42px]">
+                      <button
+                        onClick={() => { setLastFailedMsg(null); send(lastFailedMsg); }}
+                        className="px-4 py-2 rounded-lg text-[13px] font-medium bg-acc text-white border-none cursor-pointer hover:brightness-110 transition"
+                      >
+                        Reintentar
                       </button>
                     </div>
                   )}

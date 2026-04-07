@@ -809,8 +809,9 @@ def _compact_single_result(result: dict) -> dict:
 
 # ── RETRY CONFIG ─────────────────────────────────────────────────────────────
 
-MAX_RETRIES = 3
-RETRY_DELAYS = [5, 10, 15]
+MAX_RETRIES = 4  # 3 attempts with primary model + 1 with fallback
+RETRY_DELAYS = [5, 10, 15, 5]
+HAIKU_FALLBACK_MODEL = "claude-haiku-4-20250414"
 MAX_ITERATIONS = 25  # Safety limit — prevent infinite tool loops
 
 
@@ -994,8 +995,10 @@ class AgentService:
             full_text = ""
             tool_uses = []
 
-            # Use Opus for first iteration with plan (accurate measurement reading)
-            # Sonnet for everything else (prices, MO, docs — doesn't need vision accuracy)
+            # Model selection:
+            # - Opus: first iteration with plan (accurate measurement reading)
+            # - Sonnet: everything else (prices, MO, docs)
+            # - Haiku: fallback when Sonnet/Opus are overloaded (last retry)
             OPUS_MODEL = "claude-opus-4-20250514"
             use_opus = has_plan and _loop_iterations == 0
             current_model = OPUS_MODEL if use_opus else settings.ANTHROPIC_MODEL
@@ -1049,14 +1052,19 @@ class AgentService:
 
                 except anthropic.RateLimitError:
                     if attempt == MAX_RETRIES:
-                        logging.error("Rate limit exceeded after all retries")
+                        logging.error("Rate limit exceeded after all retries (including Haiku fallback)")
                         yield {"type": "action", "content": "⚠️ Servicio temporalmente no disponible. Intentá de nuevo en un minuto."}
                         yield {"type": "done", "content": ""}
                         return
                     delay = RETRY_DELAYS[attempt]
-                    logging.warning(f"Rate limit hit, retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
-                    yield {"type": "action", "content": f"⏳ Esperando disponibilidad... ({delay}s)"}
-                    # Sleep with keepalive pings to prevent proxy timeout
+                    # Switch to Haiku on last retry before giving up
+                    if attempt == MAX_RETRIES - 1:
+                        current_model = HAIKU_FALLBACK_MODEL
+                        logging.warning(f"Rate limit: switching to Haiku fallback (attempt {attempt + 1}/{MAX_RETRIES})")
+                        yield {"type": "action", "content": f"⏳ Cambiando a modelo alternativo..."}
+                    else:
+                        logging.warning(f"Rate limit hit, retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                        yield {"type": "action", "content": f"⏳ Esperando disponibilidad... ({delay}s)"}
                     for _ in range(delay):
                         await asyncio.sleep(1)
                         yield {"type": "ping", "content": ""}
@@ -1069,9 +1077,14 @@ class AgentService:
                             yield {"type": "done", "content": ""}
                             return
                         delay = RETRY_DELAYS[attempt]
-                        logging.warning(f"API overloaded, retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
-                        yield {"type": "action", "content": f"⏳ Servicio ocupado, reintentando... ({delay}s)"}
-                        # Sleep with keepalive pings to prevent proxy timeout
+                        # Switch to Haiku on last retry before giving up
+                        if attempt == MAX_RETRIES - 1:
+                            current_model = HAIKU_FALLBACK_MODEL
+                            logging.warning(f"API overloaded: switching to Haiku fallback (attempt {attempt + 1}/{MAX_RETRIES})")
+                            yield {"type": "action", "content": f"⏳ Cambiando a modelo alternativo..."}
+                        else:
+                            logging.warning(f"API overloaded, retrying in {delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                            yield {"type": "action", "content": f"⏳ Servicio ocupado, reintentando... ({delay}s)"}
                         for _ in range(delay):
                             await asyncio.sleep(1)
                             yield {"type": "ping", "content": ""}
