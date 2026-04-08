@@ -311,7 +311,6 @@ export default function DashboardPage() {
                       <td className="px-[18px] py-[13px]">
                         <div className="flex gap-1 justify-end" onClick={e => e.stopPropagation()}>
                           {q.pdf_url && <FileBtn href={q.pdf_url} emoji="📄" />}
-                          {q.excel_url && <FileBtn href={q.excel_url} emoji="📊" />}
                           {q.drive_url && <FileBtn href={q.drive_url} emoji="☁" />}
                         </div>
                       </td>

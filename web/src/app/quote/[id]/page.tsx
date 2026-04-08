@@ -309,7 +309,6 @@ export default function QuotePage() {
         </div>
         <div className="flex gap-2 flex-wrap">
           {quote?.pdf_url && <FileLink href={quote.pdf_url} label="PDF" cls="border-red-400/20 text-red-400" />}
-          {quote?.excel_url && <FileLink href={quote.excel_url} label="Excel" cls="border-grn/20 text-grn" />}
           {quote?.drive_url && <FileLink href={quote.drive_url} label="Drive" cls="border-acc/20 text-acc" />}
         </div>
       </div>
@@ -585,7 +584,7 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
           {onGenerate && !quote.pdf_url && (
             <div className="mt-6 p-5 rounded-[10px] text-center border border-dashed border-acc/30" style={{ background: "linear-gradient(135deg, rgba(124,110,240,0.08), rgba(124,110,240,0.03))" }}>
               <div className="text-sm font-semibold text-t1 mb-1.5">{`Presupuesto listo para generar`}</div>
-              <div className="text-xs text-t3 mb-4">{`Revis${A} el desglose de arriba. Al confirmar se genera el PDF, Excel y se sube a Drive.`}</div>
+              <div className="text-xs text-t3 mb-4">{`Revis${A} el desglose de arriba. Al confirmar se genera el PDF y se sube a Drive.`}</div>
               <button
                 onClick={onGenerate}
                 disabled={generating}
@@ -626,7 +625,7 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
       ) : quote.source === "web" ? (
         <div className="p-5 rounded-[10px] text-center border border-dashed border-acc/30" style={{ background: "linear-gradient(135deg, rgba(124,110,240,0.08), rgba(124,110,240,0.03))" }}>
           <div className="text-sm font-semibold text-t1 mb-1.5">{quote.notes ? `Presupuesto pendiente de revisi${O}n` : `Presupuesto pendiente de medidas`}</div>
-          <div className="text-xs text-t3 mb-4">{quote.notes ? `El cliente envi${O} datos y/o plano. Pas${A} al chat para que Valentina calcule.` : `Pas${A} al chat y dale a Valentina el enunciado o plano. Ella calcula y genera PDF, Excel y Drive.`}</div>
+          <div className="text-xs text-t3 mb-4">{quote.notes ? `El cliente envi${O} datos y/o plano. Pas${A} al chat para que Valentina calcule.` : `Pas${A} al chat y dale a Valentina el enunciado o plano. Ella calcula y genera PDF y Drive.`}</div>
           <button
             onClick={onSwitchToChat}
             className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-[13px] font-semibold text-white bg-acc border-none cursor-pointer hover:brightness-110 transition-all"
