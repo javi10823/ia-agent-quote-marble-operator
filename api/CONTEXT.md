@@ -405,7 +405,7 @@ Todos los catálogos tienen precios SIN IVA. Aplicar ×1.21 al presupuestar sin 
 - **VERIFICACIÓN:** antes de mostrar, verificar que `total = round(m2 × precio)`. Si no coincide, hay un error.
 
 ### Materiales
-- Variante **LEATHER** → solo si el cliente lo pide explícitamente
+- **⛔ LEATHER:** NUNCA elegir variante LEATHER a menos que el plano o el operador digan explícitamente "LEATHER". Si el enunciado dice "Negro Boreal" sin más → usar "Granito Negro Boreal Extra" (NO LEATHER). Si dice "Gris Mara" → usar "Granito Gris Mara Extra 2 Esp" (NO LEATHER). LEATHER es siempre la excepción, no el default.
 - **Granito Negro Brasil** → NUNCA cobrar merma, sin excepción
 - **Merma** → solo sintéticos (Silestone, Dekton, Neolith, Puraprima, Purastone, Laminatto)
 - Piedra natural (granito, mármol) → sin merma nunca
