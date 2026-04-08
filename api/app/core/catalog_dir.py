@@ -1,57 +1,63 @@
-"""Resolve catalog directory with persistent volume support.
+"""Catalog persistence via PostgreSQL.
 
-On Railway with a volume mounted, catalogs are copied to the volume
-on first boot and served from there. Edits via the config UI persist
-across deploys.
+Catalogs are stored in the `catalogs` table. On first boot, they're
+seeded from the source JSON files. Edits via the config UI persist
+in the DB across deploys.
 
-Without a volume (local dev), catalogs are served from the source code.
+For tools that need sync access (catalog_tool.py), we provide
+load_catalog() and save_catalog() that use synchronous DB access.
 """
+import json
 import logging
-import shutil
 from pathlib import Path
-
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).parent.parent.parent  # api/
 SOURCE_CATALOG_DIR = BASE_DIR / "catalog"
 
+# Keep CATALOG_DIR for backward compat (templates, etc.)
+CATALOG_DIR = SOURCE_CATALOG_DIR
 
-def _resolve_catalog_dir() -> Path:
-    """Resolve catalog directory, copying to volume if configured."""
-    volume_dir = settings.CATALOG_VOLUME_DIR
-    if not volume_dir:
-        return SOURCE_CATALOG_DIR
 
-    vol_path = Path(volume_dir)
-    try:
-        vol_path.mkdir(parents=True, exist_ok=True)
+def load_catalog_from_file(name: str) -> list:
+    """Load catalog from source JSON file (fallback)."""
+    path = SOURCE_CATALOG_DIR / f"{name}.json"
+    if not path.exists():
+        return []
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    return data if isinstance(data, list) else data.get("items", [data])
 
-        # Copy source catalogs to volume on first boot (if volume is empty)
+
+async def seed_catalogs_to_db(engine):
+    """Seed catalogs from source JSONs into DB on first boot."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.orm import sessionmaker
+
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with async_session() as session:
+        # Check if table has data
+        result = await session.execute(text("SELECT COUNT(*) FROM catalogs"))
+        count = result.scalar()
+        if count > 0:
+            logger.info(f"Catalogs table already has {count} entries, skipping seed")
+            return
+
+        # Seed from source files
         source_files = list(SOURCE_CATALOG_DIR.glob("*.json"))
-        vol_files = list(vol_path.glob("*.json"))
+        for src in source_files:
+            name = src.stem  # e.g. "labor" from "labor.json"
+            try:
+                with open(src, encoding="utf-8") as f:
+                    content = json.load(f)
+                await session.execute(
+                    text("INSERT INTO catalogs (name, content) VALUES (:name, :content)"),
+                    {"name": name, "content": json.dumps(content, ensure_ascii=False)},
+                )
+            except Exception as e:
+                logger.warning(f"Could not seed catalog {name}: {e}")
 
-        if not vol_files and source_files:
-            # First boot: copy all catalogs to volume
-            for src in source_files:
-                dst = vol_path / src.name
-                shutil.copy2(src, dst)
-            logger.info(f"Copied {len(source_files)} catalogs to volume: {vol_path}")
-        else:
-            # Subsequent boots: copy ONLY new catalogs (don't overwrite edits)
-            for src in source_files:
-                dst = vol_path / src.name
-                if not dst.exists():
-                    shutil.copy2(src, dst)
-                    logger.info(f"Copied new catalog to volume: {src.name}")
-
-        logger.info(f"Using persistent catalog dir: {vol_path} ({len(list(vol_path.glob('*.json')))} files)")
-        return vol_path
-
-    except Exception as e:
-        logger.warning(f"Could not use volume for catalogs ({e}), falling back to source dir")
-        return SOURCE_CATALOG_DIR
-
-
-CATALOG_DIR = _resolve_catalog_dir()
+        await session.commit()
+        logger.info(f"Seeded {len(source_files)} catalogs to DB")

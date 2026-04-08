@@ -77,6 +77,10 @@ async def _cache_keepalive_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    # Seed catalogs to DB on first boot
+    from app.core.catalog_dir import seed_catalogs_to_db
+    from app.core.database import engine
+    await seed_catalogs_to_db(engine)
     await cleanup_empty_drafts()
     logger.info(f"CORS_ORIGINS: {settings.CORS_ORIGINS}")
     # Start cache keep-alive background task
