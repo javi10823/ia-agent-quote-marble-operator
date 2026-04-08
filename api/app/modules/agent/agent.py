@@ -1081,7 +1081,7 @@ class AgentService:
                             yield {"type": "ping", "content": ""}
                     elif "usage limits" in str(e).lower() or "reached your specified" in str(e).lower():
                         logging.error(f"API usage limit reached: {e}")
-                        yield {"type": "action", "content": "⚠️ Se alcanzó el límite de uso de la API. Revisá los límites en console.anthropic.com."}
+                        yield {"type": "text", "content": "⚠️ Se alcanzó el límite de uso de la API de Anthropic. Contactá al administrador para revisar los límites en console.anthropic.com."}
                         yield {"type": "done", "content": ""}
                         return
                     else:
