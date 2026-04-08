@@ -209,10 +209,12 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
     # Material row — Argentine format
     fmt_price = _fmt_usd if currency == "USD" else _fmt_ars
     price_fmt = fmt_price(mat_price)
-    total_mat = round(mat_m2 * mat_price)
+    total_mat_bruto = round(mat_m2 * mat_price)
+    total_mat_fmt = fmt_price(total_mat_bruto)  # Show BRUTO in header row
     if discount_pct:
-        total_mat = round(total_mat * (1 - discount_pct / 100))
-    total_mat_fmt = fmt_price(total_mat)
+        total_mat = round(total_mat_bruto * (1 - discount_pct / 100))
+    else:
+        total_mat = total_mat_bruto
 
     # Alternating row helper — continuous counter across ALL content rows
     row_n = [0]
@@ -422,11 +424,11 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     ws["D22"].number_format = qty_fmt
     if currency == "USD":
         ws["E22"].value = f"USD{mat_price}"
-        ws["F22"].value = f"USD{total_mat_net}"
+        ws["F22"].value = f"USD{total_mat}"  # Bruto (before discount)
     else:
         ws["E22"].value = mat_price
         ws["E22"].number_format = ars_fmt
-        ws["F22"].value = total_mat_net
+        ws["F22"].value = total_mat  # Bruto (before discount)
         ws["F22"].number_format = ars_fmt
 
     # ── ONLY replace .value — NEVER touch .font, .fill, .alignment, .border ──
