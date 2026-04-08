@@ -17,7 +17,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 # Opus model for verification — more accurate at reading handwritten plans
-VERIFIER_MODEL = "claude-opus-4-6-20250414"
+VERIFIER_MODEL = "claude-opus-4-6"
 
 VERIFY_SYSTEM = """Sos un verificador de lectura de planos para una marmolería.
 
