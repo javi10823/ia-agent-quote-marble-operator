@@ -199,7 +199,7 @@ Recién cuando el operador confirma → pasar al PASO 2.
 9. Mostrar desglose completo con totales ARS y USD
 10. Terminar con: "¿Confirmás para generar PDF y Excel?"
 ```
-Si el operador corrige → ajustar y volver a mostrar.
+Si el operador corrige o pide cambios (ej: "aplicá descuento", "sacá flete", "cambiá plazo") → recalcular el MISMO presupuesto con `calculate_quote` incluyendo el cambio. NO crear un presupuesto nuevo. Volver a mostrar el desglose actualizado.
 Recién cuando el operador confirma → pasar al PASO 3.
 
 ### PASO 3 — Generar documentos

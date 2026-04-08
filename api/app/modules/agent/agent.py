@@ -1426,7 +1426,14 @@ class AgentService:
                 if check_quote and check_quote.quote_breakdown:
                     existing_mat = (check_quote.quote_breakdown.get("material_name") or "").strip().upper()
                     new_mat = (inputs.get("material") or "").strip().upper()
-                    if existing_mat and new_mat and existing_mat != new_mat:
+                    # Fuzzy material comparison — check if one contains the other
+                    # to avoid creating duplicates for "Granito Gris Mara" vs "GRANITO GRIS MARA EXTRA 2 ESP"
+                    same_material = (
+                        existing_mat == new_mat
+                        or existing_mat in new_mat
+                        or new_mat in existing_mat
+                    )
+                    if existing_mat and new_mat and not same_material:
                         # Check if an independent quote for this material already exists
                         # (same client + project + material)
                         from sqlalchemy import and_
