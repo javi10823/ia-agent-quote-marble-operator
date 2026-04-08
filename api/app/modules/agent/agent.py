@@ -775,7 +775,7 @@ class AgentService:
             # Model selection:
             # - Opus: first iteration with plan (accurate measurement reading)
             # - Sonnet: everything else (prices, MO, docs)
-            OPUS_MODEL = "claude-opus-4-20250514"
+            OPUS_MODEL = "claude-opus-4-6-20250414"
             ai_cfg = get_ai_config()
             use_opus = has_plan and _loop_iterations == 0 and ai_cfg.get("use_opus_for_plans", True)
             current_model = OPUS_MODEL if use_opus else settings.ANTHROPIC_MODEL

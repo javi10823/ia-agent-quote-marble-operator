@@ -669,7 +669,7 @@ function MotorIASection({ toast }: { toast: (msg: string) => void }) {
       <div className="flex flex-col gap-4">
         <Toggle
           label="Usar Opus para planos"
-          description="Usa Claude Opus (más preciso, 5x más caro) para leer planos. Si está desactivado, usa Sonnet."
+          description="Usa Claude Opus 4.6 (más preciso, 3x más caro) para leer planos. Si está desactivado, usa Sonnet."
           checked={aiEngine.use_opus_for_plans ?? true}
           onChange={v => updateToggle("use_opus_for_plans", v)}
         />
