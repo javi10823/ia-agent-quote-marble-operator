@@ -39,7 +39,6 @@ export default function QuoteHeader({ quote, onBack }: Props) {
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         {quote?.pdf_url && <FileLink href={quote.pdf_url} label="PDF" color="#ff6b63" />}
-        {quote?.excel_url && <FileLink href={quote.excel_url} label="Excel" color="var(--grn)" />}
         {quote?.drive_url && <FileLink href={quote.drive_url} label="Drive" color="var(--acc)" />}
       </div>
     </div>
