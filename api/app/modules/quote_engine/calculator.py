@@ -283,7 +283,7 @@ def calculate_quote(input_data: dict) -> dict:
     colocacion = input_data.get("colocacion", True)
     is_edificio = input_data.get("is_edificio", False)
     pileta = input_data.get("pileta")
-    pileta_qty = input_data.get("pileta_qty", 1)  # Number of sinks (for edificios)
+    pileta_qty = input_data.get("pileta_qty", 1)
     pileta_sku = input_data.get("pileta_sku")
     anafe = input_data.get("anafe", False)
     frentin = input_data.get("frentin", False)
@@ -291,6 +291,34 @@ def calculate_quote(input_data: dict) -> dict:
     pulido = input_data.get("pulido", False)
     plazo = input_data["plazo"]
     discount_pct = input_data.get("discount_pct", 0)
+
+    # ── Edificio guardrails ──
+    if is_edificio:
+        # Force no colocación
+        if colocacion:
+            logging.warning(f"Edificio guardrail: forcing colocacion=false (was true)")
+            colocacion = False
+
+        # Auto-count piletas from piece descriptions if not provided
+        if pileta and pileta_qty <= 1:
+            auto_pileta_count = sum(
+                1 for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
+                if any(kw in (p.get("description") or "").lower() for kw in ["pileta", "bacha", "lavatorio", "kitchenette", "c/pileta", "c/bacha"])
+            )
+            if auto_pileta_count > 1:
+                pileta_qty = auto_pileta_count
+                logging.info(f"Edificio guardrail: auto-detected {pileta_qty} piletas from piece descriptions")
+
+        # Auto-count frentines from piece descriptions if not provided
+        frentin_qty = input_data.get("frentin_qty", 1)
+        if frentin and frentin_qty <= 1:
+            auto_frentin_count = sum(
+                1 for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
+                if any(kw in (p.get("description") or "").lower() for kw in ["faldón", "faldon", "frentín", "frentin", "faldon 10", "faldón 10", "faldón 5", "faldón 15"])
+            )
+            if auto_frentin_count > 1:
+                frentin_qty = auto_frentin_count
+                logging.info(f"Edificio guardrail: auto-detected {frentin_qty} frentines from piece descriptions")
     date_str = input_data.get("date") or datetime.now().strftime("%d.%m.%Y")
 
     # 1. Find material
@@ -353,7 +381,8 @@ def calculate_quote(input_data: dict) -> dict:
         mo_items.append({"description": "Colocación", "quantity": round(qty, 2), "unit_price": price, "base_price": base, "total": round(price * qty)})
 
     # Frentín/faldón recto (supports quantity for edificios)
-    frentin_qty = input_data.get("frentin_qty", 1)
+    if not is_edificio:
+        frentin_qty = input_data.get("frentin_qty", 1)
     if frentin:
         qty_f = max(1, frentin_qty)
         sku = "FALDONDEKTON/NEOLITH" if is_sint else "FALDON"
@@ -488,4 +517,15 @@ def calculate_quote(input_data: dict) -> dict:
         "inglete": inglete,
         "pulido": pulido,
         **({"fuzzy_corrected_from": mat_result["fuzzy_corrected_from"]} if "fuzzy_corrected_from" in mat_result else {}),
+        # Edificio validation checklist
+        **({"edificio_checklist": {
+            "sin_colocacion": not colocacion,
+            "flete_qty": next((m["quantity"] for m in mo_items if "flete" in m["description"].lower()), 0),
+            "flete_calculo": f"{len(pieces)} piezas ÷ 8 = {math.ceil(len(pieces) / 8)}",
+            "mo_dividido_1_05": True,
+            "descuento_18": discount_pct == 18,
+            "total_m2": total_m2,
+            "pileta_qty": pileta_qty if pileta else 0,
+            "frentin_qty": frentin_qty if frentin else 0,
+        }} if is_edificio else {}),
     }

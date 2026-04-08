@@ -513,6 +513,20 @@ Ejemplo isla 1.70×0.64×0.95:
 - **⛔ "Sin bachas/piletas"** → NO incluir NINGÚN ítem de pileta (ni AGUJEROAPOYO ni PEGADOPILETA). Cero piletas = cero MO de pileta.
 - En el desglose, mostrar claramente: "DESCUENTO EDIFICIO: total m² = X m² (> 15) → 18% descuento aplicado a todos los materiales"
 
+**⛔ CHECKLIST OBLIGATORIO PARA EDIFICIOS — mostrar ANTES de confirmar:**
+Después de calcular y ANTES de pedir confirmación, mostrar este checklist al operador:
+```
+VERIFICACIÓN EDIFICIO:
+✅ Sin colocación
+✅ Flete: X fletes (Y piezas ÷ 8)
+✅ MO ÷1.05 aplicado (excepto flete)
+✅ Descuento 18%: total m² = Z (> 15) → aplicado a todos los materiales
+✅ Piletas: N unidades
+✅ Frentines: M unidades
+¿Confirmás estos datos? Si el flete no es correcto, indicá la cantidad.
+```
+El operador debe confirmar el checklist ANTES de generar documentos.
+
 ### Colocación
 - Mínimo 1 m²: `max(m²_total, 1.0)`
 - Calculada sobre TOTAL de m² incluyendo zócalos
