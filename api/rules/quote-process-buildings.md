@@ -36,8 +36,8 @@ Al recibir un pedido, preguntar si es **particular o edificio**. Indicadores cla
 
 ### Flete
 - Contar **piezas físicas** (no unidades/departamentos) — una mesada + una isla = 2 piezas
-- `cant_fletes = ceil(cant_piezas_fisicas / 6)`
-- Ejemplo: 96 departamentos con 120 piezas físicas → ceil(120/6) = **20 fletes**
+- `cant_fletes = ceil(cant_piezas_fisicas / 8)`
+- Ejemplo: 96 departamentos con 120 piezas físicas → ceil(120/8) = **15 fletes**
 - Precio por flete: según localidad en `delivery-zones.json` × 1.21 (sin IVA)
 - En el presupuesto: **una sola línea** con SKU `ENVIOROS` (o el de la localidad), cantidad = `cant_fletes`
 - **La toma de medidas está incluida en el SKU de flete** — NO agregar línea separada
