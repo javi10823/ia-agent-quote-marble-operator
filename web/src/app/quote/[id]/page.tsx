@@ -291,14 +291,14 @@ export default function QuotePage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-7 py-3.5 border-b border-b1 shrink-0 bg-s1">
+      <div className="flex flex-col md:flex-row md:items-center justify-between px-4 md:px-7 py-3 md:py-3.5 border-b border-b1 shrink-0 bg-s1 gap-2 md:gap-0">
         <div className="flex items-center gap-3.5">
           <button onClick={() => router.push("/")} className="w-[30px] h-[30px] rounded-md border border-b1 bg-transparent text-t2 cursor-pointer flex items-center justify-center hover:border-b2 hover:text-t1 transition">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
           </button>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="text-base font-semibold text-t1 truncate max-w-[500px]">{quote?.client_name || "Nuevo presupuesto"}</span>
+              <span className="text-sm md:text-base font-semibold text-t1 truncate max-w-[200px] md:max-w-[500px]">{quote?.client_name || "Nuevo presupuesto"}</span>
               <span className={clsx("inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-[10px] font-semibold shrink-0", st.cls)}>{CIRCLE} {st.label}</span>
               {quote?.source === "web" && <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-[10px] font-semibold bg-purple-500/15 text-purple-400 shrink-0">WEB</span>}
             </div>
@@ -314,14 +314,14 @@ export default function QuotePage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-b1 bg-s1 pl-7">
+      <div className="flex border-b border-b1 bg-s1 pl-4 md:pl-7">
         <TabBtn active={tab === "detail"} onClick={() => setTab("detail")} disabled={!quote || (quote.status === "draft" && quote.source !== "web")}>Detalle</TabBtn>
         <TabBtn active={tab === "chat"} onClick={() => setTab("chat")}>Chat</TabBtn>
       </div>
 
       {/* Content */}
       {tab === "detail" ? (
-        <div className="flex-1 overflow-y-auto px-7 py-6">
+        <div className="flex-1 overflow-y-auto px-4 md:px-7 py-4 md:py-6">
           <DetailView quote={quote} breakdown={bd} onSwitchToChat={() => setTab("chat")} onGenerate={quote?.status === "pending" || quote?.status === "draft" ? handleGenerate : undefined} generating={generating} />
           {/* Show modifications section only when quote has breakdown and is not sent */}
           {bd && quote?.status !== "sent" && (
@@ -355,7 +355,7 @@ export default function QuotePage() {
         </div>
       ) : tab === "chat" ? (
         <>
-          <div className="flex-1 overflow-y-auto px-7 pt-7 pb-4 flex flex-col gap-5">
+          <div className="flex-1 overflow-y-auto px-4 md:px-7 pt-5 md:pt-7 pb-4 flex flex-col gap-4 md:gap-5">
             {messages.length === 0 && (
               <div className="px-[18px] py-3.5 bg-s2 rounded-xl text-[13px] text-t2">
                 {`Hola ${WAVE} Soy Valentina. Pasame el enunciado del trabajo y/o el plano.`}
@@ -433,12 +433,12 @@ export default function QuotePage() {
             <div ref={endRef} />
           </div>
           {quote?.status === "draft" ? (
-            <div className="shrink-0 px-7 pt-3.5 pb-[18px] border-t border-b1 bg-s1">
+            <div className="shrink-0 px-4 md:px-7 pt-3 md:pt-3.5 pb-3 md:pb-[18px] border-t border-b1 bg-s1">
               <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} multiPiece={multiPiece} setMultiPiece={setMultiPiece} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
               <div className="text-[10px] text-t4 text-center mt-[7px]">{`Enter para enviar ${DOT} Shift+Enter para nueva l${I}nea`}</div>
             </div>
           ) : (
-            <div className="shrink-0 px-7 py-3 border-t border-b1 bg-s1 text-center">
+            <div className="shrink-0 px-4 md:px-7 py-3 border-t border-b1 bg-s1 text-center">
               <span className="text-xs text-t3">{`Historial de conversaci${O}n ${DOT} Us${A} Modificaciones en la pesta${N}a Detalle para hacer cambios`}</span>
             </div>
           )}

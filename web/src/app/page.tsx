@@ -106,9 +106,9 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-7 pt-5 pb-[18px] border-b border-b1 shrink-0">
+      <div className="flex items-center justify-between px-4 md:px-7 pt-4 md:pt-5 pb-3 md:pb-[18px] border-b border-b1 shrink-0">
         <div>
-          <div className="text-lg font-medium -tracking-[0.03em]">Presupuestos</div>
+          <div className="text-base md:text-lg font-medium -tracking-[0.03em]">Presupuestos</div>
           <div className="text-[11px] text-t3 mt-0.5">
             {new Date().toLocaleDateString("es-AR", { month: "long", year: "numeric" })} · {quotes.length} registros
           </div>
@@ -131,7 +131,7 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-7 py-6">
+      <div className="flex-1 overflow-y-auto px-4 md:px-7 py-4 md:py-6">
         {/* Stale drafts banner */}
         {staleDrafts.length > 0 && (
           <div className="flex items-center gap-2.5 bg-amb/[0.06] border border-amb/[0.16] rounded-lg px-3.5 py-2.5 mb-5 text-xs text-amb">
@@ -155,8 +155,8 @@ export default function DashboardPage() {
         ) : (
           <div className="bg-s1 border border-b1 rounded-[10px] overflow-hidden">
             {/* Filter bar */}
-            <div className="flex items-center justify-between px-4 py-2.5 bg-s2 border-b border-b1">
-              <div className="flex gap-1.5">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 px-3 md:px-4 py-2.5 bg-s2 border-b border-b1">
+              <div className="flex gap-1.5 overflow-x-auto pb-1 md:pb-0">
                 {([
                   { key: "todos", label: "Todos" },
                   { key: "draft", label: "Borrador" },
@@ -185,27 +185,15 @@ export default function DashboardPage() {
                   </button>
                 ))}
               </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={e => setDateFrom(e.target.value)}
-                  className="px-2 py-[5px] rounded-md text-[11px] font-sans border border-b1 bg-s3 text-t2 outline-none w-[120px] [color-scheme:dark]"
-                  title="Desde"
-                />
+              <div className="hidden md:flex items-center gap-2">
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="px-2 py-[5px] rounded-md text-[11px] font-sans border border-b1 bg-s3 text-t2 outline-none w-[120px] [color-scheme:dark]" title="Desde" />
                 <span className="text-t4 text-[10px]">—</span>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={e => setDateTo(e.target.value)}
-                  className="px-2 py-[5px] rounded-md text-[11px] font-sans border border-b1 bg-s3 text-t2 outline-none w-[120px] [color-scheme:dark]"
-                  title="Hasta"
-                />
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="px-2 py-[5px] rounded-md text-[11px] font-sans border border-b1 bg-s3 text-t2 outline-none w-[120px] [color-scheme:dark]" title="Hasta" />
                 {(dateFrom || dateTo) && (
                   <button onClick={() => { setDateFrom(""); setDateTo(""); }} className="text-t3 text-[11px] bg-transparent border-none cursor-pointer hover:text-t2 p-0">✕</button>
                 )}
               </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-b1 bg-s3 w-60">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-b1 bg-s3 w-full md:w-60">
                 <svg className="text-t3 shrink-0" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
@@ -224,8 +212,33 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Table */}
-            <table className="w-full border-collapse">
+            {/* Mobile Cards */}
+            <div className="md:hidden divide-y divide-white/[0.045]">
+              {filteredQuotes.map(q => {
+                const isUnread = !q.is_read;
+                return (
+                  <div key={q.id} onClick={() => { setSelectedId(q.id); router.push(`/quote/${q.id}`); }}
+                    className={clsx("flex items-center gap-3 px-3 py-3 cursor-pointer active:bg-white/[0.04] transition", isUnread && "bg-acc/[0.04]")}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        {isUnread && <span className="w-[6px] h-[6px] rounded-full bg-acc shrink-0" />}
+                        <span className={clsx("text-[13px] truncate", isUnread ? "font-semibold text-t1" : "font-medium text-t1")}>{q.client_name || "Sin nombre"}</span>
+                        {q.source === "web" && <span className="text-[8px] font-semibold px-1 py-px rounded bg-purple-500/15 text-purple-400">WEB</span>}
+                      </div>
+                      <div className="text-[11px] text-t3 truncate mt-0.5">{q.material || "\u2014"}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-[13px] font-mono text-t1">{q.total_ars ? `$${q.total_ars.toLocaleString("es-AR")}` : "\u2014"}</div>
+                      {q.total_usd ? <div className="text-[10px] text-t3">USD {q.total_usd.toLocaleString()}</div> : null}
+                    </div>
+                    <span className={clsx("text-[10px] font-medium px-1.5 py-[2px] rounded-full shrink-0", BADGE_CLASS[q.status])}>{STATUS_LABEL[q.status]}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop Table */}
+            <table className="w-full border-collapse hidden md:table">
               <thead className="bg-s2 border-b border-b1">
                 <tr>
                   <th className="text-left px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em] w-[28%]">Cliente</th>
@@ -353,7 +366,7 @@ export default function DashboardPage() {
         >
           <div
             onClick={e => e.stopPropagation()}
-            className="bg-s2 border border-b2 rounded-[14px] px-8 py-7 w-[380px] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
+            className="bg-s2 border border-b2 rounded-[14px] px-6 md:px-8 py-6 md:py-7 w-[calc(100vw-32px)] max-w-[380px] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
           >
             <div className="text-[15px] font-medium text-t1 mb-2">Eliminar presupuesto</div>
             <div className="text-[13px] text-t2 leading-relaxed mb-6">
@@ -389,7 +402,7 @@ export default function DashboardPage() {
         >
           <div
             onClick={e => e.stopPropagation()}
-            className="bg-s2 border border-b2 rounded-[14px] px-8 py-7 w-[380px] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
+            className="bg-s2 border border-b2 rounded-[14px] px-6 md:px-8 py-6 md:py-7 w-[calc(100vw-32px)] max-w-[380px] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
           >
             <div className="text-[15px] font-medium text-t1 mb-2">Cambiar estado</div>
             <div className="text-[13px] text-t2 leading-relaxed mb-1.5">

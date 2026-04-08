@@ -104,7 +104,7 @@ export default function ChatInput({ input, setInput, files, setFiles, multiPiece
               display: "flex", alignItems: "center", gap: 6,
               padding: "5px 10px", borderRadius: 6,
               background: "var(--s3)", border: "1px solid var(--b1)",
-              fontSize: 11, color: "var(--t2)", maxWidth: 280,
+              fontSize: 11, color: "var(--t2)", maxWidth: "calc(100vw - 100px)",
             }}>
               <span style={{ fontSize: 14 }}>{fileIcon(f.type)}</span>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{f.name}</span>

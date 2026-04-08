@@ -22,10 +22,16 @@
   --amb:   #f5a623;
   --amb2:  rgba(245,166,35,0.10);
   --red:   #ff453a;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; }
+
+/* Mobile-specific */
+@media (max-width: 767px) {
+  html { font-size: 14px; }
+}
 
 body {
   font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, sans-serif;
@@ -70,3 +76,6 @@ body::after {
 @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
 
 .msg-anim { animation: fadeUp 0.25s ease; }
+
+/* Mobile drawer slide-in */
+@keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
