@@ -281,8 +281,10 @@ def calculate_quote(input_data: dict) -> dict:
     pieces = input_data["pieces"]
     localidad = input_data["localidad"]
     colocacion = input_data.get("colocacion", True)
+    is_edificio = input_data.get("is_edificio", False)
     pileta = input_data.get("pileta")
-    pileta_sku = input_data.get("pileta_sku")  # Specific sink product SKU from sinks.json
+    pileta_qty = input_data.get("pileta_qty", 1)  # Number of sinks (for edificios)
+    pileta_sku = input_data.get("pileta_sku")
     anafe = input_data.get("anafe", False)
     frentin = input_data.get("frentin", False)
     inglete = input_data.get("inglete", False)
@@ -325,16 +327,17 @@ def calculate_quote(input_data: dict) -> dict:
     # 5. MO items
     mo_items = []
 
-    # Pileta
+    # Pileta (supports quantity for edificios)
     if pileta:
+        qty = max(1, pileta_qty)
         if pileta in ("empotrada_cliente", "empotrada_johnson"):
             sku = "PILETADEKTON/NEOLITH" if is_sint else "PEGADOPILETA"
             price, base = _get_mo_price(sku)
-            mo_items.append({"description": "Agujero y pegado pileta", "quantity": 1, "unit_price": price, "base_price": base, "total": price})
+            mo_items.append({"description": "Agujero y pegado pileta", "quantity": qty, "unit_price": price, "base_price": base, "total": round(price * qty)})
         elif pileta == "apoyo":
             sku = "PILETAAPOYODEKTON/NEO" if is_sint else "AGUJEROAPOYO"
             price, base = _get_mo_price(sku)
-            mo_items.append({"description": "Agujero pileta apoyo", "quantity": 1, "unit_price": price, "base_price": base, "total": price})
+            mo_items.append({"description": "Agujero pileta apoyo", "quantity": qty, "unit_price": price, "base_price": base, "total": round(price * qty)})
 
     # Anafe
     if anafe:
@@ -349,23 +352,31 @@ def calculate_quote(input_data: dict) -> dict:
         qty = max(total_m2, cfg("colocacion.min_quantity", 1.0))
         mo_items.append({"description": "Colocación", "quantity": round(qty, 2), "unit_price": price, "base_price": base, "total": round(price * qty)})
 
-    # Frentín/faldón recto
+    # Frentín/faldón recto (supports quantity for edificios)
+    frentin_qty = input_data.get("frentin_qty", 1)
     if frentin:
+        qty_f = max(1, frentin_qty)
         sku = "FALDONDEKTON/NEOLITH" if is_sint else "FALDON"
         price, base = _get_mo_price(sku)
-        mo_items.append({"description": "Armado frentín recto", "quantity": 1, "unit_price": price, "base_price": base, "total": price})
-        # Corte a 45° (inglete) — adicional al faldón
+        mo_items.append({"description": "Armado frentín recto", "quantity": qty_f, "unit_price": price, "base_price": base, "total": round(price * qty_f)})
         if inglete:
             sku_45 = "CORTE45DEKTON/NEOLITH" if is_sint else "CORTE45"
             price_45, base_45 = _get_mo_price(sku_45)
-            mo_items.append({"description": "Corte a 45°", "quantity": 1, "unit_price": price_45, "base_price": base_45, "total": price_45})
+            mo_items.append({"description": "Corte a 45°", "quantity": qty_f, "unit_price": price_45, "base_price": base_45, "total": round(price_45 * qty_f)})
 
-    # Flete
+    # Flete (edificio: ceil(piezas/8), normal: 1)
     flete_result = _find_flete(localidad)
     if flete_result.get("found"):
         flete_price = flete_result.get("price_ars", 0)
         flete_base = flete_result.get("price_ars_base", 0)
-        mo_items.append({"description": f"Flete + toma medidas {localidad}", "quantity": 1, "unit_price": flete_price, "base_price": flete_base, "total": flete_price})
+        if is_edificio:
+            num_pieces = len(pieces)
+            flete_qty = math.ceil(num_pieces / 8)
+            flete_qty = max(1, flete_qty)
+            logging.info(f"Edificio flete: {num_pieces} piezas ÷ 8 = {flete_qty} fletes")
+        else:
+            flete_qty = 1
+        mo_items.append({"description": f"Flete + toma medidas {localidad}", "quantity": flete_qty, "unit_price": flete_price, "base_price": flete_base, "total": round(flete_price * flete_qty)})
     else:
         logging.warning(f"Flete not found for '{localidad}'")
 
@@ -401,6 +412,16 @@ def calculate_quote(input_data: dict) -> dict:
                 "unit_price": sink_price,
             })
             logging.info(f"Added sink product: {sink_result.get('name')} @ ${sink_price}")
+
+    # Edificio: MO ÷1.05 (except flete)
+    if is_edificio:
+        for item in mo_items:
+            if "flete" not in item["description"].lower():
+                original_total = item["total"]
+                item["total"] = round(original_total / 1.05)
+                item["unit_price"] = round(item["unit_price"] / 1.05)
+                item["edificio_discount"] = True
+        logging.info(f"Edificio MO ÷1.05 applied (except flete)")
 
     # Totals
     total_sinks_ars = sum(s["unit_price"] * s["quantity"] for s in sinks)
@@ -458,9 +479,12 @@ def calculate_quote(input_data: dict) -> dict:
         # Persist input params for patch mode reconstruction
         "localidad": localidad,
         "colocacion": colocacion,
+        "is_edificio": is_edificio,
         "pileta": pileta,
+        "pileta_qty": pileta_qty,
         "anafe": anafe,
         "frentin": frentin,
+        "frentin_qty": frentin_qty,
         "inglete": inglete,
         "pulido": pulido,
         **({"fuzzy_corrected_from": mat_result["fuzzy_corrected_from"]} if "fuzzy_corrected_from" in mat_result else {}),

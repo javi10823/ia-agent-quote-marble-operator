@@ -517,7 +517,7 @@ Regla: siempre el más económico salvo que sea sinterizado.
 
 ### Descuentos — regla unificada
 - **Método general:** `precio × (1 - desc%)` — ej: 5% → ×0.95.
-- **Edificio material — TOTAL m² > 15 (sumando TODOS los materiales):** `floor(precio_con_iva / 1.18)` — aplica a TODOS los materiales si el total supera 15 m².
+- **Edificio material — TOTAL m² > 15 (sumando TODOS los materiales):** descuento 18% real → `precio × 0.82` — aplica a TODOS los materiales si el total supera 15 m².
 - **Edificio MO (excepto flete):** `precio / 1.05`.
 - **Precio especial:** precio÷factor indicado por operador — NO acumular con otros descuentos.
 - **Solo 1 descuento por presupuesto.** Si aplican 2 → usar el mayor.

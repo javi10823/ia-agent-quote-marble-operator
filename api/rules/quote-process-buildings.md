@@ -22,11 +22,11 @@ Al recibir un pedido, preguntar si es **particular o edificio**. Indicadores cla
 - **PILETAS y PEGADOPILETA en edificios:** aplicar descuento adicional dividiendo el precio con IVA por 1.05:
   - `precio_pileta_edif = round(precio_pileta_con_iva / 1.05)`
   - `precio_pegado_edif = round(precio_pegado_con_iva / 1.05)`
-- **MÉTODO DE CÁLCULO DESCUENTO MATERIAL — CRÍTICO:** El descuento NO se resta como porcentaje. Se divide el precio unitario con IVA por 1.18:
-  - `precio_unitario_desc = precio_con_iva / 1.18`
+- **MÉTODO DE CÁLCULO DESCUENTO MATERIAL:** Descuento 18% real sobre el precio con IVA:
+  - `precio_unitario_desc = precio_con_iva × 0.82`
   - `total_material = round(precio_unitario_desc × m2_total)`
-  - Ejemplo: $260.409 / 1.18 = $220.686/m² (precio que se muestra en el presupuesto)
-- El precio unitario mostrado en el presupuesto **ya incluye el descuento** — no se muestra línea DESC separada
+  - Ejemplo: $260.409 × 0.82 = $213.535/m²
+- Mostrar el descuento como línea separada: "Descuento 18%: -$X"
 
 ### Colocación
 - **NO se cobra colocación en edificios** — D'Angelo entrega el material y la constructora lo coloca. El servicio directamente no se presta, sin excepción
