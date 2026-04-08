@@ -412,3 +412,52 @@ Ver calculation-formulas.md y quote-process-buildings.md.
 | Colocacion | COLOCACION | COLOCACIONDEKTON/NEOLITH |
 | Faldon | FALDON | FALDONDEKTON/NEOLITH |
 | Corte 45 | CORTE45 | CORTE45DEKTON/NEOLITH |
+
+---
+
+## Reglas agregadas — NO eliminar
+
+### LEATHER
+**⛔ NUNCA elegir variante LEATHER** a menos que plano o operador digan explícitamente "LEATHER". Default: "Extra" o "Extra 2 Esp".
+
+### Localidad default
+**Rosario** siempre. NUNCA preguntar "¿la localidad es Rosario?".
+
+### 1 material = 1 presupuesto
+Siempre presupuestos separados por material. NUNCA preguntar "¿juntos o separados?".
+
+### Dudas vs Confirmación
+**⛔ NUNCA mezclar preguntas/dudas con "¿Confirmás?"** Si tenés dudas → preguntar PRIMERO. Esperar respuesta. Recién cuando NO tenés más dudas → "¿Confirmás?"
+
+### patch_quote_mo
+Para cambios de MO (flete, colocación) en presupuestos existentes → usar `patch_quote_mo`. NO usar `calculate_quote` para cambios de MO.
+
+### Faldón/Frentín — cálculo completo
+Cada faldón genera:
+1. **Pieza de material**: `[largo]ML × [alto] FALDON` → suma m²
+2. **MO armado**: total_ml × precio_FALDON (SKU: FALDON o FALDONDEKTON/NEOLITH)
+3. **MO corte 45** (solo si inglete): total_ml × 2 × precio_CORTE45
+Pasar `frentin=true` + `frentin_ml=total_metros_lineales` + `inglete=true/false` a calculate_quote.
+
+### Faldón en edificios
+Leer columna "Aclaraciones" de la planilla. "Faldón Xcm" → agregar pieza material + sumar ml al frentin_ml.
+
+### Piletas en edificios
+Leer columna "Perforaciones/Calados". Contar total bachas → pileta_qty. "2 bachas" = 2 PEGADOPILETA.
+
+### Checklist edificios — OBLIGATORIO antes de confirmar
+```
+VERIFICACIÓN EDIFICIO — [Cliente] / [Obra]
+DESPIECE POR MATERIAL: tabla con ID, Ubicación, Medida, m², Pileta, Faldón
+SERVICIOS (MO): sin colocación, PEGADOPILETA×N, armado frentín×ml, flete×X
+DESCUENTOS: 18% si total m² > 15
+¿Confirmás?
+```
+
+### Solías = sin colocación
+
+### Planos multi-pieza (3+)
+Si 3+ piezas en cuadros separados → PARAR, pedir capturas individuales. NO leer del plano general.
+
+### Archivos: solo PDF + Drive
+NO mostrar link de Excel al operador.
