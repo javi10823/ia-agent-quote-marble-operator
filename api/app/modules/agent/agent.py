@@ -16,6 +16,7 @@ from app.modules.agent.tools.plan_tool import read_plan
 from app.modules.agent.tools.document_tool import generate_documents
 from app.modules.agent.tools.drive_tool import upload_to_drive
 from app.modules.quote_engine.calculator import calculate_quote
+from app.modules.agent.tools.validation_tool import validate_despiece
 
 BASE_DIR = Path(__file__).parent.parent.parent.parent
 
@@ -1267,6 +1268,16 @@ class AgentService:
                     }
                 all_warnings.extend(warnings)
 
+                # Deep deterministic validation (safety net)
+                deep = validate_despiece(qdata)
+                if deep.errors:
+                    error_list = "\n".join(f"❌ {e}" for e in deep.errors)
+                    return {
+                        "ok": False,
+                        "error": f"Validación profunda fallida para {qdata.get('material_name', '?')}:\n{error_list}\n\nRecalcular antes de generar.",
+                    }
+                all_warnings.extend(deep.warnings)
+
             all_results = []
 
             # Load current quote for context
@@ -1556,6 +1567,31 @@ class AgentService:
                     inputs["pileta"] = "empotrada_johnson"
                     logging.warning(f"Auto-injected pileta=empotrada_johnson from conversation keywords")
             calc_result = calculate_quote(inputs)
+
+            # ── Post-calculate deterministic validation ──
+            if calc_result.get("ok"):
+                validation = validate_despiece(calc_result)
+                if not validation.ok:
+                    calc_result["_validation_errors"] = validation.errors
+                    calc_result["_validation_warnings"] = validation.warnings
+                    calc_result["_validation_note"] = (
+                        "⚠️ ERRORES DE VALIDACIÓN DETECTADOS. "
+                        "Corregir los datos y volver a calcular con calculate_quote. "
+                        "NO llamar a generate_documents hasta resolver estos errores."
+                    )
+                    logging.warning(f"Validation FAILED for {save_to_qid}: {validation.errors}")
+                else:
+                    if validation.warnings:
+                        calc_result["_validation_warnings"] = validation.warnings
+                    calc_result["_review_checklist"] = (
+                        "ANTES de llamar a generate_documents, revisá:\n"
+                        "1. ¿Las piezas coinciden con lo que pidió el operador?\n"
+                        "2. ¿El material es correcto?\n"
+                        "3. ¿Pileta/anafe/colocación coinciden con el pedido?\n"
+                        "4. ¿Los m² tienen sentido para las medidas dadas?\n"
+                        "5. ¿El flete es para la zona correcta?"
+                    )
+
             # Persist breakdown + change history to DB
             if calc_result.get("ok"):
                 try:
