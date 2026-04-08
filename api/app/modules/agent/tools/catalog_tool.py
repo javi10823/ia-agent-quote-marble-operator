@@ -15,7 +15,7 @@ def get_ai_config() -> dict:
     global _ai_config_cache
     if _ai_config_cache is not None:
         return _ai_config_cache
-    defaults = {"use_opus_for_plans": True, "rotate_plan_images": False, "max_examples": 1}
+    defaults = {"use_opus_for_plans": True, "rotate_plan_images": False, "max_examples": 1, "monthly_budget_usd": 50, "enable_hard_limit": True}
     try:
         from sqlalchemy import create_engine, text
         from app.core.config import settings

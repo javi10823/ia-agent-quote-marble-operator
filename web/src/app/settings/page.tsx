@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { fetchUsers, apiCreateUser, deleteUser, fetchCatalog, updateCatalog, type UserInfo } from "@/lib/api";
+import { fetchUsers, apiCreateUser, deleteUser, fetchCatalog, updateCatalog, fetchUsageDashboard, fetchUsageDaily, updateUsageBudget, type UserInfo } from "@/lib/api";
 import { useToast } from "@/lib/toast-context";
 import clsx from "clsx";
 
-type Section = "usuarios" | "arquitectas" | "iva" | "descuentos" | "merma" | "placas" | "edificios" | "plazos" | "medidas" | "colocacion" | "empresa" | "condiciones" | "motor_ia";
+type Section = "usuarios" | "arquitectas" | "iva" | "descuentos" | "merma" | "placas" | "edificios" | "plazos" | "medidas" | "colocacion" | "empresa" | "condiciones" | "motor_ia" | "api_usage";
 
 const SECTIONS: { key: Section; label: string; icon: string }[] = [
   { key: "usuarios", label: "Usuarios", icon: "👤" },
@@ -22,6 +22,7 @@ const SECTIONS: { key: Section; label: string; icon: string }[] = [
   { key: "empresa", label: "Empresa", icon: "🏠" },
   { key: "condiciones", label: "Condiciones", icon: "📜" },
   { key: "motor_ia", label: "Motor IA", icon: "🤖" },
+  { key: "api_usage", label: "Uso de API", icon: "📊" },
 ];
 
 export default function SettingsPage() {
@@ -75,6 +76,7 @@ export default function SettingsPage() {
           {section === "empresa" && <CompanySection toast={toast} />}
           {section === "condiciones" && <ConditionsSection toast={toast} />}
           {section === "motor_ia" && <MotorIASection toast={toast} />}
+          {section === "api_usage" && <ApiUsageSection toast={toast} />}
         </div>
       </div>
     </div>
@@ -701,6 +703,138 @@ function MotorIASection({ toast }: { toast: (msg: string) => void }) {
     </div>
   );
 }
+
+// ── API Usage Section ────────────────────────────────────────────────────────
+
+function ApiUsageSection({ toast }: { toast: (msg: string) => void }) {
+  const [dashboard, setDashboard] = useState<any>(null);
+  const [daily, setDaily] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editLimit, setEditLimit] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    Promise.all([fetchUsageDashboard(), fetchUsageDaily()])
+      .then(([d, dd]) => { setDashboard(d); setDaily(dd); setEditLimit(String(d.limit_usd)); })
+      .catch(() => toast("Error cargando datos de uso"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const saveLimit = async () => {
+    setSaving(true);
+    try {
+      await updateUsageBudget({ monthly_budget_usd: parseFloat(editLimit) });
+      const d = await fetchUsageDashboard();
+      setDashboard(d);
+      toast("Límite actualizado");
+    } catch { toast("Error"); }
+    finally { setSaving(false); }
+  };
+
+  const toggleHardLimit = async (v: boolean) => {
+    await updateUsageBudget({ enable_hard_limit: v });
+    const d = await fetchUsageDashboard();
+    setDashboard(d);
+  };
+
+  if (loading) return <div className="text-t3 text-[13px]">Cargando...</div>;
+  if (!dashboard) return <div className="text-t3 text-[13px]">Sin datos</div>;
+
+  const { spent_usd, limit_usd, pct_used, daily_avg, daily_budget, projected, days_passed, days_left, requests, alert } = dashboard;
+  const barColor = alert === "blocked" ? "bg-red" : alert === "red" ? "bg-red" : alert === "yellow" ? "bg-amb" : "bg-grn";
+  const alertMsg = alert === "blocked" ? "BLOQUEADO — Límite mensual alcanzado"
+    : alert === "red" ? `A este ritmo ($${daily_avg.toFixed(2)}/día) se proyectan $${projected.toFixed(2)} — EXCEDE el límite`
+    : alert === "yellow" ? "Cerca del límite (>80%)"
+    : "Consumo normal";
+
+  return (
+    <div>
+      <h2 className="text-[15px] font-medium text-t1 mb-1">Uso de API</h2>
+      <p className="text-[12px] text-t3 mb-5">Consumo de la API de Anthropic (Claude) este mes.</p>
+
+      {/* Main card */}
+      <div className={clsx("bg-s2 border rounded-xl p-5 mb-4", alert === "red" || alert === "blocked" ? "border-red/40" : alert === "yellow" ? "border-amb/40" : "border-b1")}>
+        <div className="flex items-end justify-between mb-3">
+          <div>
+            <div className="text-[28px] font-bold text-t1 font-mono">${spent_usd.toFixed(2)}</div>
+            <div className="text-[12px] text-t3">de ${limit_usd.toFixed(2)} este mes</div>
+          </div>
+          <div className="text-right">
+            <div className="text-[13px] text-t2">{requests} requests</div>
+            <div className="text-[11px] text-t3">{days_passed} días, {days_left} restantes</div>
+          </div>
+        </div>
+        {/* Progress bar */}
+        <div className="w-full h-2 bg-white/[0.06] rounded-full overflow-hidden mb-3">
+          <div className={clsx("h-full rounded-full transition-all", barColor)} style={{ width: `${Math.min(pct_used, 100)}%` }} />
+        </div>
+        {/* Alert */}
+        <div className={clsx("text-[12px] font-medium px-3 py-2 rounded-lg", alert === "red" || alert === "blocked" ? "bg-red/10 text-red" : alert === "yellow" ? "bg-amb/10 text-amb" : "bg-grn/10 text-grn")}>
+          {alertMsg}
+        </div>
+        {/* Stats row */}
+        <div className="flex gap-4 mt-4 text-[11px] text-t3">
+          <div>Promedio: <span className="text-t1 font-mono">${daily_avg.toFixed(2)}/día</span></div>
+          <div>Presupuesto: <span className="text-t1 font-mono">${daily_budget.toFixed(2)}/día</span></div>
+          <div>Proyección: <span className={clsx("font-mono", projected > limit_usd ? "text-red" : "text-t1")}>${projected.toFixed(2)}</span></div>
+        </div>
+      </div>
+
+      {/* Budget config */}
+      <div className="bg-s2 border border-b1 rounded-xl p-4 mb-4">
+        <div className="text-[13px] font-medium text-t1 mb-3">Configuración</div>
+        <div className="flex items-center gap-3 mb-3">
+          <span className="text-[12px] text-t3 shrink-0">Límite mensual:</span>
+          <input value={editLimit} onChange={e => setEditLimit(e.target.value)} type="number" step="5" min="0"
+            className="w-24 px-2 py-1 bg-s3 border border-b1 rounded-md text-t1 text-[13px] outline-none" />
+          <span className="text-[12px] text-t3">USD</span>
+          <button onClick={saveLimit} disabled={saving}
+            className="px-3 py-1 bg-acc border-none rounded-md text-white text-[11px] font-medium cursor-pointer">
+            {saving ? "..." : "Guardar"}
+          </button>
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[12px] text-t2">Bloqueo automático</div>
+            <div className="text-[10px] text-t3">Bloquea requests cuando se excede el límite</div>
+          </div>
+          <button onClick={() => toggleHardLimit(!dashboard.enable_hard_limit)}
+            className={clsx("w-10 h-[22px] rounded-full border-none cursor-pointer transition-colors shrink-0 relative", dashboard.enable_hard_limit ? "bg-acc" : "bg-white/[0.12]")}>
+            <div className={clsx("w-[18px] h-[18px] rounded-full bg-white absolute top-[2px] transition-[left]", dashboard.enable_hard_limit ? "left-[20px]" : "left-[2px]")} />
+          </button>
+        </div>
+      </div>
+
+      {/* Daily breakdown */}
+      <div className="bg-s2 border border-b1 rounded-xl p-4">
+        <div className="text-[13px] font-medium text-t1 mb-3">Consumo diario (últimos 30 días)</div>
+        {daily.length === 0 ? (
+          <div className="text-[12px] text-t3">Sin datos aún</div>
+        ) : (
+          <div className="max-h-[300px] overflow-y-auto">
+            <table className="w-full text-[12px]">
+              <thead><tr className="text-t3 text-left">
+                <th className="pb-2 font-medium">Fecha</th>
+                <th className="pb-2 font-medium text-right">Costo</th>
+                <th className="pb-2 font-medium text-right">Requests</th>
+                <th className="pb-2 font-medium text-right">Tokens</th>
+              </tr></thead>
+              <tbody>{daily.map((d: any) => (
+                <tr key={d.date} className="border-t border-white/[0.04]">
+                  <td className="py-1.5 text-t2">{d.date}</td>
+                  <td className={clsx("py-1.5 text-right font-mono", d.cost_usd > daily_budget ? "text-red" : "text-t1")}>${d.cost_usd.toFixed(3)}</td>
+                  <td className="py-1.5 text-right text-t3">{d.requests}</td>
+                  <td className="py-1.5 text-right text-t3">{((d.input_tokens + d.output_tokens) / 1000).toFixed(0)}K</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 
 function Toggle({ label, description, checked, onChange }: { label: string; description: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (

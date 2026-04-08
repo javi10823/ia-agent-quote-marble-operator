@@ -201,6 +201,33 @@ export async function validateQuote(id: string): Promise<{ ok: boolean; pdf_url?
   return res.json();
 }
 
+// ── Usage ────────────────────────────────────────────────────────────────────
+
+export async function fetchUsageDashboard() {
+  const res = await fetch(`${API_BASE}/api/usage/dashboard`, { credentials: "include" });
+  handleAuthError(res);
+  if (!res.ok) throw new Error("Error cargando uso de API");
+  return res.json();
+}
+
+export async function fetchUsageDaily() {
+  const res = await fetch(`${API_BASE}/api/usage/daily`, { credentials: "include" });
+  handleAuthError(res);
+  if (!res.ok) throw new Error("Error cargando detalle diario");
+  return res.json();
+}
+
+export async function updateUsageBudget(data: { monthly_budget_usd?: number; enable_hard_limit?: boolean }) {
+  const res = await fetch(`${API_BASE}/api/usage/budget`, {
+    method: "PATCH", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  handleAuthError(res);
+  if (!res.ok) throw new Error("Error actualizando presupuesto");
+  return res.json();
+}
+
 // ── Chat SSE ──────────────────────────────────────────────────────────────────
 
 export interface ChatChunk {

@@ -71,6 +71,24 @@ async def init_db():
                     logging.error(f"Migration FAILED: {col_sql[:60]}... → {e}")
                     raise
 
+        # Create token_usage table for API cost tracking
+        await conn.execute(
+            __import__("sqlalchemy").text("""
+                CREATE TABLE IF NOT EXISTS token_usage (
+                    id SERIAL PRIMARY KEY,
+                    quote_id VARCHAR(200),
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    input_tokens INTEGER DEFAULT 0,
+                    output_tokens INTEGER DEFAULT 0,
+                    cache_read_tokens INTEGER DEFAULT 0,
+                    cache_write_tokens INTEGER DEFAULT 0,
+                    model VARCHAR(50) DEFAULT 'sonnet',
+                    cost_usd FLOAT DEFAULT 0.0,
+                    iterations INTEGER DEFAULT 1
+                )
+            """)
+        )
+
         # Create catalogs table for persistent catalog storage
         await conn.execute(
             __import__("sqlalchemy").text("""

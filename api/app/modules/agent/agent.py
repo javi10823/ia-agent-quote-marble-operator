@@ -1011,7 +1011,22 @@ class AgentService:
             except Exception:
                 pass
 
-        # OPT-05: Per-quote cost summary
+        # OPT-05: Per-quote cost summary + save to DB
+        # Pricing: Sonnet input=$3/1M, output=$15/1M, cache_read=$0.30/1M, cache_write=$3.75/1M
+        #          Opus input=$15/1M, output=$75/1M
+        used_opus = has_plan  # First iteration used Opus if plan was attached
+        # Approximate: treat all tokens as Sonnet pricing (Opus is only iter 0)
+        cost_input = _total_input_tokens * 3.0 / 1_000_000
+        cost_output = _total_output_tokens * 15.0 / 1_000_000
+        cost_cache_read = _total_cache_read * 0.30 / 1_000_000
+        cost_cache_write = _total_cache_write * 3.75 / 1_000_000
+        total_cost = cost_input + cost_output + cost_cache_read + cost_cache_write
+        # Opus surcharge for first iteration (~5x input, ~5x output)
+        if used_opus and _loop_iterations > 0:
+            # Rough estimate: first iteration was ~1/N of total tokens at Opus pricing
+            opus_fraction = 1.0 / max(_loop_iterations, 1)
+            total_cost += opus_fraction * (cost_input * 4 + cost_output * 4)  # 5x - 1x already counted
+
         logging.info(
             f"QUOTE COST SUMMARY [{quote_id}] — "
             f"iterations: {_loop_iterations}, "
@@ -1019,8 +1034,26 @@ class AgentService:
             f"total_output: {_total_output_tokens}, "
             f"cache_read: {_total_cache_read}, "
             f"cache_write: {_total_cache_write}, "
-            f"effective_tokens: {_total_input_tokens + _total_output_tokens}"
+            f"cost_usd: ${total_cost:.4f}"
         )
+
+        # Save usage to DB
+        try:
+            from app.models.usage import TokenUsage
+            usage_record = TokenUsage(
+                quote_id=quote_id,
+                input_tokens=_total_input_tokens,
+                output_tokens=_total_output_tokens,
+                cache_read_tokens=_total_cache_read,
+                cache_write_tokens=_total_cache_write,
+                model="opus+sonnet" if used_opus else "sonnet",
+                cost_usd=round(total_cost, 6),
+                iterations=_loop_iterations,
+            )
+            db.add(usage_record)
+            await db.commit()
+        except Exception as e:
+            logging.warning(f"Could not save usage record: {e}")
 
         yield {"type": "done", "content": ""}
 

@@ -514,6 +514,28 @@ async def chat(
     from app.main import touch_chat_activity
     touch_chat_activity()
 
+    # Budget check — block if monthly limit exceeded
+    try:
+        from sqlalchemy import text as sql_text
+        from app.modules.agent.tools.catalog_tool import get_ai_config
+        ai_cfg = get_ai_config()
+        budget_cfg = ai_cfg if "monthly_budget_usd" in ai_cfg else {}
+        monthly_limit = budget_cfg.get("monthly_budget_usd", 50)
+        hard_limit = budget_cfg.get("enable_hard_limit", True)
+        if hard_limit and monthly_limit > 0:
+            month_start = __import__("datetime").datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            spent_result = await db.execute(
+                sql_text("SELECT COALESCE(SUM(cost_usd), 0) FROM token_usage WHERE created_at >= :start"),
+                {"start": month_start},
+            )
+            spent = spent_result.scalar() or 0
+            if spent >= monthly_limit:
+                raise HTTPException(status_code=429, detail=f"Límite mensual de API alcanzado (${spent:.2f} de ${monthly_limit:.2f}). Contactá al administrador.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.warning(f"Budget check failed: {e}")
+
     result = await db.execute(select(Quote).where(Quote.id == quote_id))
     quote = result.scalar_one_or_none()
     if not quote:

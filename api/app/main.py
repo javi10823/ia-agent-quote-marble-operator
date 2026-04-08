@@ -18,6 +18,7 @@ from app.modules.agent.router import router as agent_router, files_router
 from app.modules.catalog.router import router as catalog_router
 from app.modules.quote_engine.router import router as quote_engine_router
 from app.modules.auth.router import router as auth_router
+from app.modules.usage.router import router as usage_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -107,6 +108,7 @@ app.add_middleware(
 app.middleware("http")(auth_middleware)
 
 app.include_router(auth_router, prefix="/api")
+app.include_router(usage_router, prefix="/api")
 app.include_router(agent_router, prefix="/api")
 app.include_router(catalog_router, prefix="/api")
 app.include_router(quote_engine_router, prefix="/api")
