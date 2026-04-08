@@ -251,7 +251,7 @@ La validación ya se mostró — el operador la tiene en pantalla arriba. Repeti
 
 **Los datos del preview provienen de `calculate_quote`. Usar valores exactos:**
 - `material_m2` → heading "MATERIAL — X m²"
-- `piece_details[].m2` → columna m² de cada pieza
+- `piece_details[].m2` → m² unitario de cada pieza (multiplicar por cantidad para obtener m² total de esa fila)
 - `material_price_base` → precio unitario sin IVA
 - `material_price_unit` → precio unitario con IVA
 - `material_total` → total material
@@ -269,11 +269,15 @@ Cuando mostrás el resumen para validación del operador, usar EXACTAMENTE este 
 
 ### MATERIAL — {material_name} — {total_m2} m²
 
-| Pieza | Medida | m² |
-|-------|--------|----|
-| {nombre pieza} | {largo} × {prof} | {m2} |
+| Pieza | Medida | m² total |
+|-------|--------|----------|
+| {nombre pieza} ({cant} pcs) | {largo} × {prof} | {m2_unitario × cant} |
 | ... | ... | ... |
 | **TOTAL** | | **{total_m2} m²** |
+
+> **⚠️ CRÍTICO — m² por fila:** La columna "m² total" muestra **m² unitario × cantidad**, NO el m² de una sola pieza.
+> Ejemplo: Solía 1,20 × 3,38 × 8 pcs → m² total = 4,056 × 8 = **32,448** (NO 4,056).
+> La suma de todas las filas debe coincidir con `material_m2` de `calculate_quote`.
 
 **Precio unitario:**
 - Sin IVA: {currency} {material_price_base}
