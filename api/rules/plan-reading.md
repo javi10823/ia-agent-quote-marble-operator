@@ -43,7 +43,8 @@ Guía para analizar planos arquitectónicos y extraer correctamente todas las me
 ### Convenciones de texto en plano
 
 **Material y espesor:**
-- **"Granito Gris Mara"** / **"Silestone X"** / **"Dekton X"** / **"Neolith X"** → material del presupuesto. Usar directamente, NO preguntar.
+- **"Granito Gris Mara"** → por defecto usar **"Granito Gris Mara Extra 2 Esp"**. Solo usar variante LEATHER si dice explícitamente "LEATHER" en el plano o enunciado.
+- **"Silestone X"** / **"Dekton X"** / **"Neolith X"** → material del presupuesto. Usar directamente, NO preguntar.
 - **"e= 2,5cm"** / **"e= 2cm"** / **"20mm"** → espesor. Generalmente 2-2,5cm para granito, 20mm para sintéticos.
 - **"c/ménsula"** → con ménsula/soporte (info técnica, no afecta precio)
 
