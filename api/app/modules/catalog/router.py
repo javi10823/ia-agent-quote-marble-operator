@@ -44,26 +44,56 @@ class CatalogUpdateRequest(BaseModel):
         return v
 
 
+async def _load_from_db(name: str):
+    """Load catalog from DB, fallback to file."""
+    from app.core.database import AsyncSessionLocal
+    from sqlalchemy import text
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                text("SELECT content FROM catalogs WHERE name = :name"),
+                {"name": name},
+            )
+            row = result.first()
+            if row:
+                return json.loads(row[0]) if isinstance(row[0], str) else row[0]
+    except Exception as e:
+        logging.warning(f"DB catalog read failed for {name}: {e}")
+    # Fallback to file
+    path = CATALOG_DIR / f"{name}.json"
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    return None
+
+
+async def _save_to_db(name: str, content):
+    """Save catalog to DB."""
+    from app.core.database import AsyncSessionLocal
+    from sqlalchemy import text
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            text("INSERT INTO catalogs (name, content, updated_at) VALUES (:name, :content, NOW()) ON CONFLICT (name) DO UPDATE SET content = :content, updated_at = NOW()"),
+            {"name": name, "content": json.dumps(content, ensure_ascii=False)},
+        )
+        await session.commit()
+
+
 @router.get("/")
 async def list_catalogs():
     """List all available catalogs with metadata."""
     result = []
     for name in ALLOWED_CATALOGS:
-        path = CATALOG_DIR / f"{name}.json"
-        if path.exists():
-            data = json.loads(path.read_text(encoding="utf-8"))
+        data = await _load_from_db(name)
+        if data is not None:
             items = data if isinstance(data, list) else data.get("items", [data])
             count = len(items)
-            # Get last_updated from first item if available
             last_updated = None
             if isinstance(items, list) and items:
                 last_updated = items[0].get("last_updated") if isinstance(items[0], dict) else None
-
             result.append({
                 "name": name,
                 "item_count": count,
                 "last_updated": last_updated,
-                "size_kb": round(path.stat().st_size / 1024, 1),
             })
     return result
 
@@ -74,44 +104,19 @@ async def get_catalog(catalog_name: str):
     if catalog_name not in ALLOWED_CATALOGS:
         raise HTTPException(status_code=404, detail="Catálogo no encontrado")
 
-    path = CATALOG_DIR / f"{catalog_name}.json"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
-
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
-        logging.error(f"Malformed catalog JSON: {catalog_name} — {e}")
-        raise HTTPException(status_code=500, detail="Error leyendo catálogo (JSON corrupto)")
+    data = await _load_from_db(catalog_name)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Catálogo no encontrado")
+    return data
 
 
 @router.put("/{catalog_name}")
 async def update_catalog(catalog_name: str, body: CatalogUpdateRequest):
-    """Update catalog content after AI validation."""
+    """Update catalog content in DB."""
     if catalog_name not in ALLOWED_CATALOGS:
         raise HTTPException(status_code=403, detail="Catálogo no permitido")
 
-    path = CATALOG_DIR / f"{catalog_name}.json"
-
-    # Backup before saving
-    backup_path = CATALOG_DIR / f"{catalog_name}.json.bak"
-    if path.exists():
-        backup_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
-
-    # Atomic write: temp file + os.replace (POSIX atomic)
-    content_str = json.dumps(body.content, ensure_ascii=False, indent=2)
-    fd, tmp_path = tempfile.mkstemp(dir=str(CATALOG_DIR), suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(content_str)
-        os.replace(tmp_path, str(path))
-    except Exception:
-        # Clean up temp file on failure
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
+    await _save_to_db(catalog_name, body.content)
 
     invalidate_catalog_cache(catalog_name)
     if catalog_name == "config":
@@ -131,8 +136,7 @@ async def validate_catalog(catalog_name: str, body: CatalogUpdateRequest):
     if catalog_name not in ALLOWED_CATALOGS:
         raise HTTPException(status_code=403, detail="Catálogo no permitido")
 
-    path = CATALOG_DIR / f"{catalog_name}.json"
-    current = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+    current = await _load_from_db(catalog_name)
 
     warnings = []
     new_content = body.content

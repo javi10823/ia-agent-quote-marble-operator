@@ -10,19 +10,51 @@ _config_cache: dict | None = None
 
 
 def _get_iva_multiplier() -> float:
-    """Read IVA multiplier from config.json."""
+    """Read IVA multiplier from config (DB first, file fallback)."""
     global _config_cache
     if _config_cache is None:
         try:
-            _config_cache = json.loads((CATALOG_DIR / "config.json").read_text(encoding="utf-8"))
+            from sqlalchemy import create_engine, text
+            from app.core.config import settings
+            sync_url = settings.DATABASE_URL.replace("+asyncpg", "").replace("postgresql+asyncpg", "postgresql")
+            eng = create_engine(sync_url)
+            with eng.connect() as conn:
+                result = conn.execute(text("SELECT content FROM catalogs WHERE name = 'config'"))
+                row = result.first()
+                if row:
+                    _config_cache = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            eng.dispose()
         except Exception:
-            _config_cache = {}
+            pass
+        if _config_cache is None:
+            try:
+                _config_cache = json.loads((CATALOG_DIR / "config.json").read_text(encoding="utf-8"))
+            except Exception:
+                _config_cache = {}
     return _config_cache.get("iva", {}).get("multiplier", 1.21)
 
 
 def _load_catalog(name: str) -> list:
     if name in _catalog_cache:
         return _catalog_cache[name]
+    # Try DB first (persistent), fallback to file
+    try:
+        from sqlalchemy import create_engine, text
+        from app.core.config import settings
+        sync_url = settings.DATABASE_URL.replace("+asyncpg", "").replace("postgresql+asyncpg", "postgresql")
+        eng = create_engine(sync_url)
+        with eng.connect() as conn:
+            result = conn.execute(text("SELECT content FROM catalogs WHERE name = :name"), {"name": name})
+            row = result.first()
+            if row:
+                data = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                items = data if isinstance(data, list) else data.get("items", [])
+                _catalog_cache[name] = items
+                return items
+        eng.dispose()
+    except Exception as e:
+        logging.debug(f"DB catalog read failed for {name}, trying file: {e}")
+    # Fallback to file
     path = CATALOG_DIR / f"{name}.json"
     if not path.exists():
         return []

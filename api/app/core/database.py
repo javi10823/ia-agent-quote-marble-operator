@@ -71,6 +71,17 @@ async def init_db():
                     logging.error(f"Migration FAILED: {col_sql[:60]}... → {e}")
                     raise
 
+        # Create catalogs table for persistent catalog storage
+        await conn.execute(
+            __import__("sqlalchemy").text("""
+                CREATE TABLE IF NOT EXISTS catalogs (
+                    name VARCHAR(100) PRIMARY KEY,
+                    content JSON NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+            """)
+        )
+
         # Add 'pending' value to quotestatus enum if not present
         try:
             await conn.execute(
