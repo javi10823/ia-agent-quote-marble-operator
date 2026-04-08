@@ -953,13 +953,22 @@ class AgentService:
         except Exception:
             pass
 
-        # If plan attached, inject instruction to request separate images when multiple pieces detected
-        if has_plan:
+        # If SINGLE plan attached, inject instruction to request separate images when multiple pieces detected
+        # If multiple files attached (2+), they ARE the separate captures — process them directly
+        total_files = 1 + len(extra_files or []) if has_plan else 0
+        if has_plan and total_files == 1:
             multi_hint = "\n\n[SISTEMA — INSTRUCCIÓN OBLIGATORIA SOBRE PLANOS]\n⛔ ANTES de leer medidas, contá cuántas piezas hay en cuadros/boxes separados.\n⛔ Si hay 3 o más piezas en cuadros separados: PARAR. NO leer medidas. Pedir al operador capturas individuales de cada cuadro.\n⛔ Decir EXACTAMENTE: 'Veo [N] piezas en cuadros separados. Para leer bien las medidas, necesito que me mandes una captura de cada cuadro por separado.'\n⛔ NO usar read_plan, NO intentar leer del plano general, NO calcular. Solo pedir las capturas y esperar.\n⛔ Si son 1-2 piezas, podés leerlas directo."
             if isinstance(content, list):
                 for block in content:
                     if isinstance(block, dict) and block.get("type") == "text":
                         block["text"] = block["text"] + multi_hint
+                        break
+        elif has_plan and total_files > 1:
+            multi_read_hint = f"\n\n[SISTEMA — CAPTURAS INDIVIDUALES RECIBIDAS]\nEl operador mandó {total_files} imágenes separadas. Cada imagen es UNA pieza/cuadro individual. Leé las medidas de CADA imagen por separado. Compará la versión original y la rotada para cada pieza. NO pidas más capturas — ya las tenés todas."
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        block["text"] = block["text"] + multi_read_hint
                         break
 
         # Append user message to history (injected for Claude, clean for DB)
