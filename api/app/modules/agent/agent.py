@@ -883,7 +883,10 @@ class AgentService:
                 except Exception as e:
                     logging.warning(f"Could not create rotated plan version: {e}")
         # Attach extra files (additional images sent by operator)
+        # Each image gets a 90° rotated version to catch vertical cotas
         if extra_files:
+            from PIL import Image
+            import io
             for file_bytes, filename in extra_files:
                 ext_f = Path(filename).suffix.lower()
                 if ext_f == ".pdf":
@@ -897,7 +900,20 @@ class AgentService:
                         "type": "image",
                         "source": {"type": "base64", "media_type": mt, "data": base64.b64encode(file_bytes).decode()},
                     })
-            logging.info(f"Attached {len(extra_files)} extra files to message")
+                    # Add 90° rotated version for vertical cotas
+                    try:
+                        img = Image.open(io.BytesIO(file_bytes))
+                        rotated = img.rotate(90, expand=True)
+                        buf = io.BytesIO()
+                        rotated.save(buf, format="JPEG", quality=85)
+                        content.append({
+                            "type": "image",
+                            "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(buf.getvalue()).decode()},
+                        })
+                    except Exception:
+                        pass
+            content.append({"type": "text", "text": f"Las imágenes de arriba incluyen cada pieza en orientación original Y rotada 90°. Si una cota no se lee bien en una versión, leerla de la otra. Comparar ambas versiones para cada pieza."})
+            logging.info(f"Attached {len(extra_files)} extra files + rotated versions to message")
 
         # Always include a text block — Anthropic rejects empty text content blocks
         text = user_message.strip() if user_message.strip() else "(adjunto plano)"
