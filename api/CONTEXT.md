@@ -511,6 +511,8 @@ Ejemplo isla 1.70×0.64×0.95:
 - Descuento 18% si **TOTAL m² > 15** (sumando TODOS los materiales del edificio, no por material individual). Si el total supera 15 m², el descuento aplica a TODOS los materiales.
 - Toda MO ÷1.05 (excepto flete) | Piletas y PEGADOPILETA también ÷1.05
 - **⛔ "Sin bachas/piletas"** → NO incluir NINGÚN ítem de pileta (ni AGUJEROAPOYO ni PEGADOPILETA). Cero piletas = cero MO de pileta.
+- **⛔ FALDÓN/FRENTÍN EN EDIFICIOS:** leer la columna "Aclaraciones" de la planilla. Si dice "Faldón Xcm" → esa pieza tiene frentín. Contar CUÁNTAS piezas tienen faldón y pasar `frentin=true` + `frentin_qty=N` a `calculate_quote`. El faldón se cobra como MO "Armado frentín recto" (SKU FALDON) × cantidad de piezas con faldón. El material del faldón ya está incluido en el m² de la pieza.
+- **⛔ PILETAS EN EDIFICIOS:** leer la columna "Perforaciones/Calados". Contar el total de bachas/piletas/lavatorios y pasar `pileta_qty=N`. Cada bacha = 1 PEGADOPILETA. Si dice "2 bachas" en una pieza → sumar 2.
 - En el desglose, mostrar claramente: "DESCUENTO EDIFICIO: total m² = X m² (> 15) → 18% descuento aplicado a todos los materiales"
 
 **⛔ CHECKLIST OBLIGATORIO PARA EDIFICIOS — mostrar ANTES de confirmar:**
