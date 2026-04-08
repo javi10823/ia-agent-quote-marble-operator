@@ -387,7 +387,7 @@ class TestPromptStructure:
         blocks = build_system_prompt()
         full_text = " ".join(b["text"] for b in blocks)
         assert "AL FINAL" in full_text
-        assert "NUNCA arrancar un mensaje con una pregunta" in full_text
+        assert "NUNCA arrancar con pregunta" in full_text
 
     def test_required_data_rule_present(self):
         """System prompt must list required data before generating."""
