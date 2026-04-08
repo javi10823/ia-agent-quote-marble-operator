@@ -309,16 +309,16 @@ def calculate_quote(input_data: dict) -> dict:
                 pileta_qty = auto_pileta_count
                 logging.info(f"Edificio guardrail: auto-detected {pileta_qty} piletas from piece descriptions")
 
-        # Auto-count frentines from piece descriptions if not provided
-        frentin_qty = input_data.get("frentin_qty", 1)
-        if frentin and frentin_qty <= 1:
-            auto_frentin_count = sum(
-                1 for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
-                if any(kw in (p.get("description") or "").lower() for kw in ["faldón", "faldon", "frentín", "frentin", "faldon 10", "faldón 10", "faldón 5", "faldón 15"])
+        # Auto-calculate frentin_ml from piece descriptions if not provided
+        if frentin and not input_data.get("frentin_ml"):
+            auto_ml = sum(
+                p.get("largo", 0)
+                for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
+                if any(kw in (p.get("description") or "").lower() for kw in ["faldón", "faldon", "frentín", "frentin"])
             )
-            if auto_frentin_count > 1:
-                frentin_qty = auto_frentin_count
-                logging.info(f"Edificio guardrail: auto-detected {frentin_qty} frentines from piece descriptions")
+            if auto_ml > 0:
+                input_data["frentin_ml"] = round(auto_ml, 2)
+                logging.info(f"Edificio guardrail: auto-detected {auto_ml:.2f} ml of frentín from piece descriptions")
     date_str = input_data.get("date") or datetime.now().strftime("%d.%m.%Y")
 
     # 1. Find material
@@ -380,18 +380,29 @@ def calculate_quote(input_data: dict) -> dict:
         qty = max(total_m2, cfg("colocacion.min_quantity", 1.0))
         mo_items.append({"description": "Colocación", "quantity": round(qty, 2), "unit_price": price, "base_price": base, "total": round(price * qty)})
 
-    # Frentín/faldón recto (supports quantity for edificios)
-    if not is_edificio:
-        frentin_qty = input_data.get("frentin_qty", 1)
-    if frentin:
-        qty_f = max(1, frentin_qty)
+    # Frentín/faldón — MO is charged per METRO LINEAL, not per piece
+    # frentin_ml = total metros lineales of faldón/frentín pieces
+    frentin_ml = input_data.get("frentin_ml", 0)
+    if frentin and frentin_ml <= 0:
+        # Auto-calculate from pieces that look like faldón/frentín
+        for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces):
+            desc = (p.get("description") or "").lower()
+            if any(kw in desc for kw in ["faldón", "faldon", "frentín", "frentin"]):
+                frentin_ml += p.get("largo", 0)
+        if frentin_ml <= 0:
+            frentin_ml = 1  # Fallback: at least 1 ml
+    if frentin and frentin_ml > 0:
+        # Pegado/armado faldón: ml × precio por ml
         sku = "FALDONDEKTON/NEOLITH" if is_sint else "FALDON"
         price, base = _get_mo_price(sku)
-        mo_items.append({"description": "Armado frentín recto", "quantity": qty_f, "unit_price": price, "base_price": base, "total": round(price * qty_f)})
+        ml = round(frentin_ml, 2)
+        mo_items.append({"description": "Armado frentín", "quantity": ml, "unit_price": price, "base_price": base, "total": round(price * ml)})
         if inglete:
+            # Corte 45: ml × 2 × precio por ml (cut on both sides)
             sku_45 = "CORTE45DEKTON/NEOLITH" if is_sint else "CORTE45"
             price_45, base_45 = _get_mo_price(sku_45)
-            mo_items.append({"description": "Corte a 45°", "quantity": qty_f, "unit_price": price_45, "base_price": base_45, "total": round(price_45 * qty_f)})
+            ml_45 = round(frentin_ml * 2, 2)
+            mo_items.append({"description": "Corte 45", "quantity": ml_45, "unit_price": price_45, "base_price": base_45, "total": round(price_45 * ml_45)})
 
     # Flete (edificio: ceil(piezas/8), normal: 1)
     flete_result = _find_flete(localidad)
@@ -513,7 +524,7 @@ def calculate_quote(input_data: dict) -> dict:
         "pileta_qty": pileta_qty,
         "anafe": anafe,
         "frentin": frentin,
-        "frentin_qty": frentin_qty,
+        "frentin_ml": frentin_ml,
         "inglete": inglete,
         "pulido": pulido,
         **({"fuzzy_corrected_from": mat_result["fuzzy_corrected_from"]} if "fuzzy_corrected_from" in mat_result else {}),
@@ -526,6 +537,6 @@ def calculate_quote(input_data: dict) -> dict:
             "descuento_18": discount_pct == 18,
             "total_m2": total_m2,
             "pileta_qty": pileta_qty if pileta else 0,
-            "frentin_qty": frentin_qty if frentin else 0,
+            "frentin_ml": frentin_ml if frentin else 0,
         }} if is_edificio else {}),
     }

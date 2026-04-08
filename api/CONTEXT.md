@@ -493,9 +493,27 @@ Por cada junta entre piezas × 2ml:
 Ejemplo isla 1.70×0.64×0.95:
 `(1.70×2) + (0.64×2×2) + (0.95×2×2) = 3.40 + 2.56 + 3.80 = 9.76ml`
 
-### Regrueso vs Faldón
-- **Regrueso** (granito/mármol/Silestone/Purastone 20mm) → SKU `REGRUESO × ml`
-- **Faldón** (Dekton/Neolith/Laminatto/Puraprima 12mm) → `FALDONDEKTON × ml` + `CORTE45DEKTON × ml×2`
+### Faldón / Frentín — cálculo completo
+Cada faldón/frentín genera:
+1. **Pieza de material**: `[largo]ML × [alto] FALDON/FRENTIN` → suma m² al material total
+2. **MO armado frentín**: total_ml × precio_FALDON_por_ml (SKU: FALDON o FALDONDEKTON/NEOLITH)
+3. **MO corte 45** (solo si inglete): total_ml × 2 × precio_CORTE45_por_ml (SKU: CORTE45 o CORTE45DEKTON/NEOLITH)
+
+Pasar `frentin=true` + `frentin_ml=total_metros_lineales` + `inglete=true/false` a calculate_quote.
+Si no se pasa frentin_ml, el calculator lo auto-calcula sumando los largos de piezas con "faldón"/"frentín" en su descripción.
+
+**Formato en PDF:**
+```
+Material:
+  2,30 × 0,10 Faldón M1-Lavatorios
+
+MO:
+  Armado frentín        4,60 ml    $18.558    $85.367
+  Corte 45              9,20 ml    $7.423     $68.292   ← solo si inglete
+```
+
+### Regrueso
+- **Regrueso** (granito/mármol 20mm) → SKU `REGRUESO × ml`
 - En PDF/Excel: `REGRUESO X.XX ml x 0.05 m` — una sola línea
 
 ### Descuentos
