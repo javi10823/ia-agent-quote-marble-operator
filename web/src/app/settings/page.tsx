@@ -6,7 +6,7 @@ import { fetchUsers, apiCreateUser, deleteUser, fetchCatalog, updateCatalog, typ
 import { useToast } from "@/lib/toast-context";
 import clsx from "clsx";
 
-type Section = "usuarios" | "arquitectas" | "iva" | "descuentos" | "merma" | "placas" | "edificios" | "plazos" | "medidas" | "colocacion" | "empresa" | "condiciones";
+type Section = "usuarios" | "arquitectas" | "iva" | "descuentos" | "merma" | "placas" | "edificios" | "plazos" | "medidas" | "colocacion" | "empresa" | "condiciones" | "motor_ia";
 
 const SECTIONS: { key: Section; label: string; icon: string }[] = [
   { key: "usuarios", label: "Usuarios", icon: "👤" },
@@ -21,6 +21,7 @@ const SECTIONS: { key: Section; label: string; icon: string }[] = [
   { key: "colocacion", label: "Colocación", icon: "🔧" },
   { key: "empresa", label: "Empresa", icon: "🏠" },
   { key: "condiciones", label: "Condiciones", icon: "📜" },
+  { key: "motor_ia", label: "Motor IA", icon: "🤖" },
 ];
 
 export default function SettingsPage() {
@@ -73,6 +74,7 @@ export default function SettingsPage() {
           {section === "colocacion" && <ColocacionSection toast={toast} />}
           {section === "empresa" && <CompanySection toast={toast} />}
           {section === "condiciones" && <ConditionsSection toast={toast} />}
+          {section === "motor_ia" && <MotorIASection toast={toast} />}
         </div>
       </div>
     </div>
@@ -623,6 +625,102 @@ function Field({ label, value, onChange, type = "text" }: { label: string; value
         onChange={e => onChange(e.target.value)}
         className="w-full px-3 py-2 bg-s3 border border-b1 rounded-lg text-t1 text-[13px] font-sans outline-none focus:border-acc placeholder:text-t4"
       />
+    </div>
+  );
+}
+
+
+// ── Motor IA Section ─────────────────────────────────────────────────────────
+
+function MotorIASection({ toast }: { toast: (msg: string) => void }) {
+  const [config, setConfig] = useState<Record<string, any>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchCatalog("config").then(data => {
+      const cfg = Array.isArray(data) ? data[0] || {} : data;
+      setConfig(cfg);
+    }).catch(() => toast("Error cargando config")).finally(() => setLoading(false));
+  }, []);
+
+  const aiEngine = config.ai_engine || { use_opus_for_plans: true, rotate_plan_images: true, max_examples: 1 };
+
+  const updateToggle = async (key: string, value: boolean | number) => {
+    const updated = { ...config, ai_engine: { ...aiEngine, [key]: value } };
+    setConfig(updated);
+    setSaving(true);
+    try {
+      await updateCatalog("config", updated);
+      toast("Configuración guardada");
+    } catch { toast("Error al guardar"); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return <div className="text-t3 text-[13px]">Cargando...</div>;
+
+  return (
+    <div>
+      <h2 className="text-[15px] font-medium text-t1 mb-1">Motor IA</h2>
+      <p className="text-[12px] text-t3 mb-5">Configuración del motor de inteligencia artificial. Afecta costo y precisión.</p>
+
+      <div className="flex flex-col gap-4">
+        <Toggle
+          label="Usar Opus para planos"
+          description="Usa Claude Opus (más preciso, 5x más caro) para leer planos. Si está desactivado, usa Sonnet."
+          checked={aiEngine.use_opus_for_plans ?? true}
+          onChange={v => updateToggle("use_opus_for_plans", v)}
+        />
+        <Toggle
+          label="Rotar imágenes de planos"
+          description="Envía una versión rotada 90° de cada plano para leer texto en los márgenes. Duplica tokens de imagen."
+          checked={aiEngine.rotate_plan_images ?? true}
+          onChange={v => updateToggle("rotate_plan_images", v)}
+        />
+        <div className="bg-s2 border border-b1 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[13px] font-medium text-t1">Ejemplos por request</div>
+              <div className="text-[11px] text-t3 mt-0.5">Cantidad de ejemplos de presupuestos incluidos en cada mensaje. Más = más preciso pero más caro.</div>
+            </div>
+            <select
+              value={aiEngine.max_examples ?? 1}
+              onChange={e => updateToggle("max_examples", parseInt(e.target.value))}
+              className="bg-s3 border border-b1 rounded-md text-t1 text-[13px] px-2 py-1 outline-none"
+            >
+              <option value={0}>0 (sin ejemplos)</option>
+              <option value={1}>1 (recomendado)</option>
+              <option value={2}>2</option>
+              <option value={3}>3</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {saving && <div className="text-[11px] text-acc mt-3">Guardando...</div>}
+    </div>
+  );
+}
+
+function Toggle({ label, description, checked, onChange }: { label: string; description: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="bg-s2 border border-b1 rounded-lg p-4 flex items-center justify-between gap-4">
+      <div>
+        <div className="text-[13px] font-medium text-t1">{label}</div>
+        <div className="text-[11px] text-t3 mt-0.5">{description}</div>
+      </div>
+      <button
+        onClick={() => onChange(!checked)}
+        className={clsx(
+          "w-10 h-[22px] rounded-full border-none cursor-pointer transition-colors shrink-0 relative",
+          checked ? "bg-acc" : "bg-white/[0.12]"
+        )}
+      >
+        <div className={clsx(
+          "w-[18px] h-[18px] rounded-full bg-white absolute top-[2px] transition-[left]",
+          checked ? "left-[20px]" : "left-[2px]"
+        )} />
+      </button>
     </div>
   );
 }

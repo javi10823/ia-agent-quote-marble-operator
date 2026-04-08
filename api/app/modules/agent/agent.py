@@ -11,7 +11,7 @@ from sqlalchemy import update, select
 
 from app.core.config import settings
 from app.models.quote import Quote, QuoteStatus
-from app.modules.agent.tools.catalog_tool import catalog_lookup, catalog_batch_lookup, check_stock, check_architect
+from app.modules.agent.tools.catalog_tool import catalog_lookup, catalog_batch_lookup, check_stock, check_architect, get_ai_config
 from app.modules.agent.tools.plan_tool import read_plan
 from app.modules.agent.tools.document_tool import generate_documents
 from app.modules.agent.tools.drive_tool import upload_to_drive
@@ -185,7 +185,9 @@ if _examples_dir.exists():
 _CACHED_EXAMPLE_IDS = {"quote-013", "quote-003", "quote-004", "quote-010", "quote-030"}
 
 
-def select_examples(user_message: str, is_building: bool, max_examples: int = 2) -> list:
+def select_examples(user_message: str, is_building: bool, max_examples: int = None) -> list:
+    if max_examples is None:
+        max_examples = get_ai_config().get("max_examples", 1)
     """
     Select the most relevant examples based on tag overlap with the current case.
     Skips examples already in the cached stable block.
@@ -814,7 +816,7 @@ def _compact_single_result(result: dict) -> dict:
 
 MAX_RETRIES = 3
 RETRY_DELAYS = [5, 10, 15]
-MAX_ITERATIONS = 25  # Safety limit — prevent infinite tool loops
+MAX_ITERATIONS = 15  # Safety limit — prevent infinite tool loops
 
 
 # ── AGENT SERVICE ─────────────────────────────────────────────────────────────
@@ -866,26 +868,27 @@ class AgentService:
                         "data": base64.b64encode(plan_bytes).decode(),
                     },
                 })
-                # Also send a 90° rotated version to catch margin text
-                try:
-                    from PIL import Image
-                    import io
-                    img = Image.open(io.BytesIO(plan_bytes))
-                    rotated = img.rotate(90, expand=True)
-                    buf = io.BytesIO()
-                    rotated.save(buf, format="JPEG", quality=85)
-                    content.append({"type": "text", "text": "El siguiente es el MISMO plano rotado 90° para facilitar la lectura del texto en los márgenes laterales. Leé el texto de esta versión rotada (material, zócalo, frentín, etc.):"})
-                    content.append({
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/jpeg",
-                            "data": base64.b64encode(buf.getvalue()).decode(),
-                        },
-                    })
-                    logging.info(f"Added 90° rotated version of plan for margin text reading")
-                except Exception as e:
-                    logging.warning(f"Could not create rotated plan version: {e}")
+                # Also send a 90° rotated version to catch margin text (configurable)
+                if get_ai_config().get("rotate_plan_images", True):
+                    try:
+                        from PIL import Image
+                        import io
+                        img = Image.open(io.BytesIO(plan_bytes))
+                        rotated = img.rotate(90, expand=True)
+                        buf = io.BytesIO()
+                        rotated.save(buf, format="JPEG", quality=85)
+                        content.append({"type": "text", "text": "El siguiente es el MISMO plano rotado 90° para facilitar la lectura del texto en los márgenes laterales. Leé el texto de esta versión rotada (material, zócalo, frentín, etc.):"})
+                        content.append({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/jpeg",
+                                "data": base64.b64encode(buf.getvalue()).decode(),
+                            },
+                        })
+                        logging.info(f"Added 90° rotated version of plan for margin text reading")
+                    except Exception as e:
+                        logging.warning(f"Could not create rotated plan version: {e}")
         # Attach extra files (additional images sent by operator)
         # Each image gets a 90° rotated version to catch vertical cotas
         if extra_files:
@@ -1001,12 +1004,27 @@ class AgentService:
             # Model selection:
             # - Opus: first iteration with plan (accurate measurement reading)
             # - Sonnet: everything else (prices, MO, docs)
-            # - Haiku: fallback when Sonnet/Opus are overloaded (last retry)
             OPUS_MODEL = "claude-opus-4-20250514"
-            use_opus = has_plan and _loop_iterations == 0
+            ai_cfg = get_ai_config()
+            use_opus = has_plan and _loop_iterations == 0 and ai_cfg.get("use_opus_for_plans", True)
             current_model = OPUS_MODEL if use_opus else settings.ANTHROPIC_MODEL
             if use_opus:
                 logging.info(f"Using Opus for plan reading (iteration {_loop_iterations + 1})")
+
+            # Strip plan images from messages after first iteration (saves ~50K tokens)
+            if _loop_iterations > 0 and has_plan:
+                msgs_for_api = []
+                for msg in new_messages:
+                    content = msg.get("content", "")
+                    if isinstance(content, list):
+                        filtered = [b for b in content if not (isinstance(b, dict) and b.get("type") in ("image", "document"))]
+                        if not filtered:
+                            filtered = [{"type": "text", "text": "(plano ya leído en iteración 1)"}]
+                        msgs_for_api.append({**msg, "content": filtered})
+                    else:
+                        msgs_for_api.append(msg)
+            else:
+                msgs_for_api = new_messages
 
             # Retry loop for rate limit errors
             for attempt in range(MAX_RETRIES + 1):
@@ -1015,7 +1033,7 @@ class AgentService:
                         model=current_model,
                         max_tokens=8096,
                         system=system_prompt,
-                        messages=new_messages + _compact_tool_results(assistant_messages),
+                        messages=msgs_for_api + _compact_tool_results(assistant_messages),
                         tools=TOOLS,
                     ) as stream:
                         async for event in stream:

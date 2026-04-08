@@ -7,6 +7,44 @@ from app.core.catalog_dir import CATALOG_DIR
 
 _catalog_cache: dict[str, list] = {}
 _config_cache: dict | None = None
+_ai_config_cache: dict | None = None
+
+
+def get_ai_config() -> dict:
+    """Read AI engine toggles from config.json (DB first, file fallback)."""
+    global _ai_config_cache
+    if _ai_config_cache is not None:
+        return _ai_config_cache
+    defaults = {"use_opus_for_plans": True, "rotate_plan_images": True, "max_examples": 1}
+    try:
+        from sqlalchemy import create_engine, text
+        from app.core.config import settings
+        sync_url = settings.DATABASE_URL.replace("+asyncpg", "").replace("postgresql+asyncpg", "postgresql")
+        eng = create_engine(sync_url)
+        with eng.connect() as conn:
+            result = conn.execute(text("SELECT content FROM catalogs WHERE name = 'config'"))
+            row = result.first()
+            if row:
+                cfg = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                ai = cfg.get("ai_engine", {})
+                _ai_config_cache = {**defaults, **ai}
+                eng.dispose()
+                return _ai_config_cache
+        eng.dispose()
+    except Exception:
+        pass
+    try:
+        cfg = json.loads((CATALOG_DIR / "config.json").read_text(encoding="utf-8"))
+        ai = cfg.get("ai_engine", {})
+        _ai_config_cache = {**defaults, **ai}
+    except Exception:
+        _ai_config_cache = defaults
+    return _ai_config_cache
+
+
+def invalidate_ai_config_cache():
+    global _ai_config_cache
+    _ai_config_cache = None
 
 
 def _get_iva_multiplier() -> float:
