@@ -239,17 +239,29 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
     pdf.cell(w[3], rh, total_mat_fmt, align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
     row_done()
 
-    # Sectors + pieces
+    # Sectors + pieces (group duplicates)
     is_first_piece = True
     for sector in sectors:
         f = row_fill()
         pdf.set_font("Helvetica", "B", 8)
         pdf.cell(total_w, rh, sector.get("label", ""), fill=f, new_x="LMARGIN", new_y="NEXT")
         row_done()
-        for piece in sector.get("pieces", []):
+        # Group identical pieces: "1.20 × 3.38 Solía" × 8 → "1.20 × 3.38 Solía (×8)"
+        raw_pieces = sector.get("pieces", [])
+        grouped = []
+        seen = {}
+        for p in raw_pieces:
+            if p in seen:
+                seen[p] += 1
+            else:
+                seen[p] = 1
+                grouped.append(p)
+        for piece in grouped:
+            count = seen[piece]
+            display = f"{piece} (×{count})" if count > 1 else piece
             f = row_fill()
             pdf.set_font("Helvetica", "", 8)
-            pdf.cell(w[0], rh, piece, fill=f)
+            pdf.cell(w[0], rh, display, fill=f)
             if is_first_piece:
                 pdf.set_font("Helvetica", "B", 8)
                 if currency == "USD":
@@ -425,11 +437,20 @@ def _generate_excel(output_path: Path, data: dict) -> None:
         for col in range(1, 7):
             ws.cell(row, col).value = None
 
-    # Pieces
-    all_pieces = []
+    # Pieces (group duplicates)
+    raw_all = []
     for sector in sectors:
         for piece in sector.get("pieces", []):
-            all_pieces.append(piece)
+            raw_all.append(piece)
+    all_pieces = []
+    seen_xl = {}
+    for p in raw_all:
+        if p in seen_xl:
+            seen_xl[p] += 1
+        else:
+            seen_xl[p] = 1
+            all_pieces.append(p)
+    all_pieces = [f"{p} (×{seen_xl[p]})" if seen_xl[p] > 1 else p for p in all_pieces]
 
     # Row 23: first piece + TOTAL
     if len(all_pieces) > 0:
