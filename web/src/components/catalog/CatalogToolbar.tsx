@@ -43,7 +43,7 @@ export default function CatalogToolbar({
   const disableSave = !validation?.valid || saving || !hasChanges;
 
   return (
-    <div className="flex items-center justify-between px-5 py-3 border-b border-b1 bg-s1 shrink-0 gap-3">
+    <div className="flex flex-wrap md:flex-nowrap items-center justify-between px-3 md:px-5 py-2.5 md:py-3 border-b border-b1 bg-s1 shrink-0 gap-2 md:gap-3">
       {/* Left: back + title */}
       <div className="flex items-center gap-3 shrink-0">
         <button

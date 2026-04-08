@@ -25,7 +25,7 @@ const STATUS_NEXT: Record<Quote["status"], Quote["status"] | null> = {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { quotes, loading, error: loadError, refresh, removeQuote, setStatus } = useQuotes();
+  const { quotes, loading, error: loadError, refresh, removeQuote, setStatus, addQuote } = useQuotes();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -357,6 +357,18 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Mobile FAB — Nuevo presupuesto */}
+      <button
+        onClick={async () => {
+          try { const id = await addQuote(); router.push(`/quote/${id}`); } catch {}
+        }}
+        className="md:hidden fixed bottom-6 right-4 z-40 bg-acc text-white border-none rounded-full px-5 py-3 text-[13px] font-medium font-sans cursor-pointer flex items-center gap-2 shadow-[0_8px_24px_rgba(79,143,255,.35)] active:scale-95 transition-transform"
+        style={{ paddingBottom: `calc(12px + var(--safe-bottom, 0px))` }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nuevo presupuesto
+      </button>
 
       {/* Delete modal */}
       {deleteTarget && (
