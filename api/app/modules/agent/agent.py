@@ -1427,16 +1427,18 @@ class AgentService:
             save_to_qid = inputs.pop("target_quote_id", None) or quote_id
 
             # ── Auto-create independent quote for different material ──
-            # If this quote already has a breakdown with a DIFFERENT material,
-            # create a new independent quote instead of overwriting.
+            # Only during INITIAL generation (no breakdown yet or first calculation).
+            # In PATCH MODE (quote already validated/has docs), always overwrite
+            # the existing quote — the operator is intentionally changing the material.
             try:
                 check_q = await db.execute(select(Quote).where(Quote.id == save_to_qid))
                 check_quote = check_q.scalar_one_or_none()
-                if check_quote and check_quote.quote_breakdown:
+                is_patch_mode = check_quote and check_quote.quote_breakdown and (
+                    check_quote.status in ("validated", "sent") or check_quote.pdf_url
+                )
+                if check_quote and check_quote.quote_breakdown and not is_patch_mode:
                     existing_mat = (check_quote.quote_breakdown.get("material_name") or "").strip().upper()
                     new_mat = (inputs.get("material") or "").strip().upper()
-                    # Fuzzy material comparison — check if one contains the other
-                    # to avoid creating duplicates for "Granito Gris Mara" vs "GRANITO GRIS MARA EXTRA 2 ESP"
                     same_material = (
                         existing_mat == new_mat
                         or existing_mat in new_mat
