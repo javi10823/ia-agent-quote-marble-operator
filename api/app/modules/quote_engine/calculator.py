@@ -137,7 +137,11 @@ def _find_material(material_name: str) -> dict:
         if not all_materials:
             return {"found": False, "error": f"Material '{material_name}' no encontrado — catálogos vacíos"}
 
-        names = [m[0] for m in all_materials]
+        # Filter out LEATHER variants unless explicitly requested
+        input_lower = material_name.lower()
+        has_leather = "leather" in input_lower
+        filtered = [(n, c) for n, c in all_materials if has_leather or "leather" not in n.lower()]
+        names = [m[0] for m in (filtered if filtered else all_materials)]
         match = fuzz_process.extractOne(material_name, names, score_cutoff=70)
 
         if match:
