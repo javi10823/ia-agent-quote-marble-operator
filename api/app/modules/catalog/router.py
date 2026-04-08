@@ -10,8 +10,7 @@ from typing import Union
 from app.modules.agent.tools.catalog_tool import invalidate_catalog_cache
 from app.modules.agent.tools.document_tool import invalidate_company_config_cache
 
-BASE_DIR = Path(__file__).parent.parent.parent.parent
-CATALOG_DIR = BASE_DIR / "catalog"
+from app.core.catalog_dir import CATALOG_DIR
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 

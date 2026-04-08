@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     OPERATOR_EMAIL: str = ""
     OPERATOR_PASSWORD_HASH: str = ""
     OUTPUT_DIR: str = ""
+    CATALOG_VOLUME_DIR: str = ""  # Persistent volume path for catalogs (Railway)
     SERVICE_ACCOUNT_BASE64: str = ""
 
     @field_validator("SECRET_KEY", mode="after")

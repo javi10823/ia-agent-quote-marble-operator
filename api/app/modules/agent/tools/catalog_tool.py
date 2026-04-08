@@ -3,8 +3,7 @@ import logging
 import math
 from pathlib import Path
 
-BASE_DIR = Path(__file__).parent.parent.parent.parent.parent
-CATALOG_DIR = BASE_DIR / "catalog"
+from app.core.catalog_dir import CATALOG_DIR
 
 _catalog_cache: dict[str, list] = {}
 _config_cache: dict | None = None

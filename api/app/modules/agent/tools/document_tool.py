@@ -11,7 +11,7 @@ from app.core.static import OUTPUT_DIR
 
 
 DELIVERY_SUFFIX = "días desde la toma de medidas"
-CATALOG_DIR = BASE_DIR / "catalog"
+from app.core.catalog_dir import CATALOG_DIR
 
 _company_config_cache: dict | None = None
 
