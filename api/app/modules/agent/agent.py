@@ -1421,12 +1421,27 @@ class AgentService:
 
         elif name == "update_quote":
             updates = inputs.get("updates", {})
-            # Only allow known fields
             allowed = {"client_name", "project", "material", "total_ars", "total_usd", "status"}
             clean = {k: v for k, v in updates.items() if k in allowed and v is not None}
             if not clean:
                 return {"ok": False, "error": "No hay campos válidos para actualizar"}
             logging.info(f"update_quote {quote_id}: {clean}")
+
+            # Also update client_name/project inside the breakdown JSON
+            q_result = await db.execute(select(Quote).where(Quote.id == quote_id))
+            q_obj = q_result.scalar_one_or_none()
+            if q_obj and q_obj.quote_breakdown:
+                bd = dict(q_obj.quote_breakdown)
+                changed = False
+                if "client_name" in clean and bd.get("client_name") != clean["client_name"]:
+                    bd["client_name"] = clean["client_name"]
+                    changed = True
+                if "project" in clean and bd.get("project") != clean["project"]:
+                    bd["project"] = clean["project"]
+                    changed = True
+                if changed:
+                    clean["quote_breakdown"] = bd
+
             await db.execute(
                 update(Quote)
                 .where(Quote.id == quote_id)
