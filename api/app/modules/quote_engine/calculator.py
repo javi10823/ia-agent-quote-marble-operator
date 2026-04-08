@@ -191,18 +191,29 @@ def calculate_m2(pieces: list) -> tuple[float, list[dict]]:
     - Display per piece: 4 decimals (for traceability only)
     """
     total = 0.0
-    details = []
+    raw_details = []
     for p in pieces:
         largo = p.get("largo", 0)
         dim2 = p.get("prof") or p.get("alto") or 0
         raw_m2 = largo * dim2
         total += raw_m2
-        details.append({
+        raw_details.append({
             "description": p.get("description", ""),
             "largo": largo,
             "dim2": dim2,
-            "m2": round(raw_m2, 4),  # display only
+            "m2": round(raw_m2, 4),
         })
+    # Group identical pieces by description+dimensions
+    details = []
+    seen = {}
+    for d in raw_details:
+        key = f'{d["largo"]:.4f}_{d["dim2"]:.4f}_{d["description"]}'
+        if key in seen:
+            seen[key]["quantity"] += 1
+        else:
+            entry = {**d, "quantity": 1}
+            seen[key] = entry
+            details.append(entry)
     return round(total, 2), details
 
 
@@ -402,13 +413,23 @@ def calculate_quote(input_data: dict) -> dict:
         total_ars = total_mo_ars + total_sinks_ars + material_total_net
         total_usd = 0
 
-    # Build sectors for document generation
+    # Build sectors for document generation (group identical pieces)
     sectors = []
-    piece_labels = []
+    raw_labels = []
     for pd in piece_details:
         if pd["m2"] > 0:
             dim2_label = f'{pd["largo"]:.2f} × {pd["dim2"]:.2f}'
-            piece_labels.append(f'{dim2_label} {pd["description"]}')
+            raw_labels.append(f'{dim2_label} {pd["description"]}')
+    # Group duplicates: "0.60 × 0.38 Mesada" × 6 → "0.60 × 0.38 Mesada (×6)"
+    piece_labels = []
+    seen = {}
+    for lbl in raw_labels:
+        if lbl in seen:
+            seen[lbl] += 1
+        else:
+            seen[lbl] = 1
+            piece_labels.append(lbl)
+    piece_labels = [f"{lbl} (×{seen[lbl]})" if seen[lbl] > 1 else lbl for lbl in piece_labels]
     if piece_labels:
         sectors.append({"label": project or "Cocina", "pieces": piece_labels})
 
