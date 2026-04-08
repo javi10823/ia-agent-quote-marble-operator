@@ -516,18 +516,36 @@ Ejemplo isla 1.70×0.64×0.95:
 - En el desglose, mostrar claramente: "DESCUENTO EDIFICIO: total m² = X m² (> 15) → 18% descuento aplicado a todos los materiales"
 
 **⛔ CHECKLIST OBLIGATORIO PARA EDIFICIOS — mostrar ANTES de confirmar:**
-Después de calcular y ANTES de pedir confirmación, mostrar este checklist al operador:
+Después de calcular y ANTES de pedir confirmación, mostrar este checklist COMPLETO al operador.
+Debe incluir el despiece de CADA pieza y CADA servicio de MO:
+
 ```
-VERIFICACIÓN EDIFICIO:
+VERIFICACIÓN EDIFICIO — [Cliente] / [Obra]
+
+DESPIECE POR MATERIAL:
+
+MATERIAL 1: [nombre] — X piezas, Y,YY m²
+| ID | Ubicación | Medida | m² | Pileta | Faldón |
+| M1 | 13-Lavatorios | 2,30×0,60 | 1,38 | 3 bachas | 10cm |
+| M2 | 14-Kitchenette | 2,15×0,60 | 1,29 | 1 pileta | 5cm |
+| ... | ... | ... | ... | ... | ... |
+
+MATERIAL 2: [nombre] — X piezas, Y,YY m²
+| ... |
+
+SERVICIOS (MO):
 ✅ Sin colocación
+✅ PEGADOPILETA: N total (detalle: M1=3, M2=1, M5=2, ...)
+✅ Armado frentín recto: M total (detalle: M1=10cm, M2=5cm, ...)
 ✅ Flete: X fletes (Y piezas ÷ 8)
 ✅ MO ÷1.05 aplicado (excepto flete)
+
+DESCUENTOS:
 ✅ Descuento 18%: total m² = Z (> 15) → aplicado a todos los materiales
-✅ Piletas: N unidades
-✅ Frentines: M unidades
-¿Confirmás estos datos? Si el flete no es correcto, indicá la cantidad.
+
+¿Confirmás estos datos? Si el flete u otro dato no es correcto, indicá el cambio.
 ```
-El operador debe confirmar el checklist ANTES de generar documentos.
+El operador debe confirmar el checklist ANTES de generar documentos. NO resumir — mostrar CADA pieza.
 
 ### Colocación
 - Mínimo 1 m²: `max(m²_total, 1.0)`
