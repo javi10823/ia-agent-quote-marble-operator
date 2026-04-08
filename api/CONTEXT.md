@@ -506,9 +506,11 @@ Ejemplo isla 1.70×0.64×0.95:
 - Solo sobre material — NUNCA sobre MO
 
 ### Edificios
-- Sin colocación | Flete: `ceil(piezas_físicas/6)` | 1 PDF por material
-- Descuento 18% si m² > 15 por material
+- Sin colocación | Flete: `ceil(piezas_físicas/6)` — contar TODAS las piezas físicas (mesadas, umbrales, escalones, alféizares) y dividir por 6. Ejemplo: 40 piezas → ceil(40/6) = 7 fletes. | 1 PDF por material
+- Descuento 18% si **TOTAL m² > 15** (sumando TODOS los materiales del edificio, no por material individual). Si el total supera 15 m², el descuento aplica a TODOS los materiales.
 - Toda MO ÷1.05 (excepto flete) | Piletas y PEGADOPILETA también ÷1.05
+- **⛔ "Sin bachas/piletas"** → NO incluir NINGÚN ítem de pileta (ni AGUJEROAPOYO ni PEGADOPILETA). Cero piletas = cero MO de pileta.
+- En el desglose, mostrar claramente: "DESCUENTO EDIFICIO: total m² = X m² (> 15) → 18% descuento aplicado a todos los materiales"
 
 ### Colocación
 - Mínimo 1 m²: `max(m²_total, 1.0)`
