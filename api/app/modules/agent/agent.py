@@ -1295,7 +1295,8 @@ class AgentService:
                 if existing_bd_quote and existing_bd_quote.quote_breakdown:
                     db_bd = existing_bd_quote.quote_breakdown
                     db_material = (db_bd.get("material_name") or "").strip().upper()
-                    if db_material == mat_key:
+                    valentina_material = (qdata.get("material_name") or "").strip().upper()
+                    if db_material == valentina_material:
                         logging.info(f"Using DB breakdown for {target_qid} (material: {db_material})")
                         qdata = db_bd
 
