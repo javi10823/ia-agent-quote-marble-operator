@@ -240,7 +240,7 @@ Ver calculation-formulas.md.
 - Mostrar fila explicita DESC
 
 ### Edificios
-Ver quote-process-buildings.md. Sin colocacion | Flete: ceil(piezas/6) | MO ÷1.05 (excepto flete) | 18% desc si m²>15
+Ver quote-process-buildings.md. Sin colocacion | Flete: ceil(piezas_fisicas/8) — no contar faldones | MO ÷1.05 (excepto flete) | 18% desc si TOTAL m²>15 sobre TODOS los materiales
 
 ### Colocacion
 Ver calculation-formulas.md. Minimo 1 m² | Sobre total m² incluyendo zocalos | Estantes sueltos NO

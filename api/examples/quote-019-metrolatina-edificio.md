@@ -79,7 +79,7 @@ COCINAS
 - **Grand total: $6.564.922 + USD 1.100 Mano de obra + material**
 
 ## Reglas clave aprendidas en este ejemplo
-1. **Flete**: `ceil(piezas_físicas / 6)` — 16 mesadas (cada una = 1 pieza) → ceil(16/6) = **3 fletes**
+1. **Flete**: `ceil(piezas_físicas / 8)` — 16 mesadas → ceil(16/8) = **2 fletes**
 2. **Piletas edificio**: precio_con_iva / 1.05
 3. **PEGADOPILETA edificio**: precio_con_iva / 1.05
 4. **Descuento por material**: sumar m² del mismo material en TODO el pedido, no por pieza

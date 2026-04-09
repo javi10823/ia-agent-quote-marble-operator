@@ -24,7 +24,7 @@ Preguntar si es particular o edificio. Indicadores: enunciado lo dice, multiples
 Incluida en SKU de flete — NO cobrar por separado.
 
 ### Flete
-- Contar **piezas fisicas** (no unidades/dptos): `cant_fletes = ceil(piezas/6)`
+- Contar **piezas fisicas** (no unidades/dptos, no faldones): `cant_fletes = ceil(piezas/8)`
 - Ej: 120 piezas → ceil(120/6) = 20 fletes
 - Una sola linea con SKU zona x cant_fletes
 - Toma de medidas incluida

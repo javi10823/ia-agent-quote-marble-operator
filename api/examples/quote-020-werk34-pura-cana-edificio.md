@@ -82,7 +82,7 @@ Leer VISTA ZOCALO LATERAL: cota horizontal (15cm) = alto del zócalo. Cota verti
 | ML1 | 1 | 2 | 2 |
 | ML2 | 1 | 22 | 22 |
 | **TOTAL** | | | **72 piezas** |
-ceil(72/6) = **12 viajes** → operador ajustó a **9** (entran más piezas por viaje)
+ceil(72/8) = **9 viajes**
 
 ## Reglas clave aprendidas / confirmadas
 1. **Pata lateral = material adicional** → m² = prof_mesada × alto_pata. NO solo MO
