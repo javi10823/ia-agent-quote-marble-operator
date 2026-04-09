@@ -624,6 +624,7 @@ class AgentService:
             if ext == ".pdf":
                 # Pasada 1: Extract text/tables from PDF with pdfplumber (exact, no hallucination)
                 extracted_text = ""
+                tables_all = []  # Collect all tables for summary
                 try:
                     import pdfplumber
                     import io as _io
@@ -631,6 +632,7 @@ class AgentService:
                         for i, page in enumerate(pdf.pages):
                             # Extract tables first (structured data)
                             tables = page.extract_tables()
+                            tables_all.extend(tables)
                             if tables:
                                 for t_idx, table in enumerate(tables):
                                     extracted_text += f"\n--- Tabla {t_idx+1} (página {i+1}) ---\n"
@@ -648,7 +650,34 @@ class AgentService:
                                 if abs(w) > 200 and abs(h) > 200:  # Significant image, not a logo
                                     pdf_has_images = True
                     if extracted_text.strip():
-                        content.append({"type": "text", "text": f"[TEXTO EXTRAÍDO DEL PDF — DATOS EXACTOS]\n⛔ Este texto fue extraído automáticamente del PDF con precisión 100%. USAR ESTOS DATOS TAL CUAL. Si una celda dice \"-\" o está vacía, significa que NO APLICA — NUNCA inferir ni inventar valores. Cada fila es exacta.\n\n{extracted_text.strip()}"})
+                        # Build summary of empty/dash cells to prevent hallucination
+                        summary_lines = []
+                        for t_idx, table in enumerate(tables_all):
+                            if len(table) < 2:
+                                continue
+                            header = [str(c).strip().lower() if c else "" for c in table[0]]
+                            # Find perforaciones/calados column
+                            perf_col = None
+                            for ci, h in enumerate(header):
+                                if "perforac" in h or "calado" in h or "pileta" in h:
+                                    perf_col = ci
+                                    break
+                            if perf_col is not None:
+                                no_perf = []
+                                for row in table[1:]:
+                                    if len(row) > perf_col:
+                                        cell = str(row[perf_col]).strip() if row[perf_col] else ""
+                                        id_cell = str(row[0]).strip() if row[0] else ""
+                                        if id_cell and (cell == "-" or cell == "" or cell.lower() == "none"):
+                                            no_perf.append(id_cell)
+                                if no_perf:
+                                    summary_lines.append(f"⛔ Piezas SIN perforaciones (columna dice '-'): {', '.join(no_perf)} → 0 piletas para estas piezas. NO inventar.")
+
+                        summary = "\n".join(summary_lines)
+                        full_text = f"[TEXTO EXTRAÍDO DEL PDF — DATOS EXACTOS]\n⛔ Extraído con precisión 100%. USAR TAL CUAL. Celda \"-\" o vacía = NO APLICA. NUNCA inferir ni inventar.\n\n{extracted_text.strip()}"
+                        if summary:
+                            full_text += f"\n\n{summary}"
+                        content.append({"type": "text", "text": full_text})
                         logging.info(f"Extracted {len(extracted_text)} chars of text from PDF ({len(plan_bytes)} bytes)")
                 except Exception as e:
                     logging.warning(f"pdfplumber extraction failed: {e}")
@@ -798,7 +827,13 @@ class AgentService:
         _total_cache_read = 0
         _total_cache_write = 0
         _loop_iterations = 0
-        yield {"type": "action", "content": "Leyendo catálogos y calculando..."}
+        # Notify operator about processing mode
+        if has_plan and not pdf_has_images:
+            yield {"type": "action", "content": "📄 Modo texto — planilla detectada, extracción exacta (sin Opus)"}
+        elif has_plan and pdf_has_images:
+            yield {"type": "action", "content": "📐 Modo plano — dibujo detectado, usando Opus para lectura visual"}
+        else:
+            yield {"type": "action", "content": "Leyendo catálogos y calculando..."}
 
         while True:
             if _loop_iterations >= MAX_ITERATIONS:
