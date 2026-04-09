@@ -98,3 +98,10 @@ class QuotePatchRequest(BaseModel):
     origin: Optional[str] = Field(None, pattern=r"^(web|operator)$")
     notes: Optional[str] = None
     parent_quote_id: Optional[str] = Field(None, max_length=200)
+
+
+class DeriveMaterialRequest(BaseModel):
+    """Create a new quote derived from an existing one with a different material.
+    Copies client/project/pieces/options, recalculates everything from scratch."""
+    material: str = Field(..., min_length=1, max_length=500)
+    thickness_mm: Optional[int] = Field(None, ge=1, le=100)
