@@ -648,7 +648,7 @@ class AgentService:
                                 if abs(w) > 200 and abs(h) > 200:  # Significant image, not a logo
                                     pdf_has_images = True
                     if extracted_text.strip():
-                        content.append({"type": "text", "text": f"[TEXTO EXTRAÍDO DEL PDF — datos exactos, sin errores de lectura]\n{extracted_text.strip()}"})
+                        content.append({"type": "text", "text": f"[TEXTO EXTRAÍDO DEL PDF — DATOS EXACTOS]\n⛔ Este texto fue extraído automáticamente del PDF con precisión 100%. USAR ESTOS DATOS TAL CUAL. Si una celda dice \"-\" o está vacía, significa que NO APLICA — NUNCA inferir ni inventar valores. Cada fila es exacta.\n\n{extracted_text.strip()}"})
                         logging.info(f"Extracted {len(extracted_text)} chars of text from PDF ({len(plan_bytes)} bytes)")
                 except Exception as e:
                     logging.warning(f"pdfplumber extraction failed: {e}")
