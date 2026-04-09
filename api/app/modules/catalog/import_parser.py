@@ -64,7 +64,10 @@ def read_file(file_bytes: bytes, filename: str) -> tuple[list[str], list[list]]:
 
 
 def _read_xls(data: bytes) -> tuple[list[str], list[list]]:
-    import xlrd
+    try:
+        import xlrd
+    except ImportError:
+        raise ValueError("Para importar archivos .xls se necesita la librería xlrd. Contactar al administrador para instalarla (pip install xlrd).")
     wb = xlrd.open_workbook(file_contents=data)
     ws = wb.sheet_by_index(0)
 
@@ -100,7 +103,10 @@ def _read_xls(data: bytes) -> tuple[list[str], list[list]]:
 
 
 def _read_xlsx(data: bytes) -> tuple[list[str], list[list]]:
-    import openpyxl
+    try:
+        import openpyxl
+    except ImportError:
+        raise ValueError("Para importar archivos .xlsx se necesita la librería openpyxl. Contactar al administrador para instalarla (pip install openpyxl).")
     wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     ws = wb.active
 
