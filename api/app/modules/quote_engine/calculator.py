@@ -29,36 +29,23 @@ def _build_plate_sizes() -> dict[str, float]:
 
 PLATE_SIZES = _build_plate_sizes()
 
-# Common zone name → SKU mapping
-ZONE_SKUS = {
-    "rosario": "ENVIOROS",
-    "funes": "ENVFUNES",
-    "perez": "ENVPEREZ",
-    "san lorenzo": "ENVSANLORENZO",
-    "villa gobernador galvez": "ENVVILLA",
-    "roldan": "FLETEROLD",
-    "ibarlucea": "ENVIBAR",
-    "soldini": "ENVSOLDINI",
-    "ricardone": "ENVRICARDONE",
-    "san nicolas": "ENVSANNICO",
-    "alvear": "ENVALVEAR",
-    "arroyo seco": "ENVARROYO",
-    "galvez": "FLEGALVEZ",
-    "carcarana": "FLECARRERAS",
-    "andino": "FLETEAND",
-    "victoria": "ENVVICTORIA",
-    "san martin": "ENVSANMARTIN",
-    "general lagos": "ENVGRAL",
-    "hudsson": "ENVHUD",
-    "las parejas": "ENVLASPAREJAS",
-    "maciel": "ENVMACIEL",
-    "carmen": "ENVCARMEN",
-    "baigorria": "ENVBAI",
-    "bermudez": "ENVBER",
-    "salto grande": "ENVSALTOGDE",
-    "esther": "ENVESTHER",
-    "aldao": "ENVALDAO",
-}
+# Zone aliases — loaded from config.json
+# Supports both old format (str) and new format ({"sku": str, "pulido_extra": bool})
+def _load_zone_aliases() -> dict[str, dict]:
+    """Returns {zone_key: {"sku": str, "pulido_extra": bool}}."""
+    raw = cfg("zone_aliases", {})
+    result = {}
+    for k, v in raw.items():
+        key = k.lower().strip()
+        if key.startswith("_"):
+            continue  # skip _comment
+        if isinstance(v, str):
+            result[key] = {"sku": v, "pulido_extra": False}
+        elif isinstance(v, dict):
+            result[key] = {"sku": v.get("sku", ""), "pulido_extra": v.get("pulido_extra", False)}
+    return result
+
+ZONE_ALIASES = _load_zone_aliases()
 
 
 def _detect_material_type(catalog_result: dict) -> str:
@@ -160,20 +147,17 @@ def _find_material(material_name: str) -> dict:
 
 
 def _find_flete(localidad: str) -> dict:
-    """Find flete price for a zone."""
+    """Find flete price for a zone using exact match from config.json zone_aliases."""
     zone_key = localidad.lower().strip()
-    sku = ZONE_SKUS.get(zone_key)
-    if sku:
-        return catalog_lookup("delivery-zones", sku)
-    # Try direct SKU lookup
-    result = catalog_lookup("delivery-zones", f"ENVIO{zone_key.upper()[:3]}")
-    if result.get("found"):
+    aliases = _load_zone_aliases()
+    zone_info = aliases.get(zone_key)
+    if zone_info:
+        result = catalog_lookup("delivery-zones", zone_info["sku"])
+        if result.get("found"):
+            result["pulido_extra"] = zone_info.get("pulido_extra", False)
         return result
-    # Try partial match
-    result = catalog_lookup("delivery-zones", zone_key.upper())
-    if result.get("found"):
-        return result
-    return {"found": False, "error": f"Zona '{localidad}' no encontrada en delivery-zones"}
+    logging.warning(f"Flete: zona '{localidad}' (normalizada: '{zone_key}') no encontrada en zone_aliases de config.json")
+    return {"found": False, "error": f"Zona '{localidad}' no encontrada en zone_aliases de config.json. Agregar alias en config.json → zone_aliases."}
 
 
 def _get_mo_price(sku: str) -> tuple:
@@ -279,11 +263,14 @@ def calculate_quote(input_data: dict) -> dict:
     Calculate a complete quote from input data.
     Returns dict with all quote details, ready for document generation.
     """
+    warnings: list[str] = []  # Collect warnings visible to the agent
+
     client_name = input_data["client_name"]
     project = input_data.get("project", "")
     material_name = input_data["material"]
     pieces = input_data["pieces"]
-    localidad = input_data["localidad"]
+    localidad = input_data.get("localidad") or "rosario"  # Default Rosario if empty
+    skip_flete = input_data.get("skip_flete", False)
     colocacion = input_data.get("colocacion", True)
     is_edificio = input_data.get("is_edificio", False)
     pileta = input_data.get("pileta")
@@ -408,24 +395,39 @@ def calculate_quote(input_data: dict) -> dict:
             ml_45 = round(frentin_ml * 2, 2)
             mo_items.append({"description": "Corte 45", "quantity": ml_45, "unit_price": price_45, "base_price": base_45, "total": round(price_45 * ml_45)})
 
-    # Flete (edificio: ceil(piezas/8), normal: 1)
-    flete_result = _find_flete(localidad)
-    if flete_result.get("found"):
-        flete_price = flete_result.get("price_ars", 0)
-        flete_base = flete_result.get("price_ars_base", 0)
-        if is_edificio:
-            # Count physical pieces only (exclude faldones — they travel with the mesada)
-            physical_pieces = [p for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
-                               if not any(kw in (p.get("description") or "").lower() for kw in ["faldón", "faldon", "frentín", "frentin"])]
-            num_pieces = len(physical_pieces)
-            flete_qty = math.ceil(num_pieces / 8)
-            flete_qty = max(1, flete_qty)
-            logging.info(f"Edificio flete: {num_pieces} piezas físicas ÷ 8 = {flete_qty} fletes")
-        else:
-            flete_qty = 1
-        mo_items.append({"description": f"Flete + toma medidas {localidad}", "quantity": flete_qty, "unit_price": flete_price, "base_price": flete_base, "total": round(flete_price * flete_qty)})
+    # Flete (default: always charge unless skip_flete=True)
+    if skip_flete:
+        logging.info(f"Flete skipped: skip_flete=True (cliente retira en fábrica)")
     else:
-        logging.warning(f"Flete not found for '{localidad}'")
+        flete_result = _find_flete(localidad)
+        # Fallback to Rosario if zone not found
+        if not flete_result.get("found") and localidad.lower().strip() != "rosario":
+            warnings.append(f"⚠️ Zona '{localidad}' no encontrada en zone_aliases. Usando flete Rosario como fallback. Agregar alias en config.json si es una zona válida.")
+            logging.warning(f"Flete: zona '{localidad}' no encontrada, usando fallback Rosario")
+            flete_result = _find_flete("rosario")
+        if flete_result.get("found"):
+            flete_price = flete_result.get("price_ars", 0)
+            flete_base = flete_result.get("price_ars_base", 0)
+            if is_edificio:
+                physical_pieces = [p for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
+                                   if not any(kw in (p.get("description") or "").lower() for kw in ["faldón", "faldon", "frentín", "frentin"])]
+                num_pieces = len(physical_pieces)
+                flete_qty = math.ceil(num_pieces / 8)
+                flete_qty = max(1, flete_qty)
+                logging.info(f"Edificio flete: {num_pieces} piezas físicas ÷ 8 = {flete_qty} fletes")
+            else:
+                flete_qty = 1
+            mo_items.append({"description": f"Flete + toma medidas {localidad}", "quantity": flete_qty, "unit_price": flete_price, "base_price": flete_base, "total": round(flete_price * flete_qty)})
+
+            # Pulido de cantos extra: if zone has pulido_extra=true AND colocación is on
+            if colocacion and flete_result.get("pulido_extra", False):
+                pulido_extra_price = round(flete_price / 2)
+                pulido_extra_base = round(flete_base / 2)
+                mo_items.append({"description": "Pulido de cantos (colocación fuera de zona)", "quantity": 1, "unit_price": pulido_extra_price, "base_price": pulido_extra_base, "total": pulido_extra_price})
+                logging.info(f"Pulido cantos extra for {localidad}: ${pulido_extra_price} (flete/2)")
+        else:
+            warnings.append(f"⚠️ FLETE NO INCLUIDO: zona '{localidad}' no encontrada ni con fallback Rosario. El presupuesto NO tiene flete.")
+            logging.warning(f"Flete not found for '{localidad}' (even after fallback)")
 
     # Toma de corriente — si algún zócalo tiene alto > 10cm O hay revestimiento de pared
     has_tall_zocalo = any(
@@ -486,10 +488,15 @@ def calculate_quote(input_data: dict) -> dict:
     raw_labels = []
     for pd in piece_details:
         if pd["m2"] > 0:
-            dim2_label = f'{pd["largo"]:.2f} × {pd["dim2"]:.2f}'
-            label = f'{dim2_label} {pd["description"]}'
-            if pd["largo"] >= 3.0:
-                label += " (SE REALIZA EN 2 TRAMOS)"
+            desc_lower = (pd["description"] or "").lower()
+            is_zocalo = "zócalo" in desc_lower or "zocalo" in desc_lower
+            if is_zocalo:
+                label = f'{pd["description"]}: {pd["largo"]:.2f} ml'
+            else:
+                dim2_label = f'{pd["largo"]:.2f} × {pd["dim2"]:.2f}'
+                label = f'{dim2_label} {pd["description"]}'
+                if pd["largo"] >= 3.0:
+                    label += " (SE REALIZA EN 2 TRAMOS)"
             raw_labels.append(label)
     # Group duplicates: "0.60 × 0.38 Mesada" × 6 → "0.60 × 0.38 Mesada (×6)"
     piece_labels = []
@@ -504,6 +511,19 @@ def calculate_quote(input_data: dict) -> dict:
     if piece_labels:
         sectors.append({"label": project or "Cocina", "pieces": piece_labels})
 
+    # ── Delivery days: apply tier by m² if plazo matches the config default (numeric) ──
+    import re as _re_plazo
+    default_days = cfg("delivery_days.default", 40)
+    _plazo_match = _re_plazo.search(r'(\d+)', plazo or "")
+    _plazo_days = int(_plazo_match.group(1)) if _plazo_match else None
+    if _plazo_days == default_days:
+        tiers = cfg("delivery_days.tiers", [])
+        for tier in sorted(tiers, key=lambda t: t.get("max_m2", 999)):
+            if total_m2 <= tier.get("max_m2", 999):
+                plazo = tier.get("display", plazo)
+                logging.info(f"Delivery tier applied: {total_m2} m² → {plazo}")
+                break
+
     return {
         "ok": True,
         "client_name": client_name,
@@ -512,6 +532,7 @@ def calculate_quote(input_data: dict) -> dict:
         "delivery_days": plazo,
         "material_name": mat_result.get("name", material_name),
         "material_type": mat_type,
+        "thickness_mm": mat_result.get("thickness_mm", 20),
         "material_m2": total_m2,
         "material_price_unit": price_unit,
         "material_price_base": price_base,
@@ -537,6 +558,8 @@ def calculate_quote(input_data: dict) -> dict:
         "frentin_ml": frentin_ml,
         "inglete": inglete,
         "pulido": pulido,
+        "skip_flete": skip_flete,
+        **({"warnings": warnings} if warnings else {}),
         **({"fuzzy_corrected_from": mat_result["fuzzy_corrected_from"]} if "fuzzy_corrected_from" in mat_result else {}),
         # Edificio validation checklist
         **({"edificio_checklist": {

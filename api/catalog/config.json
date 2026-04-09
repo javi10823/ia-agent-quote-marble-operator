@@ -4,12 +4,17 @@
     "percentage": 21
   },
   "delivery_days": {
-    "_comment": "Plazo de entrega desde toma de medidas. Puede ser un número fijo o un rango.",
+    "_comment": "Plazo de entrega desde toma de medidas. Se elige por tier según m² total.",
     "default": 40,
     "range_enabled": false,
     "range_min": 20,
     "range_max": 30,
-    "display": "40 dias desde la toma de medidas"
+    "display": "40 dias desde la toma de medidas",
+    "tiers": [
+      {"max_m2": 3, "days": 20, "display": "20 dias desde la toma de medidas"},
+      {"max_m2": 6, "days": 30, "display": "30 dias desde la toma de medidas"},
+      {"max_m2": 999, "days": 40, "display": "40 dias desde la toma de medidas"}
+    ]
   },
   "discount": {
     "imported_percentage": 5,
@@ -108,6 +113,39 @@
     "use_opus_for_plans": true,
     "rotate_plan_images": false,
     "max_examples": 1
+  },
+  "zone_aliases": {
+    "_comment": "sku: SKU en delivery-zones.json. pulido_extra: true si hay colocación cobra pulido de cantos (= flete/2). Zonas cercanas a Rosario: false.",
+    "rosario": {"sku": "ENVIOROS", "pulido_extra": false},
+    "funes": {"sku": "ENVFUNES", "pulido_extra": false},
+    "roldan": {"sku": "FLETEROLD", "pulido_extra": false},
+    "perez": {"sku": "ENVPEREZ", "pulido_extra": true},
+    "san lorenzo": {"sku": "ENVSANLORENZO", "pulido_extra": true},
+    "villa gobernador galvez": {"sku": "ENVVILLA", "pulido_extra": true},
+    "ibarlucea": {"sku": "ENVIBAR", "pulido_extra": true},
+    "soldini": {"sku": "ENVSOLDINI", "pulido_extra": true},
+    "ricardone": {"sku": "ENVRICARDONE", "pulido_extra": true},
+    "san nicolas": {"sku": "ENVSANNICO", "pulido_extra": true},
+    "alvear": {"sku": "ENVALVEAR", "pulido_extra": true},
+    "arroyo seco": {"sku": "ENVARROYO", "pulido_extra": true},
+    "galvez": {"sku": "FLEGALVEZ", "pulido_extra": true},
+    "carcarana": {"sku": "FLECARRERAS", "pulido_extra": true},
+    "andino": {"sku": "FLETEAND", "pulido_extra": true},
+    "victoria": {"sku": "ENVVICTORIA", "pulido_extra": true},
+    "san martin": {"sku": "ENVSANMARTIN", "pulido_extra": true},
+    "puerto san martin": {"sku": "ENVSANMARTIN", "pulido_extra": true},
+    "puerto gral san martin": {"sku": "ENVSANMARTIN", "pulido_extra": true},
+    "pto san martin": {"sku": "ENVSANMARTIN", "pulido_extra": true},
+    "general lagos": {"sku": "ENVGRAL", "pulido_extra": true},
+    "hudsson": {"sku": "ENVHUD", "pulido_extra": true},
+    "las parejas": {"sku": "ENVLASPAREJAS", "pulido_extra": true},
+    "maciel": {"sku": "ENVMACIEL", "pulido_extra": true},
+    "carmen": {"sku": "ENVCARMEN", "pulido_extra": true},
+    "baigorria": {"sku": "ENVBAI", "pulido_extra": true},
+    "bermudez": {"sku": "ENVBER", "pulido_extra": true},
+    "salto grande": {"sku": "ENVSALTOGDE", "pulido_extra": true},
+    "esther": {"sku": "ENVESTHER", "pulido_extra": true},
+    "aldao": {"sku": "ENVALDAO", "pulido_extra": true}
   },
   "material_aliases": {
     "granito new beige": "Marmol Sahara",

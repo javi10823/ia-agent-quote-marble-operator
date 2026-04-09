@@ -181,6 +181,32 @@ class TestCalculateQuote:
         descriptions = [mo["description"].lower() for mo in result["mo_items"]]
         assert not any("toma corriente" in d for d in descriptions), f"TOMAS should not be in MO: {descriptions}"
 
+    def test_flete_puerto_san_martin(self):
+        """Puerto San Martín should resolve via zone_aliases in config.json."""
+        result = calculate_quote({
+            "client_name": "Test PSM",
+            "material": "Silestone Blanco Norte",
+            "pieces": [{"description": "Mesada", "largo": 1.5, "prof": 0.6}],
+            "localidad": "puerto san martin",
+            "colocacion": True,
+            "plazo": "30 días",
+        })
+        assert result["ok"] is True
+        descriptions = [mo["description"].lower() for mo in result["mo_items"]]
+        assert any("flete" in d and "san martin" in d for d in descriptions), f"Flete PSM not found: {descriptions}"
+
+    def test_flete_pto_san_martin_alias(self):
+        """Alias 'pto san martin' should also resolve."""
+        result = _find_flete("pto san martin")
+        assert result["found"] is True
+        assert result["price_ars"] > 0
+
+    def test_flete_unknown_zone_fails(self):
+        """Unknown zone should return found=False, not silently skip."""
+        result = _find_flete("atlantida")
+        assert result["found"] is False
+        assert "zone_aliases" in result.get("error", "").lower()
+
     def test_material_not_found_error(self):
         result = calculate_quote({
             "client_name": "Test",
