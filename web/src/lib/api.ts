@@ -151,6 +151,37 @@ export async function markQuoteAsRead(id: string): Promise<void> {
   if (!res.ok) throw new Error("Error al marcar como leído");
 }
 
+// ── Derive Material ─────────────────────────────────────────────────────────
+
+export interface DeriveMaterialPayload {
+  material: string;
+  thickness_mm?: number;
+}
+
+export interface DeriveMaterialResponse {
+  ok: boolean;
+  quote_id: string;
+  material: string;
+  total_ars: number;
+  total_usd: number;
+  derived_from: string;
+}
+
+export async function deriveMaterial(quoteId: string, payload: DeriveMaterialPayload): Promise<DeriveMaterialResponse> {
+  const res = await fetch(`${API_BASE}/api/quotes/${quoteId}/derive-material`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    credentials: "include",
+  });
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al derivar presupuesto");
+  }
+  return res.json();
+}
+
 // ── Quote Comparison ─────────────────────────────────────────────────────────
 
 export interface QuoteCompareItem {
