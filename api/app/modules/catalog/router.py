@@ -221,22 +221,19 @@ async def import_preview(file: UploadFile = File(...)):
     return result
 
 
-class ImportApplyRequest(BaseModel):
-    """Request to apply a previewed import to specific catalogs."""
-    catalogs: list[str]  # catalog names to update (from preview)
-    source_file: str = ""  # original filename for audit
-    include_new: bool = True  # include new items (not in current catalog)
-
-
 @router.post("/import-apply")
 async def import_apply(
-    body: ImportApplyRequest,
     file: UploadFile = File(...),
+    catalogs: str = "",           # JSON array string from FormData
+    include_new: str = "true",    # "true"/"false" from FormData
+    source_file: str = "",
 ):
     """Apply a previewed import: backup current → update catalogs.
 
+    Accepts FormData with: file + catalogs (JSON array string) + include_new + source_file.
+
     1. Re-parse the file (same as preview)
-    2. For each catalog in body.catalogs:
+    2. For each selected catalog:
        a. Backup current catalog to catalog_backups table
        b. Apply upsert (update existing by SKU, optionally add new)
        c. Invalidate caches
@@ -245,6 +242,15 @@ async def import_apply(
     Items with price $0 are ALWAYS skipped.
     Items in current catalog but NOT in file are NEVER deleted.
     """
+    # Parse FormData fields
+    try:
+        catalog_list = json.loads(catalogs) if catalogs else []
+    except (json.JSONDecodeError, TypeError):
+        catalog_list = [c.strip() for c in catalogs.split(",") if c.strip()]
+    do_include_new = include_new.lower() in ("true", "1", "yes")
+
+    if not catalog_list:
+        raise HTTPException(status_code=400, detail="No se seleccionaron catálogos para importar")
     if not file.filename:
         raise HTTPException(status_code=400, detail="Archivo sin nombre")
 
@@ -279,7 +285,7 @@ async def import_apply(
 
     results = {}
 
-    for cat_name in body.catalogs:
+    for cat_name in catalog_list:
         if cat_name not in preview.get("catalogs", {}):
             results[cat_name] = {"ok": False, "error": "No hay datos para este catálogo en el archivo"}
             continue
@@ -297,7 +303,7 @@ async def import_apply(
                     {
                         "name": cat_name,
                         "content": json.dumps(current_items, ensure_ascii=False),
-                        "source": body.source_file or file.filename,
+                        "source": source_file or file.filename,
                         "stats": json.dumps({
                             "items_before": len(current_items),
                             "updated": len(diff["updated"]),
@@ -330,7 +336,7 @@ async def import_apply(
                 stats["updated"] += 1
 
         # Add new items (if enabled)
-        if body.include_new:
+        if do_include_new:
             for new_item in diff["new"]:
                 entry = {
                     "sku": new_item["sku"],
@@ -358,7 +364,7 @@ async def import_apply(
     return {
         "ok": all(r.get("ok") for r in results.values()),
         "results": results,
-        "source_file": body.source_file or file.filename,
+        "source_file": source_file or file.filename,
     }
 
 
