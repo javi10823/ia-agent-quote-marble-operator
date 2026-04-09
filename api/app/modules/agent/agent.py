@@ -618,17 +618,54 @@ class AgentService:
 
         # Build user message content
         content = []
+        pdf_has_images = False  # Track if PDF has drawings (needs vision pass)
         if plan_bytes and plan_filename:
             ext = Path(plan_filename).suffix.lower()
             if ext == ".pdf":
-                content.append({
-                    "type": "document",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "application/pdf",
-                        "data": base64.b64encode(plan_bytes).decode(),
-                    },
-                })
+                # Pasada 1: Extract text/tables from PDF with pdfplumber (exact, no hallucination)
+                extracted_text = ""
+                try:
+                    import pdfplumber
+                    import io as _io
+                    with pdfplumber.open(_io.BytesIO(plan_bytes)) as pdf:
+                        for i, page in enumerate(pdf.pages):
+                            # Extract tables first (structured data)
+                            tables = page.extract_tables()
+                            if tables:
+                                for t_idx, table in enumerate(tables):
+                                    extracted_text += f"\n--- Tabla {t_idx+1} (página {i+1}) ---\n"
+                                    for row in table:
+                                        cells = [str(c).strip() if c else "" for c in row]
+                                        extracted_text += " | ".join(cells) + "\n"
+                            # Also extract plain text (headers, notes, etc.)
+                            page_text = page.extract_text()
+                            if page_text:
+                                extracted_text += f"\n--- Texto página {i+1} ---\n{page_text}\n"
+                            # Check if page has large images (drawings/plans, not logos)
+                            for img in (page.images or []):
+                                w = img.get("width", 0) or img.get("x1", 0) - img.get("x0", 0)
+                                h = img.get("height", 0) or img.get("top", 0) - img.get("bottom", 0)
+                                if abs(w) > 200 and abs(h) > 200:  # Significant image, not a logo
+                                    pdf_has_images = True
+                    if extracted_text.strip():
+                        content.append({"type": "text", "text": f"[TEXTO EXTRAÍDO DEL PDF — datos exactos, sin errores de lectura]\n{extracted_text.strip()}"})
+                        logging.info(f"Extracted {len(extracted_text)} chars of text from PDF ({len(plan_bytes)} bytes)")
+                except Exception as e:
+                    logging.warning(f"pdfplumber extraction failed: {e}")
+
+                # Pasada 2: If PDF has drawings/images, also send as document for vision
+                if pdf_has_images or not extracted_text.strip():
+                    content.append({
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": base64.b64encode(plan_bytes).decode(),
+                        },
+                    })
+                    logging.info(f"PDF has images/drawings — sending as document for vision pass")
+                else:
+                    logging.info(f"PDF is text-only (no images) — skipping vision pass, using extracted text only")
             else:
                 media_type = "image/jpeg" if ext in [".jpg", ".jpeg"] else "image/webp" if ext == ".webp" else "image/png"
                 content.append({
@@ -777,10 +814,14 @@ class AgentService:
             # - Sonnet: everything else (prices, MO, docs)
             OPUS_MODEL = "claude-opus-4-6"
             ai_cfg = get_ai_config()
-            use_opus = has_plan and _loop_iterations == 0 and ai_cfg.get("use_opus_for_plans", True)
+            # Only use Opus if PDF has images/drawings (not for text-only planillas)
+            needs_vision = has_plan and pdf_has_images
+            use_opus = needs_vision and _loop_iterations == 0 and ai_cfg.get("use_opus_for_plans", True)
             current_model = OPUS_MODEL if use_opus else settings.ANTHROPIC_MODEL
             if use_opus:
                 logging.info(f"Using Opus for plan reading (iteration {_loop_iterations + 1})")
+            elif has_plan and _loop_iterations == 0 and not pdf_has_images:
+                logging.info(f"PDF is text-only — using Sonnet (no Opus needed)")
 
             # Strip plan images from messages after first iteration (saves ~50K tokens)
             if _loop_iterations > 0 and has_plan:
