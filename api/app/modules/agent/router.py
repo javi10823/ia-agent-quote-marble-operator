@@ -26,6 +26,7 @@ from app.modules.agent.schemas import (
     QuoteCompareResponse,
     QuoteStatusUpdate,
     QuotePatchRequest,
+    DeriveMaterialRequest,
 )
 
 router = APIRouter(tags=["agent"])
@@ -330,6 +331,147 @@ async def validate_quote(
         "pdf_url": pdf_url,
         "excel_url": excel_url,
         "drive_url": final_drive_url,
+    }
+
+
+# ── DERIVE MATERIAL — create new quote with different material ───────────────
+
+@router.post("/quotes/{quote_id}/derive-material")
+async def derive_material(
+    quote_id: str,
+    body: DeriveMaterialRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a NEW quote derived from an existing one, replacing only the material.
+
+    Copies client data, pieces, and options from the original.
+    Recalculates everything from scratch via calculate_quote.
+    The new quote is born in DRAFT status with no documents.
+
+    Traceability: new quote's parent_quote_id points to the original.
+    conversation_id is NOT copied — the derived quote starts its own chat.
+    """
+    import uuid as _uuid
+    from app.modules.quote_engine.calculator import calculate_quote
+
+    # Load original
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    original = result.scalar_one_or_none()
+    if not original:
+        raise HTTPException(status_code=404, detail="Presupuesto original no encontrado")
+
+    # ── Source of truth for pieces ──
+    # Priority: quote.pieces (raw input) > breakdown.piece_details (calculated)
+    # If neither exists, reject — we need a reliable base to recalculate.
+    pieces = None
+    if original.pieces:
+        # Raw pieces saved at creation — best source
+        pieces = original.pieces
+    elif original.quote_breakdown and original.quote_breakdown.get("piece_details"):
+        # Fallback: reconstruct from breakdown's piece_details
+        pieces = []
+        for pd in original.quote_breakdown["piece_details"]:
+            piece = {"description": pd["description"], "largo": pd["largo"]}
+            if pd.get("dim2"):
+                # dim2 is prof for mesadas, alto for zócalos
+                desc_lower = pd["description"].lower()
+                if "zócalo" in desc_lower or "zocalo" in desc_lower:
+                    piece["alto"] = pd["dim2"]
+                else:
+                    piece["prof"] = pd["dim2"]
+            pieces.append(piece)
+        logging.info(f"[derive] Reconstructed {len(pieces)} pieces from breakdown for {quote_id}")
+    if not pieces:
+        raise HTTPException(status_code=400, detail="El presupuesto original no tiene piezas. No se puede derivar.")
+
+    # ── Plazo: from breakdown or config default ──
+    plazo = None
+    if original.quote_breakdown:
+        plazo = original.quote_breakdown.get("delivery_days")
+    if not plazo:
+        try:
+            from app.core.company_config import get as _cfg
+            plazo = _cfg("delivery_days.display", "40 dias desde la toma de medidas")
+        except Exception:
+            plazo = "40 dias desde la toma de medidas"
+
+    # ── Build calculate_quote input ──
+    calc_input = {
+        "client_name": original.client_name or "",
+        "project": original.project or "",
+        "material": body.material,
+        "pieces": pieces,
+        "localidad": original.localidad or "rosario",
+        "colocacion": original.colocacion if original.colocacion is not None else True,
+        "pileta": original.pileta,
+        "anafe": original.anafe or False,
+        "plazo": plazo,
+        "skip_flete": original.quote_breakdown.get("skip_flete", False) if original.quote_breakdown else False,
+    }
+    # Carry over frentin/inglete/pulido from original breakdown if they existed
+    if original.quote_breakdown:
+        for key in ("frentin", "frentin_ml", "inglete", "pulido", "discount_pct", "is_edificio"):
+            val = original.quote_breakdown.get(key)
+            if val:
+                calc_input[key] = val
+
+    # ── Calculate ──
+    calc_result = calculate_quote(calc_input)
+    if not calc_result.get("ok"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Error al calcular con material '{body.material}': {calc_result.get('error', 'desconocido')}"
+        )
+
+    # ── Create new quote ──
+    new_id = str(_uuid.uuid4())
+    new_quote = Quote(
+        id=new_id,
+        client_name=original.client_name,
+        project=original.project,
+        material=calc_result.get("material_name", body.material),
+        total_ars=calc_result.get("total_ars"),
+        total_usd=calc_result.get("total_usd"),
+        quote_breakdown=calc_result,
+        status=QuoteStatus.DRAFT,
+        source=original.source,
+        is_read=True,
+        # Client contact
+        client_phone=original.client_phone,
+        client_email=original.client_email,
+        # Quote options (copied from original)
+        localidad=original.localidad,
+        colocacion=original.colocacion,
+        pileta=original.pileta,
+        anafe=original.anafe,
+        sink_type=original.sink_type,
+        pieces=pieces,
+        notes=original.notes,
+        # Traceability
+        parent_quote_id=original.parent_quote_id or original.id,
+        # Fresh state — no docs, no chat, no history
+        messages=[],
+        change_history=[],
+        # conversation_id intentionally NOT copied:
+        # the derived quote starts its own chat context.
+    )
+    db.add(new_quote)
+    await db.commit()
+
+    logging.info(
+        f"[derive-material] {quote_id} → {new_id} | "
+        f"material: {original.material} → {body.material} | "
+        f"total_ars: {original.total_ars} → {calc_result.get('total_ars')} | "
+        f"total_usd: {original.total_usd} → {calc_result.get('total_usd')}"
+    )
+
+    return {
+        "ok": True,
+        "quote_id": new_id,
+        "material": calc_result.get("material_name"),
+        "total_ars": calc_result.get("total_ars"),
+        "total_usd": calc_result.get("total_usd"),
+        "derived_from": quote_id,
     }
 
 
