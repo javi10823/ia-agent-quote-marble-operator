@@ -155,6 +155,8 @@ def catalog_lookup(catalog: str, sku: str) -> dict:
                 result["origin"] = item["origin"]
             if "sink_type" in item:
                 result["sink_type"] = item["sink_type"]
+            if "thickness_mm" in item:
+                result["thickness_mm"] = item["thickness_mm"]
 
             return result
 
