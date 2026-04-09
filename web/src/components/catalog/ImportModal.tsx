@@ -207,7 +207,7 @@ export default function ImportModal({ onDone, onClose }: Props) {
               {preview.iva_warning && (
                 <div className="px-3.5 py-3 rounded-lg bg-red-500/[0.08] border border-red-500/20 text-xs text-red-400 leading-relaxed">
                   <strong>{"\uD83D\uDD34"} Precio con IVA detectado</strong><br/>
-                  El archivo solo tiene la columna "Precio De Venta Con IVA". Los cat\u00E1logos almacenan precios SIN IVA. No se puede importar sin confirmaci\u00F3n expl\u00EDcita.
+                  El archivo solo tiene la columna {"\u201C"}Precio De Venta Con IVA{"\u201D"}. Los cat{"\u00E1"}logos almacenan precios SIN IVA. No se puede importar sin confirmaci{"\u00F3"}n expl{"\u00ED"}cita.
                 </div>
               )}
 
