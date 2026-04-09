@@ -43,6 +43,7 @@ async def seed_catalogs_to_db(engine):
         count = result.scalar()
         if count > 0:
             logger.info(f"Catalogs table already has {count} entries, skipping seed")
+            await _sync_config_keys(async_session)
             return
 
         # Seed from source files
