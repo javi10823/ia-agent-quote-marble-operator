@@ -61,3 +61,51 @@ async def seed_catalogs_to_db(engine):
 
         await session.commit()
         logger.info(f"Seeded {len(source_files)} catalogs to DB")
+
+    # Always sync new top-level keys from config.json → DB
+    await _sync_config_keys(async_session)
+
+
+async def _sync_config_keys(async_session):
+    """Merge new top-level keys from config.json file into DB config.
+
+    Only adds keys that exist in the file but are missing in DB.
+    Existing DB values are never overwritten (user edits win).
+    """
+    from sqlalchemy import text
+
+    config_path = SOURCE_CATALOG_DIR / "config.json"
+    if not config_path.exists():
+        return
+
+    with open(config_path, encoding="utf-8") as f:
+        file_config = json.load(f)
+
+    if not isinstance(file_config, dict):
+        return
+
+    async with async_session() as session:
+        result = await session.execute(
+            text("SELECT content FROM catalogs WHERE name = 'config'")
+        )
+        row = result.first()
+        if not row:
+            return
+
+        db_config = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+        if not isinstance(db_config, dict):
+            return
+
+        new_keys = [k for k in file_config if k not in db_config]
+        if not new_keys:
+            return
+
+        for k in new_keys:
+            db_config[k] = file_config[k]
+
+        await session.execute(
+            text("UPDATE catalogs SET content = :content, updated_at = NOW() WHERE name = 'config'"),
+            {"content": json.dumps(db_config, ensure_ascii=False)},
+        )
+        await session.commit()
+        logger.info(f"Config sync: added {len(new_keys)} new keys from file → DB: {new_keys}")
