@@ -101,6 +101,20 @@ async def init_db():
             """)
         )
 
+        # Create catalog_backups table for import safety
+        await conn.execute(
+            __import__("sqlalchemy").text("""
+                CREATE TABLE IF NOT EXISTS catalog_backups (
+                    id SERIAL PRIMARY KEY,
+                    catalog_name VARCHAR(100) NOT NULL,
+                    content JSON NOT NULL,
+                    source_file VARCHAR(500),
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    stats JSON
+                )
+            """)
+        )
+
         # Add 'pending' value to quotestatus enum if not present
         try:
             await conn.execute(
