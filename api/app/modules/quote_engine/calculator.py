@@ -460,7 +460,7 @@ def calculate_quote(input_data: dict) -> dict:
             if colocacion and flete_result.get("pulido_extra", False):
                 pulido_extra_price = round(flete_price / 2)
                 pulido_extra_base = round(flete_base / 2)
-                mo_items.append({"description": "Pulido de cantos (colocación fuera de zona)", "quantity": 1, "unit_price": pulido_extra_price, "base_price": pulido_extra_base, "total": pulido_extra_price})
+                mo_items.append({"description": "Pulido de cantos", "quantity": 1, "unit_price": pulido_extra_price, "base_price": pulido_extra_base, "total": pulido_extra_price})
                 logging.info(f"Pulido cantos extra for {localidad}: ${pulido_extra_price} (flete/2)")
         else:
             warnings.append(f"⚠️ FLETE NO INCLUIDO: zona '{localidad}' no encontrada ni con fallback Rosario. El presupuesto NO tiene flete.")

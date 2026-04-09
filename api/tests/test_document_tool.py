@@ -130,7 +130,7 @@ class TestGenerateDocuments:
                 {"description": "Agujero anafe", "quantity": 1, "unit_price": 43097, "total": 43097},
                 {"description": "Colocación", "quantity": 4.83, "unit_price": 60135, "total": 290452},
                 {"description": "Flete + toma medidas puerto san martin", "quantity": 1, "unit_price": 145200, "total": 145200},
-                {"description": "Pulido de cantos (colocación fuera de zona)", "quantity": 1, "unit_price": 72600, "total": 72600},
+                {"description": "Pulido de cantos", "quantity": 1, "unit_price": 72600, "total": 72600},
             ],
             "total_ars": 616496,
             "total_usd": 2507,
