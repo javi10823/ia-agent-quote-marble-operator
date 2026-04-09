@@ -132,6 +132,37 @@ class TestParseEdificioTables:
         m11 = next(r for s in raw["sections"] for r in s["rows"] if r["id"] == "M11")
         assert m11["ubicacion"] == "65- Cocina"
 
+    def test_m13_no_ubicacion(self):
+        """M13 has no ubicacion in PDF — confirmed from rendered PDF."""
+        raw = parse_edificio_tables(ALL_TABLES)
+        m13 = next(r for s in raw["sections"] for r in s["rows"] if r["id"] == "M13")
+        assert m13["ubicacion"] is None
+
+    def test_m13_no_perforaciones(self):
+        """M13 has '-' in perforaciones → null."""
+        raw = parse_edificio_tables(ALL_TABLES)
+        m13 = next(r for s in raw["sections"] for r in s["rows"] if r["id"] == "M13")
+        assert m13["perforaciones_raw"] is None
+
+    def test_m11_m12_m13_alignment(self):
+        """Critical alignment test — verified against rendered PDF.
+        M11 = 65-Cocina, 2 piletas, no faldón
+        M12 = no ubicacion, no perforaciones, no faldón
+        M13 = no ubicacion, no perforaciones, no faldón
+        """
+        raw = parse_edificio_tables(ALL_TABLES)
+        rows = {r["id"]: r for s in raw["sections"] for r in s["rows"]}
+        # M11: has ubicacion + perforaciones
+        assert rows["M11"]["ubicacion"] == "65- Cocina"
+        assert rows["M11"]["perforaciones_raw"] is not None
+        assert "2 piletas" in rows["M11"]["perforaciones_raw"]
+        # M12: no ubicacion, no perforaciones
+        assert rows["M12"]["ubicacion"] is None
+        assert rows["M12"]["perforaciones_raw"] is None
+        # M13: no ubicacion, no perforaciones
+        assert rows["M13"]["ubicacion"] is None
+        assert rows["M13"]["perforaciones_raw"] is None
+
     def test_m12_perforaciones_dash(self):
         raw = parse_edificio_tables(ALL_TABLES)
         m12 = next(r for s in raw["sections"] for r in s["rows"] if r["id"] == "M12")
