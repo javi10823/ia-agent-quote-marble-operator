@@ -1,5 +1,6 @@
 import calendar
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -9,11 +10,13 @@ from app.modules.agent.tools.catalog_tool import get_ai_config
 
 router = APIRouter(prefix="/usage", tags=["usage"])
 
+AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+
 
 @router.get("/dashboard")
 async def get_dashboard(db: AsyncSession = Depends(get_db)):
     """Get current month usage summary with alerts."""
-    now = datetime.now()
+    now = datetime.now(AR_TZ)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     days_in_month = calendar.monthrange(now.year, now.month)[1]
     days_passed = max(now.day, 1)
@@ -68,17 +71,17 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
 @router.get("/daily")
 async def get_daily(db: AsyncSession = Depends(get_db)):
     """Get daily usage breakdown for the last 30 days."""
-    since = datetime.now() - timedelta(days=30)
+    since = datetime.now(AR_TZ) - timedelta(days=30)
     result = await db.execute(
         text("""
-            SELECT DATE(created_at) as day,
+            SELECT DATE(created_at AT TIME ZONE 'America/Argentina/Buenos_Aires') as day,
                    COALESCE(SUM(cost_usd), 0) as cost,
                    COUNT(*) as requests,
                    COALESCE(SUM(input_tokens), 0) as input_tokens,
                    COALESCE(SUM(output_tokens), 0) as output_tokens
             FROM token_usage
             WHERE created_at >= :since
-            GROUP BY DATE(created_at)
+            GROUP BY DATE(created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')
             ORDER BY day DESC
         """),
         {"since": since},
