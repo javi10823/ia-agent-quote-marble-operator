@@ -118,6 +118,8 @@ def invalidate_catalog_cache(name: str | None = None):
 
 def catalog_lookup(catalog: str, sku: str) -> dict:
     """Look up a SKU in the specified catalog and return price with IVA."""
+    # Strip .json extension if Valentina adds it
+    catalog = catalog.replace(".json", "")
     items = _load_catalog(catalog)
     if not items:
         logging.warning(f"catalog_lookup: catalog '{catalog}' returned 0 items!")
