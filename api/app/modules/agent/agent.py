@@ -1107,23 +1107,38 @@ class AgentService:
             cur_quote = cur_q.scalar_one_or_none()
 
             for idx, qdata in enumerate(quotes_data):
+                mat_name = (qdata.get("material_name") or "").strip().upper()
                 if idx == 0:
-                    # First material always uses current quote_id
                     target_qid = quote_id
                 else:
-                    # Additional materials: create independent quote
-                    target_qid = str(uuid_mod.uuid4())
-                    new_quote = Quote(
-                        id=target_qid,
-                        client_name=qdata.get("client_name", ""),
-                        project=qdata.get("project", ""),
-                        material=qdata.get("material_name"),
-                        messages=list(cur_quote.messages or []) if cur_quote else [],
-                        status=QuoteStatus.DRAFT,
-                    )
-                    db.add(new_quote)
-                    await db.flush()
-                    logging.info(f"Created independent quote {target_qid} for material: {qdata.get('material_name')}")
+                    # Check if calculate_quote already created a quote for this material
+                    from sqlalchemy import and_
+                    target_qid = None
+                    try:
+                        client = qdata.get("client_name", cur_quote.client_name if cur_quote else "")
+                        existing = await db.execute(select(Quote).where(Quote.client_name == client))
+                        for eq in existing.scalars().all():
+                            eq_mat = (eq.material or "").strip().upper()
+                            if eq.id != quote_id and (eq_mat == mat_name or mat_name in eq_mat or eq_mat in mat_name):
+                                target_qid = eq.id
+                                logging.info(f"Reusing quote {target_qid} for material: {mat_name}")
+                                break
+                    except Exception as e:
+                        logging.warning(f"Could not search for existing quote: {e}")
+
+                    if not target_qid:
+                        target_qid = str(uuid_mod.uuid4())
+                        new_quote = Quote(
+                            id=target_qid,
+                            client_name=qdata.get("client_name", ""),
+                            project=qdata.get("project", ""),
+                            material=qdata.get("material_name"),
+                            messages=list(cur_quote.messages or []) if cur_quote else [],
+                            status=QuoteStatus.DRAFT,
+                        )
+                        db.add(new_quote)
+                        await db.flush()
+                        logging.info(f"Created independent quote {target_qid} for material: {qdata.get('material_name')}")
 
                 # Use DB breakdown if it exists and material matches (from calculate_quote)
                 existing_bd_result = await db.execute(select(Quote).where(Quote.id == target_qid))
