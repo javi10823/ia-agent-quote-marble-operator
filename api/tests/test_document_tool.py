@@ -106,3 +106,54 @@ class TestGenerateDocuments:
             # Check Argentine locale was injected
             workbook_xml = z.read("xl/workbook.xml").decode("utf-8")
             assert "es_AR" in workbook_xml, "Argentine locale not found in workbook.xml"
+
+    @pytest.mark.asyncio
+    async def test_excel_all_mo_items_present(self):
+        """Excel must include ALL MO items — even when >4 (template slots)."""
+        import zipfile
+
+        data = {
+            "client_name": "Alvaro Torres",
+            "project": "Cocina",
+            "material_name": "SILESTONE BLANCO NORTE",
+            "material_m2": 4.83,
+            "material_price_unit": 519,
+            "material_currency": "USD",
+            "discount_pct": 0,
+            "sectors": [{"label": "Cocina", "pieces": [
+                "4.10 × 0.65 Mesada tramo 1 (SE REALIZA EN 2 TRAMOS)",
+                "2.80 × 0.65 Mesada tramo 2",
+                "6.90ML X 0.05 ZOC",
+            ]}],
+            "mo_items": [
+                {"description": "Agujero y pegado pileta", "quantity": 1, "unit_price": 65147, "total": 65147},
+                {"description": "Agujero anafe", "quantity": 1, "unit_price": 43097, "total": 43097},
+                {"description": "Colocación", "quantity": 4.83, "unit_price": 60135, "total": 290452},
+                {"description": "Flete + toma medidas puerto san martin", "quantity": 1, "unit_price": 145200, "total": 145200},
+                {"description": "Pulido de cantos (colocación fuera de zona)", "quantity": 1, "unit_price": 72600, "total": 72600},
+            ],
+            "total_ars": 616496,
+            "total_usd": 2507,
+        }
+
+        quote_id = "test-mo-complete"
+        result = await generate_documents(quote_id, data)
+        assert result["ok"]
+
+        xlsx_files = list((OUTPUT_DIR / quote_id).glob("*.xlsx"))
+        assert len(xlsx_files) == 1
+
+        # Read Excel XML directly (openpyxl can't load due to custom locale injection)
+        with zipfile.ZipFile(str(xlsx_files[0]), 'r') as z:
+            sheet_xml = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
+
+        # All 5 MO descriptions must appear in the sheet XML
+        assert "pileta" in sheet_xml.lower(), "Pileta MO missing from Excel"
+        assert "anafe" in sheet_xml.lower(), "Anafe MO missing from Excel"
+        # Use "colocaci" to match both Colocación and Colocacion
+        assert "colocaci" in sheet_xml.lower(), "Colocación MO missing from Excel"
+        assert "flete" in sheet_xml.lower(), "Flete MO missing from Excel"
+        assert "pulido" in sheet_xml.lower(), "Pulido de cantos MO missing from Excel"
+
+        # The SUM formula must cover F28:F32 (5 items)
+        assert "F28:F32" in sheet_xml, f"Total PESOS formula should be SUM(F28:F32) — not found in XML"
