@@ -650,34 +650,46 @@ class AgentService:
                                 if abs(w) > 200 and abs(h) > 200:  # Significant image, not a logo
                                     pdf_has_images = True
                     if extracted_text.strip():
-                        # Build summary of empty/dash cells to prevent hallucination
-                        summary_lines = []
-                        for t_idx, table in enumerate(tables_all):
-                            if len(table) < 2:
-                                continue
-                            header = [str(c).strip().lower() if c else "" for c in table[0]]
-                            # Find perforaciones/calados column
-                            perf_col = None
-                            for ci, h in enumerate(header):
-                                if "perforac" in h or "calado" in h or "pileta" in h:
-                                    perf_col = ci
-                                    break
-                            if perf_col is not None:
-                                no_perf = []
-                                for row in table[1:]:
-                                    if len(row) > perf_col:
-                                        cell = str(row[perf_col]).strip() if row[perf_col] else ""
-                                        id_cell = str(row[0]).strip() if row[0] else ""
-                                        if id_cell and (cell == "-" or cell == "" or cell.lower() == "none"):
-                                            no_perf.append(id_cell)
-                                if no_perf:
-                                    summary_lines.append(f"⛔ Piezas SIN perforaciones (columna dice '-'): {', '.join(no_perf)} → 0 piletas para estas piezas. NO inventar.")
+                        # Check if this is an edificio — use deterministic parser
+                        from app.modules.quote_engine.edificio_parser import (
+                            detect_edificio, parse_edificio_tables,
+                            normalize_edificio_data, compute_edificio_aggregates,
+                            validate_edificio,
+                        )
+                        detection = detect_edificio(user_message, tables_all)
 
-                        summary = "\n".join(summary_lines)
-                        full_text = f"[TEXTO EXTRAÍDO DEL PDF — DATOS EXACTOS]\n⛔ Extraído con precisión 100%. USAR TAL CUAL. Celda \"-\" o vacía = NO APLICA. NUNCA inferir ni inventar.\n\n{extracted_text.strip()}"
-                        if summary:
-                            full_text += f"\n\n{summary}"
-                        content.append({"type": "text", "text": full_text})
+                        if detection["is_edificio"]:
+                            # Deterministic pipeline — Claude CANNOT calculate
+                            raw_data = parse_edificio_tables(tables_all)
+                            norm_data = normalize_edificio_data(raw_data)
+                            edif_summary = compute_edificio_aggregates(norm_data)
+                            edif_validation = validate_edificio(norm_data, edif_summary)
+
+                            import json as _json
+                            pre_calc = _json.dumps({
+                                "summary": edif_summary,
+                                "validation": edif_validation,
+                                "normalized_pieces": [p for s in norm_data.get("sections", []) for p in s.get("pieces", [])],
+                            }, indent=2, ensure_ascii=False, default=str)
+
+                            content.append({"type": "text", "text": f"""[EDIFICIO PRE-CALCULADO — CONTRATO ESTRICTO]
+⛔ Todos los valores fueron calculados por el sistema con precisión 100%.
+⛔ NO recalcular ningún valor. NO modificar campos numéricos. NO inferir datos faltantes.
+⛔ null = desconocido. "-" = no aplica. NUNCA inventar.
+⛔ Usar los totales del JSON para redactar el presupuesto.
+
+{pre_calc}
+
+Texto libre del PDF: {raw_data.get('free_text', '')}
+"""})
+                            logging.info(f"Edificio detected (confidence={detection['confidence']:.2f}): {detection['reasons']}")
+                            logging.info(f"Edificio summary: {edif_summary.get('totals', {})}")
+                            if not edif_validation["is_valid"]:
+                                logging.error(f"Edificio validation FAILED: {edif_validation['errors']}")
+                        else:
+                            # Non-edificio PDF — send extracted text with safety instructions
+                            content.append({"type": "text", "text": f"[TEXTO EXTRAÍDO DEL PDF — DATOS EXACTOS]\n⛔ Extraído con precisión 100%. USAR TAL CUAL. Celda \"-\" o vacía = NO APLICA. NUNCA inferir ni inventar.\n\n{extracted_text.strip()}"})
+
                         logging.info(f"Extracted {len(extracted_text)} chars of text from PDF ({len(plan_bytes)} bytes)")
                 except Exception as e:
                     logging.warning(f"pdfplumber extraction failed: {e}")
@@ -828,8 +840,20 @@ class AgentService:
         _total_cache_write = 0
         _loop_iterations = 0
         # Notify operator about processing mode
+        # Detect edificio for action message
+        _is_edificio_mode = False
         if has_plan and not pdf_has_images:
-            yield {"type": "action", "content": "📄 Modo texto — planilla detectada, extracción exacta (sin Opus)"}
+            # Check if edificio was detected
+            try:
+                from app.modules.quote_engine.edificio_parser import detect_edificio as _det
+                _det_result = _det(user_message, tables_all if 'tables_all' in dir() else [])
+                _is_edificio_mode = _det_result.get("is_edificio", False)
+            except Exception:
+                pass
+            if _is_edificio_mode:
+                yield {"type": "action", "content": "🏗️ Modo edificio — datos extraídos y calculados por el sistema"}
+            else:
+                yield {"type": "action", "content": "📄 Modo texto — planilla detectada, extracción exacta (sin Opus)"}
         elif has_plan and pdf_has_images:
             yield {"type": "action", "content": "📐 Modo plano — dibujo detectado, usando Opus para lectura visual"}
         else:
