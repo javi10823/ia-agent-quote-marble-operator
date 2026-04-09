@@ -85,13 +85,15 @@ def _load_catalog(name: str) -> list:
             result = conn.execute(text("SELECT content FROM catalogs WHERE name = :name"), {"name": name})
             row = result.first()
             if row:
-                data = json.loads(row[0]) if isinstance(row[0], str) else row[0]
-                items = data if isinstance(data, list) else data.get("items", [])
+                raw = row[0]
+                data = json.loads(raw) if isinstance(raw, str) else raw
+                items = data if isinstance(data, list) else data.get("items", [data]) if isinstance(data, dict) else []
                 _catalog_cache[name] = items
+                logging.debug(f"Loaded catalog '{name}' from DB: {len(items)} items")
                 return items
         eng.dispose()
     except Exception as e:
-        logging.debug(f"DB catalog read failed for {name}, trying file: {e}")
+        logging.warning(f"DB catalog read failed for {name}: {e}")
     # Fallback to file
     path = CATALOG_DIR / f"{name}.json"
     if not path.exists():
@@ -117,6 +119,8 @@ def invalidate_catalog_cache(name: str | None = None):
 def catalog_lookup(catalog: str, sku: str) -> dict:
     """Look up a SKU in the specified catalog and return price with IVA."""
     items = _load_catalog(catalog)
+    if not items:
+        logging.warning(f"catalog_lookup: catalog '{catalog}' returned 0 items!")
     sku_upper = sku.upper()
 
     for item in items:
