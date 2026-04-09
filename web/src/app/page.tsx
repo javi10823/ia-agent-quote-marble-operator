@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { type Quote } from "@/lib/api";
+import { type Quote, deriveMaterial } from "@/lib/api";
 import { useQuotes } from "@/lib/quotes-context";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -35,6 +35,11 @@ export default function DashboardPage() {
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [deriveTarget, setDeriveTarget] = useState<{ id: string; material: string; client: string } | null>(null);
+  const [deriveMat, setDeriveMat] = useState("");
+  const [deriveThickness, setDeriveThickness] = useState("");
+  const [deriving, setDeriving] = useState(false);
+  const [deriveError, setDeriveError] = useState("");
 
   const staleDrafts = useMemo(() => quotes.filter(q => {
     if (q.status !== "draft") return false;
@@ -101,6 +106,48 @@ export default function DashboardPage() {
     } catch { /* toast already shown by context */ }
     setDeleting(false);
     setDeleteTarget(null);
+  }
+
+  function askDerive(e: React.MouseEvent, id: string, material: string, client: string) {
+    e.stopPropagation();
+    e.preventDefault();
+    setDeriveTarget({ id, material: material || "", client: client || "Sin nombre" });
+    setDeriveMat("");
+    setDeriveThickness("");
+    setDeriveError("");
+  }
+
+  function closeDerive() {
+    setDeriveTarget(null);
+    setDeriveMat("");
+    setDeriveThickness("");
+    setDeriveError("");
+    setDeriving(false);
+  }
+
+  async function confirmDerive() {
+    if (!deriveTarget) return;
+    const mat = deriveMat.trim();
+    if (!mat) { setDeriveError("Ingres\u00E1 un material."); return; }
+    const thk = deriveThickness.trim();
+    let thickness_mm: number | undefined;
+    if (thk) {
+      const n = Number(thk);
+      if (!Number.isFinite(n) || n <= 0) { setDeriveError("El espesor debe ser un n\u00FAmero mayor a 0."); return; }
+      thickness_mm = Math.round(n);
+    }
+    setDeriving(true);
+    setDeriveError("");
+    try {
+      const res = await deriveMaterial(deriveTarget.id, { material: mat, ...(thickness_mm ? { thickness_mm } : {}) });
+      closeDerive();
+      refresh();
+      router.push(`/quote/${res.quote_id}`);
+    } catch (err: any) {
+      setDeriveError(err.message || "Error al crear variante");
+    } finally {
+      setDeriving(false);
+    }
   }
 
   return (
@@ -231,6 +278,15 @@ export default function DashboardPage() {
                       <div className="text-[13px] font-mono text-t1">{q.total_ars ? `$${q.total_ars.toLocaleString("es-AR")}` : "\u2014"}</div>
                       {q.total_usd ? <div className="text-[10px] text-t3">USD {q.total_usd.toLocaleString()}</div> : null}
                     </div>
+                    {q.material && (
+                      <button
+                        onClick={(e) => askDerive(e, q.id, q.material || "", q.client_name)}
+                        title="Duplicar con otro material"
+                        className="w-7 h-7 rounded-md border border-b1 bg-transparent text-t3 cursor-pointer flex items-center justify-center text-[10px] shrink-0 transition-all hover:border-acc/50 hover:text-acc"
+                      >
+                        +M
+                      </button>
+                    )}
                     <span className={clsx("text-[10px] font-medium px-1.5 py-[2px] rounded-full shrink-0", BADGE_CLASS[q.status])}>{STATUS_LABEL[q.status]}</span>
                   </div>
                 );
@@ -326,6 +382,18 @@ export default function DashboardPage() {
                           {q.pdf_url && <FileBtn href={q.pdf_url} emoji="📄" />}
                           {q.drive_url && <FileBtn href={q.drive_url} emoji="☁" />}
                         </div>
+                      </td>
+                      {/* Duplicar material */}
+                      <td className="px-1 py-[13px] w-10">
+                        {q.material ? (
+                          <button
+                            onClick={(e) => askDerive(e, q.id, q.material || "", q.client_name)}
+                            title="Duplicar con otro material"
+                            className="w-7 h-7 rounded-md border border-b1 bg-transparent text-t3 cursor-pointer flex items-center justify-center text-[10px] font-medium transition-all hover:border-acc/50 hover:text-acc"
+                          >
+                            +M
+                          </button>
+                        ) : null}
                       </td>
                       {/* Delete */}
                       <td className="px-2.5 py-[13px] w-10">
@@ -439,6 +507,70 @@ export default function DashboardPage() {
                 )}
               >
                 {changingStatus ? "Cambiando..." : "Confirmar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Derive material modal */}
+      {deriveTarget && (
+        <div
+          onClick={closeDerive}
+          className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-[4px] flex items-center justify-center"
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="bg-s2 border border-b2 rounded-[14px] px-6 md:px-8 py-6 md:py-7 w-[calc(100vw-32px)] max-w-[420px] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
+          >
+            <div className="text-[15px] font-medium text-t1 mb-1">Duplicar con otro material</div>
+            <div className="text-[12px] text-t3 mb-4">
+              Cliente: <strong className="text-t2">{deriveTarget.client}</strong>
+              {deriveTarget.material && <> {"\u00B7"} Material actual: <strong className="text-t2">{deriveTarget.material}</strong></>}
+            </div>
+
+            <label className="block text-[11px] font-medium text-t3 uppercase tracking-wide mb-1">Material nuevo</label>
+            <input
+              type="text"
+              value={deriveMat}
+              onChange={e => { setDeriveMat(e.target.value); setDeriveError(""); }}
+              placeholder="Ej: Purastone Blanco Paloma"
+              autoFocus
+              onKeyDown={e => { if (e.key === "Enter" && !deriving) confirmDerive(); }}
+              className="w-full px-3 py-2 bg-s3 border border-b1 rounded-lg text-t1 text-[13px] font-sans outline-none focus:border-acc placeholder:text-t4 mb-3"
+            />
+
+            <label className="block text-[11px] font-medium text-t3 uppercase tracking-wide mb-1">Espesor mm <span className="text-t4 normal-case">(opcional)</span></label>
+            <input
+              type="number"
+              value={deriveThickness}
+              onChange={e => { setDeriveThickness(e.target.value); setDeriveError(""); }}
+              placeholder="20"
+              min={1}
+              onKeyDown={e => { if (e.key === "Enter" && !deriving) confirmDerive(); }}
+              className="w-24 px-3 py-2 bg-s3 border border-b1 rounded-lg text-t1 text-[13px] font-sans outline-none focus:border-acc placeholder:text-t4 mb-4"
+            />
+
+            {deriveError && (
+              <div className="text-[12px] text-err mb-3 leading-relaxed">{deriveError}</div>
+            )}
+
+            <div className="flex gap-2.5 justify-end">
+              <button
+                onClick={closeDerive}
+                className="px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans cursor-pointer border border-b2 bg-transparent text-t2 hover:text-t1 hover:border-b3 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDerive}
+                disabled={deriving}
+                className={clsx(
+                  "px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans border-none text-white transition",
+                  deriving ? "bg-acc/60 cursor-wait" : "bg-acc cursor-pointer hover:bg-blue-500",
+                )}
+              >
+                {deriving ? "Creando..." : "Crear variante"}
               </button>
             </div>
           </div>
