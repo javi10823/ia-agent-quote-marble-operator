@@ -205,6 +205,43 @@ def calculate_m2(pieces: list) -> tuple[float, list[dict]]:
     return round(total, 2), details
 
 
+def list_pieces(pieces: list) -> dict:
+    """Format pieces for Paso 1 display: correct labels + total m² (deterministic).
+
+    Returns structured data that the agent must use verbatim in Paso 1.
+    Zócalos use "ml" format, mesadas use "largo × prof", >3m gets "2 TRAMOS".
+    """
+    total_m2, piece_details = calculate_m2(
+        [p if isinstance(p, dict) else p for p in pieces]
+    )
+
+    formatted = []
+    for pd in piece_details:
+        desc = pd.get("description", "")
+        desc_lower = desc.lower()
+        is_zocalo = "zócalo" in desc_lower or "zocalo" in desc_lower
+        qty = pd.get("quantity", 1)
+
+        if is_zocalo:
+            label = f"{desc}: {pd['largo']:.2f} ml"
+        else:
+            label = f"{desc} — {pd['largo']:.2f} x {pd['dim2']:.2f}"
+            if pd["largo"] >= 3.0:
+                label += " (SE REALIZA EN 2 TRAMOS)"
+
+        m2_display = round(pd["m2"] * qty, 2)
+        entry = {"label": label, "m2": m2_display}
+        if qty > 1:
+            entry["qty"] = qty
+        formatted.append(entry)
+
+    return {
+        "ok": True,
+        "pieces": formatted,
+        "total_m2": total_m2,
+    }
+
+
 def calculate_merma(m2_needed: float, material_type: str) -> dict:
     """Calculate merma for synthetic materials."""
     mat_lower = material_type.lower()

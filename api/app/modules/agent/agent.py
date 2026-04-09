@@ -15,7 +15,7 @@ from app.modules.agent.tools.catalog_tool import catalog_lookup, catalog_batch_l
 from app.modules.agent.tools.plan_tool import read_plan
 from app.modules.agent.tools.document_tool import generate_documents
 from app.modules.agent.tools.drive_tool import upload_to_drive
-from app.modules.quote_engine.calculator import calculate_quote
+from app.modules.quote_engine.calculator import calculate_quote, list_pieces
 from app.modules.agent.tools.validation_tool import validate_despiece
 
 BASE_DIR = Path(__file__).parent.parent.parent.parent
@@ -412,6 +412,7 @@ def build_system_prompt(has_plan: bool = False, is_building: bool = False, user_
 # ── TOOL DEFINITIONS ──────────────────────────────────────────────────────────
 
 TOOLS = [
+    {"name": "list_pieces", "description": "PASO 1 OBLIGATORIO: lista piezas con formato correcto + total m². Usar SIEMPRE en Paso 1 para mostrar piezas. Zócalos salen en ml. El total incluye zócalos.", "input_schema": {"type": "object", "properties": {"pieces": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}, "largo": {"type": "number"}, "prof": {"type": "number"}, "alto": {"type": "number"}}, "required": ["description", "largo"]}}}, "required": ["pieces"]}},
     {"name": "catalog_lookup", "description": "Busca precio de 1 SKU en catálogo.", "input_schema": {"type": "object", "properties": {"catalog": {"type": "string"}, "sku": {"type": "string"}}, "required": ["catalog", "sku"]}},
     {"name": "catalog_batch_lookup", "description": "Busca múltiples SKUs. Preferir sobre catalog_lookup para 2+.", "input_schema": {"type": "object", "properties": {"queries": {"type": "array", "items": {"type": "object", "properties": {"catalog": {"type": "string"}, "sku": {"type": "string"}}, "required": ["catalog", "sku"]}}}, "required": ["queries"]}},
     {"name": "check_stock", "description": "Verifica retazos en stock.", "input_schema": {"type": "object", "properties": {"material_sku": {"type": "string"}}, "required": ["material_sku"]}},
@@ -1197,7 +1198,9 @@ Texto libre del PDF: {raw_data.get('free_text', '')}
 
     async def _execute_tool(self, name: str, inputs: dict, quote_id: str, db: AsyncSession, conversation_history: list | None = None, current_user_message: str = "") -> dict:
         logging.info(f"Tool call: {name} | quote: {quote_id}")
-        if name == "catalog_lookup":
+        if name == "list_pieces":
+            return list_pieces(inputs["pieces"])
+        elif name == "catalog_lookup":
             return catalog_lookup(inputs["catalog"], inputs["sku"])
         elif name == "catalog_batch_lookup":
             return catalog_batch_lookup(inputs["queries"])
