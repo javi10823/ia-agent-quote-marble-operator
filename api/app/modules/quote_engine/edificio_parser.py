@@ -131,9 +131,14 @@ def detect_edificio(user_message: str, tables: list[list[list]]) -> DetectionRes
     reasons = []
     confidence = 0.0
 
-    # Signal 1: operator says "edificio" (strong)
+    # Signal 1: operator says "edificio" or similar (strong)
     msg_lower = (user_message or "").lower()
-    if any(kw in msg_lower for kw in ["edificio", "building", "concesionario"]):
+    if any(kw in msg_lower for kw in [
+        "edificio", "edificios", "building", "concesionario",
+        "departamento", "departamentos", "unidades",
+        "torre", "torres", "constructora", "consorcio",
+        "obra nueva",
+    ]):
         reasons.append("operador indicó edificio en el enunciado")
         confidence += 0.5
 

@@ -320,12 +320,22 @@ async def upload_source_files(
 
                 auto_message = "\n".join(parts)
 
-                # Read file from disk — check both OUTPUT_DIR and /tmp fallback
+                # Read file from disk — check both OUTPUT_DIR and /tmp fallback, retry once
                 from app.core.static import OUTPUT_DIR as _OUTDIR
-                file_path = _OUTDIR / qid / "sources" / first_file["filename"]
-                if not file_path.exists():
-                    file_path = Path("/tmp/output") / qid / "sources" / first_file["filename"]
-                plan_data = file_path.read_bytes() if file_path.exists() else None
+                plan_data = None
+                for _attempt in range(2):
+                    file_path = _OUTDIR / qid / "sources" / first_file["filename"]
+                    if not file_path.exists():
+                        file_path = Path("/tmp/output") / qid / "sources" / first_file["filename"]
+                    if file_path.exists():
+                        plan_data = file_path.read_bytes()
+                        break
+                    if _attempt == 0:
+                        logging.warning(f"File not found for {qid}, retrying in 2s: {first_file['filename']}")
+                        await asyncio.sleep(2)
+                if plan_data is None:
+                    logging.error(f"File NOT FOUND after retry for {qid}: {first_file['filename']}. Skipping background processing.")
+                    return
 
                 agent = AgentService()
                 async with AsyncSessionLocal() as bg_db:

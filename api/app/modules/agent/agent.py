@@ -79,18 +79,18 @@ def _validate_quote_data(qdata: dict) -> tuple[list[str], list[str]]:
 
     return errors, warnings
 
-# ── BUILDING DETECTION ───────────────────────────────────────────────────────
-
-BUILDING_KEYWORDS = [
-    "edificio", "edificios", "departamento", "departamentos",
-    "unidades", "torre", "torres", "constructora", "consorcio",
-    "cantidad:", "cantidad :", "pisos", "obra nueva",
-]
-
+# ── BUILDING DETECTION (unified — delegates to edificio_parser) ──────────────
 
 def _detect_building(user_message: str) -> bool:
-    text = user_message.lower()
-    return any(kw in text for kw in BUILDING_KEYWORDS)
+    """Keyword-based building detection for system prompt selection.
+    Uses detect_edificio() with empty tables as single source of truth.
+    """
+    try:
+        from app.modules.quote_engine.edificio_parser import detect_edificio
+        result = detect_edificio(user_message, [])
+        return result["is_edificio"]
+    except Exception:
+        return False
 
 
 # ── EXAMPLE SELECTION ────────────────────────────────────────────────────────
@@ -898,6 +898,9 @@ Texto libre del PDF: {raw_data.get('free_text', '')}
         else:
             yield {"type": "action", "content": "Leyendo catálogos y calculando..."}
 
+        _list_pieces_called = False  # Track if list_pieces was called (guardrail for Paso 1)
+        _list_pieces_retry_done = False  # Prevent infinite retry
+
         while True:
             if _loop_iterations >= MAX_ITERATIONS:
                 logging.error(f"Agent exceeded MAX_ITERATIONS ({MAX_ITERATIONS}) for quote {quote_id}")
@@ -1061,7 +1064,33 @@ Texto libre del PDF: {raw_data.get('free_text', '')}
             tool_use_blocks = [b for b in final_message.content if b.type == "tool_use"]
 
             if not tool_use_blocks:
-                # No tool calls — conversation turn is done
+                # No tool calls — conversation turn is done.
+                # ── Guardrail: Paso 1 must use list_pieces ──
+                # If this is likely Paso 1 (no breakdown yet, no calculate_quote called),
+                # and list_pieces was never called, force a retry with explicit instruction.
+                if not _list_pieces_called and not _list_pieces_retry_done:
+                    try:
+                        _gq = await db.execute(select(Quote).where(Quote.id == quote_id))
+                        _gquote = _gq.scalar_one_or_none()
+                        _has_breakdown = _gquote and _gquote.quote_breakdown
+                    except Exception:
+                        _has_breakdown = True  # On error, don't block
+                    # Check if any text mentions pieces/m² (Paso 1 content)
+                    _resp_text = "".join(b.text for b in final_message.content if hasattr(b, "text") and b.text)
+                    _looks_like_paso1 = any(kw in _resp_text.lower() for kw in ["m²", "m2", "pieza", "mesada", "confirma"])
+                    if not _has_breakdown and _looks_like_paso1:
+                        _list_pieces_retry_done = True
+                        logging.warning(f"[guardrail] Paso 1 without list_pieces for {quote_id} — forcing retry")
+                        # Inject correction and continue the loop
+                        assistant_messages.append({"role": "assistant", "content": _serialize_content(final_message.content)})
+                        assistant_messages.append({"role": "user", "content": [{"type": "text", "text": (
+                            "[SISTEMA — ERROR PASO 1] ⛔ Mostraste piezas/m² SIN llamar a list_pieces. "
+                            "DEBÉS llamar list_pieces con las piezas y usar sus valores EXACTOS (labels + total_m2). "
+                            "Volvé a mostrar la tabla usando list_pieces. NO calcular m² manualmente."
+                        )}]})
+                        _loop_iterations += 1
+                        continue
+
                 assistant_messages.append({
                     "role": "assistant",
                     "content": _serialize_content(final_message.content),
@@ -1071,6 +1100,8 @@ Texto libre del PDF: {raw_data.get('free_text', '')}
             # Process tool calls
             tool_results = []
             for tool_use in tool_use_blocks:
+                if tool_use.name == "list_pieces":
+                    _list_pieces_called = True
                 yield {"type": "action", "content": f"⚙️ Ejecutando: {tool_use.name}..."}
                 # Log every tool call with full inputs for debugging
                 logging.info(f"🔧 TOOL CALL [{quote_id}]: {tool_use.name}")
