@@ -119,7 +119,10 @@ export function QuotesProvider({ children }: { children: ReactNode }) {
     if (deletingRef.current) return;
     deletingRef.current = true;
     const backup = quotes;
-    setQuotes(prev => prev.filter(q => q.id !== id));
+    // Find the family root and remove the entire family optimistically
+    const target = quotes.find(q => q.id === id);
+    const rootId = target?.parent_quote_id || id;
+    setQuotes(prev => prev.filter(q => q.id !== rootId && q.parent_quote_id !== rootId));
     try {
       await apiDeleteQuote(id);
     } catch (err: any) {

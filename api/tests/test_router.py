@@ -102,11 +102,46 @@ class TestDeleteQuote:
 
         del_resp = await client.delete(f"/api/quotes/{quote_id}")
         assert del_resp.status_code == 200
-        assert del_resp.json()["ok"] is True
+        body = del_resp.json()
+        assert body["ok"] is True
+        assert quote_id in body["deleted"]
 
         # Should be gone
         get_resp = await client.get(f"/api/quotes/{quote_id}")
         assert get_resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_delete_parent_cascades_to_children(self, client):
+        """Deleting a parent quote must also delete all its children."""
+        parent = (await client.post("/api/quotes")).json()["id"]
+        child = (await client.post("/api/quotes")).json()["id"]
+        await client.patch(f"/api/quotes/{child}", json={"parent_quote_id": parent})
+
+        del_resp = await client.delete(f"/api/quotes/{parent}")
+        assert del_resp.status_code == 200
+        body = del_resp.json()
+        assert set(body["deleted"]) == {parent, child}
+
+        assert (await client.get(f"/api/quotes/{parent}")).status_code == 404
+        assert (await client.get(f"/api/quotes/{child}")).status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_delete_child_cascades_to_family(self, client):
+        """Deleting a child quote must also delete the parent and siblings."""
+        parent = (await client.post("/api/quotes")).json()["id"]
+        child1 = (await client.post("/api/quotes")).json()["id"]
+        child2 = (await client.post("/api/quotes")).json()["id"]
+        await client.patch(f"/api/quotes/{child1}", json={"parent_quote_id": parent})
+        await client.patch(f"/api/quotes/{child2}", json={"parent_quote_id": parent})
+
+        del_resp = await client.delete(f"/api/quotes/{child1}")
+        assert del_resp.status_code == 200
+        body = del_resp.json()
+        assert set(body["deleted"]) == {parent, child1, child2}
+
+        assert (await client.get(f"/api/quotes/{parent}")).status_code == 404
+        assert (await client.get(f"/api/quotes/{child1}")).status_code == 404
+        assert (await client.get(f"/api/quotes/{child2}")).status_code == 404
 
     @pytest.mark.asyncio
     async def test_delete_nonexistent_404(self, client):

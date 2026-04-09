@@ -227,7 +227,7 @@ export default function ConfigPage() {
 
           {/* Editor */}
           <div className="flex-1 overflow-hidden px-5 py-3">
-            <div className="h-full border border-b1 rounded-lg overflow-hidden">
+            <div className="h-full border border-b1 rounded-lg overflow-auto">
               <CatalogEditor
                 value={content}
                 onChange={setContent}
