@@ -88,6 +88,7 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
                 localidad=body.localidad,
                 colocacion=body.colocacion,
                 pileta=body.pileta.value if body.pileta else None,
+                sink_type=body.sink_type.model_dump() if body.sink_type else None,
                 anafe=body.anafe,
             )
             db.add(quote)
@@ -158,6 +159,7 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
             localidad=body.localidad,
             colocacion=body.colocacion,
             pileta=body.pileta.value if body.pileta else None,
+            sink_type=body.sink_type.model_dump() if body.sink_type else None,
             anafe=body.anafe,
             pieces=[p.model_dump() for p in body.pieces] if body.pieces else None,
         )
@@ -306,6 +308,11 @@ async def upload_source_files(
                 anafe_val = getattr(q, "anafe", None)
                 if anafe_val:
                     parts.append(f"Con anafe")
+                sink_type_val = getattr(q, "sink_type", None)
+                if sink_type_val:
+                    bc = sink_type_val.get("basin_count", "").capitalize()
+                    mt = "Pegada de " + sink_type_val.get("mount_type", "") if sink_type_val.get("mount_type") else ""
+                    parts.append(f"Tipo de bacha: {bc} · {mt}".strip(" ·"))
                 parts.append(f"Plazo: {_default_plazo}")
                 if q.notes:
                     parts.append(f"Notas del cliente: {q.notes}")

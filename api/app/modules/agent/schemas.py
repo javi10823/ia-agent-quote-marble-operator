@@ -1,7 +1,13 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Union
+from typing import Optional, Union, Literal
 from datetime import datetime
 from app.models.quote import QuoteStatus
+
+
+class SinkTypeSchema(BaseModel):
+    """Tipo de bacha: simple/doble + montaje arriba/abajo."""
+    basin_count: Literal["simple", "doble"]
+    mount_type: Literal["arriba", "abajo"]
 
 
 class QuoteListResponse(BaseModel):
@@ -23,6 +29,7 @@ class QuoteListResponse(BaseModel):
     localidad: Optional[str] = None
     colocacion: Optional[bool] = None
     pileta: Optional[str] = None
+    sink_type: Optional[SinkTypeSchema] = None
     anafe: Optional[bool] = None
     pieces: Optional[list] = None
     conversation_id: Optional[str] = None
@@ -85,6 +92,7 @@ class QuotePatchRequest(BaseModel):
     localidad: Optional[str] = Field(None, max_length=200)
     colocacion: Optional[bool] = None
     pileta: Optional[str] = Field(None, max_length=50)
+    sink_type: Optional[SinkTypeSchema] = None
     anafe: Optional[bool] = None
     conversation_id: Optional[str] = Field(None, max_length=100)
     origin: Optional[str] = Field(None, pattern=r"^(web|operator)$")

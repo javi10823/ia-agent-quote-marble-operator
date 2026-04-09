@@ -22,6 +22,7 @@ export interface Quote {
   source: string | null;
   is_read: boolean;
   notes: string | null;
+  sink_type: { basin_count: "simple" | "doble"; mount_type: "arriba" | "abajo" } | null;
   created_at: string;
 }
 

@@ -472,6 +472,9 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
           <MetaItem label="Origen" value={quote.source === "web" ? "Web (chatbot)" : "Operador"} />
           <MetaItem label="Total ARS" value={quote.total_ars ? fmtARS(quote.total_ars) : DASH} highlight />
           <MetaItem label="Total USD" value={quote.total_usd ? fmtUSD(quote.total_usd) : DASH} highlight />
+          {quote.sink_type && (
+            <MetaItem label="Tipo de bacha" value={`${quote.sink_type.basin_count === "doble" ? "Doble" : "Simple"} \u00b7 Pegada de ${quote.sink_type.mount_type}`} />
+          )}
         </div>
       </Section>
 
