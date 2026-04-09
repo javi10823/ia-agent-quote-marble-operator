@@ -223,7 +223,7 @@ def list_pieces(pieces: list) -> dict:
         qty = pd.get("quantity", 1)
 
         if is_zocalo:
-            label = f"{desc}: {pd['largo']:.2f} ml"
+            label = f"{pd['largo']:.2f}ML X {pd['dim2']:.2f} ZOC"
         else:
             label = f"{desc} — {pd['largo']:.2f} x {pd['dim2']:.2f}"
             if pd["largo"] >= 3.0:
@@ -528,7 +528,7 @@ def calculate_quote(input_data: dict) -> dict:
             desc_lower = (pd["description"] or "").lower()
             is_zocalo = "zócalo" in desc_lower or "zocalo" in desc_lower
             if is_zocalo:
-                label = f'{pd["description"]}: {pd["largo"]:.2f} ml'
+                label = f'{pd["largo"]:.2f}ML X {pd["dim2"]:.2f} ZOC'
             else:
                 dim2_label = f'{pd["largo"]:.2f} × {pd["dim2"]:.2f}'
                 label = f'{dim2_label} {pd["description"]}'
