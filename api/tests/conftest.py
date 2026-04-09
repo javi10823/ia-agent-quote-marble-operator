@@ -29,6 +29,25 @@ async def db_engine():
     engine = create_async_engine("sqlite+aiosqlite://", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Create non-ORM tables used by catalog system
+        from sqlalchemy import text
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS catalogs (
+                name VARCHAR(100) PRIMARY KEY,
+                content JSON NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS catalog_backups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                catalog_name VARCHAR(100) NOT NULL,
+                content JSON NOT NULL,
+                source_file VARCHAR(500),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                stats JSON
+            )
+        """))
     yield engine
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -54,12 +73,19 @@ async def client(db_engine):
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
+
+    # Override AsyncSessionLocal so catalog router (which bypasses get_db) uses test DB
+    import app.core.database as _db_mod
+    _original_session_local = _db_mod.AsyncSessionLocal
+    _db_mod.AsyncSessionLocal = session_factory
+
     transport = ASGITransport(app=app)
     # Create a test JWT token so auth middleware doesn't block requests
     test_token = create_token("test@test.com")
     async with AsyncClient(transport=transport, base_url="http://test", cookies={COOKIE_NAME: test_token}) as ac:
         yield ac
     app.dependency_overrides.clear()
+    _db_mod.AsyncSessionLocal = _original_session_local
 
 
 @pytest_asyncio.fixture
