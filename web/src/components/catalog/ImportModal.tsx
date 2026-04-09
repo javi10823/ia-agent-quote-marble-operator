@@ -412,10 +412,10 @@ export default function ImportModal({ onDone, onClose }: Props) {
               <button onClick={() => { setStep("upload"); setPreview(null); setError(""); }} className="px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans cursor-pointer border border-b2 bg-transparent text-t2 hover:text-t1 hover:border-b3 transition">{"\u2190"} Cambiar archivo</button>
               <button
                 onClick={handleApply}
-                disabled={selectedCatalogs.size === 0 || preview.iva_warning}
+                disabled={selectedCatalogs.size === 0 || !!preview?.iva_warning}
                 className={clsx(
                   "px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans border-none text-white transition",
-                  selectedCatalogs.size === 0 || preview.iva_warning ? "bg-acc/30 cursor-not-allowed" : "bg-acc cursor-pointer hover:bg-blue-500",
+                  selectedCatalogs.size === 0 || preview?.iva_warning ? "bg-acc/30 cursor-not-allowed" : "bg-acc cursor-pointer hover:bg-blue-500",
                 )}
               >
                 Importar ({selectedCatalogs.size})
