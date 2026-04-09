@@ -234,7 +234,11 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
     # Material header row
     f = row_fill()
     pdf.set_font("Helvetica", "B", 9)
-    pdf.cell(w[0], rh, f"{mat_name} - 20mm", fill=f)
+    # Thickness: use from breakdown, skip if name already contains Nmm/NMM
+    import re as _re
+    _thickness = data.get("thickness_mm", 20)
+    _mat_display = f"{mat_name} - {_thickness}mm" if not _re.search(r'\d+[Mm][Mm]', mat_name) else mat_name
+    pdf.cell(w[0], rh, _mat_display, fill=f)
     pdf.cell(w[1], rh, _fmt_qty(mat_m2), align="R", fill=f)
     pdf.set_font("Helvetica", "", 9)
     pdf.cell(w[2], rh, price_fmt, align="R", fill=f)
@@ -419,7 +423,9 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     if discount_pct:
         total_mat_net = total_mat - round(total_mat * discount_pct / 100)
 
-    ws["A22"].value = f"{mat_name} - 20mm"
+    import re as _re_xl
+    _thickness_xl = data.get("thickness_mm", 20)
+    ws["A22"].value = f"{mat_name} - {_thickness_xl}mm" if not _re_xl.search(r'\d+[Mm][Mm]', mat_name) else mat_name
     ws["D22"].value = mat_m2
     ws["D22"].number_format = qty_fmt
     if currency == "USD":
