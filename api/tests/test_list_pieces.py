@@ -35,10 +35,10 @@ class TestListPieces:
         assert "2 TRAMOS" not in tramo2[0]
 
         # Zócalo: must use "ml" format, NOT "×" format
-        zocalo = [l for l in labels if "calo" in l.lower()]
+        zocalo = [l for l in labels if "ZOC" in l]
         assert len(zocalo) == 1
-        assert "ml" in zocalo[0], f"Zócalo should show ml: {zocalo[0]}"
-        assert "×" not in zocalo[0], f"Zócalo should NOT show ×: {zocalo[0]}"
+        assert "ML" in zocalo[0], f"Zócalo should show ML: {zocalo[0]}"
+        assert "ZOC" in zocalo[0], f"Zócalo should show ZOC: {zocalo[0]}"
         assert "6.90" in zocalo[0]
 
     def test_zocalo_included_in_total(self):
@@ -52,14 +52,15 @@ class TestListPieces:
         assert result["total_m2"] == 1.3
 
     def test_zocalo_label_format(self):
-        """Zócalo must render as 'Zócalo: X.XX ml'."""
+        """Zócalo must render as 'X.XXML X Y.YY ZOC'."""
         result = list_pieces([
             {"description": "Zócalo trasero", "largo": 3.50, "alto": 0.05},
         ])
         label = result["pieces"][0]["label"]
-        assert "ml" in label
+        assert "ML" in label
+        assert "ZOC" in label
         assert "3.50" in label
-        assert "×" not in label
+        assert "0.05" in label
 
     def test_mesada_3m_gets_2_tramos(self):
         """Mesada ≥ 3m must show '(SE REALIZA EN 2 TRAMOS)'."""
@@ -140,9 +141,9 @@ class TestListPiecesToolDispatch:
         assert result["total_m2"] == 4.83
 
         labels = [p["label"] for p in result["pieces"]]
-        zocalo = [l for l in labels if "calo" in l.lower()]
-        assert "ml" in zocalo[0]
-        assert "×" not in zocalo[0]
+        zocalo = [l for l in labels if "ZOC" in l]
+        assert "ML" in zocalo[0]
+        assert "ZOC" in zocalo[0]
 
 
 # ── Verify list_pieces is in TOOLS schema ────────────────────────────────────

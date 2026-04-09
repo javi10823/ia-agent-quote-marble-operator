@@ -31,9 +31,10 @@ class TestZocaloFormat:
         ))
         assert result["ok"]
         labels = result["sectors"][0]["pieces"]
-        zocalo_labels = [l for l in labels if "calo" in l.lower()]
+        zocalo_labels = [l for l in labels if "ZOC" in l]
         assert len(zocalo_labels) == 1
-        assert "ml" in zocalo_labels[0], f"Zócalo should show ml: {zocalo_labels[0]}"
+        assert "ML" in zocalo_labels[0], f"Zócalo should show ML: {zocalo_labels[0]}"
+        assert "ZOC" in zocalo_labels[0], f"Zócalo should show ZOC: {zocalo_labels[0]}"
         assert "×" not in zocalo_labels[0], f"Zócalo should not show ×: {zocalo_labels[0]}"
 
     def test_zocalo_no_2_tramos(self):
@@ -46,7 +47,7 @@ class TestZocaloFormat:
         ))
         assert result["ok"]
         labels = result["sectors"][0]["pieces"]
-        zocalo_labels = [l for l in labels if "calo" in l.lower()]
+        zocalo_labels = [l for l in labels if "ZOC" in l]
         assert "2 TRAMOS" not in zocalo_labels[0]
 
     def test_mesada_still_gets_2_tramos(self):
@@ -249,9 +250,12 @@ class TestAlvaroTorresCase:
 
         # Zócalo label format
         labels = result["sectors"][0]["pieces"]
-        zocalo_labels = [l for l in labels if "calo" in l.lower()]
+        zocalo_labels = [l for l in labels if "ZOC" in l]
         assert len(zocalo_labels) == 1
-        assert "ml" in zocalo_labels[0]
+        assert "ML" in zocalo_labels[0]
+        assert "ZOC" in zocalo_labels[0]
+        assert "6.90" in zocalo_labels[0]
+        assert "0.05" in zocalo_labels[0]
         assert "2 TRAMOS" not in zocalo_labels[0]
 
         # Mesada tramo 1 (4.10m) should have 2 TRAMOS
