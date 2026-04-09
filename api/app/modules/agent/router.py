@@ -266,30 +266,36 @@ async def validate_quote(
     from app.modules.agent.tools.document_tool import generate_documents
     from app.modules.agent.tools.drive_tool import upload_to_drive
 
-    doc_data = {
-        "client_name": bd.get("client_name", quote.client_name),
-        "project": bd.get("project", quote.project),
-        "date": bd.get("date"),
-        "delivery_days": bd.get("delivery_days"),
-        "material_name": bd.get("material_name", quote.material),
-        "material_m2": bd.get("material_m2"),
-        "material_price_unit": bd.get("material_price_unit"),
-        "material_currency": bd.get("material_currency"),
-        "discount_pct": bd.get("discount_pct", 0),
-        "sectors": bd.get("sectors", []),
-        "sinks": bd.get("sinks", []),
-        "mo_items": bd.get("mo_items", []),
-        "total_ars": bd.get("total_ars", quote.total_ars),
-        "total_usd": bd.get("total_usd", quote.total_usd),
-    }
+    # Use complete breakdown as source of truth — it contains all fields
+    # that generate_documents needs (sectors, mo_items, material_total,
+    # merma, piece_details, sinks, discount_amount, etc.)
+    # Only fill fallbacks for fields that might be missing in legacy breakdowns.
+    doc_data = dict(bd)
+    doc_data.setdefault("client_name", quote.client_name)
+    doc_data.setdefault("project", quote.project)
+    doc_data.setdefault("material_name", quote.material)
+    doc_data.setdefault("total_ars", quote.total_ars)
+    doc_data.setdefault("total_usd", quote.total_usd)
+    doc_data.setdefault("discount_pct", 0)
+    doc_data.setdefault("sectors", [])
+    doc_data.setdefault("mo_items", [])
 
     doc_result = await generate_documents(quote_id, doc_data)
     pdf_url = doc_result.get("pdf_url") if doc_result.get("ok") else None
     excel_url = doc_result.get("excel_url") if doc_result.get("ok") else None
 
+    # Preserve existing drive_url if new upload fails
+    existing_drive_url = quote.drive_url
+    existing_drive_file_id = quote.drive_file_id
+
     drive_url = None
     drive_file_id = None
     if doc_result.get("ok"):
+        # Delete old Drive file before uploading new one
+        if existing_drive_file_id:
+            from app.modules.agent.tools.drive_tool import delete_drive_file
+            await delete_drive_file(existing_drive_file_id)
+
         drive_result = await upload_to_drive(
             quote_id,
             doc_data["client_name"],
@@ -300,14 +306,22 @@ async def validate_quote(
             drive_url = drive_result.get("drive_url")
             drive_file_id = drive_result.get("drive_file_id")
 
+    # If upload failed, preserve existing drive_url
+    final_drive_url = drive_url or existing_drive_url
+    final_drive_file_id = drive_file_id or existing_drive_file_id
+
+    update_values = {
+        "status": QuoteStatus.VALIDATED,
+        "pdf_url": pdf_url,
+        "excel_url": excel_url,
+    }
+    # Only update drive fields if we have new values (don't overwrite with None)
+    if drive_url:
+        update_values["drive_url"] = drive_url
+        update_values["drive_file_id"] = drive_file_id
+
     await db.execute(
-        update(Quote).where(Quote.id == quote_id).values(
-            status=QuoteStatus.VALIDATED,
-            pdf_url=pdf_url,
-            excel_url=excel_url,
-            drive_url=drive_url,
-            drive_file_id=drive_file_id,
-        )
+        update(Quote).where(Quote.id == quote_id).values(**update_values)
     )
     await db.commit()
 
@@ -315,7 +329,7 @@ async def validate_quote(
         "ok": True,
         "pdf_url": pdf_url,
         "excel_url": excel_url,
-        "drive_url": drive_url,
+        "drive_url": final_drive_url,
     }
 
 
@@ -347,6 +361,10 @@ async def patch_quote(
     # Serialize pieces to list of dicts for JSON column
     if "pieces" in updates and updates["pieces"] is not None:
         updates["pieces"] = [p.model_dump() for p in body.pieces]
+
+    # Serialize sink_type to dict for JSON column
+    if "sink_type" in updates and body.sink_type is not None:
+        updates["sink_type"] = body.sink_type.model_dump()
 
     await db.execute(update(Quote).where(Quote.id == quote_id).values(**updates))
     await db.commit()

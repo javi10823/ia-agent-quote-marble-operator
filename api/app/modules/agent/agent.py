@@ -239,7 +239,7 @@ def select_examples(user_message: str, is_building: bool, max_examples: int = No
 
 _REQUIREMENT_PATTERNS: list[tuple[list[str], str, str]] = [
     # (keywords, requirement_id, human_label)
-    (["bacha", "pileta", "sink"], "pileta", "PILETA/BACHA — el operador pidió cotizar pileta. DEBE aparecer en el presupuesto. Si no se definió tipo, presupuestar Johnson por defecto."),
+    (["bacha", "pileta", "sink", "compra la bacha", "compra bacha", "compra pileta", "la compra en", "la pide"], "pileta", "PILETA/BACHA — el operador pidió cotizar pileta. DEBE aparecer en el presupuesto. Si no se definió tipo, presupuestar Johnson por defecto."),
     (["anafe", "hornalla"], "anafe", "ANAFE — el operador mencionó anafe. Incluir agujero de anafe en MO."),
     (["zócalo", "zocalo"], "zocalo", "ZÓCALO — el operador mencionó zócalo. Incluir en piezas y MO."),
     (["frentín", "frentin"], "frentin", "FRENTÍN — el operador mencionó frentín. Incluir como pieza (suma m²) + FALDON/CORTE45 en MO."),
@@ -419,7 +419,7 @@ TOOLS = [
     {"name": "read_plan", "description": "Rasteriza plano a 300 DPI con crops.", "input_schema": {"type": "object", "properties": {"filename": {"type": "string"}, "crop_instructions": {"type": "array", "items": {"type": "object", "properties": {"label": {"type": "string"}, "x1": {"type": "integer"}, "y1": {"type": "integer"}, "x2": {"type": "integer"}, "y2": {"type": "integer"}}}}}, "required": ["filename"]}},
     {"name": "generate_documents", "description": "Genera PDF+Excel. 1 quote por material.", "input_schema": {"type": "object", "properties": {"quotes": {"type": "array", "items": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "date": {"type": "string"}, "delivery_days": {"type": "string"}, "material_name": {"type": "string"}, "material_m2": {"type": "number"}, "material_price_unit": {"type": "number"}, "material_currency": {"type": "string", "enum": ["USD", "ARS"]}, "discount_pct": {"type": "number"}, "sectors": {"type": "array", "items": {"type": "object", "properties": {"label": {"type": "string"}, "pieces": {"type": "array", "items": {"type": "string"}}}}}, "sinks": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "quantity": {"type": "integer"}, "unit_price": {"type": "number"}}}}, "mo_items": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}, "quantity": {"type": "number"}, "unit_price": {"type": "number"}, "total": {"type": "number"}}}}, "total_ars": {"type": "number"}, "total_usd": {"type": "number"}}, "required": ["client_name", "material_name"]}}}, "required": ["quotes"]}},
     {"name": "update_quote", "description": "Actualiza client_name/project/status en DB.", "input_schema": {"type": "object", "properties": {"quote_id": {"type": "string"}, "updates": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "material": {"type": "string"}, "total_ars": {"type": "number"}, "total_usd": {"type": "number"}, "status": {"type": "string", "enum": ["draft", "validated", "sent"]}}}}, "required": ["quote_id", "updates"]}},
-    {"name": "calculate_quote", "description": "Calcula m², MO, totales. SIEMPRE usar para cálculos.", "input_schema": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "material": {"type": "string"}, "pieces": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}, "largo": {"type": "number"}, "prof": {"type": "number"}, "alto": {"type": "number"}}, "required": ["description", "largo"]}}, "localidad": {"type": "string"}, "colocacion": {"type": "boolean"}, "is_edificio": {"type": "boolean"}, "pileta": {"type": "string", "enum": ["empotrada_cliente", "empotrada_johnson", "apoyo"]}, "pileta_qty": {"type": "integer"}, "pileta_sku": {"type": "string"}, "anafe": {"type": "boolean"}, "frentin": {"type": "boolean"}, "frentin_ml": {"type": "number"}, "inglete": {"type": "boolean"}, "pulido": {"type": "boolean"}, "plazo": {"type": "string"}, "discount_pct": {"type": "number"}}, "required": ["client_name", "material", "pieces", "localidad", "plazo"]}},
+    {"name": "calculate_quote", "description": "Calcula m², MO, totales. SIEMPRE usar para cálculos.", "input_schema": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "material": {"type": "string"}, "pieces": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}, "largo": {"type": "number"}, "prof": {"type": "number"}, "alto": {"type": "number"}}, "required": ["description", "largo"]}}, "localidad": {"type": "string"}, "colocacion": {"type": "boolean"}, "is_edificio": {"type": "boolean"}, "pileta": {"type": "string", "enum": ["empotrada_cliente", "empotrada_johnson", "apoyo"]}, "pileta_qty": {"type": "integer"}, "pileta_sku": {"type": "string"}, "anafe": {"type": "boolean"}, "frentin": {"type": "boolean"}, "frentin_ml": {"type": "number"}, "inglete": {"type": "boolean"}, "pulido": {"type": "boolean"}, "skip_flete": {"type": "boolean", "description": "true SOLO si el cliente retira en fábrica. Default false — siempre cobrar flete."}, "plazo": {"type": "string"}, "discount_pct": {"type": "number"}}, "required": ["client_name", "material", "pieces", "localidad", "plazo"]}},
     {"name": "patch_quote_mo", "description": "Modifica MO sin recalcular. Para agregar/quitar flete, colocación.", "input_schema": {"type": "object", "properties": {"remove_items": {"type": "array", "items": {"type": "string"}}, "add_colocacion": {"type": "boolean"}, "add_flete": {"type": "string"}}, "required": []}},
 ]
 
@@ -794,20 +794,58 @@ Texto libre del PDF: {raw_data.get('free_text', '')}
         import copy
         clean_user_content = copy.deepcopy(content)
 
-        # Inject minimal patch mode context if quote already has a breakdown
+        # Inject context hint based on quote state
         try:
             _ctx_q = await db.execute(select(Quote).where(Quote.id == quote_id))
             _ctx_quote = _ctx_q.scalar_one_or_none()
             if _ctx_quote and _ctx_quote.quote_breakdown:
                 bd = _ctx_quote.quote_breakdown
-                patch_hint = f"\n[SISTEMA — MODO PATCH ACTIVO]\nEste presupuesto YA tiene un breakdown calculado (material: {bd.get('material_name')}, total_ars: {bd.get('total_ars')}, total_usd: {bd.get('total_usd')}). Estás en MODO PATCH. Usá patch_quote_mo para cambios de MO (flete, colocación). NO volver a preguntar datos ni piezas. NO usar calculate_quote para cambios de MO."
+                is_validated = _ctx_quote.pdf_url or _ctx_quote.status in (QuoteStatus.VALIDATED, QuoteStatus.SENT)
+                if is_validated:
+                    # Strict patch mode — only MO changes via patch_quote_mo
+                    ctx_hint = (
+                        f"\n[SISTEMA — MODO PATCH ACTIVO]\n"
+                        f"Este presupuesto YA tiene documentos generados (material: {bd.get('material_name')}, "
+                        f"total_ars: {bd.get('total_ars')}, total_usd: {bd.get('total_usd')}). "
+                        f"Estás en MODO PATCH. Usá patch_quote_mo para cambios de MO (flete, colocación). "
+                        f"NO volver a preguntar datos ni piezas. NO usar calculate_quote para cambios de MO."
+                    )
+                else:
+                    # Draft with breakdown but no docs — free edit mode
+                    ctx_hint = (
+                        f"\n[SISTEMA — EDICIÓN LIBRE]\n"
+                        f"Este presupuesto tiene un cálculo previo (material: {bd.get('material_name')}, "
+                        f"total_ars: {bd.get('total_ars')}, total_usd: {bd.get('total_usd')}) pero AÚN NO tiene documentos generados.\n"
+                        f"- Cambios de MO (flete, colocación) → usá patch_quote_mo\n"
+                        f"- Cambios de material, piezas, medidas → usá calculate_quote (recálculo completo)\n"
+                        f"NO volver a preguntar datos que ya tenés. Aplicar el cambio directo."
+                    )
                 if isinstance(content, list):
                     for block in content:
                         if isinstance(block, dict) and block.get("type") == "text":
-                            block["text"] = block["text"] + patch_hint
+                            block["text"] = block["text"] + ctx_hint
                             break
         except Exception:
             pass
+
+        # Detect multiple materials in user message → inject hint
+        _msg_lower = user_message.lower() if isinstance(user_message, str) else ""
+        _multi_mat_patterns = [" y ", " o ", "opción 1", "opcion 1", "alternativa", "también en ", "tambien en "]
+        _material_keywords = ["silestone", "dekton", "neolith", "puraprima", "purastone", "laminatto",
+                              "granito", "mármol", "marmol", "negro brasil", "carrara"]
+        _mat_count = sum(1 for mk in _material_keywords if mk in _msg_lower)
+        if _mat_count >= 2 and any(p in _msg_lower for p in _multi_mat_patterns):
+            multi_mat_hint = (
+                "\n\n[SISTEMA — MÚLTIPLES MATERIALES DETECTADOS]\n"
+                "El operador pidió presupuestar más de un material en este mensaje. "
+                "Llamar calculate_quote UNA VEZ POR MATERIAL, con las mismas piezas y medidas para cada uno. "
+                "Cada material genera un presupuesto independiente."
+            )
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        block["text"] = block["text"] + multi_mat_hint
+                        break
 
         # If SINGLE plan attached, inject instruction to request separate images when multiple pieces detected
         # If multiple files attached (2+), they ARE the separate captures — process them directly
@@ -1268,6 +1306,11 @@ Texto libre del PDF: {raw_data.get('free_text', '')}
                 logging.info(f"generate_documents [{idx}] {qdata.get('material_name')}: ok={result.get('ok')}, error={result.get('error')}")
 
                 drive_result: dict = {}
+                # Read existing drive_url before overwriting (preserve if new upload fails)
+                _qr = await db.execute(select(Quote).where(Quote.id == target_qid))
+                _cur = _qr.scalar_one_or_none()
+                existing_drive_url = _cur.drive_url if _cur else None
+
                 if result.get("ok"):
                     # Only promote status to VALIDATED on first generation
                     # (draft/pending). On regeneration (already validated/sent),
@@ -1276,8 +1319,6 @@ Texto libre del PDF: {raw_data.get('free_text', '')}
                         "pdf_url": result.get("pdf_url"),
                         "excel_url": result.get("excel_url"),
                     }
-                    _qr = await db.execute(select(Quote).where(Quote.id == target_qid))
-                    _cur = _qr.scalar_one_or_none()
                     if not _cur or _cur.status in (
                         QuoteStatus.DRAFT, QuoteStatus.PENDING
                     ):
@@ -1288,11 +1329,9 @@ Texto libre del PDF: {raw_data.get('free_text', '')}
 
                     # Delete old Drive file if exists (prevents duplicates)
                     from app.modules.agent.tools.drive_tool import delete_drive_file
-                    old_quote = await db.execute(select(Quote).where(Quote.id == target_qid))
-                    old_q = old_quote.scalar_one_or_none()
-                    if old_q and old_q.drive_file_id:
-                        await delete_drive_file(old_q.drive_file_id)
-                        logging.info(f"Deleted old Drive file {old_q.drive_file_id} for quote {target_qid}")
+                    if _cur and _cur.drive_file_id:
+                        await delete_drive_file(_cur.drive_file_id)
+                        logging.info(f"Deleted old Drive file {_cur.drive_file_id} for quote {target_qid}")
 
                     # Upload to Drive
                     date_str = qdata.get("date", "")
@@ -1310,6 +1349,7 @@ Texto libre del PDF: {raw_data.get('free_text', '')}
                                 drive_file_id=drive_result.get("drive_file_id"),
                             )
                         )
+                    # If upload failed, do NOT overwrite existing drive_url with None
 
                 # Single atomic commit per quote — all DB changes together
                 try:
@@ -1322,13 +1362,15 @@ Texto libre del PDF: {raw_data.get('free_text', '')}
                         pass
                     return {"ok": False, "error": f"Error guardando quote: {str(e)[:200]}"}
 
+                # Use new drive_url if upload succeeded, else preserve existing
+                final_drive_url = drive_result.get("drive_url") or existing_drive_url
                 all_results.append({
                     "quote_id": target_qid,
                     "material": qdata.get("material_name"),
                     "ok": result.get("ok", False),
                     "pdf_url": result.get("pdf_url"),
                     "excel_url": result.get("excel_url"),
-                    "drive_url": drive_result.get("drive_url") if result.get("ok") else None,
+                    "drive_url": final_drive_url if result.get("ok") else None,
                     "error": result.get("error"),
                 })
 
@@ -1372,16 +1414,14 @@ Texto libre del PDF: {raw_data.get('free_text', '')}
             save_to_qid = inputs.pop("target_quote_id", None) or quote_id
 
             # ── Auto-create independent quote for different material ──
-            # Only during INITIAL generation (no breakdown yet or first calculation).
-            # In PATCH MODE (quote already validated/has docs), always overwrite
-            # the existing quote — the operator is intentionally changing the material.
+            # Create a NEW quote only when operator explicitly wants alternatives
+            # (quote already has docs/validated). In DRAFT without docs, overwrite
+            # the same quote — operator is editing, not adding alternatives.
             try:
                 check_q = await db.execute(select(Quote).where(Quote.id == save_to_qid))
                 check_quote = check_q.scalar_one_or_none()
-                is_patch_mode = check_quote and check_quote.quote_breakdown and (
-                    check_quote.status in ("validated", "sent") or check_quote.pdf_url
-                )
-                if check_quote and check_quote.quote_breakdown and not is_patch_mode:
+                has_docs = check_quote and (check_quote.pdf_url or check_quote.status in ("validated", "sent"))
+                if check_quote and check_quote.quote_breakdown and has_docs:
                     existing_mat = (check_quote.quote_breakdown.get("material_name") or "").strip().upper()
                     new_mat = (inputs.get("material") or "").strip().upper()
                     same_material = (
@@ -1502,8 +1542,20 @@ Texto libre del PDF: {raw_data.get('free_text', '')}
             except Exception as e:
                 logging.warning(f"Could not check existing breakdown for {save_to_qid}: {e}")
 
-            # Fallback: check conversation for pileta keywords
+            # ── Pileta signal: structured field first, keywords fallback ──
             if not inputs.get("pileta"):
+                # 1. Structured signal: read pileta field from Quote model (set by chatbot)
+                try:
+                    _pq = await db.execute(select(Quote).where(Quote.id == save_to_qid))
+                    _pileta_quote = _pq.scalar_one_or_none()
+                    if _pileta_quote and _pileta_quote.pileta:
+                        inputs["pileta"] = _pileta_quote.pileta
+                        logging.info(f"Pileta from quote field: {_pileta_quote.pileta} for {save_to_qid}")
+                except Exception as e:
+                    logging.warning(f"Could not read pileta field from quote {save_to_qid}: {e}")
+
+            if not inputs.get("pileta"):
+                # 2. Keyword fallback: scan conversation for pileta/bacha mentions
                 all_text = current_user_message.lower()
                 if conversation_history:
                     for msg in conversation_history:
@@ -1515,9 +1567,31 @@ Texto libre del PDF: {raw_data.get('free_text', '')}
                                 for blk in c:
                                     if isinstance(blk, dict) and blk.get("type") == "text":
                                         all_text += " " + blk.get("text", "").lower()
-                if any(kw in all_text for kw in ["bacha", "pileta", "cotizar bacha", "con bacha"]):
+                if any(kw in all_text for kw in ["bacha", "pileta", "cotizar bacha", "con bacha",
+                                                  "compra la bacha", "compra bacha", "compra pileta",
+                                                  "la compra en", "la pide"]):
                     inputs["pileta"] = "empotrada_johnson"
-                    logging.warning(f"Auto-injected pileta=empotrada_johnson from conversation keywords")
+                    logging.warning(f"Auto-injected pileta=empotrada_johnson from conversation keywords for {save_to_qid}")
+
+            # ── skip_flete: detect "retiro en fábrica" / "lo busco yo" ──
+            if not inputs.get("skip_flete"):
+                _all_user_text = current_user_message.lower()
+                if conversation_history:
+                    for msg in conversation_history:
+                        if msg.get("role") == "user":
+                            c = msg.get("content", "")
+                            if isinstance(c, str):
+                                _all_user_text += " " + c.lower()
+                            elif isinstance(c, list):
+                                for blk in c:
+                                    if isinstance(blk, dict) and blk.get("type") == "text":
+                                        _all_user_text += " " + blk.get("text", "").lower()
+                _skip_phrases = ["lo retiro", "retiro yo", "retiro en", "voy a buscar", "lo busco",
+                                 "retira en fábrica", "retira en fabrica", "sin flete", "no necesita flete"]
+                if any(phrase in _all_user_text for phrase in _skip_phrases):
+                    inputs["skip_flete"] = True
+                    logging.info(f"Auto-set skip_flete=True from conversation keywords for {save_to_qid}")
+
             calc_result = calculate_quote(inputs)
 
             # ── Post-calculate deterministic validation ──

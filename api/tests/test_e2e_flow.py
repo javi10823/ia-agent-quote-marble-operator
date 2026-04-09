@@ -4,7 +4,7 @@ import uuid
 import shutil
 import pytest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 from sqlalchemy import select
 
 from app.models.quote import Quote, QuoteStatus
@@ -459,3 +459,236 @@ class TestUpdateQuoteReal:
         )
 
         assert result["ok"] is False
+
+
+# ── SMOKE TEST: Full operator flow — chatbot → edit → validate ───────────────
+
+class TestOperatorFlowSmoke:
+    """End-to-end smoke test simulating the real operator flow:
+    1. Chatbot creates quote with data (simulates web API)
+    2. calculate_quote persists breakdown
+    3. Operator edits before validating (patch_quote_mo)
+    4. Breakdown in DB reflects the edit
+    5. validate endpoint generates docs from updated breakdown
+    6. PDF + Drive links are both present
+    """
+
+    @pytest.mark.asyncio
+    async def test_full_flow_edit_then_validate(self, db_session, sample_quote_data):
+        """Chatbot quote → calculate → edit MO → validate → PDF + Drive."""
+        from app.modules.quote_engine.calculator import calculate_quote
+
+        # ── Step 1: Chatbot creates quote (simulates POST from web) ──
+        qid = await _create_quote(db_session)
+
+        # Set quote fields as chatbot would
+        from sqlalchemy import update as sql_update
+        await db_session.execute(
+            sql_update(Quote).where(Quote.id == qid).values(
+                client_name="Maria Lopez",
+                project="Cocina",
+                material="Silestone Blanco Norte",
+                localidad="puerto san martin",
+                pileta="empotrada_johnson",
+                source="web",
+            )
+        )
+        await db_session.commit()
+
+        # ── Step 2: calculate_quote (Valentina processes the brief) ──
+        agent = AgentService()
+        calc_result = await agent._execute_tool(
+            "calculate_quote",
+            {
+                "client_name": "Maria Lopez",
+                "project": "Cocina",
+                "material": "Silestone Blanco Norte",
+                "pieces": [
+                    {"description": "Mesada", "largo": 2.0, "prof": 0.6},
+                    {"description": "Zócalo", "largo": 2.0, "alto": 0.05},
+                ],
+                "localidad": "puerto san martin",
+                "colocacion": True,
+                "pileta": "empotrada_johnson",
+                "plazo": "30 días",
+            },
+            quote_id=qid,
+            db=db_session,
+        )
+
+        assert calc_result["ok"] is True, f"calculate_quote failed: {calc_result.get('error')}"
+        assert calc_result["total_usd"] > 0
+        assert calc_result["total_ars"] > 0
+
+        # Verify breakdown persisted in DB
+        r = await db_session.execute(select(Quote).where(Quote.id == qid))
+        q = r.scalar_one()
+        assert q.quote_breakdown is not None
+        assert q.quote_breakdown["material_name"] == calc_result["material_name"]
+        assert q.total_ars == calc_result["total_ars"]
+        assert q.total_usd == calc_result["total_usd"]
+        original_ars = q.total_ars
+
+        # Verify flete for Puerto San Martín is present
+        flete_items = [m for m in q.quote_breakdown["mo_items"] if "flete" in m["description"].lower()]
+        assert len(flete_items) == 1, f"Expected 1 flete item, got: {flete_items}"
+        assert "san martin" in flete_items[0]["description"].lower()
+
+        # Verify pileta MO is present (from structured field)
+        pileta_items = [m for m in q.quote_breakdown["mo_items"] if "pileta" in m["description"].lower()]
+        assert len(pileta_items) == 1, f"Expected 1 pileta item, got: {pileta_items}"
+
+        # ── Step 3: Operator edits before validating (remove colocación) ──
+        patch_result = await agent._execute_tool(
+            "patch_quote_mo",
+            {"remove_items": ["Colocación", "Colocacion"]},
+            quote_id=qid,
+            db=db_session,
+        )
+
+        assert patch_result["ok"] is True
+        assert len(patch_result.get("removed", [])) > 0
+
+        # ── Step 4: Verify DB has updated breakdown ──
+        db_session.expire_all()
+        r = await db_session.execute(select(Quote).where(Quote.id == qid))
+        q_after_edit = r.scalar_one()
+        bd = q_after_edit.quote_breakdown
+
+        # Colocación should be gone
+        coloc_items = [m for m in bd["mo_items"] if "colocaci" in m["description"].lower()]
+        assert len(coloc_items) == 0, f"Colocación should be removed: {coloc_items}"
+
+        # Total ARS should be lower (removed colocación)
+        assert q_after_edit.total_ars < original_ars, (
+            f"Total ARS should have decreased: {q_after_edit.total_ars} vs original {original_ars}"
+        )
+
+        # Flete and pileta should still be there
+        flete_after = [m for m in bd["mo_items"] if "flete" in m["description"].lower()]
+        assert len(flete_after) == 1
+        pileta_after = [m for m in bd["mo_items"] if "pileta" in m["description"].lower()]
+        assert len(pileta_after) == 1
+
+        # ── Step 5: Validate — generate docs from updated breakdown ──
+        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK):
+            gen_result = await agent._execute_tool(
+                "generate_documents",
+                {"quotes": [bd]},
+                quote_id=qid,
+                db=db_session,
+            )
+
+        assert gen_result["ok"] is True
+        assert gen_result["generated"] == 1
+        r0 = gen_result["results"][0]
+        assert r0["pdf_url"] is not None, "PDF URL missing"
+        assert r0["drive_url"] is not None, "Drive URL missing"
+
+        # ── Step 6: Verify final DB state ──
+        db_session.expire_all()
+        r = await db_session.execute(select(Quote).where(Quote.id == qid))
+        final = r.scalar_one()
+        assert final.status == QuoteStatus.VALIDATED
+        assert final.pdf_url is not None
+        assert final.pdf_url.endswith(".pdf")
+        assert final.drive_url == "https://drive.google.com/test"
+        # Breakdown should still reflect the edit (no colocación)
+        final_coloc = [m for m in final.quote_breakdown["mo_items"] if "colocaci" in m["description"].lower()]
+        assert len(final_coloc) == 0, "Colocación re-appeared after validate!"
+
+    @pytest.mark.asyncio
+    async def test_material_change_on_draft_overwrites_same_quote(self, db_session):
+        """Changing material on DRAFT should NOT create a new invisible quote."""
+        from app.modules.quote_engine.calculator import calculate_quote
+
+        qid = await _create_quote(db_session)
+        agent = AgentService()
+
+        # First calculation: Silestone
+        calc1 = await agent._execute_tool(
+            "calculate_quote",
+            {
+                "client_name": "Test",
+                "material": "Silestone Blanco Norte",
+                "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
+                "localidad": "Rosario",
+                "plazo": "30 días",
+            },
+            quote_id=qid,
+            db=db_session,
+        )
+        assert calc1["ok"] is True
+        assert "NORTE" in calc1["material_name"].upper()
+
+        # Verify quote is DRAFT with breakdown but NO docs
+        r = await db_session.execute(select(Quote).where(Quote.id == qid))
+        q = r.scalar_one()
+        assert q.quote_breakdown is not None
+        assert q.pdf_url is None
+        assert q.status == QuoteStatus.DRAFT
+
+        # Second calculation: different material (Purastone)
+        calc2 = await agent._execute_tool(
+            "calculate_quote",
+            {
+                "client_name": "Test",
+                "material": "Blanco Paloma",
+                "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
+                "localidad": "Rosario",
+                "plazo": "30 días",
+            },
+            quote_id=qid,
+            db=db_session,
+        )
+        assert calc2["ok"] is True
+
+        # The key assertion: calc2 should have saved to the SAME quote_id
+        assert calc2["quote_id"] == qid, (
+            f"Material change on DRAFT created new quote {calc2['quote_id']} instead of overwriting {qid}"
+        )
+
+        # Verify the quote now has the NEW material
+        db_session.expire_all()
+        r = await db_session.execute(select(Quote).where(Quote.id == qid))
+        q_updated = r.scalar_one()
+        assert "PALOMA" in q_updated.material.upper(), (
+            f"Quote material should be Paloma, got: {q_updated.material}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_drive_url_preserved_on_revalidation_failure(self, db_session, sample_quote_data):
+        """If Drive upload fails on revalidation, existing drive_url must survive."""
+        qid = await _create_quote(db_session)
+        agent = AgentService()
+
+        # First generation — success with Drive
+        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK):
+            result1 = await agent._execute_tool(
+                "generate_documents",
+                {"quotes": [sample_quote_data]},
+                quote_id=qid,
+                db=db_session,
+            )
+        assert result1["ok"] is True
+        assert result1["results"][0]["drive_url"] == "https://drive.google.com/test"
+
+        # Verify drive_url in DB
+        r = await db_session.execute(select(Quote).where(Quote.id == qid))
+        assert r.scalar_one().drive_url == "https://drive.google.com/test"
+
+        # Second generation — Drive fails
+        with patch("app.modules.agent.agent.upload_to_drive", return_value={"ok": False, "error": "timeout"}):
+            with patch("app.modules.agent.tools.drive_tool.delete_drive_file", new_callable=AsyncMock, return_value=None):
+                result2 = await agent._execute_tool(
+                    "generate_documents",
+                    {"quotes": [sample_quote_data]},
+                    quote_id=qid,
+                    db=db_session,
+                )
+
+        assert result2["ok"] is True
+        # drive_url in result should fall back to existing
+        assert result2["results"][0]["drive_url"] == "https://drive.google.com/test", (
+            f"drive_url should be preserved, got: {result2['results'][0]['drive_url']}"
+        )
