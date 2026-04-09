@@ -2,11 +2,11 @@
 
 import { useEffect, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
-import { fetchCatalogs, fetchCatalog, validateCatalog, updateCatalog } from "@/lib/api";
+import { fetchCatalogs, fetchCatalog, validateCatalog, updateCatalog, listBackups, restoreBackup, type BackupEntry } from "@/lib/api";
 import { useToast } from "@/lib/toast-context";
 import CatalogSidebar from "@/components/catalog/CatalogSidebar";
 import CatalogToolbar from "@/components/catalog/CatalogToolbar";
-import CsvImportModal from "@/components/catalog/CsvImportModal";
+import ImportModal from "@/components/catalog/ImportModal";
 
 // Dynamic import to avoid SSR issues with CodeMirror
 const CatalogEditor = dynamic(() => import("@/components/catalog/CatalogEditor"), {
@@ -43,8 +43,11 @@ export default function ConfigPage() {
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [csvImportOpen, setCsvImportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [warningsExpanded, setWarningsExpanded] = useState(true);
+  const [backups, setBackups] = useState<BackupEntry[]>([]);
+  const [restoreTarget, setRestoreTarget] = useState<BackupEntry | null>(null);
+  const [restoring, setRestoring] = useState(false);
   const toast = useToast();
 
   const hasChanges = content !== originalContent;
@@ -129,12 +132,36 @@ export default function ConfigPage() {
     }
   }, [validation, content, selected, toast]);
 
-  // CSV import apply
-  const handleCsvApply = useCallback((jsonString: string) => {
-    setContent(jsonString);
-    setValidation(null);
-    toast("Datos importados. Valida y guarda para confirmar.", "warning");
-  }, [toast]);
+  // Load backups for selected catalog
+  const loadBackups = useCallback(() => {
+    listBackups(selected).then(setBackups).catch(() => setBackups([]));
+  }, [selected]);
+  useEffect(() => { loadBackups(); }, [loadBackups]);
+
+  // After import completes: refresh catalog + backups
+  const handleImportDone = useCallback(() => {
+    loadCatalog(selected);
+    loadBackups();
+    fetchCatalogs().then(setCatalogs).catch(() => {});
+  }, [selected, loadCatalog, loadBackups]);
+
+  // Restore backup
+  const handleRestore = useCallback(async () => {
+    if (!restoreTarget) return;
+    setRestoring(true);
+    try {
+      await restoreBackup(restoreTarget.id);
+      loadCatalog(selected);
+      loadBackups();
+      fetchCatalogs().then(setCatalogs).catch(() => {});
+      toast("Cat\u00E1logo restaurado correctamente", "success");
+    } catch (err: any) {
+      toast(err.message || "Error al restaurar", "error");
+    } finally {
+      setRestoring(false);
+      setRestoreTarget(null);
+    }
+  }, [restoreTarget, selected, loadCatalog, loadBackups, toast]);
 
   // Keyboard shortcut: Ctrl/Cmd+S to save
   useEffect(() => {
@@ -162,7 +189,7 @@ export default function ConfigPage() {
         saving={saving}
         onValidate={handleValidate}
         onSave={handleSave}
-        onImport={() => setCsvImportOpen(true)}
+        onImport={() => setImportOpen(true)}
         onBack={() => window.history.back()}
       />
 
@@ -225,9 +252,9 @@ export default function ConfigPage() {
             </div>
           )}
 
-          {/* Editor */}
-          <div className="flex-1 overflow-hidden px-5 py-3">
-            <div className="h-full border border-b1 rounded-lg overflow-auto">
+          {/* Editor + Backups */}
+          <div className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-4">
+            <div className="flex-1 min-h-[300px] border border-b1 rounded-lg overflow-hidden">
               <CatalogEditor
                 value={content}
                 onChange={setContent}
@@ -236,18 +263,63 @@ export default function ConfigPage() {
                 onRetry={() => loadCatalog(selected)}
               />
             </div>
+
+            {/* Backup History */}
+            {backups.length > 0 && (
+              <div className="shrink-0 pb-4">
+                <div className="text-[11px] font-semibold text-t3 uppercase tracking-wide mb-2">Historial de backups {"\u2014"} {selected}</div>
+                <div className="flex flex-col gap-1">
+                  {backups.map(b => (
+                    <div key={b.id} className="flex items-center gap-3 px-3.5 py-2.5 bg-white/[0.015] border border-b1 rounded-lg">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[12px] font-medium text-t1">{b.created_at ? new Date(b.created_at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "\u2014"}</div>
+                        <div className="text-[10px] text-t3 truncate mt-0.5">{b.source_file || "manual"}{b.stats?.items_before != null ? ` \u00B7 ${b.stats.items_before} items` : ""}{b.stats?.reason ? ` \u00B7 ${b.stats.reason}` : ""}</div>
+                      </div>
+                      <button
+                        onClick={() => setRestoreTarget(b)}
+                        className="px-2.5 py-1 rounded-md text-[11px] font-medium font-sans cursor-pointer border border-b2 bg-transparent text-t3 hover:text-t1 hover:border-b3 transition shrink-0"
+                      >
+                        Restaurar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* CSV Import Modal */}
-      {csvImportOpen && (
-        <CsvImportModal
-          catalogName={selected}
-          currentContent={content}
-          onApply={handleCsvApply}
-          onClose={() => setCsvImportOpen(false)}
+      {/* Import Modal */}
+      {importOpen && (
+        <ImportModal
+          onDone={handleImportDone}
+          onClose={() => setImportOpen(false)}
         />
+      )}
+
+      {/* Restore Confirmation Modal */}
+      {restoreTarget && (
+        <div onClick={() => setRestoreTarget(null)} className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-[4px] flex items-center justify-center">
+          <div onClick={e => e.stopPropagation()} className="bg-s2 border border-b2 rounded-[14px] px-6 md:px-8 py-6 md:py-7 w-[calc(100vw-32px)] max-w-[420px] shadow-[0_20px_60px_rgba(0,0,0,.5)]">
+            <div className="text-[15px] font-medium text-t1 mb-2">Restaurar backup</div>
+            <div className="text-[13px] text-t2 leading-relaxed mb-2">
+              {"\u00BF"}Restaurar <strong className="text-t1">{selected}</strong> al estado del {restoreTarget.created_at ? new Date(restoreTarget.created_at).toLocaleString("es-AR") : "backup"}?
+            </div>
+            <div className="text-[11px] text-t3 mb-1">Origen: {restoreTarget.source_file || "manual"}</div>
+            <div className="text-[11px] text-amb mb-5">Se crear{"\u00E1"} un backup de seguridad del estado actual antes de restaurar.</div>
+            <div className="flex gap-2.5 justify-end">
+              <button onClick={() => setRestoreTarget(null)} className="px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans cursor-pointer border border-b2 bg-transparent text-t2 hover:text-t1 hover:border-b3 transition">Cancelar</button>
+              <button
+                onClick={handleRestore}
+                disabled={restoring}
+                className={`px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans border-none text-white transition ${restoring ? "bg-amb/60 cursor-wait" : "bg-amb cursor-pointer hover:bg-amber-500"}`}
+              >
+                {restoring ? "Restaurando..." : "Confirmar restauraci\u00F3n"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

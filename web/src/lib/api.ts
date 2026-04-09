@@ -403,6 +403,108 @@ export async function updateCatalog(name: string, content: unknown) {
   return res.json();
 }
 
+// ── Catalog Import ──────────────────────────────────────────────────────────
+
+export interface ImportDiffItem {
+  sku: string;
+  name: string;
+  old_price?: number;
+  new_price?: number;
+  change_pct?: number;
+  price?: number;
+}
+
+export interface ImportCatalogDiff {
+  catalog: string;
+  currency: string;
+  price_field: string;
+  updated: ImportDiffItem[];
+  new: ImportDiffItem[];
+  missing: ImportDiffItem[];
+  zero_price: ImportDiffItem[];
+  unchanged: number;
+  warnings: string[];
+  total_in_file: number;
+  total_in_catalog: number;
+}
+
+export interface ImportPreviewResult {
+  format: string;
+  total_items: number;
+  catalogs: Record<string, ImportCatalogDiff>;
+  unmatched: { sku: string; name: string; price: number | null }[];
+  iva_warning: boolean;
+  warnings: string[];
+}
+
+export interface ImportApplyResult {
+  ok: boolean;
+  results: Record<string, { ok: boolean; updated?: number; added?: number; skipped_zero?: number; error?: string }>;
+  source_file: string;
+}
+
+export interface BackupEntry {
+  id: number;
+  created_at: string | null;
+  source_file: string | null;
+  stats: { items_before?: number; updated?: number; new?: number; reason?: string } | null;
+}
+
+export async function importPreview(file: File): Promise<ImportPreviewResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}/api/catalog/import-preview`, {
+    method: "POST",
+    body: form,
+    credentials: "include",
+  });
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al analizar archivo");
+  }
+  return res.json();
+}
+
+export async function importApply(file: File, catalogs: string[], includeNew: boolean, sourceFile: string): Promise<ImportApplyResult> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("catalogs", JSON.stringify(catalogs));
+  form.append("include_new", String(includeNew));
+  form.append("source_file", sourceFile);
+  const res = await fetch(`${API_BASE}/api/catalog/import-apply`, {
+    method: "POST",
+    body: form,
+    credentials: "include",
+  });
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al importar");
+  }
+  return res.json();
+}
+
+export async function listBackups(catalogName: string): Promise<BackupEntry[]> {
+  const res = await fetch(`${API_BASE}/api/catalog/backups/${catalogName}`, { credentials: "include" });
+  handleAuthError(res);
+  if (!res.ok) throw new Error("Error al cargar backups");
+  return res.json();
+}
+
+export async function restoreBackup(backupId: number): Promise<{ ok: boolean; catalog: string }> {
+  const res = await fetch(`${API_BASE}/api/catalog/backups/${backupId}/restore`, {
+    method: "POST",
+    credentials: "include",
+  });
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al restaurar backup");
+  }
+  return res.json();
+}
+
 // ── Users ────────────────────────────────────────────────────────────────────
 
 export interface UserInfo {
