@@ -62,9 +62,12 @@ ESCALONES_TABLE = [
 ALL_TABLES = [MARMOLERIA_TABLE, UMBRALES_TABLE, ALFEIZARES_TABLE, ESCALONES_TABLE]
 
 
+TEST_ALIASES = {"granito new beige": "Marmol Sahara", "new beige": "Marmol Sahara"}
+
+
 def _get_full_pipeline():
     raw = parse_edificio_tables(ALL_TABLES)
-    normalized = normalize_edificio_data(raw)
+    normalized = normalize_edificio_data(raw, material_aliases=TEST_ALIASES)
     summary = compute_edificio_aggregates(normalized)
     return raw, normalized, summary
 

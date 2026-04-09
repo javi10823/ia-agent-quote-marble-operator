@@ -22,10 +22,30 @@
   },
   "materials": {
     "_comment": "Clasificacion de materiales por familia",
-    "sinteticos": ["silestone", "dekton", "neolith", "puraprima", "purastone", "laminatto"],
-    "sinterizados": ["dekton", "neolith", "puraprima", "laminatto"],
-    "merma_media_placa": ["silestone"],
-    "merma_placa_entera": ["purastone", "puraprima", "dekton", "neolith", "laminatto"],
+    "sinteticos": [
+      "silestone",
+      "dekton",
+      "neolith",
+      "puraprima",
+      "purastone",
+      "laminatto"
+    ],
+    "sinterizados": [
+      "dekton",
+      "neolith",
+      "puraprima",
+      "laminatto"
+    ],
+    "merma_media_placa": [
+      "silestone"
+    ],
+    "merma_placa_entera": [
+      "purastone",
+      "puraprima",
+      "dekton",
+      "neolith",
+      "laminatto"
+    ],
     "plate_material_map": {
       "silestone": "estandar",
       "purastone": "estandar",
@@ -36,9 +56,9 @@
     }
   },
   "measurements": {
-    "default_depth": 0.60,
+    "default_depth": 0.6,
     "default_zocalo_height": 0.05,
-    "tall_zocalo_threshold": 0.10
+    "tall_zocalo_threshold": 0.1
   },
   "colocacion": {
     "min_quantity": 1.0
@@ -83,5 +103,9 @@
   "conditions": {
     "general": "*PRESUPUESTO SUJETO A VARIACION DE PRECIO\n*MATERIALES IMPORTADOS SEGUN COTIZACION DOLAR VENTA BANCO NACION AL MOMENTO DE LA CONFIRMACION\n*LA TOMA DE MEDIDAS NO PODRA SUPERAR LOS 30 DIAS DESDE LA CONFIRMACION, CASO CONTRARIO EL 20% RESTANTE SE ACTUALIZARA SEGUN INDICE LA CONSTRUCCION\n*PRESUPUESTO DEFINITIVO SEGUN MEDIDAS TOMADAS EN OBRA\n*LOS PRECIOS INCLUYEN IVA",
     "payment": "*Materiales Importados: 80% seña, 20% restante contra entrega (cotizacion dolar venta BCO NACION).\n*Materiales Nacionales: 80% seña, 20% restante contra entrega.\nPago contado / transferencia / debito / credito / cheques 15 dias para importados y 30 dias para nacionales\nTARJETAS DE CREDITO CONSULTAR PLANES"
+  },
+  "material_aliases": {
+    "granito new beige": "Marmol Sahara",
+    "new beige": "Marmol Sahara"
   }
 }

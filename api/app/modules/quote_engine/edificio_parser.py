@@ -273,21 +273,39 @@ def parse_edificio_tables(tables: list[list[list]]) -> RawEdificioData:
 
 # ── 3. normalize_edificio_data ───────────────────────────────────────────────
 
-# Default material aliases — maps PDF names to catalog names
-DEFAULT_MATERIAL_ALIASES = {
-    "granito new beige": "Marmol Sahara",
-    "granito new beige ": "Marmol Sahara",
-    "new beige": "Marmol Sahara",
-}
+def _load_material_aliases() -> dict:
+    """Load material aliases from config.json (DB or file). Administrable from dashboard."""
+    try:
+        from app.modules.agent.tools.catalog_tool import _load_catalog
+        config = _load_catalog("config")
+        if isinstance(config, list) and len(config) == 1:
+            config = config[0]
+        if isinstance(config, dict):
+            return config.get("material_aliases", {})
+    except Exception:
+        pass
+    # Fallback: read from file
+    try:
+        import json as _json
+        from pathlib import Path
+        cfg_path = Path(__file__).parent.parent.parent / "catalog" / "config.json"
+        if cfg_path.exists():
+            with open(cfg_path, encoding="utf-8") as f:
+                cfg = _json.load(f)
+            return cfg.get("material_aliases", {})
+    except Exception:
+        pass
+    return {}
 
 
 def normalize_edificio_data(raw: RawEdificioData, material_aliases: dict | None = None) -> NormalizedEdificioData:
     """Parse types + derive calculated fields. Quantity > 1 handled correctly.
 
     material_aliases: optional dict mapping PDF material names (lowercase) to catalog names.
-    Falls back to DEFAULT_MATERIAL_ALIASES if not provided.
+    If not provided, loads from config.json (administrable from dashboard).
     """
-    aliases = {k.lower().strip(): v for k, v in (material_aliases or DEFAULT_MATERIAL_ALIASES).items()}
+    loaded = material_aliases if material_aliases is not None else _load_material_aliases()
+    aliases = {k.lower().strip(): v for k, v in loaded.items()}
     sections = []
 
     for raw_section in raw.get("sections", []):
