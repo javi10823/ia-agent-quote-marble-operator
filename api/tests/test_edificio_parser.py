@@ -262,7 +262,7 @@ class TestComputeEdificioAggregates:
 
     def test_escalones_quantity(self):
         _, norm, summary = _get_full_pipeline()
-        beige = summary["materials"].get("Granito new beige", {})
+        beige = summary["materials"].get("Marmol Sahara", {})
         # E-01: 19 + E-02: 4 = 23 escalones in physical count
         assert beige["piece_count_physical"] >= 23
 
@@ -280,7 +280,7 @@ class TestComputeEdificioAggregates:
     def test_piece_count_physical_multiplies_cantidad(self):
         """Escalones with qty=19 should count 19 physical pieces, not 1 row."""
         _, _, summary = _get_full_pipeline()
-        beige = summary["materials"].get("Granito new beige", {})
+        beige = summary["materials"].get("Marmol Sahara", {})
         # At minimum: 12 umbrales + 2 alfeizares + 19 + 4 escalones = 37
         assert beige["piece_count_physical"] >= 37
 

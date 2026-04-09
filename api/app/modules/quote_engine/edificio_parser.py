@@ -273,8 +273,21 @@ def parse_edificio_tables(tables: list[list[list]]) -> RawEdificioData:
 
 # ── 3. normalize_edificio_data ───────────────────────────────────────────────
 
-def normalize_edificio_data(raw: RawEdificioData) -> NormalizedEdificioData:
-    """Parse types + derive calculated fields. Quantity > 1 handled correctly."""
+# Default material aliases — maps PDF names to catalog names
+DEFAULT_MATERIAL_ALIASES = {
+    "granito new beige": "Marmol Sahara",
+    "granito new beige ": "Marmol Sahara",
+    "new beige": "Marmol Sahara",
+}
+
+
+def normalize_edificio_data(raw: RawEdificioData, material_aliases: dict | None = None) -> NormalizedEdificioData:
+    """Parse types + derive calculated fields. Quantity > 1 handled correctly.
+
+    material_aliases: optional dict mapping PDF material names (lowercase) to catalog names.
+    Falls back to DEFAULT_MATERIAL_ALIASES if not provided.
+    """
+    aliases = {k.lower().strip(): v for k, v in (material_aliases or DEFAULT_MATERIAL_ALIASES).items()}
     sections = []
 
     for raw_section in raw.get("sections", []):
@@ -311,10 +324,15 @@ def normalize_edificio_data(raw: RawEdificioData) -> NormalizedEdificioData:
                     faldon_ml_unit = largo
                     faldon_ml_total = round(largo * cantidad, 2) if largo else None
 
+            # Apply material alias (PDF name → catalog name)
+            raw_material = raw_row.get("material_raw")
+            resolved_material = aliases.get((raw_material or "").lower().strip(), raw_material)
+
             pieces.append(NormalizedPiece(
                 id=raw_row.get("id"),
                 ubicacion=raw_row.get("ubicacion"),
-                material=raw_row.get("material_raw"),
+                material=resolved_material,
+                material_raw=raw_material,  # preserve original
                 terminacion=raw_row.get("terminacion_raw"),
                 perforaciones_text=perf_text,
                 aclaraciones_text=acl_text,
