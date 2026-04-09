@@ -53,6 +53,7 @@ class Quote(Base):
     colocacion: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=False)
     pileta: Mapped[str | None] = mapped_column(String(50), nullable=True)
     anafe: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=False)
+    sink_type: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Raw pieces input (as submitted, before calculation)
     pieces: Mapped[list | None] = mapped_column(JSON, nullable=True)

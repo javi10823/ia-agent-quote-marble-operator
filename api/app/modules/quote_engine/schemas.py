@@ -1,7 +1,7 @@
 """Pydantic schemas for the public quote API."""
 
 from pydantic import BaseModel, Field
-from typing import Optional, Union
+from typing import Optional, Union, Literal
 from enum import Enum
 
 
@@ -9,6 +9,12 @@ class PiletaType(str, Enum):
     EMPOTRADA_CLIENTE = "empotrada_cliente"
     EMPOTRADA_JOHNSON = "empotrada_johnson"
     APOYO = "apoyo"
+
+
+class SinkTypeInput(BaseModel):
+    """Tipo de bacha: simple/doble + montaje arriba/abajo."""
+    basin_count: Literal["simple", "doble"]
+    mount_type: Literal["arriba", "abajo"]
 
 
 class PieceInput(BaseModel):
@@ -26,9 +32,11 @@ class QuoteInput(BaseModel):
     localidad: str = Field(..., min_length=1, max_length=100, description="Zona de flete (ej: Rosario)")
     colocacion: bool = Field(default=True)
     pileta: Optional[PiletaType] = Field(default=None)
+    sink_type: Optional[SinkTypeInput] = Field(default=None, description="Tipo de bacha: basin_count (simple/doble), mount_type (arriba/abajo)")
     anafe: bool = Field(default=False)
     frentin: bool = Field(default=False)
     pulido: bool = Field(default=False)
+    skip_flete: bool = Field(default=False, description="True solo si el cliente retira el trabajo en fábrica")
     plazo: Optional[str] = Field(default=None, max_length=100, description="Ej: 30 días. Si no se envía, usa default de config.json")
     discount_pct: float = Field(default=0, ge=0, le=100)
     date: Optional[str] = Field(default=None, description="DD/MM/YYYY o DD.MM.YYYY")
