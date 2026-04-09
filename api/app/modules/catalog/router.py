@@ -3,7 +3,7 @@ import os
 import tempfile
 import logging
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, field_validator
 from typing import Union
 
@@ -73,7 +73,7 @@ async def _save_to_db(name: str, content):
     from sqlalchemy import text
     async with AsyncSessionLocal() as session:
         await session.execute(
-            text("INSERT INTO catalogs (name, content, updated_at) VALUES (:name, :content, NOW()) ON CONFLICT (name) DO UPDATE SET content = :content, updated_at = NOW()"),
+            text("INSERT INTO catalogs (name, content, updated_at) VALUES (:name, :content, CURRENT_TIMESTAMP) ON CONFLICT (name) DO UPDATE SET content = :content, updated_at = CURRENT_TIMESTAMP"),
             {"name": name, "content": json.dumps(content, ensure_ascii=False)},
         )
         await session.commit()
@@ -224,9 +224,9 @@ async def import_preview(file: UploadFile = File(...)):
 @router.post("/import-apply")
 async def import_apply(
     file: UploadFile = File(...),
-    catalogs: str = "",           # JSON array string from FormData
-    include_new: str = "true",    # "true"/"false" from FormData
-    source_file: str = "",
+    catalogs: str = Form(""),           # JSON array string from FormData
+    include_new: str = Form("true"),    # "true"/"false" from FormData
+    source_file: str = Form(""),
 ):
     """Apply a previewed import: backup current → update catalogs.
 
@@ -384,7 +384,7 @@ async def list_backups(catalog_name: str):
         rows = result.fetchall()
 
     return [
-        {"id": r[0], "created_at": r[1].isoformat() if r[1] else None, "source_file": r[2], "stats": r[3]}
+        {"id": r[0], "created_at": r[1].isoformat() if hasattr(r[1], 'isoformat') else str(r[1]) if r[1] else None, "source_file": r[2], "stats": r[3]}
         for r in rows
     ]
 
