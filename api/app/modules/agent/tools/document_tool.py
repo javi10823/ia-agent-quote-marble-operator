@@ -440,8 +440,9 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     # ── ONLY replace .value — NEVER touch .font, .fill, .alignment, .border ──
     # The template has all formatting correct. We just swap the data.
 
-    # Clear only the values in dynamic rows (23-34)
-    for row in range(23, 35):
+    # Clear values in dynamic rows (23 through max possible output row)
+    max_clear = 35 + max(0, len(mo_items) - 4) + 3
+    for row in range(23, max_clear + 1):
         for col in range(1, 7):
             ws.cell(row, col).value = None
 
@@ -477,26 +478,39 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     for i, piece in enumerate(all_pieces[2:], start=25):
         ws.cell(i, 1).value = piece
 
-    # MO items — template rows 27 (header), 28-31 (items), 32 (total)
-    ws.cell(27, 1).value = "MANO DE OBRA"
+    # MO items — template has 4 slots (rows 28-31). Insert extra rows if needed.
+    MO_HEADER_ROW = 27
+    MO_START_ROW = 28
+    TEMPLATE_MO_SLOTS = 4
+    extra_mo = max(0, len(mo_items) - TEMPLATE_MO_SLOTS)
+    if extra_mo > 0:
+        ws.insert_rows(MO_START_ROW + TEMPLATE_MO_SLOTS, extra_mo)
+
+    ws.cell(MO_HEADER_ROW, 1).value = "MANO DE OBRA"
     for i, mo in enumerate(mo_items):
-        row = 28 + i
-        if row > 31:
-            break  # Template only has 4 MO rows
+        row = MO_START_ROW + i
         ws.cell(row, 1).value = mo["description"]
         ws.cell(row, 4).value = mo["quantity"]
+        ws.cell(row, 4).number_format = qty_fmt
         ws.cell(row, 5).value = mo["unit_price"]
+        ws.cell(row, 5).number_format = ars_fmt
         ws.cell(row, 6).value = f"=D{row}*E{row}"
+        ws.cell(row, 6).number_format = ars_fmt
 
-    # Total PESOS — row 32
-    mo_end = min(28 + len(mo_items) - 1, 31)
-    ws.cell(32, 5).value = "Total PESOS"
-    ws.cell(32, 6).value = f"=SUM(F28:F{mo_end})"
+    # Total PESOS — after all MO items
+    mo_end_row = MO_START_ROW + len(mo_items) - 1
+    total_pesos_row = mo_end_row + 1
+    ws.cell(total_pesos_row, 5).value = "Total PESOS"
+    ws.cell(total_pesos_row, 5).font = bold
+    ws.cell(total_pesos_row, 6).value = f"=SUM(F{MO_START_ROW}:F{mo_end_row})"
+    ws.cell(total_pesos_row, 6).number_format = ars_fmt
+    ws.cell(total_pesos_row, 6).font = bold
 
-    # Grand total — row 35
+    # Grand total — 3 rows after total pesos (matching template spacing)
+    grand_row = total_pesos_row + 3
     grand = _format_grand_total(total_ars, total_usd, currency)
-    ws.cell(35, 1).value = grand
-    ws.merge_cells("A35:F35")
+    ws.cell(grand_row, 1).value = grand
+    ws.merge_cells(f"A{grand_row}:F{grand_row}")
 
     wb.save(str(output_path))
     _inject_locale(str(output_path))
