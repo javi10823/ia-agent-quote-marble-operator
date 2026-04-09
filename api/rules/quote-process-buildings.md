@@ -7,9 +7,9 @@ Preguntar si es particular o edificio. Indicadores: enunciado lo dice, multiples
 - m2 total material > 15 m2 → **18% descuento** sobre material
 - Siempre, sin excepcion, cuando supera umbral
 - Solo sobre material, NUNCA MO
-- **m² por MATERIAL:** sumar m² del MISMO material. No mezclar materiales para umbral.
-  - Ej: Boreal 19.6 m² → descuento. Dallas 2.5 m² mismo pedido → sin descuento.
-- **METODO:** `precio_unitario_desc = precio_con_iva / 1.18`. Precio mostrado YA incluye descuento.
+- **m² TOTAL:** sumar m² de TODOS los materiales del edificio. Si total > 15 → 18% a TODOS.
+  - Ej: Boreal 12.6 + Brasil 4.3 + Sahara 37.2 = 54.1 m² > 15 → descuento a los 3.
+- **METODO:** `precio_unitario_desc = precio_con_iva × 0.82` (18% real).
 - CLIENTE OBLIGATORIO — si no se tiene, pedirlo antes de generar PDF.
 
 ### MO en edificios

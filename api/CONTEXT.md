@@ -443,7 +443,7 @@ Pasar `frentin=true` + `frentin_ml=total_metros_lineales` + `inglete=true/false`
 Leer columna "Aclaraciones" de la planilla. "Faldón Xcm" → agregar pieza material + sumar ml al frentin_ml.
 
 ### Piletas en edificios
-Leer columna "Perforaciones/Calados". Contar total bachas → pileta_qty. "2 bachas" = 2 PEGADOPILETA.
+Leer columna "Perforaciones/Calados". Contar total bachas → pileta_qty. "2 bachas" = 2 PEGADOPILETA. Si la columna dice "-" o está vacía → 0 piletas. NUNCA inventar piletas que no estén en la planilla.
 
 ### Checklist edificios — OBLIGATORIO antes de confirmar
 ```

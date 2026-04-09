@@ -414,10 +414,13 @@ def calculate_quote(input_data: dict) -> dict:
         flete_price = flete_result.get("price_ars", 0)
         flete_base = flete_result.get("price_ars_base", 0)
         if is_edificio:
-            num_pieces = len(pieces)
+            # Count physical pieces only (exclude faldones — they travel with the mesada)
+            physical_pieces = [p for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
+                               if not any(kw in (p.get("description") or "").lower() for kw in ["faldón", "faldon", "frentín", "frentin"])]
+            num_pieces = len(physical_pieces)
             flete_qty = math.ceil(num_pieces / 8)
             flete_qty = max(1, flete_qty)
-            logging.info(f"Edificio flete: {num_pieces} piezas ÷ 8 = {flete_qty} fletes")
+            logging.info(f"Edificio flete: {num_pieces} piezas físicas ÷ 8 = {flete_qty} fletes")
         else:
             flete_qty = 1
         mo_items.append({"description": f"Flete + toma medidas {localidad}", "quantity": flete_qty, "unit_price": flete_price, "base_price": flete_base, "total": round(flete_price * flete_qty)})
@@ -484,7 +487,10 @@ def calculate_quote(input_data: dict) -> dict:
     for pd in piece_details:
         if pd["m2"] > 0:
             dim2_label = f'{pd["largo"]:.2f} × {pd["dim2"]:.2f}'
-            raw_labels.append(f'{dim2_label} {pd["description"]}')
+            label = f'{dim2_label} {pd["description"]}'
+            if pd["largo"] >= 3.0:
+                label += " (SE REALIZA EN 2 TRAMOS)"
+            raw_labels.append(label)
     # Group duplicates: "0.60 × 0.38 Mesada" × 6 → "0.60 × 0.38 Mesada (×6)"
     piece_labels = []
     seen = {}
@@ -536,7 +542,7 @@ def calculate_quote(input_data: dict) -> dict:
         **({"edificio_checklist": {
             "sin_colocacion": not colocacion,
             "flete_qty": next((m["quantity"] for m in mo_items if "flete" in m["description"].lower()), 0),
-            "flete_calculo": f"{len(pieces)} piezas ÷ 8 = {math.ceil(len(pieces) / 8)}",
+            "flete_calculo": f"{next((m['quantity'] for m in mo_items if 'flete' in m['description'].lower()), 0)} fletes",
             "mo_dividido_1_05": True,
             "descuento_18": discount_pct == 18,
             "total_m2": total_m2,
