@@ -614,9 +614,21 @@ class AgentService:
 
         # Build system prompt per request with contextual loading
         has_plan = plan_bytes is not None and plan_filename is not None
-        # Detect building from current message OR conversation history
-        # (operator may confirm with just "sí" — need to preserve building context)
-        is_building = _detect_building(user_message)
+
+        # ── Building detection: DB flag (sticky) > history > current message ──
+        # Once a quote enters building mode, it stays there for all turns.
+        is_building = False
+        try:
+            _bq = await db.execute(select(Quote).where(Quote.id == quote_id))
+            _bquote = _bq.scalar_one_or_none()
+            if _bquote and _bquote.is_building:
+                is_building = True
+        except Exception:
+            pass
+        # If not in DB, detect from current message
+        if not is_building:
+            is_building = _detect_building(user_message)
+        # If not in current message, scan conversation history
         if not is_building and messages:
             for msg in messages:
                 if msg.get("role") == "user":
@@ -634,6 +646,14 @@ class AgentService:
                             break
                 if is_building:
                     break
+        # Persist to DB so future turns don't need to re-scan
+        if is_building:
+            try:
+                await db.execute(update(Quote).where(Quote.id == quote_id).values(is_building=True))
+                await db.commit()
+            except Exception:
+                pass
+
         system_prompt = build_system_prompt(has_plan=has_plan, is_building=is_building, user_message=user_message, conversation_history=messages)
 
         # Build user message content
