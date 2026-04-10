@@ -250,6 +250,25 @@ Ver quote-process-buildings.md. Sin colocacion | Flete: ceil(piezas_fisicas/8) �
 ### Colocacion
 Ver calculation-formulas.md. Minimo 1 m² | Sobre total m² incluyendo zocalos | Estantes sueltos NO
 
+### Pulido de cantos extra
+- Si hay colocacion fuera de Rosario y la zona tiene `pulido_extra: true` en config.json → cobrar "Pulido de cantos" = mitad del flete
+- Excepciones (no cobran): Rosario, Funes, Roldan
+- Sin colocacion o retiro en fabrica → no aplica
+- Configurado por zona en config.json → zone_aliases → pulido_extra: true/false
+
+### Flete
+- Default: siempre cobrar flete. Solo omitir si el operador dice "retiro en fabrica" / "lo busco yo" (skip_flete=true)
+- Localidad vacia → default Rosario
+- Zona no encontrada → fallback Rosario + warning visible
+
+### Plazo de entrega (tiers por m²)
+- Si el operador no especifica plazo, se aplica por m² total:
+  - ≤ 3 m² → 20 dias
+  - ≤ 6 m² → 30 dias
+  - > 6 m² → 40 dias
+- Configurado en config.json → delivery_days → tiers
+- Si el operador o chatbot especifica un plazo explicito, no se aplica tier
+
 ### Inferencias automaticas
 - Isla → PEGADOPILETA | Alzada → 1 TOMAS (excepto isla frente revestido)
 - Colocacion default: SI | Flete default: Rosario (ENVIOROS)
