@@ -167,12 +167,368 @@ async def generate_edificio_documents(
             "currency": cur,
         })
 
+    # ── 4th document: Resumen General de Obra ──
+    resumen_name = f"{client_name} - Resumen General de Obra - {date_str}"
+    resumen_pdf = quote_dir / f"{resumen_name}.pdf"
+    resumen_xlsx = quote_dir / f"{resumen_name}.xlsx"
+
+    # Build material rows from paso2_calc (read-only, no recomputation)
+    calc_results = paso2_calc.get("calc_results", {})
+    mat_rows = []
+    total_mat_ars = 0
+    total_mat_usd = 0
+    mat_display_names = []
+    for mat_name_r, mr in calc_results.items():
+        if not mr.get("ok"):
+            continue
+        cur = mr["currency"]
+        net = mr["material_net"]
+        mat_rows.append({
+            "name": mr.get("catalog_name", mat_name_r),
+            "m2": mr["m2"],
+            "currency": cur,
+            "price_unit": mr["price_unit"],
+            "subtotal": mr["material_total"],
+            "discount_pct": mr.get("discount_pct", 0),
+            "discount_amount": mr.get("discount_amount", 0),
+            "net": net,
+        })
+        mat_display_names.append(mr.get("catalog_name", mat_name_r))
+        if cur == "ARS":
+            total_mat_ars += net
+        else:
+            total_mat_usd += net
+
+    resumen_data = {
+        "client_name": client_name,
+        "project": project,
+        "materials": mat_rows,
+        "mo_items": paso2_calc.get("mo_items", []),
+        "mo_total": paso2_calc.get("mo_total", 0),
+        "total_mat_ars": total_mat_ars,
+        "total_mat_usd": total_mat_usd,
+        "grand_total_ars": paso2_calc.get("grand_total_ars", 0),
+        "grand_total_usd": paso2_calc.get("grand_total_usd", 0),
+        "material_names": mat_display_names,
+    }
+
+    await asyncio.gather(
+        asyncio.to_thread(_generate_resumen_obra_pdf, resumen_pdf, resumen_data),
+        asyncio.to_thread(_generate_resumen_obra_excel, resumen_xlsx, resumen_data),
+    )
+
+    generated.append({
+        "material": "Resumen General de Obra",
+        "pdf_url": f"/files/{quote_id}/{resumen_name}.pdf",
+        "excel_url": f"/files/{quote_id}/{resumen_name}.xlsx",
+        "total_ars": paso2_calc.get("grand_total_ars", 0),
+        "total_usd": paso2_calc.get("grand_total_usd", 0),
+        "currency": "consolidado",
+    })
+
     return {
         "ok": True,
         "generated": generated,
         "grand_total_ars": paso2_calc.get("grand_total_ars", 0),
         "grand_total_usd": paso2_calc.get("grand_total_usd", 0),
     }
+
+
+def _generate_resumen_obra_pdf(pdf_path: Path, data: dict) -> None:
+    """Generate consolidated project summary PDF — same D'Angelo look."""
+    from fpdf import FPDF
+    from app.modules.quote_engine.edificio_parser import _fmt_num
+
+    co = _load_company_config()
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    # Top bar
+    pdf.set_fill_color(26, 47, 94)
+    pdf.rect(0, 0, 210, 4, "F")
+
+    # Logo
+    logo_path = TEMPLATES_DIR / "logo-dangelo.png"
+    if logo_path.exists():
+        pdf.image(str(logo_path), x=10, y=10, w=55)
+        pdf.set_y(35)
+    else:
+        pdf.set_y(12)
+        pdf.set_font("Helvetica", "B", 28)
+        pdf.cell(0, 12, co["name"], new_x="LMARGIN", new_y="NEXT")
+
+    # Header
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(0, 5, f"{co['address']} | Tel: {co['phone']} | {co['email']}", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+    col_w = 95
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(col_w, 5, f"Cliente: {data['client_name']}")
+    pdf.cell(col_w, 5, "Forma de pago", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(col_w, 5, "")
+    pdf.cell(col_w, 5, "CONTADO EFVO", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(col_w, 5, f"Proyecto: {data['project']}")
+    pdf.cell(col_w, 5, "Fecha de entrega", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(col_w, 5, "")
+    pdf.cell(col_w, 5, "Segun cronograma de obra", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(col_w, 5, f"Fecha: {datetime.now().strftime('%d/%m/%Y')}")
+    pdf.ln(5)
+
+    pdf.set_draw_color(26, 26, 26)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(4)
+
+    # Title
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 7, "RESUMEN GENERAL DE OBRA", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+
+    # ── 1. Materials table ──
+    pdf.set_font("Helvetica", "B", 8)
+    mw = [52, 12, 12, 22, 24, 22, 24]  # widths
+    headers = ["Material", "m2", "Mon", "Precio unit", "Subtotal", "Descuento", "Total neto"]
+    for i, h in enumerate(headers):
+        pdf.cell(mw[i], 5, h, align="R" if i > 0 else "L")
+    pdf.ln()
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(1)
+
+    pdf.set_font("Helvetica", "", 8)
+    for m in data["materials"]:
+        cur = m["currency"]
+        sym = "USD " if cur == "USD" else "$"
+        pdf.cell(mw[0], 5, m["name"][:30])
+        pdf.cell(mw[1], 5, _fmt_num(m["m2"]), align="R")
+        pdf.cell(mw[2], 5, cur, align="R")
+        pdf.cell(mw[3], 5, f"{sym}{_fmt_num(m['price_unit'], 0)}", align="R")
+        pdf.cell(mw[4], 5, f"{sym}{_fmt_num(m['subtotal'], 0)}", align="R")
+        if m["discount_pct"]:
+            pdf.cell(mw[5], 5, f"-{sym}{_fmt_num(m['discount_amount'], 0)}", align="R")
+        else:
+            pdf.cell(mw[5], 5, "-", align="R")
+        pdf.cell(mw[6], 5, f"{sym}{_fmt_num(m['net'], 0)}", align="R")
+        pdf.ln()
+
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "B", 9)
+    if data["total_mat_ars"]:
+        pdf.cell(0, 5, f"Total materiales ARS: ${_fmt_num(data['total_mat_ars'], 0)}", new_x="LMARGIN", new_y="NEXT")
+    if data["total_mat_usd"]:
+        pdf.cell(0, 5, f"Total materiales USD: USD {_fmt_num(data['total_mat_usd'], 0)}", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(4)
+
+    # ── 2. MO table ──
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(0, 5, "MANO DE OBRA GLOBAL", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(1)
+
+    ow = [80, 25, 35, 35]
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.cell(ow[0], 5, "Concepto")
+    pdf.cell(ow[1], 5, "Cantidad", align="R")
+    pdf.cell(ow[2], 5, "Precio c/IVA", align="R")
+    pdf.cell(ow[3], 5, "Total", align="R")
+    pdf.ln()
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(1)
+
+    pdf.set_font("Helvetica", "", 8)
+    for mo in data["mo_items"]:
+        qty = mo.get("qty", 1)
+        qty_str = _fmt_num(qty, 2) if isinstance(qty, float) else str(qty)
+        pdf.cell(ow[0], 5, mo.get("desc", ""))
+        pdf.cell(ow[1], 5, qty_str, align="R")
+        pdf.cell(ow[2], 5, f"${_fmt_num(mo.get('price', 0), 0)}", align="R")
+        pdf.cell(ow[3], 5, f"${_fmt_num(mo.get('total', 0), 0)}", align="R")
+        pdf.ln()
+
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(0, 5, f"Total mano de obra ARS: ${_fmt_num(data['mo_total'], 0)}", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(4)
+
+    # ── 3. Grand totals ──
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(0, 6, "TOTALES GENERALES DEL PROYECTO", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(1)
+    pdf.set_font("Helvetica", "", 9)
+    if data["total_mat_ars"]:
+        pdf.cell(0, 5, f"Total materiales ARS: ${_fmt_num(data['total_mat_ars'], 0)}", new_x="LMARGIN", new_y="NEXT")
+    if data["total_mat_usd"]:
+        pdf.cell(0, 5, f"Total materiales USD: USD {_fmt_num(data['total_mat_usd'], 0)}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 5, f"Total mano de obra ARS: ${_fmt_num(data['mo_total'], 0)}", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(0, 6, f"TOTAL FINAL ARS: ${_fmt_num(data['grand_total_ars'], 0)}", new_x="LMARGIN", new_y="NEXT")
+    if data["grand_total_usd"]:
+        pdf.cell(0, 6, f"TOTAL FINAL USD: USD {_fmt_num(data['grand_total_usd'], 0)}", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(4)
+
+    # ── 4. Clarification ──
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.cell(0, 4, "Este documento resume el total consolidado de la obra.", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 4, "Ademas, se emiten presupuestos individuales por material:", new_x="LMARGIN", new_y="NEXT")
+    for name in data.get("material_names", []):
+        pdf.cell(0, 4, f"  - {name}", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+
+    # ── 5. Conditions ──
+    pdf.set_font("Helvetica", "", 7)
+    pdf.cell(0, 3.5, "Forma de pago: Contado", new_x="LMARGIN", new_y="NEXT")
+    if co.get("conditions_general"):
+        for line in co["conditions_general"].split("\n"):
+            pdf.cell(0, 3.5, line.strip(), new_x="LMARGIN", new_y="NEXT")
+    if co.get("conditions_payment"):
+        for line in co["conditions_payment"].split("\n"):
+            pdf.cell(0, 3.5, line.strip(), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "I", 7)
+    pdf.cell(0, 4, "No se suben mesadas que no entren en ascensor", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.output(str(pdf_path))
+
+
+def _generate_resumen_obra_excel(excel_path: Path, data: dict) -> None:
+    """Generate consolidated project summary Excel — one sheet, mirrors PDF."""
+    import openpyxl
+    from openpyxl.styles import Font, Alignment
+    from app.modules.quote_engine.edificio_parser import _fmt_num
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Resumen Obra"
+
+    bold = Font(name="Calibri", bold=True, size=10)
+    bold_big = Font(name="Calibri", bold=True, size=12)
+    normal = Font(name="Calibri", size=10)
+    small = Font(name="Calibri", size=9)
+    italic = Font(name="Calibri", italic=True, size=9)
+    ars_fmt = '"$"#,##0'
+
+    ws.column_dimensions["A"].width = 35
+    ws.column_dimensions["B"].width = 10
+    ws.column_dimensions["C"].width = 8
+    ws.column_dimensions["D"].width = 16
+    ws.column_dimensions["E"].width = 16
+    ws.column_dimensions["F"].width = 16
+    ws.column_dimensions["G"].width = 16
+
+    r = 1
+    ws.cell(r, 1, "D'ANGELO MARMOLERIA").font = Font(name="Calibri", bold=True, size=14)
+    r = 3
+    ws.cell(r, 1, f"Cliente: {data['client_name']}").font = bold
+    ws.cell(r, 4, "Forma de pago: CONTADO EFVO").font = normal
+    r = 4
+    ws.cell(r, 1, f"Proyecto: {data['project']}").font = bold
+    ws.cell(r, 4, "Fecha de entrega: Segun cronograma de obra").font = normal
+    r = 5
+    ws.cell(r, 1, f"Fecha: {datetime.now().strftime('%d/%m/%Y')}").font = normal
+    r = 7
+    ws.cell(r, 1, "RESUMEN GENERAL DE OBRA").font = bold_big
+
+    # Materials table
+    r = 9
+    for ci, h in enumerate(["Material", "m2", "Moneda", "Precio unit", "Subtotal", "Descuento", "Total neto"], 1):
+        ws.cell(r, ci, h).font = bold
+    r = 10
+    for m in data["materials"]:
+        cur = m["currency"]
+        ws.cell(r, 1, m["name"]).font = normal
+        ws.cell(r, 2, m["m2"]).font = normal
+        ws.cell(r, 2).number_format = '#,##0.00'
+        ws.cell(r, 3, cur).font = normal
+        if cur == "USD":
+            ws.cell(r, 4, f"USD{m['price_unit']}").font = normal
+            ws.cell(r, 5, f"USD{m['subtotal']}").font = normal
+            ws.cell(r, 6, f"-USD{m['discount_amount']}" if m['discount_amount'] else "-").font = normal
+            ws.cell(r, 7, f"USD{m['net']}").font = bold
+        else:
+            ws.cell(r, 4, m["price_unit"]).font = normal
+            ws.cell(r, 4).number_format = ars_fmt
+            ws.cell(r, 5, m["subtotal"]).font = normal
+            ws.cell(r, 5).number_format = ars_fmt
+            ws.cell(r, 6, -m["discount_amount"] if m["discount_amount"] else 0).font = normal
+            ws.cell(r, 6).number_format = ars_fmt
+            ws.cell(r, 7, m["net"]).font = bold
+            ws.cell(r, 7).number_format = ars_fmt
+        r += 1
+
+    r += 1
+    if data["total_mat_ars"]:
+        ws.cell(r, 1, "Total materiales ARS").font = bold
+        ws.cell(r, 7, data["total_mat_ars"]).font = bold
+        ws.cell(r, 7).number_format = ars_fmt
+        r += 1
+    if data["total_mat_usd"]:
+        ws.cell(r, 1, "Total materiales USD").font = bold
+        ws.cell(r, 7, f"USD{data['total_mat_usd']}").font = bold
+        r += 1
+
+    # MO table
+    r += 2
+    ws.cell(r, 1, "MANO DE OBRA GLOBAL").font = bold_big
+    r += 1
+    for ci, h in enumerate(["Concepto", "Cantidad", "", "Precio c/IVA", "Total"], 1):
+        if h:
+            ws.cell(r, ci, h).font = bold
+    r += 1
+    for mo in data["mo_items"]:
+        ws.cell(r, 1, mo.get("desc", "")).font = normal
+        ws.cell(r, 2, mo.get("qty", 1)).font = normal
+        ws.cell(r, 4, mo.get("price", 0)).font = normal
+        ws.cell(r, 4).number_format = ars_fmt
+        ws.cell(r, 5, mo.get("total", 0)).font = normal
+        ws.cell(r, 5).number_format = ars_fmt
+        r += 1
+
+    r += 1
+    ws.cell(r, 1, "Total mano de obra ARS").font = bold
+    ws.cell(r, 5, data["mo_total"]).font = bold
+    ws.cell(r, 5).number_format = ars_fmt
+
+    # Grand totals
+    r += 2
+    ws.cell(r, 1, "TOTALES GENERALES DEL PROYECTO").font = bold_big
+    r += 1
+    if data["total_mat_ars"]:
+        ws.cell(r, 1, "Total materiales ARS").font = normal
+        ws.cell(r, 5, data["total_mat_ars"]).font = normal
+        ws.cell(r, 5).number_format = ars_fmt
+        r += 1
+    if data["total_mat_usd"]:
+        ws.cell(r, 1, "Total materiales USD").font = normal
+        ws.cell(r, 5, f"USD{data['total_mat_usd']}").font = normal
+        r += 1
+    ws.cell(r, 1, "Total mano de obra ARS").font = normal
+    ws.cell(r, 5, data["mo_total"]).font = normal
+    ws.cell(r, 5).number_format = ars_fmt
+    r += 1
+    ws.cell(r, 1, "TOTAL FINAL ARS").font = bold
+    ws.cell(r, 5, data["grand_total_ars"]).font = bold
+    ws.cell(r, 5).number_format = ars_fmt
+    r += 1
+    if data["grand_total_usd"]:
+        ws.cell(r, 1, "TOTAL FINAL USD").font = bold
+        ws.cell(r, 5, f"USD{data['grand_total_usd']}").font = bold
+
+    # Clarification
+    r += 2
+    ws.cell(r, 1, "Este documento resume el total consolidado de la obra.").font = italic
+    r += 1
+    ws.cell(r, 1, "Ademas, se emiten presupuestos individuales por material:").font = italic
+    r += 1
+    for name in data.get("material_names", []):
+        ws.cell(r, 1, f"  - {name}").font = italic
+        r += 1
+
+    # Conditions
+    r += 1
+    ws.cell(r, 1, "Forma de pago: Contado").font = Font(name="Calibri", size=8)
+
+    wb.save(str(excel_path))
 
 
 def _generate_edificio_pdf(pdf_path: Path, data: dict) -> None:
