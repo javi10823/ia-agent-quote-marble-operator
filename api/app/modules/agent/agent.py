@@ -759,7 +759,7 @@ class AgentService:
                         # Build response with download links
                         lines = ["Documentos generados:\n"]
                         for gen in doc_result["generated"]:
-                            emoji = "📄" if gen["type"] == "material" else "🔧"
+                            emoji = "📄"
                             lines.append(f"{emoji} **{gen['material']}**")
                             lines.append(f"  - [Descargar PDF]({gen['pdf_url']})")
                             if gen.get("drive_url"):
