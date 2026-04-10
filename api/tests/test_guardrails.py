@@ -63,3 +63,28 @@ class TestUnifiedEdificioDetection:
             assert agent_result == parser_result, (
                 f"Inconsistency for '{msg}': _detect_building={agent_result}, detect_edificio={parser_result}"
             )
+
+
+# ── Fix: list_pieces blocked for edificio ────────────────────────────────────
+
+class TestEdificioBlocksListPieces:
+    """When is_building=True, list_pieces must not be available to Claude."""
+
+    def test_list_pieces_removed_from_tools_for_edificio(self):
+        """Simulate the active_tools filter used in stream_chat."""
+        from app.modules.agent.agent import TOOLS
+        is_building = True
+        active_tools = [t for t in TOOLS if t["name"] != "list_pieces"] if is_building else TOOLS
+        tool_names = [t["name"] for t in active_tools]
+        assert "list_pieces" not in tool_names
+        # Other tools still present
+        assert "calculate_quote" in tool_names
+        assert "catalog_lookup" in tool_names
+
+    def test_list_pieces_available_for_normal(self):
+        """Normal quotes still get list_pieces."""
+        from app.modules.agent.agent import TOOLS
+        is_building = False
+        active_tools = [t for t in TOOLS if t["name"] != "list_pieces"] if is_building else TOOLS
+        tool_names = [t["name"] for t in active_tools]
+        assert "list_pieces" in tool_names
