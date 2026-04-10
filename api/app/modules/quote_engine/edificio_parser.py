@@ -547,3 +547,132 @@ def validate_edificio(data: NormalizedEdificioData, summary: EdificioSummary) ->
         errors=errors,
         warnings=warnings,
     )
+
+
+# ── 6. render_edificio_paso1 — deterministic Paso 1 output ──────────────────
+
+def _fmt_num(n, decimals=2) -> str:
+    """Format number with Argentine locale (comma decimal, dot thousands)."""
+    if n is None:
+        return "—"
+    rounded = round(n, decimals)
+    if decimals == 0 or rounded == int(rounded):
+        return f"{int(rounded):,}".replace(",", ".")
+    s = f"{rounded:,.{decimals}f}"
+    # Swap , and . for Argentine format
+    s = s.replace(",", "_TEMP_").replace(".", ",").replace("_TEMP_", ".")
+    return s
+
+
+def render_edificio_paso1(norm: NormalizedEdificioData, summary: dict) -> str:
+    """Render Paso 1 output for edificio — 100% deterministic, no LLM involved.
+
+    Produces a commercial-grade markdown block separated by material,
+    with correct totals, aliases applied, and MO summary.
+    """
+    # Known OCR garbage from vertically rotated merged cells in PDFs
+    _OCR_GARBAGE = {"AJAB\nATNALP", "ATNALP\nATLA", "AJAB ATNALP", "ATNALP ATLA"}
+    _OCR_REPLACEMENTS = {
+        "AJAB\nATNALP": "Planta Baja",
+        "ATNALP\nATLA": "Planta Alta",
+    }
+
+    lines = []
+    totals = summary.get("totals", {})
+    materials = summary.get("materials", {})
+
+    lines.append("## VERIFICACIÓN EDIFICIO")
+    lines.append("")
+
+    for mat_name, mat_data in materials.items():
+        m2_total = mat_data.get("m2_total", 0)
+        pieces = mat_data.get("pieces", [])
+        faldon_pieces = mat_data.get("faldon_pieces", [])
+
+        lines.append(f"### {mat_name.upper()} — {_fmt_num(m2_total)} m²")
+        lines.append("")
+
+        # Determine if any piece has cantidad > 1
+        has_qty = any(p.get("cantidad", 1) > 1 for p in pieces)
+        has_pileta = any(p.get("pileta_count", 0) > 0 for p in pieces)
+        has_faldon = any(p.get("faldon_cm") for p in pieces)
+
+        # Header
+        cols = ["ID", "Ubicación", "Medida", "m²"]
+        if has_qty:
+            cols.append("Cant")
+        if has_pileta:
+            cols.append("Pileta")
+        if has_faldon:
+            cols.append("Faldón")
+        lines.append("| " + " | ".join(cols) + " |")
+        lines.append("| " + " | ".join(["---"] * len(cols)) + " |")
+
+        # Rows
+        for p in pieces:
+            pid = p.get("id", "")
+            raw_ubic = p.get("ubicacion") or ""
+            ubic = _OCR_REPLACEMENTS.get(raw_ubic, raw_ubic.replace("\n", " ")) or "—"
+            largo = p.get("largo", 0)
+            ancho = p.get("ancho", 0)
+            medida = f"{_fmt_num(largo)} × {_fmt_num(ancho)}"
+            cantidad = p.get("cantidad", 1)
+            m2 = p.get("m2_calc_total", 0)
+            pileta_count = p.get("pileta_count", 0)
+            pileta_type = p.get("pileta_type")
+            faldon_cm = p.get("faldon_cm")
+
+            row = [pid, ubic, medida, _fmt_num(m2)]
+            if has_qty:
+                row.append(f"×{cantidad}" if cantidad > 1 else "")
+            if has_pileta:
+                if pileta_count > 0 and pileta_type:
+                    ptype = "emp" if "empotrada" in pileta_type else "apoyo"
+                    row.append(f"{pileta_count} {ptype}")
+                else:
+                    row.append("—")
+            if has_faldon:
+                row.append(f"{faldon_cm}cm" if faldon_cm else "—")
+            lines.append("| " + " | ".join(str(c) for c in row) + " |")
+
+        # Faldones summary (if any)
+        if faldon_pieces:
+            m2_fald = mat_data.get("m2_faldones", 0)
+            lines.append(f"+ {len(faldon_pieces)} {'faldón' if len(faldon_pieces) == 1 else 'faldones'} ({_fmt_num(m2_fald)} m²)")
+
+        lines.append("")
+
+    # MO summary
+    lines.append("### SERVICIOS (MO)")
+    lines.append("- Sin colocación (edificio)")
+
+    peg = totals.get("pileta_pegado_total", 0)
+    apo = totals.get("pileta_apoyo_total", 0)
+    if peg > 0:
+        lines.append(f"- PEGADOPILETA ×{peg}")
+    if apo > 0:
+        lines.append(f"- AGUJEROAPOYO ×{apo}")
+
+    fald_ml = totals.get("faldon_ml_total", 0)
+    if fald_ml > 0:
+        lines.append(f"- Armado faldón ×{_fmt_num(fald_ml)} ml")
+
+    flete = totals.get("flete_qty", 0)
+    phys = totals.get("pieces_physical_total", 0)
+    if flete > 0:
+        lines.append(f"- Flete ×{flete} viajes ({phys} piezas físicas)")
+
+    lines.append("")
+
+    # Descuento
+    if totals.get("descuento_18_aplica"):
+        m2_tot = totals.get("m2_total", 0)
+        lines.append("### DESCUENTOS")
+        lines.append(f"18% por volumen — {_fmt_num(m2_tot)} m² > 15 → aplica a TODOS los materiales")
+        lines.append("")
+
+    # Grand total
+    m2_grand = totals.get("m2_total", 0)
+    lines.append(f"**TOTAL: {_fmt_num(m2_grand)} m²**")
+
+    return "\n".join(lines)

@@ -655,7 +655,7 @@ class AgentService:
                         from app.modules.quote_engine.edificio_parser import (
                             detect_edificio, parse_edificio_tables,
                             normalize_edificio_data, compute_edificio_aggregates,
-                            validate_edificio,
+                            validate_edificio, render_edificio_paso1,
                         )
                         detection = detect_edificio(user_message, tables_all)
 
@@ -666,6 +666,9 @@ class AgentService:
                             edif_summary = compute_edificio_aggregates(norm_data)
                             edif_validation = validate_edificio(norm_data, edif_summary)
 
+                            # Render Paso 1 deterministically — Claude must NOT rewrite this
+                            rendered_paso1 = render_edificio_paso1(norm_data, edif_summary)
+
                             import json as _json
                             pre_calc = _json.dumps({
                                 "summary": edif_summary,
@@ -673,19 +676,16 @@ class AgentService:
                                 "normalized_pieces": [p for s in norm_data.get("sections", []) for p in s.get("pieces", [])],
                             }, indent=2, ensure_ascii=False, default=str)
 
-                            content.append({"type": "text", "text": f"""[EDIFICIO PRE-CALCULADO — CONTRATO ESTRICTO]
-⛔ Todos los valores fueron calculados por el sistema con precisión 100%.
-⛔ NO recalcular ningún valor. NO modificar campos numéricos. NO inferir datos faltantes.
-⛔ NO llamar list_pieces — este JSON YA ES la fuente de verdad para Paso 1.
-⛔ Presentar separado por material, con totales del JSON. NO aplanar en una sola tabla.
-⛔ null = desconocido. "-" = no aplica. NUNCA inventar.
-⛔ Usar los totales del JSON para redactar el presupuesto.
-⛔ UNA SOLA salida de Paso 1 — no mostrar primero un resumen y después otro detallado.
-⛔ Piezas con cantidad > 1 (escalones, etc.): mostrar m² TOTAL (m2_calc_total), no unitario.
+                            content.append({"type": "text", "text": f"""[EDIFICIO — PASO 1 YA RENDERIZADO POR EL SISTEMA]
+⛔ El bloque de abajo es la salida FINAL y DEFINITIVA de Paso 1.
+⛔ Copialo TAL CUAL en tu respuesta. NO reescribir, NO reformatear, NO agregar otra versión.
+⛔ Solo agregar al final: "¿Confirmás las piezas y medidas?"
+⛔ NO llamar list_pieces ni ninguna tool en este turno — todo ya está calculado.
 
+{rendered_paso1}
+
+[DATOS INTERNOS PARA PASO 2 — no mostrar al operador]
 {pre_calc}
-
-Texto libre del PDF: {raw_data.get('free_text', '')}
 """})
                             logging.info(f"Edificio detected (confidence={detection['confidence']:.2f}): {detection['reasons']}")
                             logging.info(f"Edificio summary: {edif_summary.get('totals', {})}")
