@@ -688,3 +688,210 @@ def render_edificio_paso1(norm: NormalizedEdificioData, summary: dict) -> str:
     lines.append(f"**TOTAL: {_fmt_num(m2_grand)} m²**")
 
     return "\n".join(lines)
+
+
+# ── 7. render_edificio_paso2 — deterministic pricing output ──────────────────
+
+def render_edificio_paso2(summary: dict, localidad: str = "Rosario") -> dict:
+    """Calculate prices and render Paso 2 for edificio — 100% deterministic.
+
+    Uses catalog_lookup for material prices and MO prices directly.
+    No calculate_quote — avoids residential logic (sinks, colocacion, split flete).
+
+    Returns: {
+        "rendered": str (markdown),
+        "calc_results": {material_name: {...prices...}},
+        "grand_total_ars": int,
+        "grand_total_usd": int,
+    }
+    """
+    from app.modules.agent.tools.catalog_tool import catalog_lookup
+    from app.modules.quote_engine.calculator import _find_flete, _get_mo_price
+
+    materials = summary.get("materials", {})
+    totals = summary.get("totals", {})
+    discount_pct = 18 if totals.get("descuento_18_aplica") else 0
+
+    # ── 1. Price each material ──
+    mat_results = {}
+    grand_ars = 0
+    grand_usd = 0
+
+    for mat_name, mat_data in materials.items():
+        m2 = mat_data.get("m2_total", 0)  # includes faldones m²
+
+        # Lookup material price
+        mat_result = catalog_lookup("materials-granito-nacional", mat_name)
+        if not mat_result.get("found"):
+            mat_result = catalog_lookup("materials-granito-importado", mat_name)
+        if not mat_result.get("found"):
+            # Try all catalogs
+            from app.modules.quote_engine.calculator import _find_material
+            mat_result = _find_material(mat_name)
+
+        if not mat_result.get("found"):
+            mat_results[mat_name] = {"ok": False, "error": f"Material '{mat_name}' no encontrado"}
+            continue
+
+        currency = mat_result.get("currency", "ARS")
+        if currency == "USD":
+            price_unit = mat_result.get("price_usd", 0)  # already with IVA (floor)
+            price_base = mat_result.get("price_usd_base", 0)
+        else:
+            price_unit = mat_result.get("price_ars", 0)  # already with IVA (round)
+            price_base = mat_result.get("price_ars_base", 0)
+
+        material_total = round(m2 * price_unit)
+        discount_amount = round(material_total * discount_pct / 100) if discount_pct else 0
+        material_net = material_total - discount_amount
+
+        mat_results[mat_name] = {
+            "ok": True,
+            "currency": currency,
+            "m2": m2,
+            "price_unit": price_unit,
+            "price_base": price_base,
+            "material_total": material_total,
+            "discount_pct": discount_pct,
+            "discount_amount": discount_amount,
+            "material_net": material_net,
+            "catalog_name": mat_result.get("name", mat_name),
+        }
+
+        if currency == "USD":
+            grand_usd += material_net
+        else:
+            grand_ars += material_net
+
+    # ── 2. Calculate global MO ──
+    mo_items = []
+    mo_total = 0
+
+    # Detect sinterizado for any material (affects MO SKUs)
+    from app.modules.quote_engine.calculator import SINTERIZADOS
+    any_sint = any(
+        any(s in mat_name.lower() for s in SINTERIZADOS)
+        for mat_name in materials.keys()
+    )
+
+    # PEGADOPILETA
+    peg_count = totals.get("pileta_pegado_total", 0)
+    if peg_count > 0:
+        sku = "PILETADEKTON/NEOLITH" if any_sint else "PEGADOPILETA"
+        price, base = _get_mo_price(sku)
+        # Edificio: ÷1.05
+        price_edif = round(price / 1.05)
+        total = price_edif * peg_count
+        mo_items.append({"desc": "Agujero y pegado pileta", "qty": peg_count, "price": price_edif, "total": total})
+        mo_total += total
+
+    # AGUJEROAPOYO
+    apo_count = totals.get("pileta_apoyo_total", 0)
+    if apo_count > 0:
+        sku = "PILETAAPOYODEKTON/NEO" if any_sint else "AGUJEROAPOYO"
+        price, base = _get_mo_price(sku)
+        price_edif = round(price / 1.05)
+        total = price_edif * apo_count
+        mo_items.append({"desc": "Agujero pileta apoyo", "qty": apo_count, "price": price_edif, "total": total})
+        mo_total += total
+
+    # Armado faldón
+    fald_ml = totals.get("faldon_ml_total", 0)
+    if fald_ml > 0:
+        sku = "FALDONDEKTON/NEOLITH" if any_sint else "FALDON"
+        price, base = _get_mo_price(sku)
+        price_edif = round(price / 1.05)
+        total = round(price_edif * fald_ml)
+        mo_items.append({"desc": "Armado faldón", "qty": fald_ml, "price": price_edif, "total": total})
+        mo_total += total
+
+    # Flete (global, NOT ÷1.05)
+    flete_qty = totals.get("flete_qty", 0)
+    if flete_qty > 0:
+        flete_result = _find_flete(localidad)
+        if flete_result.get("found"):
+            flete_price = flete_result.get("price_ars", 0)
+            flete_total = flete_price * flete_qty
+            mo_items.append({"desc": f"Flete + toma medidas {localidad}", "qty": flete_qty, "price": flete_price, "total": round(flete_total)})
+            mo_total += round(flete_total)
+
+    grand_ars += mo_total
+
+    # ── 3. Render markdown ──
+    lines = []
+    lines.append("## Presupuesto Edificio")
+    lines.append("")
+
+    # Materials
+    for mat_name, mr in mat_results.items():
+        if not mr.get("ok"):
+            lines.append(f"### {mat_name.upper()} — ERROR: {mr.get('error')}")
+            lines.append("")
+            continue
+
+        cur = mr["currency"]
+        cur_sym = "USD " if cur == "USD" else "$"
+        m2 = mr["m2"]
+        mat_data = materials[mat_name]
+
+        lines.append(f"### {mat_name.upper()} — {_fmt_num(m2)} m²")
+        lines.append("")
+        lines.append("| Concepto | Valor |")
+        lines.append("| --- | --- |")
+        lines.append(f"| Precio unitario (con IVA) | {cur_sym}{_fmt_num(mr['price_unit'], 0)}/m² |")
+        lines.append(f"| Superficie | {_fmt_num(m2)} m² |")
+        lines.append(f"| Subtotal material | {cur_sym}{_fmt_num(mr['material_total'], 0)} |")
+        if mr["discount_pct"]:
+            lines.append(f"| Descuento {mr['discount_pct']}% | -{cur_sym}{_fmt_num(mr['discount_amount'], 0)} |")
+            lines.append(f"| **Total material** | **{cur_sym}{_fmt_num(mr['material_net'], 0)}** |")
+        else:
+            lines.append(f"| **Total material** | **{cur_sym}{_fmt_num(mr['material_total'], 0)}** |")
+        lines.append("")
+
+    # Global MO
+    lines.append("### MANO DE OBRA")
+    lines.append("")
+    lines.append("| Concepto | Cant | Precio c/IVA | Total |")
+    lines.append("| --- | --- | --- | --- |")
+    for mo in mo_items:
+        qty_str = _fmt_num(mo["qty"], 2) if isinstance(mo["qty"], float) else str(mo["qty"])
+        lines.append(f"| {mo['desc']} | {qty_str} | ${_fmt_num(mo['price'], 0)} | ${_fmt_num(mo['total'], 0)} |")
+    lines.append(f"| **Total MO** | | | **${_fmt_num(mo_total, 0)}** |")
+    lines.append("")
+    lines.append("*Sin colocación (edificio). MO ÷1.05 excepto flete.*")
+    lines.append("")
+
+    # Descuento note
+    if discount_pct:
+        lines.append("### DESCUENTOS")
+        lines.append(f"18% por volumen ({_fmt_num(totals.get('m2_total', 0))} m² > 15) — aplicado a material de cada presupuesto")
+        lines.append("")
+
+    # Grand total
+    lines.append("### GRAND TOTAL")
+    lines.append("")
+    total_parts = []
+    if grand_usd > 0:
+        total_parts.append(f"**USD {_fmt_num(grand_usd, 0)}** material")
+    # ARS materials (if any)
+    ars_mat = sum(mr["material_net"] for mr in mat_results.values() if mr.get("ok") and mr["currency"] == "ARS")
+    if ars_mat > 0:
+        total_parts.append(f"**${_fmt_num(ars_mat, 0)}** material ARS")
+    total_parts.append(f"**${_fmt_num(mo_total, 0)}** mano de obra")
+    lines.append(" + ".join(total_parts))
+    if grand_ars > 0:
+        lines.append(f"\n**Total ARS: ${_fmt_num(grand_ars, 0)}**")
+    if grand_usd > 0:
+        lines.append(f"**Total USD: USD {_fmt_num(grand_usd, 0)}**")
+    lines.append("")
+
+    rendered = "\n".join(lines)
+
+    return {
+        "rendered": rendered,
+        "calc_results": mat_results,
+        "mo_items": mo_items,
+        "mo_total": mo_total,
+        "grand_total_ars": grand_ars,
+        "grand_total_usd": grand_usd,
+    }
