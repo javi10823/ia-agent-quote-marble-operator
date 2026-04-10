@@ -328,6 +328,7 @@ def generate_diff(catalog_name: str, current_items: list[dict], new_items: list[
             current_by_sku[item["sku"].upper()] = item
 
     updated = []
+    normalized = []
     new = []
     zero_price = []
     unchanged = 0
@@ -357,7 +358,15 @@ def generate_diff(catalog_name: str, current_items: list[dict], new_items: list[
             # Handle missing price field gracefully (None or absent)
             if old_price is None:
                 old_price = 0
+
+            # Check if old price needs decimal normalization
+            needs_normalization = (
+                isinstance(old_price, float)
+                and old_price != round(old_price, 2)
+            )
+
             if price is not None and abs(price - old_price) > 0.01:
+                # Real price change (may also normalize decimals)
                 change_pct = round((price - old_price) / old_price * 100, 1) if old_price != 0 else 0
                 entry = {
                     "sku": sku,
@@ -369,6 +378,14 @@ def generate_diff(catalog_name: str, current_items: list[dict], new_items: list[
                 if abs(change_pct) > 30:
                     warnings.append(f"SKU '{sku}': cambio de precio {change_pct:+.1f}% ({old_price} → {price})")
                 updated.append(entry)
+            elif needs_normalization and price is not None:
+                # No commercial change, but decimals need cleanup
+                normalized.append({
+                    "sku": sku,
+                    "name": item.get("name") or cur.get("name", ""),
+                    "old_price": old_price,
+                    "new_price": price,
+                })
             else:
                 unchanged += 1
         else:
@@ -397,6 +414,7 @@ def generate_diff(catalog_name: str, current_items: list[dict], new_items: list[
         "file_currency": file_currency,
         "price_field": price_field,
         "updated": updated,
+        "normalized": normalized,
         "new": new,
         "missing": missing,
         "zero_price": zero_price,

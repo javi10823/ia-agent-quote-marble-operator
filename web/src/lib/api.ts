@@ -423,6 +423,7 @@ export interface ImportCatalogDiff {
   file_currency: string;
   price_field: string;
   updated: ImportDiffItem[];
+  normalized: ImportDiffItem[];
   new: ImportDiffItem[];
   missing: ImportDiffItem[];
   zero_price: ImportDiffItem[];

@@ -62,7 +62,7 @@ export default function ImportModal({ onDone, onClose }: Props) {
       // Auto-select catalogs that have changes
       const cats = new Set<string>();
       for (const [name, diff] of Object.entries(result.catalogs)) {
-        if (diff.updated.length > 0 || diff.new.length > 0) {
+        if (diff.updated.length > 0 || diff.new.length > 0 || (diff.normalized?.length ?? 0) > 0) {
           cats.add(name);
         }
       }
@@ -261,7 +261,7 @@ export default function ImportModal({ onDone, onClose }: Props) {
               <div className="flex gap-1 p-1 bg-white/[0.03] rounded-lg border border-b1 self-start flex-wrap">
                 {catNames.map(name => {
                   const diff = preview.catalogs[name];
-                  const hasChanges = diff.updated.length > 0 || diff.new.length > 0;
+                  const hasChanges = diff.updated.length > 0 || diff.new.length > 0 || (diff.normalized?.length ?? 0) > 0;
                   return (
                     <button key={name} onClick={() => setActiveTab(name)}
                       className={clsx("px-3 py-[6px] rounded-md text-xs font-medium font-sans border-none cursor-pointer transition-all",
@@ -295,6 +295,7 @@ export default function ImportModal({ onDone, onClose }: Props) {
                       </label>
                       <div className="flex gap-3 text-[11px] text-t3 ml-auto">
                         {currentDiff.updated.length > 0 && <span><strong className="text-amb">{currentDiff.updated.length}</strong> actualizados</span>}
+                        {(currentDiff.normalized?.length ?? 0) > 0 && <span><strong className="text-blue-400">{currentDiff.normalized.length}</strong> normalizados</span>}
                         {currentDiff.new.length > 0 && <span><strong className="text-grn">{currentDiff.new.length}</strong> nuevos</span>}
                         <span><strong>{currentDiff.unchanged}</strong> sin cambio</span>
                         {currentDiff.missing.length > 0 && <span><strong className="text-t3">{currentDiff.missing.length}</strong> faltantes</span>}
@@ -335,6 +336,18 @@ export default function ImportModal({ onDone, onClose }: Props) {
                               <span className={clsx("text-[10px] px-1.5 py-0.5 rounded font-semibold", (item.change_pct ?? 0) > 0 ? "bg-amber-500/10 text-amb" : "bg-green-500/10 text-grn")}>
                                 {(item.change_pct ?? 0) > 0 ? "+" : ""}{item.change_pct}%
                               </span>
+                            </td>
+                          </tr>
+                        ))}
+                        {/* Normalized items (decimal cleanup) */}
+                        {(currentDiff.normalized ?? []).map(item => (
+                          <tr key={`norm-${item.sku}`} className="bg-blue-500/[0.04]">
+                            <td className="px-3 py-2 font-mono text-[11px] border-b border-white/[0.03]">{item.sku}</td>
+                            <td className="px-3 py-2 border-b border-white/[0.03] text-t2">{item.name}</td>
+                            <td className="px-3 py-2 text-right font-mono text-[11px] border-b border-white/[0.03] text-t3">{currentDiff.currency === "USD" ? `USD ${item.old_price}` : `$${item.old_price}`}</td>
+                            <td className="px-3 py-2 text-right font-mono text-[11px] border-b border-white/[0.03] text-blue-400 font-semibold">{currentDiff.currency === "USD" ? `USD ${fmtPrice(item.new_price)}` : `$${fmtPrice(item.new_price)}`}</td>
+                            <td className="px-3 py-2 text-right border-b border-white/[0.03]">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-blue-500/10 text-blue-400">Decimales</span>
                             </td>
                           </tr>
                         ))}
@@ -448,7 +461,7 @@ export default function ImportModal({ onDone, onClose }: Props) {
                 {Object.entries(applyResult).map(([cat, stats]: [string, any]) => (
                   <div key={cat} className="flex justify-between text-[12px]">
                     <span className="text-t2">{cat}</span>
-                    <span className="text-t1">{stats.ok ? `${stats.updated || 0} actualizados · ${stats.added || 0} nuevos` : <span className="text-red-400">Error</span>}</span>
+                    <span className="text-t1">{stats.ok ? `${stats.updated || 0} actualizados${stats.normalized ? ` · ${stats.normalized} normalizados` : ""} · ${stats.added || 0} nuevos` : <span className="text-red-400">Error</span>}</span>
                   </div>
                 ))}
                 <div className="border-t border-b1 my-1" />

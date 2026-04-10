@@ -321,10 +321,10 @@ async def import_apply(
         updated_catalog = list(current_items)  # Copy
         by_sku = {item["sku"].upper(): i for i, item in enumerate(updated_catalog) if isinstance(item, dict) and "sku" in item}
 
-        stats = {"updated": 0, "added": 0, "skipped_zero": 0}
+        stats = {"updated": 0, "normalized": 0, "added": 0, "skipped_zero": 0}
         today = __import__("datetime").datetime.now().strftime("%d/%m/%Y")
 
-        # Update existing
+        # Update existing (price changes)
         for change in diff["updated"]:
             sku_upper = change["sku"].upper()
             if sku_upper in by_sku:
@@ -334,6 +334,14 @@ async def import_apply(
                 if change.get("name"):
                     updated_catalog[idx]["name"] = change["name"]
                 stats["updated"] += 1
+
+        # Normalize existing (decimal cleanup, no commercial change)
+        for change in diff.get("normalized", []):
+            sku_upper = change["sku"].upper()
+            if sku_upper in by_sku:
+                idx = by_sku[sku_upper]
+                updated_catalog[idx][price_field] = change["new_price"]
+                stats["normalized"] += 1
 
         # Add new items (if enabled)
         if do_include_new:
@@ -356,7 +364,7 @@ async def import_apply(
             await _save_to_db(cat_name, updated_catalog)
             invalidate_catalog_cache(cat_name)
             results[cat_name] = {"ok": True, **stats}
-            logging.info(f"[import-apply] {cat_name}: updated={stats['updated']}, added={stats['added']}, skipped_zero={stats['skipped_zero']}")
+            logging.info(f"[import-apply] {cat_name}: updated={stats['updated']}, normalized={stats['normalized']}, added={stats['added']}, skipped_zero={stats['skipped_zero']}")
         except Exception as e:
             logging.error(f"[import-apply] Save failed for {cat_name}: {e}")
             results[cat_name] = {"ok": False, "error": f"Error guardando: {str(e)[:100]}"}

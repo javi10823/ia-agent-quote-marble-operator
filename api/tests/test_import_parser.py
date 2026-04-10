@@ -225,6 +225,35 @@ class TestDiffGeneration:
         assert len(diff["warnings"]) >= 1
         assert "100.0%" in diff["warnings"][0]
 
+    def test_diff_normalization_detects_excess_decimals(self):
+        """Items with >2 decimals should be flagged as normalized, not unchanged."""
+        current = [
+            {"sku": "SKU1", "name": "Normal", "price_ars": 100.50, "currency": "ARS"},
+            {"sku": "SKU2", "name": "Bad decimals", "price_ars": 298448.48303928, "currency": "ARS"},
+            {"sku": "SKU3", "name": "Also bad", "price_ars": 180189.046773, "currency": "ARS"},
+        ]
+        new_items = [
+            {"sku": "SKU1", "name": "Normal", "price_no_vat": 100.50, "currency": "ARS"},
+            {"sku": "SKU2", "name": "Bad decimals", "price_no_vat": 298448.48, "currency": "ARS"},
+            {"sku": "SKU3", "name": "Also bad", "price_no_vat": 180189.05, "currency": "ARS"},
+        ]
+        diff = generate_diff("materials-granito-nacional", current, new_items)
+        assert diff["unchanged"] == 1  # SKU1 only
+        assert len(diff["normalized"]) == 2
+        assert len(diff["updated"]) == 0
+        # Normalized items should have the rounded price
+        skus = {n["sku"] for n in diff["normalized"]}
+        assert "SKU2" in skus
+        assert "SKU3" in skus
+
+    def test_diff_real_change_not_in_normalized(self):
+        """A real price change on a bad-decimal item goes to updated, not normalized."""
+        current = [{"sku": "SKU1", "name": "Item", "price_ars": 298448.48303928, "currency": "ARS"}]
+        new_items = [{"sku": "SKU1", "name": "Item", "price_no_vat": 310000.00, "currency": "ARS"}]
+        diff = generate_diff("materials-granito-nacional", current, new_items)
+        assert len(diff["updated"]) == 1
+        assert len(diff["normalized"]) == 0
+
     def test_diff_currency_mismatch_uses_catalog_currency(self):
         """When file says USD but catalog is ARS, diff must use price_ars."""
         current = [
