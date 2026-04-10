@@ -56,7 +56,7 @@ class TestEdificioDocs:
         return paso2_and_summary[1]
 
     @pytest.mark.asyncio
-    async def test_generates_3_documents(self, paso2, summary):
+    async def test_generates_4_documents(self, paso2, summary):
         from app.modules.agent.tools.document_tool import generate_edificio_documents
         qid = "test-edif-doc-001"
         result = await generate_edificio_documents(
@@ -67,14 +67,14 @@ class TestEdificioDocs:
             project="Concesionario",
         )
         assert result["ok"]
-        assert len(result["generated"]) == 3  # 3 materials, each with its MO
+        assert len(result["generated"]) == 4  # 3 materials, each with its MO
 
     @pytest.mark.asyncio
     async def test_3_material_docs_plus_1_services(self, paso2, summary):
         from app.modules.agent.tools.document_tool import generate_edificio_documents
         qid = "test-edif-doc-002"
         result = await generate_edificio_documents(qid, paso2, summary, "ESH", "Test")
-        assert len(result["generated"]) == 3
+        assert len(result["generated"]) == 4
 
     @pytest.mark.asyncio
     async def test_pdf_and_excel_exist_on_disk(self, paso2, summary):
@@ -84,8 +84,8 @@ class TestEdificioDocs:
         qdir = OUTPUT_DIR / qid
         pdfs = list(qdir.glob("*.pdf"))
         xlsxs = list(qdir.glob("*.xlsx"))
-        assert len(pdfs) == 3, f"Expected 3 PDFs, got {len(pdfs)}"
-        assert len(xlsxs) == 3, f"Expected 3 Excels, got {len(xlsxs)}"
+        assert len(pdfs) == 4, f"Expected 3 PDFs, got {len(pdfs)}"
+        assert len(xlsxs) == 4, f"Expected 3 Excels, got {len(xlsxs)}"
 
     @pytest.mark.asyncio
     async def test_grand_totals_positive(self, paso2, summary):
