@@ -420,6 +420,7 @@ export interface ImportDiffItem {
 export interface ImportCatalogDiff {
   catalog: string;
   currency: string;
+  file_currency: string;
   price_field: string;
   updated: ImportDiffItem[];
   new: ImportDiffItem[];

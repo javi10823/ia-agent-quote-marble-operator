@@ -9,6 +9,7 @@ The parser:
 - Detects format automatically from headers
 - Extracts price WITHOUT IVA (never uses "Con IVA" column as source)
 - Classifies each item into the correct catalog by matching SKU
+- Uses the catalog's authoritative currency (not the file format) for diff comparison
 - Returns structured preview data with diffs against current catalog
 """
 
@@ -25,6 +26,24 @@ from typing import Optional
 # Dux XLS header patterns (row 6)
 DUX_MATERIALS_HEADERS = {"código", "producto", "costo", "porc. utilidad", "precio de venta"}
 DUX_SERVICIOS_HEADERS = {"código", "producto", "precio de venta"}
+
+# Authoritative currency for each catalog — source of truth for price field selection.
+# The file's detected format (dux_materials_usd / dux_servicios_ars) tells us the file
+# structure, but the CATALOG determines which price_field to compare against.
+CATALOG_CURRENCY: dict[str, str] = {
+    "materials-silestone": "USD",
+    "materials-purastone": "USD",
+    "materials-dekton": "USD",
+    "materials-neolith": "USD",
+    "materials-puraprima": "USD",
+    "materials-laminatto": "USD",
+    "materials-granito-importado": "USD",
+    "materials-granito-nacional": "ARS",
+    "materials-marmol": "USD",
+    "labor": "ARS",
+    "delivery-zones": "ARS",
+    "sinks": "ARS",
+}
 
 # Catalog classification: maps SKU → catalog name
 # Built dynamically from current catalog data
@@ -262,8 +281,30 @@ def classify_items(items: list[dict], sku_index: dict[str, str]) -> dict[str, li
 
 # ── Diff generation ──────────────────────────────────────────────────────────
 
+def _detect_catalog_currency(catalog_name: str, current_items: list[dict]) -> str:
+    """Determine the authoritative currency for a catalog.
+
+    Priority:
+    1. Explicit CATALOG_CURRENCY mapping (most reliable)
+    2. Majority currency from existing catalog items
+    3. Fallback to USD
+    """
+    if catalog_name in CATALOG_CURRENCY:
+        return CATALOG_CURRENCY[catalog_name]
+    # Infer from existing items
+    currencies = [item.get("currency") for item in current_items if isinstance(item, dict) and item.get("currency")]
+    if currencies:
+        from collections import Counter
+        most_common = Counter(currencies).most_common(1)[0][0]
+        return most_common
+    return "USD"
+
+
 def generate_diff(catalog_name: str, current_items: list[dict], new_items: list[dict]) -> dict:
     """Generate diff between current catalog and incoming items.
+
+    Uses the CATALOG's authoritative currency (not the file's detected currency)
+    to determine which price field to compare against.
 
     Returns: {
         catalog: str,
@@ -274,9 +315,10 @@ def generate_diff(catalog_name: str, current_items: list[dict], new_items: list[
         warnings: [str],
     }
     """
-    # Determine price field
-    is_usd = any(item.get("currency") == "USD" for item in new_items[:5])
-    price_field = "price_usd" if is_usd else "price_ars"
+    # Determine price field from CATALOG currency, not file currency
+    file_currency = "USD" if any(item.get("currency") == "USD" for item in new_items[:5]) else "ARS"
+    catalog_currency = _detect_catalog_currency(catalog_name, current_items)
+    price_field = "price_usd" if catalog_currency == "USD" else "price_ars"
 
     current_by_sku = {}
     for item in current_items:
@@ -290,6 +332,13 @@ def generate_diff(catalog_name: str, current_items: list[dict], new_items: list[
     import_skus = set()
     warnings = []
 
+    # Warn if file currency doesn't match catalog currency
+    if file_currency != catalog_currency:
+        warnings.append(
+            f"Moneda del archivo ({file_currency}) difiere del catálogo ({catalog_currency}). "
+            f"Se usa la moneda del catálogo ({catalog_currency}) para comparar."
+        )
+
     for item in new_items:
         sku = item["sku"]
         sku_upper = sku.upper()
@@ -302,9 +351,12 @@ def generate_diff(catalog_name: str, current_items: list[dict], new_items: list[
 
         if sku_upper in current_by_sku:
             cur = current_by_sku[sku_upper]
-            old_price = cur.get(price_field, 0)
-            if price is not None and old_price and abs(price - old_price) > 0.01:
-                change_pct = round((price - old_price) / old_price * 100, 1) if old_price else 0
+            old_price = cur.get(price_field)
+            # Handle missing price field gracefully (None or absent)
+            if old_price is None:
+                old_price = 0
+            if price is not None and abs(price - old_price) > 0.01:
+                change_pct = round((price - old_price) / old_price * 100, 1) if old_price != 0 else 0
                 entry = {
                     "sku": sku,
                     "name": item.get("name") or cur.get("name", ""),
@@ -339,7 +391,8 @@ def generate_diff(catalog_name: str, current_items: list[dict], new_items: list[
 
     return {
         "catalog": catalog_name,
-        "currency": "USD" if is_usd else "ARS",
+        "currency": catalog_currency,
+        "file_currency": file_currency,
         "price_field": price_field,
         "updated": updated,
         "new": new,

@@ -124,9 +124,10 @@ export default function ImportModal({ onDone, onClose }: Props) {
 
   // ── Step subtitle ─────────────────────────────────────────────────────────
 
+  const activeDiff = preview?.catalogs[activeTab];
   const subtitle = step === "upload" ? "Arrastr\u00E1 un archivo exportado de Dux (.xls, .xlsx, .csv)"
     : step === "detect" ? "Analizando archivo..."
-    : step === "preview" && preview ? `${FORMAT_LABELS[preview.format] || preview.format} \u00B7 ${preview.total_items} items`
+    : step === "preview" && preview ? `${FORMAT_LABELS[preview.format] || preview.format} \u00B7 ${preview.total_items} items${activeDiff && activeDiff.file_currency !== activeDiff.currency ? ` \u00B7 Cat\u00E1logo: ${activeDiff.currency}` : ""}`
     : step === "importing" ? "Importando..."
     : "Importaci\u00F3n completada";
 
@@ -203,6 +204,13 @@ export default function ImportModal({ onDone, onClose }: Props) {
                 </div>
               </div>
 
+              {/* Currency mismatch warning per catalog */}
+              {currentDiff && currentDiff.file_currency && currentDiff.currency !== currentDiff.file_currency && (
+                <div className="px-3.5 py-2.5 rounded-lg bg-amber-500/[0.06] border border-amber-500/20 text-xs text-amb leading-relaxed">
+                  <strong>{"\u26A0"} Moneda corregida:</strong> El archivo fue detectado como <strong>{currentDiff.file_currency}</strong>, pero el cat{"\u00E1"}logo <strong>{currentDiff.catalog}</strong> usa <strong>{currentDiff.currency}</strong>. Se compara con <strong>{currentDiff.price_field}</strong> (sin IVA).
+                </div>
+              )}
+
               {/* IVA warning */}
               {preview.iva_warning && (
                 <div className="px-3.5 py-3 rounded-lg bg-red-500/[0.08] border border-red-500/20 text-xs text-red-400 leading-relaxed">
@@ -240,18 +248,29 @@ export default function ImportModal({ onDone, onClose }: Props) {
               {currentDiff && activeTab !== "_unmatched" && (
                 <div>
                   {/* Stats bar */}
-                  <div className="flex items-center gap-3 mb-3">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={selectedCatalogs.has(activeTab)} onChange={() => toggleCatalog(activeTab)}
-                        className="w-3.5 h-3.5 rounded accent-[var(--acc)]" />
-                      <span className="text-xs font-medium text-t2">Importar</span>
-                    </label>
-                    <div className="flex gap-3 text-[11px] text-t3 ml-auto">
-                      {currentDiff.updated.length > 0 && <span><strong className="text-amb">{currentDiff.updated.length}</strong> actualizados</span>}
-                      {currentDiff.new.length > 0 && <span><strong className="text-grn">{currentDiff.new.length}</strong> nuevos</span>}
-                      <span><strong>{currentDiff.unchanged}</strong> sin cambio</span>
-                      {currentDiff.missing.length > 0 && <span><strong className="text-t3">{currentDiff.missing.length}</strong> faltantes</span>}
-                      {currentDiff.zero_price.length > 0 && <span><strong className="text-red-400">{currentDiff.zero_price.length}</strong> $0</span>}
+                  <div className="flex flex-col gap-2 mb-3">
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" checked={selectedCatalogs.has(activeTab)} onChange={() => toggleCatalog(activeTab)}
+                          className="w-3.5 h-3.5 rounded accent-[var(--acc)]" />
+                        <span className="text-xs font-medium text-t2">Importar</span>
+                      </label>
+                      <div className="flex gap-3 text-[11px] text-t3 ml-auto">
+                        {currentDiff.updated.length > 0 && <span><strong className="text-amb">{currentDiff.updated.length}</strong> actualizados</span>}
+                        {currentDiff.new.length > 0 && <span><strong className="text-grn">{currentDiff.new.length}</strong> nuevos</span>}
+                        <span><strong>{currentDiff.unchanged}</strong> sin cambio</span>
+                        {currentDiff.missing.length > 0 && <span><strong className="text-t3">{currentDiff.missing.length}</strong> faltantes</span>}
+                        {currentDiff.zero_price.length > 0 && <span><strong className="text-red-400">{currentDiff.zero_price.length}</strong> $0</span>}
+                      </div>
+                    </div>
+                    {/* Detection metadata */}
+                    <div className="flex gap-2 text-[10px] text-t3">
+                      <span className="px-1.5 py-0.5 rounded bg-white/[0.04] border border-b1">Moneda: <strong className="text-t2">{currentDiff.currency}</strong></span>
+                      <span className="px-1.5 py-0.5 rounded bg-white/[0.04] border border-b1">Campo: <strong className="text-t2">{currentDiff.price_field}</strong></span>
+                      <span className="px-1.5 py-0.5 rounded bg-white/[0.04] border border-b1">Precio: <strong className="text-t2">sin IVA</strong></span>
+                      {currentDiff.file_currency && currentDiff.file_currency !== currentDiff.currency && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amb">Archivo: {currentDiff.file_currency} {"\u2192"} {currentDiff.currency}</span>
+                      )}
                     </div>
                   </div>
 
