@@ -656,6 +656,57 @@ class AgentService:
 
         system_prompt = build_system_prompt(has_plan=has_plan, is_building=is_building, user_message=user_message, conversation_history=messages)
 
+        # ── EDIFICIO PASO 2: server-side pricing, bypass Claude ──
+        # Condition: is_building + quote has summary (from Paso 1) + no plan attached (= confirmation)
+        # + user message looks like confirmation (short, no new pieces/data)
+        if is_building and not has_plan:
+            try:
+                _p2q = await db.execute(select(Quote).where(Quote.id == quote_id))
+                _p2quote = _p2q.scalar_one_or_none()
+                _bd = _p2quote.quote_breakdown if _p2quote else None
+                _has_summary = _bd and isinstance(_bd, dict) and "summary" in _bd
+                _is_confirmation = len(user_message.strip()) < 200  # Short message = confirmation, not new data
+                if _has_summary and _is_confirmation:
+                    from app.modules.quote_engine.edificio_parser import render_edificio_paso2
+                    yield {"type": "action", "content": "Calculando precios por material..."}
+
+                    edif_summary = _bd["summary"]
+                    edif_localidad = _p2quote.localidad or "Rosario"
+
+                    paso2_data = render_edificio_paso2(edif_summary, edif_localidad)
+                    paso2_response = paso2_data["rendered"] + "\n¿Confirmás para generar los presupuestos?"
+
+                    # Save calc results + conversation
+                    try:
+                        _bd["paso2_calc"] = {
+                            "calc_results": paso2_data["calc_results"],
+                            "mo_items": paso2_data["mo_items"],
+                            "mo_total": paso2_data["mo_total"],
+                            "grand_total_ars": paso2_data["grand_total_ars"],
+                            "grand_total_usd": paso2_data["grand_total_usd"],
+                        }
+                        updated_msgs = list(_p2quote.messages or []) + [
+                            {"role": "user", "content": [{"type": "text", "text": user_message}]},
+                            {"role": "assistant", "content": [{"type": "text", "text": paso2_response}]},
+                        ]
+                        await db.execute(
+                            update(Quote).where(Quote.id == quote_id).values(
+                                quote_breakdown=_bd,
+                                messages=updated_msgs,
+                                total_ars=paso2_data["grand_total_ars"],
+                                total_usd=paso2_data["grand_total_usd"],
+                            )
+                        )
+                        await db.commit()
+                    except Exception as e:
+                        logging.error(f"Failed to save edificio Paso 2: {e}")
+
+                    yield {"type": "text", "content": paso2_response}
+                    yield {"type": "done", "content": ""}
+                    return  # ← EXIT: no Claude for edificio Paso 2
+            except Exception as e:
+                logging.warning(f"Edificio Paso 2 bypass failed, falling back to Claude: {e}")
+
         # Build user message content
         content = []
         pdf_has_images = False  # Track if PDF has drawings (needs vision pass)
