@@ -1068,7 +1068,8 @@ Texto libre del PDF: {raw_data.get('free_text', '')}
                 # ── Guardrail: Paso 1 must use list_pieces ──
                 # If this is likely Paso 1 (no breakdown yet, no calculate_quote called),
                 # and list_pieces was never called, force a retry with explicit instruction.
-                if not _list_pieces_called and not _list_pieces_retry_done:
+                if not _list_pieces_called and not _list_pieces_retry_done and not is_building:
+                    # Skip guardrail for edificio — data comes from deterministic pipeline, not list_pieces
                     try:
                         _gq = await db.execute(select(Quote).where(Quote.id == quote_id))
                         _gquote = _gq.scalar_one_or_none()
