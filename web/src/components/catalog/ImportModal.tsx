@@ -11,10 +11,18 @@ interface Props {
 
 type Step = "upload" | "detect" | "preview" | "importing" | "done";
 
+// Format labels — solo el formato/estructura, sin moneda (la moneda la define el catálogo)
 const FORMAT_LABELS: Record<string, string> = {
-  dux_materials_usd: "Dux Materiales (USD)",
-  dux_servicios_ars: "Dux Servicios / Flete (ARS)",
-  csv_generic: "CSV genérico",
+  dux_materials_usd: "Dux Materiales",
+  dux_servicios_ars: "Dux Servicios / Flete",
+  csv_generic: "CSV gen\u00E9rico",
+};
+
+// Moneda original que trae el formato del archivo (para mostrar contexto)
+const FORMAT_FILE_CURRENCY: Record<string, string> = {
+  dux_materials_usd: "USD",
+  dux_servicios_ars: "ARS",
+  csv_generic: "",
 };
 
 export default function ImportModal({ onDone, onClose }: Props) {
@@ -127,9 +135,16 @@ export default function ImportModal({ onDone, onClose }: Props) {
   // ── Step subtitle ─────────────────────────────────────────────────────────
 
   const activeDiff = preview?.catalogs[activeTab];
+  const fileCurrency = preview ? (FORMAT_FILE_CURRENCY[preview.format] || "") : "";
+  const catalogCurrency = activeDiff?.currency || "";
+  const hasMismatch = activeDiff && activeDiff.file_currency !== activeDiff.currency;
+
   const subtitle = step === "upload" ? "Arrastr\u00E1 un archivo exportado de Dux (.xls, .xlsx, .csv)"
     : step === "detect" ? "Analizando archivo..."
-    : step === "preview" && preview ? `${FORMAT_LABELS[preview.format] || preview.format} \u00B7 ${preview.total_items} items${activeDiff && activeDiff.file_currency !== activeDiff.currency ? ` \u00B7 Cat\u00E1logo: ${activeDiff.currency}` : ""}`
+    : step === "preview" && preview
+      ? hasMismatch
+        ? `Formato: ${FORMAT_LABELS[preview.format] || preview.format} \u00B7 Archivo: ${fileCurrency} \u00B7 Cat\u00E1logo: ${catalogCurrency} \u00B7 ${preview.total_items} items`
+        : `${FORMAT_LABELS[preview.format] || preview.format} (${catalogCurrency}) \u00B7 ${preview.total_items} items`
     : step === "importing" ? "Importando..."
     : "Importaci\u00F3n completada";
 
@@ -202,22 +217,35 @@ export default function ImportModal({ onDone, onClose }: Props) {
                 <span className="text-lg shrink-0">{"\uD83D\uDCC4"}</span>
                 <div className="flex-1 min-w-0">
                   <div className="text-[13px] font-medium text-t1 truncate">{file?.name}</div>
-                  <div className="text-[11px] text-t3">{FORMAT_LABELS[preview.format] || preview.format} \u00B7 {preview.total_items} items \u00B7 Precio: <strong className="text-t2">sin IVA</strong></div>
+                  <div className="text-[11px] text-t3">
+                    {FORMAT_LABELS[preview.format] || preview.format} {"\u00B7"} {preview.total_items} items {"\u00B7"} Precio: <strong className="text-t2">sin IVA</strong>
+                  </div>
                 </div>
               </div>
 
-              {/* Currency mismatch warning — requires explicit confirmation */}
+              {/* Currency mismatch — confirmation required */}
               {preview.currency_mismatch && (
-                <div className="px-3.5 py-3 rounded-lg bg-amber-500/[0.08] border border-amber-500/20 text-xs text-amb leading-relaxed flex flex-col gap-2">
-                  <div>
-                    <strong>{"\u26A0"} Moneda del archivo difiere del cat{"\u00E1"}logo destino</strong><br/>
-                    El archivo fue clasificado como <strong>{FORMAT_LABELS[preview.format] || preview.format}</strong>, pero {catNames.filter(n => preview.catalogs[n].file_currency !== preview.catalogs[n].currency).map(n => (<span key={n}><strong>{n}</strong> usa <strong>{preview.catalogs[n].currency}</strong></span>)).reduce((a, b) => <>{a}, {b}</>)}. Se compara contra el campo de precio del cat{"\u00E1"}logo (sin IVA).
+                <div className="rounded-lg border border-amber-500/20 overflow-hidden">
+                  {/* Pills row */}
+                  <div className="flex flex-wrap gap-2 px-3.5 py-2.5 bg-white/[0.02] border-b border-amber-500/10">
+                    <span className="px-2 py-1 rounded-md bg-white/[0.04] border border-b1 text-[10px] text-t3">Formato detectado: <strong className="text-t1">{FORMAT_LABELS[preview.format] || preview.format}</strong></span>
+                    <span className="px-2 py-1 rounded-md bg-white/[0.04] border border-b1 text-[10px] text-t3">Moneda del archivo: <strong className="text-t1">{fileCurrency}</strong></span>
+                    <span className="px-2 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-[10px] text-amb">Moneda del cat{"\u00E1"}logo: <strong>{catalogCurrency}</strong></span>
+                    <span className="px-2 py-1 rounded-md bg-white/[0.04] border border-b1 text-[10px] text-t3">Campo usado: <strong className="text-t1">{activeDiff?.price_field || "price_ars"}</strong></span>
+                    <span className="px-2 py-1 rounded-md bg-white/[0.04] border border-b1 text-[10px] text-t3">Precio: <strong className="text-t1">sin IVA</strong></span>
                   </div>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={currencyMismatchAcked} onChange={e => setCurrencyMismatchAcked(e.target.checked)}
-                      className="w-3.5 h-3.5 rounded accent-[var(--amb)]" />
-                    <span className="text-[11px] text-t2 font-medium">Confirmo que la moneda del cat{"\u00E1"}logo es correcta y quiero importar</span>
-                  </label>
+                  {/* Explanation + checkbox */}
+                  <div className="px-3.5 py-3 bg-amber-500/[0.04] flex flex-col gap-2.5">
+                    <div className="text-xs text-t2 leading-relaxed">
+                      <strong className="text-amb">Formato del archivo y moneda del cat{"\u00E1"}logo no coinciden</strong><br/>
+                      <span className="text-t3">El archivo fue reconocido con formato <strong className="text-t2">{FORMAT_LABELS[preview.format] || preview.format} / {fileCurrency}</strong>, pero el cat{"\u00E1"}logo seleccionado usa <strong className="text-t2">{catalogCurrency}</strong>. La importaci{"\u00F3"}n comparar{"\u00E1"} y actualizar{"\u00E1"} precios en {catalogCurrency} sin IVA usando el campo <strong className="text-t2">{activeDiff?.price_field || "price_ars"}</strong> del cat{"\u00E1"}logo destino.</span>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={currencyMismatchAcked} onChange={e => setCurrencyMismatchAcked(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded accent-[var(--amb)]" />
+                      <span className="text-[11px] text-t1 font-medium">Confirmo que quiero importar este archivo usando la moneda y el campo del cat{"\u00E1"}logo destino</span>
+                    </label>
+                  </div>
                 </div>
               )}
 
@@ -273,15 +301,14 @@ export default function ImportModal({ onDone, onClose }: Props) {
                         {currentDiff.zero_price.length > 0 && <span><strong className="text-red-400">{currentDiff.zero_price.length}</strong> $0</span>}
                       </div>
                     </div>
-                    {/* Detection metadata */}
-                    <div className="flex gap-2 text-[10px] text-t3">
-                      <span className="px-1.5 py-0.5 rounded bg-white/[0.04] border border-b1">Moneda: <strong className="text-t2">{currentDiff.currency}</strong></span>
-                      <span className="px-1.5 py-0.5 rounded bg-white/[0.04] border border-b1">Campo: <strong className="text-t2">{currentDiff.price_field}</strong></span>
-                      <span className="px-1.5 py-0.5 rounded bg-white/[0.04] border border-b1">Precio: <strong className="text-t2">sin IVA</strong></span>
-                      {currentDiff.file_currency && currentDiff.file_currency !== currentDiff.currency && (
-                        <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amb">Archivo: {currentDiff.file_currency} {"\u2192"} {currentDiff.currency}</span>
-                      )}
-                    </div>
+                    {/* Detection metadata — solo cuando NO hay mismatch (si hay, se muestran en el banner arriba) */}
+                    {!(currentDiff.file_currency && currentDiff.file_currency !== currentDiff.currency) && (
+                      <div className="flex gap-2 text-[10px] text-t3">
+                        <span className="px-1.5 py-0.5 rounded bg-white/[0.04] border border-b1">Moneda: <strong className="text-t2">{currentDiff.currency}</strong></span>
+                        <span className="px-1.5 py-0.5 rounded bg-white/[0.04] border border-b1">Campo: <strong className="text-t2">{currentDiff.price_field}</strong></span>
+                        <span className="px-1.5 py-0.5 rounded bg-white/[0.04] border border-b1">Precio: <strong className="text-t2">sin IVA</strong></span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Table */}
@@ -376,10 +403,10 @@ export default function ImportModal({ onDone, onClose }: Props) {
                 </div>
               )}
 
-              {/* Warnings */}
-              {preview.warnings.length > 0 && (
+              {/* Warnings — filter out currency mismatch ones (already shown in dedicated banner) */}
+              {preview.warnings.filter(w => !w.startsWith("Moneda del archivo")).length > 0 && (
                 <div className="flex flex-col gap-1.5">
-                  {preview.warnings.map((w, i) => (
+                  {preview.warnings.filter(w => !w.startsWith("Moneda del archivo")).map((w, i) => (
                     <div key={i} className="px-3.5 py-2 rounded-lg bg-amber-500/[0.06] border border-amber-500/20 text-[11px] text-amb leading-relaxed">
                       {"\u26A0"} {w}
                     </div>
