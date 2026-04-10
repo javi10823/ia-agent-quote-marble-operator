@@ -670,7 +670,7 @@ class AgentService:
                 # ── PASO 3: Generate documents ──
                 if _building_step == "step2_quote" and _is_confirmation and _bd.get("paso2_calc"):
                     from app.modules.agent.tools.document_tool import generate_edificio_documents
-                    yield {"type": "action", "content": "Generando documentos (3 materiales + servicios)..."}
+                    yield {"type": "action", "content": "Generando presupuestos..."}
 
                     paso2_calc = _bd["paso2_calc"]
                     edif_summary = _bd.get("summary", {})
