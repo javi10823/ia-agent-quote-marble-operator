@@ -695,6 +695,78 @@ class AgentService:
                         yield {"type": "done", "content": ""}
                         return
 
+                # ── VISUAL EDIFICIO: Awaiting material choice or failed page confirmation ──
+                if _building_step == "awaiting_material_choice" and user_message.strip():
+                    from app.modules.quote_engine.edificio_parser import (
+                        compute_edificio_aggregates, validate_edificio,
+                    )
+                    from app.modules.quote_engine.visual_edificio_parser import (
+                        resolve_material_choice, build_normalized_from_visual,
+                        render_visual_edificio_paso1, render_visual_edificio_choices,
+                        dismiss_failed_pages,
+                    )
+
+                    pages_data = _bd.get("visual_pages_raw", [])
+                    msg_lower = user_message.strip().lower()
+
+                    # Check if operator is confirming to proceed without failed pages
+                    if any(kw in msg_lower for kw in ["continuar sin fallidas", "seguir sin fallidas", "ignorar fallidas"]):
+                        pages_data = dismiss_failed_pages(pages_data)
+                        _bd["visual_pages_raw"] = pages_data
+
+                    # Check if operator is choosing material
+                    has_material_blocker = any("Material ambiguo" in b for b in _bd.get("blockers", []))
+                    if has_material_blocker and not any(kw in msg_lower for kw in ["continuar sin", "seguir sin", "ignorar"]):
+                        # Treat user message as material choice
+                        pages_data = resolve_material_choice(pages_data, user_message.strip())
+                        _bd["material_choice"] = user_message.strip()
+
+                    # Re-normalize and check remaining blockers
+                    norm_data, visual_warnings, visual_blockers = build_normalized_from_visual(pages_data)
+
+                    if visual_blockers:
+                        # Still blockers
+                        response = render_visual_edificio_choices(pages_data, visual_warnings, visual_blockers)
+                        _bd["visual_pages_raw"] = pages_data
+                        _bd["warnings"] = visual_warnings
+                        _bd["blockers"] = visual_blockers
+                    else:
+                        # All clear → proceed to Paso 1 review
+                        edif_summary = compute_edificio_aggregates(norm_data)
+                        edif_validation = validate_edificio(norm_data, edif_summary)
+                        material_choice = _bd.get("material_choice")
+                        response = render_visual_edificio_paso1(
+                            pages_data, norm_data, edif_summary, visual_warnings,
+                            material_choice=material_choice,
+                        )
+                        response += "\n\n¿Confirmás las piezas y medidas?"
+
+                        _bd["building_step"] = "step1_review"
+                        _bd["summary"] = edif_summary
+                        _bd["validation"] = dict(edif_validation)
+                        _bd["normalized_pieces"] = [dict(p) for s in norm_data.get("sections", []) for p in s.get("pieces", [])]
+                        _bd["visual_pages_normalized"] = [dict(p) for s in norm_data.get("sections", []) for p in s.get("pieces", [])]
+                        _bd["visual_pages_raw"] = pages_data
+                        _bd["warnings"] = visual_warnings
+
+                    try:
+                        await db.execute(
+                            update(Quote).where(Quote.id == quote_id).values(
+                                quote_breakdown=_bd,
+                                messages=list(_p2quote.messages or []) + [
+                                    {"role": "user", "content": [{"type": "text", "text": user_message}]},
+                                    {"role": "assistant", "content": [{"type": "text", "text": response}]},
+                                ],
+                            )
+                        )
+                        await db.commit()
+                    except Exception as e:
+                        logging.error(f"Failed to save material choice state: {e}")
+
+                    yield {"type": "text", "content": response}
+                    yield {"type": "done", "content": ""}
+                    return
+
                 # ── PASO 3: Generate documents ──
                 if _building_step == "step2_quote" and _bd.get("paso2_calc"):
                     # Validate client_name before generating
@@ -961,56 +1033,117 @@ class AgentService:
                         detection = detect_edificio(user_message, tables_all)
 
                         if detection["is_edificio"]:
-                            # ── EDIFICIO PASO 1: 100% server-side, no Claude ──
-                            # Render deterministically and emit directly via SSE.
-                            # Claude is completely bypassed for this turn.
+                            # ── EDIFICIO DETECTED ──
+                            detection_mode = detection.get("detection_mode", "keyword")
+                            logging.info(f"Edificio detected (confidence={detection['confidence']:.2f}, mode={detection_mode}): {detection['reasons']}")
+
+                            # Try tabular path first
                             raw_data = parse_edificio_tables(tables_all)
-                            norm_data = normalize_edificio_data(raw_data)
-                            edif_summary = compute_edificio_aggregates(norm_data)
-                            edif_validation = validate_edificio(norm_data, edif_summary)
-                            rendered_paso1 = render_edificio_paso1(norm_data, edif_summary)
+                            has_tabular_data = bool(raw_data.get("sections"))
 
-                            logging.info(f"Edificio detected (confidence={detection['confidence']:.2f}): {detection['reasons']}")
-                            logging.info(f"Edificio summary: {edif_summary.get('totals', {})}")
-                            if not edif_validation["is_valid"]:
-                                logging.error(f"Edificio validation FAILED: {edif_validation['errors']}")
+                            if has_tabular_data:
+                                # ── PATH A: TABULAR EDIFICIO (existing, 100% server-side) ──
+                                detection_mode = "tabular"
+                                norm_data = normalize_edificio_data(raw_data)
+                                edif_summary = compute_edificio_aggregates(norm_data)
+                                edif_validation = validate_edificio(norm_data, edif_summary)
+                                rendered_paso1 = render_edificio_paso1(norm_data, edif_summary)
 
-                            # Build the complete response text
-                            paso1_response = rendered_paso1 + "\n\n¿Confirmás las piezas y medidas?"
-                            all_warns = edif_validation.get("warnings", [])
-                            errors = edif_validation.get("errors", [])
-                            if errors:
-                                # Critical errors: show them explicitly
-                                err_list = "\n".join(f"❌ {e}" for e in errors)
-                                paso1_response = rendered_paso1 + f"\n\n**Errores a corregir:**\n{err_list}\n\n⛔ Corregir antes de confirmar."
-                            elif all_warns:
-                                # Non-blocking warnings: summarize, don't dump raw list
-                                ubic_warns = [w for w in all_warns if "sin ubicación" in w.lower()]
-                                m2_warns = [w for w in all_warns if "m2" in w.lower() or "m²" in w.lower()]
-                                qty_warns = [w for w in all_warns if "cantidad" in w.lower()]
-                                other_warns = [w for w in all_warns if w not in ubic_warns + m2_warns + qty_warns]
+                                logging.info(f"Edificio tabular path: {edif_summary.get('totals', {})}")
+                                if not edif_validation["is_valid"]:
+                                    logging.error(f"Edificio validation FAILED: {edif_validation['errors']}")
 
-                                parts = []
-                                if ubic_warns:
-                                    parts.append(f"{len(ubic_warns)} piezas sin ubicación en planilla")
-                                if m2_warns:
-                                    parts.append(f"{len(m2_warns)} diferencias de m² entre planilla y cálculo")
-                                if qty_warns:
-                                    parts.append(f"{len(qty_warns)} piezas con cantidad > 1")
-                                for w in other_warns:
-                                    parts.append(w)
+                                paso1_response = rendered_paso1 + "\n\n¿Confirmás las piezas y medidas?"
+                                all_warns = edif_validation.get("warnings", [])
+                                errors = edif_validation.get("errors", [])
+                                if errors:
+                                    err_list = "\n".join(f"❌ {e}" for e in errors)
+                                    paso1_response = rendered_paso1 + f"\n\n**Errores a corregir:**\n{err_list}\n\n⛔ Corregir antes de confirmar."
+                                elif all_warns:
+                                    ubic_warns = [w for w in all_warns if "sin ubicación" in w.lower()]
+                                    m2_warns = [w for w in all_warns if "m2" in w.lower() or "m²" in w.lower()]
+                                    qty_warns = [w for w in all_warns if "cantidad" in w.lower()]
+                                    other_warns = [w for w in all_warns if w not in ubic_warns + m2_warns + qty_warns]
+                                    parts = []
+                                    if ubic_warns:
+                                        parts.append(f"{len(ubic_warns)} piezas sin ubicación en planilla")
+                                    if m2_warns:
+                                        parts.append(f"{len(m2_warns)} diferencias de m² entre planilla y cálculo")
+                                    if qty_warns:
+                                        parts.append(f"{len(qty_warns)} piezas con cantidad > 1")
+                                    for w in other_warns:
+                                        parts.append(w)
+                                    summary_text = " · ".join(parts) if parts else f"{len(all_warns)} advertencias"
+                                    paso1_response = rendered_paso1 + f"\n\n*Advertencias no bloqueantes ({len(all_warns)}): {summary_text}.*\n\n¿Confirmás las piezas y medidas?"
 
-                                summary_text = " · ".join(parts) if parts else f"{len(all_warns)} advertencias"
-                                paso1_response = rendered_paso1 + f"\n\n*Advertencias no bloqueantes ({len(all_warns)}): {summary_text}.*\n\n¿Confirmás las piezas y medidas?"
+                                import json as _json
+                                pre_calc = {
+                                    "building_step": "step1_review",
+                                    "building_detection_mode": detection_mode,
+                                    "summary": edif_summary,
+                                    "validation": dict(edif_validation),
+                                    "normalized_pieces": [dict(p) for s in norm_data.get("sections", []) for p in s.get("pieces", [])],
+                                }
 
-                            # Save pre-calc data to quote for Paso 2
-                            import json as _json
-                            pre_calc = {
-                                "building_step": "step1_review",  # State machine: awaiting Paso 1 confirmation
-                                "summary": edif_summary,
-                                "validation": dict(edif_validation),
-                                "normalized_pieces": [dict(p) for s in norm_data.get("sections", []) for p in s.get("pieces", [])],
-                            }
+                            elif pdf_has_images:
+                                # ── PATH B: VISUAL CAD EDIFICIO (new, uses Claude vision) ──
+                                detection_mode = "visual_auto" if detection_mode != "manual_override" else "manual_override"
+                                logging.info(f"Edificio visual CAD path (mode={detection_mode}): no tabular data, PDF has images")
+                                from app.modules.quote_engine.visual_edificio_parser import (
+                                    extract_visual_edificio, build_normalized_from_visual,
+                                    render_visual_edificio_paso1, render_visual_edificio_choices,
+                                )
+
+                                yield {"type": "text", "content": "Analizando planos CAD con visión artificial... (puede tomar 15-30 segundos)"}
+
+                                pages_data = await extract_visual_edificio(self.client, plan_bytes)
+
+                                if not pages_data:
+                                    yield {"type": "text", "content": "No se pudieron extraer datos del PDF. ¿Podés enviar la planilla con las medidas?"}
+                                    yield {"type": "done", "content": ""}
+                                    return
+
+                                norm_data, visual_warnings, visual_blockers = build_normalized_from_visual(pages_data)
+
+                                import json as _json
+                                if visual_blockers:
+                                    # Blockers (material ambiguo / failed pages) → stop and ask
+                                    paso1_response = render_visual_edificio_choices(pages_data, visual_warnings, visual_blockers)
+                                    pre_calc = {
+                                        "building_step": "awaiting_material_choice",
+                                        "building_detection_mode": detection_mode,
+                                        "visual_pages_raw": pages_data,
+                                        "warnings": visual_warnings,
+                                        "blockers": visual_blockers,
+                                        "source": "visual_cad",
+                                    }
+                                else:
+                                    # No blockers → proceed to Paso 1 review
+                                    edif_summary = compute_edificio_aggregates(norm_data)
+                                    edif_validation = validate_edificio(norm_data, edif_summary)
+                                    paso1_response = render_visual_edificio_paso1(
+                                        pages_data, norm_data, edif_summary, visual_warnings,
+                                    )
+                                    paso1_response += "\n\n¿Confirmás las piezas y medidas?"
+
+                                    pre_calc = {
+                                        "building_step": "step1_review",
+                                        "building_detection_mode": detection_mode,
+                                        "summary": edif_summary,
+                                        "validation": dict(edif_validation),
+                                        "normalized_pieces": [dict(p) for s in norm_data.get("sections", []) for p in s.get("pieces", [])],
+                                        "visual_pages_raw": pages_data,
+                                        "visual_pages_normalized": [dict(p) for s in norm_data.get("sections", []) for p in s.get("pieces", [])],
+                                        "warnings": visual_warnings,
+                                        "source": "visual_cad",
+                                    }
+                            else:
+                                # No tables, no images — ask for planilla
+                                yield {"type": "text", "content": "Detecté que es un edificio, pero el PDF no tiene tablas ni planos visibles. ¿Podés enviar la planilla con las medidas en formato tabla (Excel o CSV)?"}
+                                yield {"type": "done", "content": ""}
+                                return
+
+                            # ── Common save & emit for both tabular and visual paths ──
                             try:
                                 await db.execute(
                                     update(Quote).where(Quote.id == quote_id).values(
@@ -1023,10 +1156,9 @@ class AgentService:
                             except Exception as e:
                                 logging.error(f"Failed to save edificio pre-calc: {e}")
 
-                            # Save conversation to DB
                             clean_user_content = [{"type": "text", "text": user_message}]
                             if plan_bytes:
-                                clean_user_content.insert(0, {"type": "text", "text": "(adjunto planilla edificio)"})
+                                clean_user_content.insert(0, {"type": "text", "text": "(adjunto planos edificio)"})
                             assistant_msg = {"role": "assistant", "content": [{"type": "text", "text": paso1_response}]}
                             try:
                                 updated_messages = list(messages) + [
@@ -1040,7 +1172,6 @@ class AgentService:
                             except Exception as e:
                                 logging.error(f"Failed to save edificio conversation: {e}")
 
-                            # Emit directly via SSE — bypass Claude entirely
                             yield {"type": "text", "content": paso1_response}
                             yield {"type": "done", "content": ""}
                             return  # ← EXIT: no Claude loop for edificio Paso 1
