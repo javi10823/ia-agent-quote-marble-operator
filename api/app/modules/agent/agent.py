@@ -656,10 +656,9 @@ class AgentService:
 
         system_prompt = build_system_prompt(has_plan=has_plan, is_building=is_building, user_message=user_message, conversation_history=messages)
 
-        # ── EDIFICIO STATE MACHINE: server-side Paso 2 or pass to Paso 3 ──
-        # State: building_step in quote_breakdown controls which step to execute.
-        # "step1_review" → confirmation → render Paso 2 → save "step2_quote"
-        # "step2_quote"  → confirmation → fall through to Claude for generate_documents
+        # ── EDIFICIO STATE MACHINE: Paso 2, 3 — all server-side ──
+        # "step1_review" → confirm → render Paso 2 → "step2_quote"
+        # "step2_quote"  → confirm → generate documents → "step3_done"
         if is_building and not has_plan:
             try:
                 _p2q = await db.execute(select(Quote).where(Quote.id == quote_id))
@@ -667,6 +666,84 @@ class AgentService:
                 _bd = _p2quote.quote_breakdown if _p2quote else None
                 _building_step = _bd.get("building_step") if isinstance(_bd, dict) else None
                 _is_confirmation = len(user_message.strip()) < 200
+
+                # ── PASO 3: Generate documents ──
+                if _building_step == "step2_quote" and _is_confirmation and _bd.get("paso2_calc"):
+                    from app.modules.agent.tools.document_tool import generate_edificio_documents
+                    yield {"type": "action", "content": "Generando documentos (3 materiales + servicios)..."}
+
+                    paso2_calc = _bd["paso2_calc"]
+                    edif_summary = _bd.get("summary", {})
+
+                    doc_result = await generate_edificio_documents(
+                        quote_id=quote_id,
+                        paso2_calc=paso2_calc,
+                        summary=edif_summary,
+                        client_name=_p2quote.client_name or "",
+                        project=_p2quote.project or "",
+                    )
+
+                    if doc_result.get("ok"):
+                        # Upload to Drive
+                        drive_urls = []
+                        for gen in doc_result["generated"]:
+                            try:
+                                drive_result = await upload_to_drive(
+                                    quote_id,
+                                    _p2quote.client_name or "",
+                                    gen["material"],
+                                    datetime.now().strftime("%d.%m.%Y"),
+                                )
+                                if drive_result.get("ok"):
+                                    gen["drive_url"] = drive_result.get("drive_url")
+                                    drive_urls.append(drive_result.get("drive_url"))
+                            except Exception as e:
+                                logging.warning(f"Drive upload failed for {gen['material']}: {e}")
+
+                        # Build response with download links
+                        lines = ["Documentos generados:\n"]
+                        for gen in doc_result["generated"]:
+                            emoji = "📄" if gen["type"] == "material" else "🔧"
+                            lines.append(f"{emoji} **{gen['material']}**")
+                            lines.append(f"  - [Descargar PDF]({gen['pdf_url']})")
+                            if gen.get("drive_url"):
+                                lines.append(f"  - [Ver en Drive]({gen['drive_url']})")
+                        lines.append("")
+                        lines.append(f"**Total ARS: ${doc_result['grand_total_ars']:,.0f}".replace(",", ".") + "**")
+                        if doc_result["grand_total_usd"]:
+                            lines.append(f"**Total USD: USD {doc_result['grand_total_usd']:,.0f}".replace(",", ".") + "**")
+                        paso3_response = "\n".join(lines)
+
+                        # Save state
+                        try:
+                            _bd["building_step"] = "step3_done"
+                            first_gen = doc_result["generated"][0] if doc_result["generated"] else {}
+                            updated_msgs = list(_p2quote.messages or []) + [
+                                {"role": "user", "content": [{"type": "text", "text": user_message}]},
+                                {"role": "assistant", "content": [{"type": "text", "text": paso3_response}]},
+                            ]
+                            await db.execute(
+                                update(Quote).where(Quote.id == quote_id).values(
+                                    quote_breakdown=_bd,
+                                    messages=updated_msgs,
+                                    status=QuoteStatus.VALIDATED,
+                                    pdf_url=first_gen.get("pdf_url"),
+                                    drive_url=drive_urls[0] if drive_urls else None,
+                                )
+                            )
+                            await db.commit()
+                        except Exception as e:
+                            logging.error(f"Failed to save edificio Paso 3: {e}")
+
+                        yield {"type": "text", "content": paso3_response}
+                        yield {"type": "done", "content": ""}
+                        return  # ← EXIT: edificio Paso 3 done
+                    else:
+                        yield {"type": "text", "content": f"Error al generar documentos: {doc_result.get('error', 'desconocido')}"}
+                        yield {"type": "done", "content": ""}
+                        return
+
+                # ── PASO 2: Pricing ──
                 if _building_step == "step1_review" and _is_confirmation:
                     from app.modules.quote_engine.edificio_parser import render_edificio_paso2
                     yield {"type": "action", "content": "Calculando precios por material..."}
