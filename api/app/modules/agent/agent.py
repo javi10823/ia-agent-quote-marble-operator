@@ -701,25 +701,61 @@ class AgentService:
                         compute_edificio_aggregates, validate_edificio,
                     )
                     from app.modules.quote_engine.visual_edificio_parser import (
-                        resolve_material_choice, build_normalized_from_visual,
+                        validate_material_choice, resolve_material_choice,
+                        build_normalized_from_visual,
                         render_visual_edificio_paso1, render_visual_edificio_choices,
                         dismiss_failed_pages,
                     )
 
                     pages_data = _bd.get("visual_pages_raw", [])
+                    pending_actions = _bd.get("pending_actions", [])
                     msg_lower = user_message.strip().lower()
 
-                    # Check if operator is confirming to proceed without failed pages
+                    # ── Action: operator confirms to proceed without failed pages ──
                     if any(kw in msg_lower for kw in ["continuar sin fallidas", "seguir sin fallidas", "ignorar fallidas"]):
+                        dismissed = [p.get("_page_number") for p in pages_data if p.get("_extraction_failed")]
                         pages_data = dismiss_failed_pages(pages_data)
                         _bd["visual_pages_raw"] = pages_data
+                        _bd["dismissed_failed_pages"] = dismissed
+                        _bd["operator_accepted_partial_extraction"] = True
+                        if "failed_pages_confirmation" in pending_actions:
+                            pending_actions.remove("failed_pages_confirmation")
 
-                    # Check if operator is choosing material
+                    # ── Action: operator chooses material ──
                     has_material_blocker = any("Material ambiguo" in b for b in _bd.get("blockers", []))
                     if has_material_blocker and not any(kw in msg_lower for kw in ["continuar sin", "seguir sin", "ignorar"]):
-                        # Treat user message as material choice
-                        pages_data = resolve_material_choice(pages_data, user_message.strip())
-                        _bd["material_choice"] = user_message.strip()
+                        # Validate material choice against detected options
+                        ok, normalized_choice, available_options = validate_material_choice(pages_data, user_message.strip())
+                        if not ok:
+                            opts_str = " / ".join(f"({i+1}) {o}" for i, o in enumerate(available_options))
+                            response = (
+                                f"No pude mapear \"{user_message.strip()}\" a un material válido.\n\n"
+                                f"Las opciones detectadas son:\n{opts_str}\n\n"
+                                f"Indicá el material exacto o el número de opción."
+                            )
+                            try:
+                                await db.execute(
+                                    update(Quote).where(Quote.id == quote_id).values(
+                                        quote_breakdown=_bd,
+                                        messages=list(_p2quote.messages or []) + [
+                                            {"role": "user", "content": [{"type": "text", "text": user_message}]},
+                                            {"role": "assistant", "content": [{"type": "text", "text": response}]},
+                                        ],
+                                    )
+                                )
+                                await db.commit()
+                            except Exception as e:
+                                logging.error(f"Failed to save invalid material choice: {e}")
+                            yield {"type": "text", "content": response}
+                            yield {"type": "done", "content": ""}
+                            return
+                        # Valid choice — resolve
+                        pages_data = resolve_material_choice(pages_data, normalized_choice)
+                        _bd["material_choice"] = normalized_choice
+                        if "material_choice" in pending_actions:
+                            pending_actions.remove("material_choice")
+
+                    _bd["pending_actions"] = pending_actions
 
                     # Re-normalize and check remaining blockers
                     norm_data, visual_warnings, visual_blockers = build_normalized_from_visual(pages_data)
@@ -744,8 +780,7 @@ class AgentService:
                         _bd["building_step"] = "step1_review"
                         _bd["summary"] = edif_summary
                         _bd["validation"] = dict(edif_validation)
-                        _bd["normalized_pieces"] = [dict(p) for s in norm_data.get("sections", []) for p in s.get("pieces", [])]
-                        _bd["visual_pages_normalized"] = [dict(p) for s in norm_data.get("sections", []) for p in s.get("pieces", [])]
+                        _bd["normalized_pieces_flat"] = [dict(p) for s in norm_data.get("sections", []) for p in s.get("pieces", [])]
                         _bd["visual_pages_raw"] = pages_data
                         _bd["warnings"] = visual_warnings
 
@@ -1109,12 +1144,21 @@ class AgentService:
                                 if visual_blockers:
                                     # Blockers (material ambiguo / failed pages) → stop and ask
                                     paso1_response = render_visual_edificio_choices(pages_data, visual_warnings, visual_blockers)
+
+                                    # Track what the operator needs to resolve
+                                    pending_actions = []
+                                    if any("Material ambiguo" in b for b in visual_blockers):
+                                        pending_actions.append("material_choice")
+                                    if any("fallaron" in b for b in visual_blockers):
+                                        pending_actions.append("failed_pages_confirmation")
+
                                     pre_calc = {
                                         "building_step": "awaiting_material_choice",
                                         "building_detection_mode": detection_mode,
                                         "visual_pages_raw": pages_data,
                                         "warnings": visual_warnings,
                                         "blockers": visual_blockers,
+                                        "pending_actions": pending_actions,
                                         "source": "visual_cad",
                                     }
                                 else:
@@ -1131,9 +1175,8 @@ class AgentService:
                                         "building_detection_mode": detection_mode,
                                         "summary": edif_summary,
                                         "validation": dict(edif_validation),
-                                        "normalized_pieces": [dict(p) for s in norm_data.get("sections", []) for p in s.get("pieces", [])],
+                                        "normalized_pieces_flat": [dict(p) for s in norm_data.get("sections", []) for p in s.get("pieces", [])],
                                         "visual_pages_raw": pages_data,
-                                        "visual_pages_normalized": [dict(p) for s in norm_data.get("sections", []) for p in s.get("pieces", [])],
                                         "warnings": visual_warnings,
                                         "source": "visual_cad",
                                     }

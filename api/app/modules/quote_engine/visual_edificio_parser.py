@@ -145,6 +145,35 @@ def rasterize_pdf_pages(plan_bytes: bytes) -> list[bytes]:
 
 # ── Per-Page Claude Vision Extraction ───────────────────────────────────────
 
+def _build_extraction_request(page_image: bytes) -> dict:
+    """Build the messages.create kwargs for a single page extraction.
+
+    Separated so asyncio.to_thread can call client.messages.create with these args.
+    """
+    return {
+        "model": EXTRACTION_MODEL,
+        "max_tokens": MAX_TOKENS_PER_PAGE,
+        "system": EXTRACTION_SYSTEM_PROMPT,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": base64.b64encode(page_image).decode(),
+                    },
+                },
+                {
+                    "type": "text",
+                    "text": EXTRACTION_USER_PROMPT,
+                },
+            ],
+        }],
+    }
+
+
 async def _extract_single_page(
     client,
     page_image: bytes,
@@ -153,33 +182,21 @@ async def _extract_single_page(
 ) -> dict:
     """Extract structured data from a single PDF page using Claude vision.
 
+    Uses asyncio.to_thread to avoid blocking the event loop with the
+    synchronous Anthropic client. This ensures asyncio.gather + Semaphore
+    provides real parallelism across pages.
+
     Returns the parsed JSON dict, or a dict with _extraction_failed=True on error.
     """
     async with semaphore:
         raw_text = ""
+        request_kwargs = _build_extraction_request(page_image)
         for attempt in range(RETRY_ATTEMPTS):
             try:
-                response = client.messages.create(
-                    model=EXTRACTION_MODEL,
-                    max_tokens=MAX_TOKENS_PER_PAGE,
-                    system=EXTRACTION_SYSTEM_PROMPT,
-                    messages=[{
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/jpeg",
-                                    "data": base64.b64encode(page_image).decode(),
-                                },
-                            },
-                            {
-                                "type": "text",
-                                "text": EXTRACTION_USER_PROMPT,
-                            },
-                        ],
-                    }],
+                # Run sync client call in a thread to not block the event loop
+                response = await asyncio.to_thread(
+                    client.messages.create,
+                    **request_kwargs,
                 )
 
                 raw_text = response.content[0].text.strip()
@@ -431,10 +448,66 @@ def build_normalized_from_visual(
 
 # ── Material Resolution ─────────────────────────────────────────────────────
 
-def resolve_material_choice(pages_data: list[dict], chosen_material: str) -> list[dict]:
-    """Update all pages with the operator's material choice.
+def validate_material_choice(
+    pages_data: list[dict],
+    user_input: str,
+) -> tuple[bool, Optional[str], list[str]]:
+    """Validate operator's material choice against detected options.
 
-    Replaces material_text with chosen material and clears ambiguity flags.
+    Returns: (ok, normalized_choice, available_options)
+    - ok: True if the input matches one of the detected options
+    - normalized_choice: the canonical option name (properly cased)
+    - available_options: all options detected across pages (for error message)
+
+    Matching rules:
+    - Case-insensitive exact match
+    - Case-insensitive substring match (e.g., "cuarzo" matches "Cuarzo Blanco Norte")
+    - Numeric choice (e.g., "1" matches first option, "2" matches second)
+    """
+    # Collect all unique options across pages
+    all_options: list[str] = []
+    seen = set()
+    for page in pages_data:
+        if page.get("_extraction_failed") or not page.get("material_ambiguo"):
+            continue
+        for opt in page.get("materiales_opciones", []):
+            opt_key = opt.strip().lower()
+            if opt_key not in seen:
+                seen.add(opt_key)
+                all_options.append(opt.strip())
+
+    if not all_options:
+        return False, None, []
+
+    input_clean = user_input.strip()
+    input_lower = input_clean.lower()
+
+    # Try numeric choice first ("1", "2", etc.)
+    try:
+        idx = int(input_clean) - 1
+        if 0 <= idx < len(all_options):
+            return True, all_options[idx], all_options
+    except ValueError:
+        pass
+
+    # Exact case-insensitive match
+    for opt in all_options:
+        if opt.lower() == input_lower:
+            return True, opt, all_options
+
+    # Substring match (e.g., "cuarzo" matches "Cuarzo Blanco Norte")
+    matches = [opt for opt in all_options if input_lower in opt.lower()]
+    if len(matches) == 1:
+        return True, matches[0], all_options
+
+    # No match
+    return False, None, all_options
+
+
+def resolve_material_choice(pages_data: list[dict], chosen_material: str) -> list[dict]:
+    """Update all pages with the validated material choice.
+
+    IMPORTANT: Call validate_material_choice() first to ensure the choice is valid.
     The choice is persisted in quote_breakdown.material_choice by the caller.
     """
     for page in pages_data:
