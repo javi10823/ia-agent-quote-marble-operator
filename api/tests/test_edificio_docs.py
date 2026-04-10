@@ -56,7 +56,7 @@ class TestEdificioDocs:
         return paso2_and_summary[1]
 
     @pytest.mark.asyncio
-    async def test_generates_4_document_pairs(self, paso2, summary):
+    async def test_generates_3_documents(self, paso2, summary):
         from app.modules.agent.tools.document_tool import generate_edificio_documents
         qid = "test-edif-doc-001"
         result = await generate_edificio_documents(
