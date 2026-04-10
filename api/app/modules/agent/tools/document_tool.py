@@ -129,96 +129,41 @@ async def generate_edificio_documents(
     project: str = "",
     localidad: str = "Rosario",
 ) -> dict:
-    """Generate 3 PDF+Excel for edificio — direct from paso2_calc, NO recalculation.
+    """Generate 3 PDF+Excel for edificio using build_edificio_doc_context.
 
-    This function is a dumb pipe: paso2_calc → template. Nothing is recalculated.
-    MO global goes in the first material document (Boreal). The rest get material only.
-    Uses _generate_pdf and _generate_excel (original D'Angelo template).
+    Presentation model built by edificio_parser, not ad-hoc here.
+    Uses _generate_pdf/_generate_excel (original D'Angelo template).
     """
+    from app.modules.quote_engine.edificio_parser import build_edificio_doc_context
+
     date_str = datetime.now().strftime("%d.%m.%Y")
     quote_dir = OUTPUT_DIR / quote_id
     quote_dir.mkdir(exist_ok=True)
 
-    calc_results = paso2_calc.get("calc_results", {})
-    mo_items_raw = paso2_calc.get("mo_items", [])
-    mo_total = paso2_calc.get("mo_total", 0)
-
-    # Convert paso2_calc mo_items to template format
-    mo_for_template = []
-    for mo in mo_items_raw:
-        mo_for_template.append({
-            "description": mo.get("desc", ""),
-            "quantity": mo.get("qty", 1),
-            "unit_price": mo.get("price", 0),
-            "base_price": mo.get("price_base", mo.get("price", 0)),
-            "total": mo.get("total", 0),
-        })
-
+    contexts = build_edificio_doc_context(summary, paso2_calc, client_name, project)
     generated = []
 
-    # Determine which material carries global MO.
-    # Rule: first ARS material gets it (typically Boreal). If all USD, first material.
-    valid_mats = [(n, r) for n, r in calc_results.items() if r.get("ok")]
-    ars_mats = [n for n, r in valid_mats if r["currency"] == "ARS"]
-    mo_carrier = ars_mats[0] if ars_mats else (valid_mats[0][0] if valid_mats else "")
-    logging.info(f"[edificio-docs] MO carrier material: {mo_carrier}")
+    for ctx in contexts:
+        mat_name = ctx.pop("_mat_name_raw", "")
+        cur = ctx.pop("_currency", "ARS")
+        ctx.pop("_carries_mo", False)
 
-    for mat_name, mr in calc_results.items():
-        if not mr.get("ok"):
-            continue
-
-        cur = mr["currency"]
-        safe_mat = mat_name.replace("/", "-").replace("\\", "-")
+        safe_mat = (ctx.get("material_name") or mat_name).replace("/", "-").replace("\\", "-")
         base_name = f"{client_name} - {safe_mat} - {date_str}"
         pdf_path = quote_dir / f"{base_name}.pdf"
         excel_path = quote_dir / f"{base_name}.xlsx"
 
-        carries_mo = (mat_name == mo_carrier)
-
-        if carries_mo:
-            this_mo = mo_for_template
-            total_ars = (mr["material_net"] if cur == "ARS" else 0) + mo_total
-            total_usd = mr["material_net"] if cur == "USD" else 0
-        else:
-            this_mo = []
-            total_ars = mr["material_net"] if cur == "ARS" else 0
-            total_usd = mr["material_net"] if cur == "USD" else 0
-
-        # Build piece labels for sectors
-        piece_labels = mr.get("piece_labels", [])
-        if not piece_labels:
-            piece_labels = [f"{mr['m2']} m²"]
-
-        # Build quote_data exactly as _generate_pdf/_generate_excel expect
-        quote_data = {
-            "client_name": client_name,
-            "project": project,
-            "delivery_days": "Segun cronograma de obra",
-            "material_name": mr.get("catalog_name", mat_name),
-            "material_m2": mr["m2"],
-            "material_price_unit": mr["price_unit"],
-            "material_currency": cur,
-            "material_total": mr["material_total"],
-            "discount_pct": mr.get("discount_pct", 0),
-            "thickness_mm": mr.get("thickness_mm", 20),
-            "sectors": [{"label": project or "Edificio", "pieces": piece_labels}],
-            "sinks": [],  # Never sink products in edificio
-            "mo_items": this_mo,
-            "total_ars": total_ars,
-            "total_usd": total_usd,
-        }
-
         await asyncio.gather(
-            asyncio.to_thread(_generate_pdf, pdf_path, quote_data),
-            asyncio.to_thread(_generate_excel, excel_path, quote_data),
+            asyncio.to_thread(_generate_pdf, pdf_path, ctx),
+            asyncio.to_thread(_generate_excel, excel_path, ctx),
         )
 
         generated.append({
-            "material": mat_name,
+            "material": mat_name or ctx.get("material_name", ""),
             "pdf_url": f"/files/{quote_id}/{base_name}.pdf",
             "excel_url": f"/files/{quote_id}/{base_name}.xlsx",
-            "total_ars": total_ars,
-            "total_usd": total_usd,
+            "total_ars": ctx.get("total_ars", 0),
+            "total_usd": ctx.get("total_usd", 0),
             "currency": cur,
         })
 
