@@ -10,7 +10,8 @@
 **PASO 3:** Generar documentos.
 
 **⛔ PROHIBIDO en PASO 1:** llamar catalog_lookup, catalog_batch_lookup, calculate_quote.
-**✅ OBLIGATORIO en PASO 1:** llamar `list_pieces` para obtener labels + total m². Usar sus valores exactos.
+**✅ OBLIGATORIO en PASO 1 (presupuestos normales):** llamar `list_pieces` para obtener labels + total m². Usar sus valores exactos.
+**⛔ EXCEPCIÓN EDIFICIO:** si recibiste JSON pre-calculado del sistema de edificio, ese JSON ES la fuente de verdad. NO llamar list_pieces. NO aplanar piezas. Presentar separado por material tal como viene.
 **⛔ PROHIBIDO en PASO 2:** llamar generate_documents.
 
 Excepcion: "procesamiento automatico" → ejecutar todo de corrido sin parar.
@@ -98,12 +99,13 @@ Sin otros cambios.
 ### PASO 1 — Piezas y medidas (SIN precios)
 1. Recibir enunciado/plano
 2. Si hay plano → 4 PASADAS (ver plan-reading.md)
-3. **⛔ OBLIGATORIO: llamar `list_pieces` con las piezas extraídas.** Usar el resultado EXACTO (labels + total_m2) para la tabla. NUNCA calcular m² inline ni formatear zócalos manualmente.
-4. Mostrar tabla con los labels y m² devueltos por `list_pieces`
-5. "¿Confirmas las piezas y medidas?"
+3. **Presupuesto normal:** llamar `list_pieces` con las piezas extraídas. Usar el resultado EXACTO (labels + total_m2) para la tabla.
+4. **⛔ EDIFICIO:** si el sistema inyectó JSON pre-calculado con secciones por material, usarlo TAL CUAL como fuente de verdad. NO llamar list_pieces. NO aplanar piezas. NO recalcular m². Presentar separado por material.
+5. Mostrar tabla. "¿Confirmas las piezas y medidas?"
 
 ⛔ NO buscar precios ni calcular MO en este paso.
-⛔ NO calcular m² manualmente — SIEMPRE usar `list_pieces`.
+⛔ Presupuestos normales: NO calcular m² manualmente — usar `list_pieces`.
+⛔ Edificios: NO llamar `list_pieces` — usar JSON pre-calculado del sistema.
 
 ### PASO 2 — Precios, MO, merma, descuentos, totales
 5. catalog_batch_lookup
