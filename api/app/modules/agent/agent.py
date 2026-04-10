@@ -614,7 +614,26 @@ class AgentService:
 
         # Build system prompt per request with contextual loading
         has_plan = plan_bytes is not None and plan_filename is not None
+        # Detect building from current message OR conversation history
+        # (operator may confirm with just "sí" — need to preserve building context)
         is_building = _detect_building(user_message)
+        if not is_building and messages:
+            for msg in messages:
+                if msg.get("role") == "user":
+                    c = msg.get("content", "")
+                    text_parts = []
+                    if isinstance(c, str):
+                        text_parts.append(c)
+                    elif isinstance(c, list):
+                        for blk in c:
+                            if isinstance(blk, dict) and blk.get("type") == "text":
+                                text_parts.append(blk.get("text", ""))
+                    for part in text_parts:
+                        if _detect_building(part) or "EDIFICIO PRE-CALCULADO" in part or "EDIFICIO — PASO 1" in part:
+                            is_building = True
+                            break
+                if is_building:
+                    break
         system_prompt = build_system_prompt(has_plan=has_plan, is_building=is_building, user_message=user_message, conversation_history=messages)
 
         # Build user message content
