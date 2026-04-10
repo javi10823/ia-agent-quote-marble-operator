@@ -166,3 +166,114 @@ class TestBuildingStepStateMachine:
         text_chunks = [c for c in chunks if c.get("type") == "text"]
         all_text = " ".join(c.get("content", "") for c in text_chunks)
         assert "Presupuesto Edificio" not in all_text
+
+
+class TestAwaitingClientName:
+
+    @pytest.mark.asyncio
+    async def test_missing_client_enters_awaiting_state(self, db_session):
+        """step2_quote without client_name → awaiting_client_name."""
+        qid = f"test-await-{uuid.uuid4()}"
+        quote = Quote(
+            id=qid,
+            client_name="",  # Empty!
+            project="Concesionario",
+            material="Negro Boreal",
+            localidad="Rosario",
+            is_building=True,
+            messages=[],
+            status=QuoteStatus.DRAFT,
+        )
+        db_session.add(quote)
+        await db_session.commit()
+
+        bd = {
+            "building_step": "step2_quote",
+            "paso2_calc": {"calc_results": {}, "mo_items": [], "mo_total": 0, "grand_total_ars": 0, "grand_total_usd": 0},
+            "summary": {"materials": {}, "totals": {}},
+        }
+        await db_session.execute(sql_update(Quote).where(Quote.id == qid).values(quote_breakdown=bd))
+        await db_session.commit()
+
+        agent = AgentService()
+        chunks = []
+        async for chunk in agent.stream_chat(qid, [], "Confirmo", None, None, db=db_session):
+            chunks.append(chunk)
+
+        text = " ".join(c.get("content", "") for c in chunks if c.get("type") == "text")
+        assert "nombre del cliente" in text.lower()
+
+        r = await db_session.execute(select(Quote).where(Quote.id == qid))
+        q = r.scalar_one()
+        assert q.quote_breakdown["building_step"] == "awaiting_client_name"
+
+    @pytest.mark.asyncio
+    async def test_client_name_captured_and_persisted(self, db_session):
+        """awaiting_client_name + "ESH" → saves client_name, resumes to step2_quote."""
+        qid = f"test-capture-{uuid.uuid4()}"
+        quote = Quote(
+            id=qid,
+            client_name="",
+            project="Concesionario",
+            material="Negro Boreal",
+            localidad="Rosario",
+            is_building=True,
+            messages=[],
+            status=QuoteStatus.DRAFT,
+        )
+        db_session.add(quote)
+        await db_session.commit()
+
+        bd = {
+            "building_step": "awaiting_client_name",
+            "paso2_calc": {"calc_results": {}, "mo_items": [], "mo_total": 0, "grand_total_ars": 0, "grand_total_usd": 0},
+            "summary": {"materials": {}, "totals": {}},
+        }
+        await db_session.execute(sql_update(Quote).where(Quote.id == qid).values(quote_breakdown=bd))
+        await db_session.commit()
+
+        agent = AgentService()
+        chunks = []
+        async for chunk in agent.stream_chat(qid, [], "ESH 1121-SM", None, None, db=db_session):
+            chunks.append(chunk)
+
+        # Client name should be persisted
+        r = await db_session.execute(select(Quote).where(Quote.id == qid))
+        q = r.scalar_one()
+        assert q.client_name == "ESH 1121-SM"
+        # Step should have resumed (step2_quote or step3_done)
+        step = q.quote_breakdown.get("building_step")
+        assert step in ("step2_quote", "step3_done"), f"Expected resume, got: {step}"
+
+    @pytest.mark.asyncio
+    async def test_no_infinite_loop(self, db_session):
+        """After client name is set, should not ask again."""
+        qid = f"test-noloop-{uuid.uuid4()}"
+        quote = Quote(
+            id=qid,
+            client_name="ESH",  # Already set
+            project="Concesionario",
+            material="Negro Boreal",
+            localidad="Rosario",
+            is_building=True,
+            messages=[],
+            status=QuoteStatus.DRAFT,
+        )
+        db_session.add(quote)
+        await db_session.commit()
+
+        bd = {
+            "building_step": "step2_quote",
+            "paso2_calc": {"calc_results": {}, "mo_items": [], "mo_total": 0, "grand_total_ars": 0, "grand_total_usd": 0},
+            "summary": {"materials": {}, "totals": {}},
+        }
+        await db_session.execute(sql_update(Quote).where(Quote.id == qid).values(quote_breakdown=bd))
+        await db_session.commit()
+
+        agent = AgentService()
+        chunks = []
+        async for chunk in agent.stream_chat(qid, [], "Confirmo", None, None, db=db_session):
+            chunks.append(chunk)
+
+        text = " ".join(c.get("content", "") for c in chunks if c.get("type") == "text")
+        assert "nombre del cliente" not in text.lower()
