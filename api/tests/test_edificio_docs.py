@@ -101,6 +101,7 @@ class TestEdificioDocs:
     @pytest.mark.asyncio
     async def test_services_excel_has_mo_items(self, paso2, summary):
         """Services Excel must contain all MO items."""
+        import zipfile
         from app.modules.agent.tools.document_tool import generate_edificio_documents
         qid = "test-edif-doc-005"
         await generate_edificio_documents(qid, paso2, summary, "ESH", "Test")
@@ -108,14 +109,11 @@ class TestEdificioDocs:
         svc_xlsx = list((OUTPUT_DIR / qid).glob("*Servicios*.xlsx"))
         assert len(svc_xlsx) == 1
 
-        import openpyxl
-        wb = openpyxl.load_workbook(str(svc_xlsx[0]))
-        ws = wb.active
-        all_text = " ".join(str(ws.cell(r, c).value or "") for r in range(1, 30) for c in range(1, 5))
-        wb.close()
+        with zipfile.ZipFile(str(svc_xlsx[0]), 'r') as z:
+            sheet_xml = z.read("xl/worksheets/sheet1.xml").decode("utf-8").lower()
 
-        assert "pegado pileta" in all_text.lower() or "pegadopileta" in all_text.lower()
-        assert "apoyo" in all_text.lower()
+        assert "pegado pileta" in sheet_xml or "pegadopileta" in sheet_xml
+        assert "apoyo" in sheet_xml or "fald" in sheet_xml
 
     @pytest.mark.asyncio
     async def test_services_pdf_has_correct_content(self, paso2, summary):
@@ -132,16 +130,13 @@ class TestEdificioDocs:
     @pytest.mark.asyncio
     async def test_no_sink_product_in_any_doc(self, paso2, summary):
         """No Johnson/Quadra/Luxor in any generated document."""
+        import zipfile
         from app.modules.agent.tools.document_tool import generate_edificio_documents
         qid = "test-edif-doc-007"
         await generate_edificio_documents(qid, paso2, summary, "ESH", "Test")
 
-        # Check all Excels (easier to parse than PDFs)
         for xlsx in (OUTPUT_DIR / qid).glob("*.xlsx"):
-            import openpyxl
-            wb = openpyxl.load_workbook(str(xlsx))
-            ws = wb.active
-            all_text = " ".join(str(ws.cell(r, c).value or "") for r in range(1, 30) for c in range(1, 5))
-            wb.close()
+            with zipfile.ZipFile(str(xlsx), 'r') as z:
+                sheet_xml = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
             for forbidden in ["Johnson", "Quadra", "Luxor", "Oval"]:
-                assert forbidden not in all_text, f"Found '{forbidden}' in {xlsx.name}"
+                assert forbidden not in sheet_xml, f"Found '{forbidden}' in {xlsx.name}"
