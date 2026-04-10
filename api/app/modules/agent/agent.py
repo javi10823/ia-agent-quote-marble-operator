@@ -680,6 +680,8 @@ class AgentService:
 ⛔ Presentar separado por material, con totales del JSON. NO aplanar en una sola tabla.
 ⛔ null = desconocido. "-" = no aplica. NUNCA inventar.
 ⛔ Usar los totales del JSON para redactar el presupuesto.
+⛔ UNA SOLA salida de Paso 1 — no mostrar primero un resumen y después otro detallado.
+⛔ Piezas con cantidad > 1 (escalones, etc.): mostrar m² TOTAL (m2_calc_total), no unitario.
 
 {pre_calc}
 
