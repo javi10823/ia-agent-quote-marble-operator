@@ -895,3 +895,115 @@ def render_edificio_paso2(summary: dict, localidad: str = "Rosario") -> dict:
         "grand_total_ars": grand_ars,
         "grand_total_usd": grand_usd,
     }
+
+
+# ── 8. build_edificio_doc_context — presentation model for PDF/Excel ────────
+
+def build_edificio_doc_context(
+    summary: dict,
+    paso2_calc: dict,
+    client_name: str,
+    project: str,
+) -> list[dict]:
+    """Build 3 ready-to-render document contexts for edificio.
+
+    Returns list of dicts, each compatible with _generate_pdf/_generate_excel.
+    - First ARS material carries all global MO.
+    - Others get material only (no MO block, no Total PESOS $0).
+    - Despiece uses sectors from summary pieces (grouped by ubicacion).
+    - Descuento integrated in material block.
+    - No recalculation. All values from paso2_calc.
+    """
+    calc_results = paso2_calc.get("calc_results", {})
+    mo_items_raw = paso2_calc.get("mo_items", [])
+    mo_total = paso2_calc.get("mo_total", 0)
+    materials_summary = summary.get("materials", {})
+
+    # Convert MO items to template format
+    mo_for_template = []
+    for mo in mo_items_raw:
+        mo_for_template.append({
+            "description": mo.get("desc", ""),
+            "quantity": mo.get("qty", 1),
+            "unit_price": mo.get("price", 0),
+            "base_price": mo.get("price_base", mo.get("price", 0)),
+            "total": mo.get("total", 0),
+        })
+
+    # Determine MO carrier: first ARS material
+    valid_mats = [(n, r) for n, r in calc_results.items() if r.get("ok")]
+    ars_mats = [n for n, r in valid_mats if r["currency"] == "ARS"]
+    mo_carrier = ars_mats[0] if ars_mats else (valid_mats[0][0] if valid_mats else "")
+
+    contexts = []
+
+    for mat_name, mr in calc_results.items():
+        if not mr.get("ok"):
+            continue
+
+        cur = mr["currency"]
+        carries_mo = (mat_name == mo_carrier)
+        mat_summary = materials_summary.get(mat_name, {})
+
+        # ── Build sectors from pieces grouped by ubicacion ──
+        pieces = mat_summary.get("pieces", [])
+        sectors_by_ubic: dict[str, list[str]] = {}
+        for p in pieces:
+            ubic = p.get("ubicacion") or "General"
+            # Clean OCR garbage
+            if "\n" in ubic:
+                ubic = {"AJAB\nATNALP": "Planta Baja", "ATNALP\nATLA": "Planta Alta"}.get(ubic, ubic.replace("\n", " "))
+            qty = p.get("cantidad", 1)
+            largo = p.get("largo", 0)
+            ancho = p.get("ancho", 0)
+            desc_lower = (p.get("id") or "").lower()
+
+            if qty > 1:
+                label = f"{_fmt_num(largo)} X {_fmt_num(ancho)} X {qty} UNID"
+            else:
+                label = f"{_fmt_num(largo)} X {_fmt_num(ancho)}"
+
+            sectors_by_ubic.setdefault(ubic, []).append(label)
+
+        # Add faldón pieces as ZOC-style labels in their sectors
+        for fp in mat_summary.get("faldon_pieces", []):
+            # Faldones go in "General" sector
+            sectors_by_ubic.setdefault("General", []).append(
+                f"{_fmt_num(fp.get('largo', 0))}ML X {_fmt_num(fp.get('alto', 0))} FALDON"
+            )
+
+        sectors = [{"label": ubic, "pieces": labels} for ubic, labels in sectors_by_ubic.items()]
+
+        # ── Build totals ──
+        if carries_mo:
+            total_ars = (mr["material_net"] if cur == "ARS" else 0) + mo_total
+            total_usd = mr["material_net"] if cur == "USD" else 0
+            this_mo = mo_for_template
+        else:
+            total_ars = mr["material_net"] if cur == "ARS" else 0
+            total_usd = mr["material_net"] if cur == "USD" else 0
+            this_mo = []
+
+        contexts.append({
+            "client_name": client_name,
+            "project": project,
+            "delivery_days": "Segun cronograma de obra",
+            "material_name": mr.get("catalog_name", mat_name),
+            "material_m2": mr["m2"],
+            "material_price_unit": mr["price_unit"],
+            "material_currency": cur,
+            "material_total": mr["material_total"],
+            "discount_pct": mr.get("discount_pct", 0),
+            "thickness_mm": mr.get("thickness_mm", 20),
+            "sectors": sectors,
+            "sinks": [],
+            "mo_items": this_mo,
+            "total_ars": total_ars,
+            "total_usd": total_usd,
+            # Metadata for generate_edificio_documents
+            "_mat_name_raw": mat_name,
+            "_currency": cur,
+            "_carries_mo": carries_mo,
+        })
+
+    return contexts
