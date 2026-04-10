@@ -507,6 +507,41 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
         </Section>
       )}
 
+      {/* Building children — for building_parent quotes */}
+      {quote.quote_kind === "building_parent" && quote.children && quote.children.length > 0 && (
+        <Section title={`Presupuestos por material (${quote.children.length})`}>
+          <div className="flex flex-col gap-2">
+            {quote.children.map((child: any) => (
+              <div key={child.id} className="flex items-center gap-3 px-4 py-3 rounded-lg border border-b1 bg-white/[0.02] hover:bg-white/[0.04] cursor-pointer transition" onClick={() => window.location.href = `/quote/${child.id}`}>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-medium text-t1">{child.material || "\u2014"}</div>
+                  <div className="text-[11px] text-t3 mt-0.5">
+                    {child.total_usd ? `USD ${child.total_usd.toLocaleString()}` : ""}
+                    {child.total_usd && child.total_ars ? " + " : ""}
+                    {child.total_ars ? `$${child.total_ars.toLocaleString("es-AR")}` : ""}
+                    {!child.total_usd && !child.total_ars ? "\u2014" : ""}
+                  </div>
+                </div>
+                <div className="flex gap-1.5 shrink-0">
+                  {child.pdf_url && <a href={child.pdf_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[11px] px-2 py-1 rounded border border-b1 text-t3 hover:text-t1 hover:border-b2 transition no-underline">{"\uD83D\uDCC4"} PDF</a>}
+                  {child.drive_url && <a href={child.drive_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[11px] px-2 py-1 rounded border border-b1 text-t3 hover:text-t1 hover:border-b2 transition no-underline">{"\u2601"} Drive</a>}
+                </div>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-t4 shrink-0"><polyline points="9 18 15 12 9 6"/></svg>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {/* For building_child_material, show link back to parent */}
+      {quote.quote_kind === "building_child_material" && quote.parent_quote_id && (
+        <div className="px-1">
+          <button onClick={() => window.location.href = `/quote/${quote.parent_quote_id}`} className="text-xs text-acc bg-transparent border-none cursor-pointer font-sans p-0 hover:underline">
+            {"\u2190"} Volver al proyecto
+          </button>
+        </div>
+      )}
+
       {breakdown && (
         <Section title="Solicitud">
           <div className="grid grid-cols-2 gap-3">
