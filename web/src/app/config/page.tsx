@@ -154,7 +154,7 @@ export default function ConfigPage() {
       loadCatalog(selected);
       loadBackups();
       fetchCatalogs().then(setCatalogs).catch(() => {});
-      toast("Catálogo restaurado correctamente", "success");
+      toast("Cat\u00E1logo restaurado correctamente", "success");
     } catch (err: any) {
       toast(err.message || "Error al restaurar", "error");
     } finally {
@@ -252,9 +252,9 @@ export default function ConfigPage() {
             </div>
           )}
 
-          {/* Editor — flex-1 min-h-0 lets CodeMirror scroll internally */}
-          <div className="flex-1 min-h-0 px-5 py-3">
-            <div className="h-full border border-b1 rounded-lg overflow-hidden">
+          {/* Editor + Backups */}
+          <div className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-4">
+            <div className="min-h-[400px] max-h-[60vh] border border-b1 rounded-lg overflow-auto">
               <CatalogEditor
                 value={content}
                 onChange={setContent}
@@ -263,30 +263,30 @@ export default function ConfigPage() {
                 onRetry={() => loadCatalog(selected)}
               />
             </div>
-          </div>
 
-          {/* Backup History — separate scroll area, doesn't fight with editor */}
-          {backups.length > 0 && (
-            <div className="shrink-0 max-h-[200px] overflow-y-auto px-5 pb-4 border-t border-b1">
-              <div className="text-[11px] font-semibold text-t3 uppercase tracking-wide mb-2 mt-3">Historial de backups — {selected}</div>
-              <div className="flex flex-col gap-1">
-                {backups.map(b => (
-                  <div key={b.id} className="flex items-center gap-3 px-3.5 py-2.5 bg-white/[0.015] border border-b1 rounded-lg">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[12px] font-medium text-t1">{b.created_at ? new Date(b.created_at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</div>
-                      <div className="text-[10px] text-t3 truncate mt-0.5">{b.source_file || "manual"}{b.stats?.items_before != null ? ` · ${b.stats.items_before} items` : ""}{b.stats?.reason ? ` · ${b.stats.reason}` : ""}</div>
+            {/* Backup History */}
+            {backups.length > 0 && (
+              <div className="shrink-0 pb-4">
+                <div className="text-[11px] font-semibold text-t3 uppercase tracking-wide mb-2">Historial de backups {"\u2014"} {selected}</div>
+                <div className="flex flex-col gap-1">
+                  {backups.map(b => (
+                    <div key={b.id} className="flex items-center gap-3 px-3.5 py-2.5 bg-white/[0.015] border border-b1 rounded-lg">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[12px] font-medium text-t1">{b.created_at ? new Date(b.created_at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "\u2014"}</div>
+                        <div className="text-[10px] text-t3 truncate mt-0.5">{b.source_file || "manual"}{b.stats?.items_before != null ? ` \u00B7 ${b.stats.items_before} items` : ""}{b.stats?.reason ? ` \u00B7 ${b.stats.reason}` : ""}</div>
+                      </div>
+                      <button
+                        onClick={() => setRestoreTarget(b)}
+                        className="px-2.5 py-1 rounded-md text-[11px] font-medium font-sans cursor-pointer border border-b2 bg-transparent text-t3 hover:text-t1 hover:border-b3 transition shrink-0"
+                      >
+                        Restaurar
+                      </button>
                     </div>
-                    <button
-                      onClick={() => setRestoreTarget(b)}
-                      className="px-2.5 py-1 rounded-md text-[11px] font-medium font-sans cursor-pointer border border-b2 bg-transparent text-t3 hover:text-t1 hover:border-b3 transition shrink-0"
-                    >
-                      Restaurar
-                    </button>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
@@ -304,10 +304,10 @@ export default function ConfigPage() {
           <div onClick={e => e.stopPropagation()} className="bg-s2 border border-b2 rounded-[14px] px-6 md:px-8 py-6 md:py-7 w-[calc(100vw-32px)] max-w-[420px] shadow-[0_20px_60px_rgba(0,0,0,.5)]">
             <div className="text-[15px] font-medium text-t1 mb-2">Restaurar backup</div>
             <div className="text-[13px] text-t2 leading-relaxed mb-2">
-              ¿Restaurar <strong className="text-t1">{selected}</strong> al estado del {restoreTarget.created_at ? new Date(restoreTarget.created_at).toLocaleString("es-AR") : "backup"}?
+              {"\u00BF"}Restaurar <strong className="text-t1">{selected}</strong> al estado del {restoreTarget.created_at ? new Date(restoreTarget.created_at).toLocaleString("es-AR") : "backup"}?
             </div>
             <div className="text-[11px] text-t3 mb-1">Origen: {restoreTarget.source_file || "manual"}</div>
-            <div className="text-[11px] text-amb mb-5">Se creará un backup de seguridad del estado actual antes de restaurar.</div>
+            <div className="text-[11px] text-amb mb-5">Se crear{"\u00E1"} un backup de seguridad del estado actual antes de restaurar.</div>
             <div className="flex gap-2.5 justify-end">
               <button onClick={() => setRestoreTarget(null)} className="px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans cursor-pointer border border-b2 bg-transparent text-t2 hover:text-t1 hover:border-b3 transition">Cancelar</button>
               <button
@@ -315,7 +315,7 @@ export default function ConfigPage() {
                 disabled={restoring}
                 className={`px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans border-none text-white transition ${restoring ? "bg-amb/60 cursor-wait" : "bg-amb cursor-pointer hover:bg-amber-500"}`}
               >
-                {restoring ? "Restaurando..." : "Confirmar restauración"}
+                {restoring ? "Restaurando..." : "Confirmar restauraci\u00F3n"}
               </button>
             </div>
           </div>
