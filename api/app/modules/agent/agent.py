@@ -699,37 +699,65 @@ class AgentService:
                         detection = detect_edificio(user_message, tables_all)
 
                         if detection["is_edificio"]:
-                            # Deterministic pipeline — Claude CANNOT calculate
+                            # ── EDIFICIO PASO 1: 100% server-side, no Claude ──
+                            # Render deterministically and emit directly via SSE.
+                            # Claude is completely bypassed for this turn.
                             raw_data = parse_edificio_tables(tables_all)
                             norm_data = normalize_edificio_data(raw_data)
                             edif_summary = compute_edificio_aggregates(norm_data)
                             edif_validation = validate_edificio(norm_data, edif_summary)
-
-                            # Render Paso 1 deterministically — Claude must NOT rewrite this
                             rendered_paso1 = render_edificio_paso1(norm_data, edif_summary)
 
-                            import json as _json
-                            pre_calc = _json.dumps({
-                                "summary": edif_summary,
-                                "validation": edif_validation,
-                                "normalized_pieces": [p for s in norm_data.get("sections", []) for p in s.get("pieces", [])],
-                            }, indent=2, ensure_ascii=False, default=str)
-
-                            content.append({"type": "text", "text": f"""[EDIFICIO — PASO 1 YA RENDERIZADO POR EL SISTEMA]
-⛔ El bloque de abajo es la salida FINAL y DEFINITIVA de Paso 1.
-⛔ Copialo TAL CUAL en tu respuesta. NO reescribir, NO reformatear, NO agregar otra versión.
-⛔ Solo agregar al final: "¿Confirmás las piezas y medidas?"
-⛔ NO llamar list_pieces ni ninguna tool en este turno — todo ya está calculado.
-
-{rendered_paso1}
-
-[DATOS INTERNOS PARA PASO 2 — no mostrar al operador]
-{pre_calc}
-"""})
                             logging.info(f"Edificio detected (confidence={detection['confidence']:.2f}): {detection['reasons']}")
                             logging.info(f"Edificio summary: {edif_summary.get('totals', {})}")
                             if not edif_validation["is_valid"]:
                                 logging.error(f"Edificio validation FAILED: {edif_validation['errors']}")
+
+                            # Build the complete response text
+                            paso1_response = rendered_paso1 + "\n\n¿Confirmás las piezas y medidas?"
+                            if edif_validation.get("warnings"):
+                                warns = "\n".join(f"⚠ {w}" for w in edif_validation["warnings"][:10])
+                                paso1_response = rendered_paso1 + f"\n\n**Advertencias:**\n{warns}\n\n¿Confirmás las piezas y medidas?"
+
+                            # Save pre-calc data to quote for Paso 2
+                            import json as _json
+                            pre_calc = {
+                                "summary": edif_summary,
+                                "validation": dict(edif_validation),
+                                "normalized_pieces": [dict(p) for s in norm_data.get("sections", []) for p in s.get("pieces", [])],
+                            }
+                            try:
+                                await db.execute(
+                                    update(Quote).where(Quote.id == quote_id).values(
+                                        is_building=True,
+                                        quote_breakdown=pre_calc,
+                                    )
+                                )
+                                await db.commit()
+                            except Exception as e:
+                                logging.error(f"Failed to save edificio pre-calc: {e}")
+
+                            # Save conversation to DB
+                            clean_user_content = [{"type": "text", "text": user_message}]
+                            if plan_bytes:
+                                clean_user_content.insert(0, {"type": "text", "text": "(adjunto planilla edificio)"})
+                            assistant_msg = {"role": "assistant", "content": [{"type": "text", "text": paso1_response}]}
+                            try:
+                                updated_messages = list(messages) + [
+                                    {"role": "user", "content": clean_user_content},
+                                    assistant_msg,
+                                ]
+                                await db.execute(
+                                    update(Quote).where(Quote.id == quote_id).values(messages=updated_messages)
+                                )
+                                await db.commit()
+                            except Exception as e:
+                                logging.error(f"Failed to save edificio conversation: {e}")
+
+                            # Emit directly via SSE — bypass Claude entirely
+                            yield {"type": "text", "content": paso1_response}
+                            yield {"type": "done", "content": ""}
+                            return  # ← EXIT: no Claude loop for edificio Paso 1
                         else:
                             # Non-edificio PDF — send extracted text with safety instructions
                             content.append({"type": "text", "text": f"[TEXTO EXTRAÍDO DEL PDF — DATOS EXACTOS]\n⛔ Extraído con precisión 100%. USAR TAL CUAL. Celda \"-\" o vacía = NO APLICA. NUNCA inferir ni inventar.\n\n{extracted_text.strip()}"})
