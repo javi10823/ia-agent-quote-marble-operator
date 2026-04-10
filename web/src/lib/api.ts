@@ -19,6 +19,8 @@ export interface Quote {
   excel_url: string | null;
   drive_url: string | null;
   parent_quote_id: string | null;
+  quote_kind: "standard" | "building_parent" | "building_child_material" | "variant_option" | null;
+  comparison_group_id: string | null;
   source: string | null;
   is_read: boolean;
   notes: string | null;
@@ -69,6 +71,7 @@ export interface QuoteDetail extends Quote {
   messages: Message[];
   quote_breakdown: QuoteBreakdown | null;
   source_files: SourceFile[] | null;
+  children?: Quote[];  // building_child_material quotes for building_parent
 }
 
 export interface Message {

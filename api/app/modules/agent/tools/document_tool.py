@@ -378,15 +378,14 @@ def _generate_resumen_obra_pdf(pdf_path: Path, data: dict) -> None:
 
     # ── 5. Conditions ──
     pdf.set_font("Helvetica", "", 7)
-    pdf.cell(0, 3.5, "Forma de pago: Contado", new_x="LMARGIN", new_y="NEXT")
+    pdf.multi_cell(180, 3.5, "Forma de pago: Contado", new_x="LMARGIN", new_y="NEXT")
     if co.get("conditions_general"):
-        for line in co["conditions_general"].split("\n"):
-            pdf.cell(0, 3.5, line.strip(), new_x="LMARGIN", new_y="NEXT")
+        pdf.multi_cell(180, 3.5, co["conditions_general"].strip(), new_x="LMARGIN", new_y="NEXT")
     if co.get("conditions_payment"):
-        for line in co["conditions_payment"].split("\n"):
-            pdf.cell(0, 3.5, line.strip(), new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(1)
+        pdf.multi_cell(180, 3.5, co["conditions_payment"].strip(), new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "I", 7)
-    pdf.cell(0, 4, "No se suben mesadas que no entren en ascensor", new_x="LMARGIN", new_y="NEXT")
+    pdf.multi_cell(180, 4, "No se suben mesadas que no entren en ascensor", new_x="LMARGIN", new_y="NEXT")
 
     pdf.output(str(pdf_path))
 
@@ -712,9 +711,6 @@ def _generate_edificio_pdf(pdf_path: Path, data: dict) -> None:
 
         pdf.set_font("Helvetica", "B", 9)
         pdf.cell(w[0] + w[1], 5, "")
-        pdf.cell(w[2], 5, "subtotal pesos", align="R")
-        pdf.cell(w[3], 5, _fmt_ars(mo_subtotal), align="R", new_x="LMARGIN", new_y="NEXT")
-        pdf.cell(w[0] + w[1], 5, "")
         pdf.cell(w[2], 5, "TOTAL PESOS", align="R")
         pdf.cell(w[3], 5, _fmt_ars(mo_subtotal), align="R", new_x="LMARGIN", new_y="NEXT")
 
@@ -731,19 +727,18 @@ def _generate_edificio_pdf(pdf_path: Path, data: dict) -> None:
 
     pdf.ln(3)
 
-    # Conditions
+    # Conditions — use multi_cell for wrapping long lines
     pdf.set_font("Helvetica", "", 7)
-    pdf.cell(0, 3.5, f"Forma de pago: Contado", new_x="LMARGIN", new_y="NEXT")
+    pdf.multi_cell(180, 3.5, "Forma de pago: Contado", new_x="LMARGIN", new_y="NEXT")
     if co.get("conditions_general"):
-        for line in co["conditions_general"].split("\n"):
-            pdf.cell(0, 3.5, line.strip(), new_x="LMARGIN", new_y="NEXT")
+        pdf.multi_cell(180, 3.5, co["conditions_general"].strip(), new_x="LMARGIN", new_y="NEXT")
     if co.get("conditions_payment"):
-        for line in co["conditions_payment"].split("\n"):
-            pdf.cell(0, 3.5, line.strip(), new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(1)
+        pdf.multi_cell(180, 3.5, co["conditions_payment"].strip(), new_x="LMARGIN", new_y="NEXT")
 
     # Footer
     pdf.set_font("Helvetica", "I", 7)
-    pdf.cell(0, 4, "No se suben mesadas que no entren en ascensor", new_x="LMARGIN", new_y="NEXT")
+    pdf.multi_cell(180, 4, "No se suben mesadas que no entren en ascensor", new_x="LMARGIN", new_y="NEXT")
 
     pdf.output(str(pdf_path))
 
@@ -893,14 +888,9 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
             r += 1
 
         r += 1
-        ws.cell(r, 5).value = "subtotal pesos"
-        ws.cell(r, 5).font = bold
-        ws.cell(r, 6).value = f"=SUM(F{mo_start}:F{mo_start + len(mo_items) - 1})"
-        ws.cell(r, 6).number_format = ars_fmt
-        r += 1
         ws.cell(r, 5).value = "TOTAL PESOS"
         ws.cell(r, 5).font = bold
-        ws.cell(r, 6).value = f"=F{r-1}"
+        ws.cell(r, 6).value = f"=SUM(F{mo_start}:F{mo_start + len(mo_items) - 1})"
         ws.cell(r, 6).number_format = ars_fmt
         ws.cell(r, 6).font = bold
 

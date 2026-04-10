@@ -22,6 +22,8 @@ class QuoteListResponse(BaseModel):
     excel_url: Optional[str]
     drive_url: Optional[str]
     parent_quote_id: Optional[str] = None
+    quote_kind: Optional[str] = "standard"
+    comparison_group_id: Optional[str] = None
     source: Optional[str] = "operator"
     is_read: bool = True
     client_phone: Optional[str] = None
