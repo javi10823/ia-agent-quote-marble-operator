@@ -438,6 +438,7 @@ export interface ImportPreviewResult {
   catalogs: Record<string, ImportCatalogDiff>;
   unmatched: { sku: string; name: string; price: number | null }[];
   iva_warning: boolean;
+  currency_mismatch: boolean;
   warnings: string[];
 }
 

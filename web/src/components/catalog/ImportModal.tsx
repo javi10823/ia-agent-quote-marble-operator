@@ -28,6 +28,7 @@ export default function ImportModal({ onDone, onClose }: Props) {
   const [importing, setImporting] = useState(false);
   const [applyResult, setApplyResult] = useState<Record<string, any> | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [currencyMismatchAcked, setCurrencyMismatchAcked] = useState(false);
   const dragCounter = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -43,6 +44,7 @@ export default function ImportModal({ onDone, onClose }: Props) {
   const handleFile = useCallback(async (f: File) => {
     setFile(f);
     setError("");
+    setCurrencyMismatchAcked(false);
     setStep("detect");
 
     try {
@@ -204,10 +206,18 @@ export default function ImportModal({ onDone, onClose }: Props) {
                 </div>
               </div>
 
-              {/* Currency mismatch warning per catalog */}
-              {currentDiff && currentDiff.file_currency && currentDiff.currency !== currentDiff.file_currency && (
-                <div className="px-3.5 py-2.5 rounded-lg bg-amber-500/[0.06] border border-amber-500/20 text-xs text-amb leading-relaxed">
-                  <strong>{"\u26A0"} Moneda corregida:</strong> El archivo fue detectado como <strong>{currentDiff.file_currency}</strong>, pero el cat{"\u00E1"}logo <strong>{currentDiff.catalog}</strong> usa <strong>{currentDiff.currency}</strong>. Se compara con <strong>{currentDiff.price_field}</strong> (sin IVA).
+              {/* Currency mismatch warning — requires explicit confirmation */}
+              {preview.currency_mismatch && (
+                <div className="px-3.5 py-3 rounded-lg bg-amber-500/[0.08] border border-amber-500/20 text-xs text-amb leading-relaxed flex flex-col gap-2">
+                  <div>
+                    <strong>{"\u26A0"} Moneda del archivo difiere del cat{"\u00E1"}logo destino</strong><br/>
+                    El archivo fue clasificado como <strong>{FORMAT_LABELS[preview.format] || preview.format}</strong>, pero {catNames.filter(n => preview.catalogs[n].file_currency !== preview.catalogs[n].currency).map(n => (<span key={n}><strong>{n}</strong> usa <strong>{preview.catalogs[n].currency}</strong></span>)).reduce((a, b) => <>{a}, {b}</>)}. Se compara contra el campo de precio del cat{"\u00E1"}logo (sin IVA).
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={currencyMismatchAcked} onChange={e => setCurrencyMismatchAcked(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded accent-[var(--amb)]" />
+                    <span className="text-[11px] text-t2 font-medium">Confirmo que la moneda del cat{"\u00E1"}logo es correcta y quiero importar</span>
+                  </label>
                 </div>
               )}
 
@@ -431,10 +441,10 @@ export default function ImportModal({ onDone, onClose }: Props) {
               <button onClick={() => { setStep("upload"); setPreview(null); setError(""); }} className="px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans cursor-pointer border border-b2 bg-transparent text-t2 hover:text-t1 hover:border-b3 transition">{"\u2190"} Cambiar archivo</button>
               <button
                 onClick={handleApply}
-                disabled={selectedCatalogs.size === 0 || !!preview?.iva_warning}
+                disabled={selectedCatalogs.size === 0 || !!preview?.iva_warning || (!!preview?.currency_mismatch && !currencyMismatchAcked)}
                 className={clsx(
                   "px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans border-none text-white transition",
-                  selectedCatalogs.size === 0 || preview?.iva_warning ? "bg-acc/30 cursor-not-allowed" : "bg-acc cursor-pointer hover:bg-blue-500",
+                  selectedCatalogs.size === 0 || preview?.iva_warning || (preview?.currency_mismatch && !currencyMismatchAcked) ? "bg-acc/30 cursor-not-allowed" : "bg-acc cursor-pointer hover:bg-blue-500",
                 )}
               >
                 Importar ({selectedCatalogs.size})

@@ -473,11 +473,18 @@ def parse_import_file(file_bytes: bytes, filename: str, current_catalogs: dict[s
             f"Requieren asignación manual si son válidos."
         )
 
+    # Flag if ANY catalog has a currency mismatch with the file
+    currency_mismatch = any(
+        d.get("file_currency") != d.get("currency")
+        for d in catalog_diffs.values()
+    )
+
     return {
         "format": fmt,
         "total_items": len(items),
         "catalogs": catalog_diffs,
         "unmatched": unmatched,
         "iva_warning": iva_warning,
+        "currency_mismatch": currency_mismatch,
         "warnings": global_warnings,
     }
