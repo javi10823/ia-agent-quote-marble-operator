@@ -15,7 +15,7 @@ type Step = "upload" | "detect" | "preview" | "importing" | "done";
 const FORMAT_LABELS: Record<string, string> = {
   dux_materials_usd: "Dux Materiales",
   dux_servicios_ars: "Dux Servicios / Flete",
-  csv_generic: "CSV gen\u00E9rico",
+  csv_generic: "CSV genérico",
 };
 
 // Moneda original que trae el formato del archivo (para mostrar contexto)
@@ -128,8 +128,8 @@ export default function ImportModal({ onDone, onClose }: Props) {
   const currentDiff: ImportCatalogDiff | null = preview?.catalogs[activeTab] ?? null;
 
   const fmtPrice = (n: number | null | undefined) => {
-    if (n == null) return "\u2014";
-    return n.toLocaleString("es-AR", { maximumFractionDigits: 0 });
+    if (n == null) return "—";
+    return n.toLocaleString("es-AR", { maximumFractionDigits: 2 });
   };
 
   // ── Step subtitle ─────────────────────────────────────────────────────────
@@ -139,14 +139,14 @@ export default function ImportModal({ onDone, onClose }: Props) {
   const catalogCurrency = activeDiff?.currency || "";
   const hasMismatch = activeDiff && activeDiff.file_currency !== activeDiff.currency;
 
-  const subtitle = step === "upload" ? "Arrastr\u00E1 un archivo exportado de Dux (.xls, .xlsx, .csv)"
+  const subtitle = step === "upload" ? "Arrastrá un archivo exportado de Dux (.xls, .xlsx, .csv)"
     : step === "detect" ? "Analizando archivo..."
     : step === "preview" && preview
       ? hasMismatch
-        ? `Formato: ${FORMAT_LABELS[preview.format] || preview.format} \u00B7 Archivo: ${fileCurrency} \u00B7 Cat\u00E1logo: ${catalogCurrency} \u00B7 ${preview.total_items} items`
-        : `${FORMAT_LABELS[preview.format] || preview.format} (${catalogCurrency}) \u00B7 ${preview.total_items} items`
+        ? `Formato: ${FORMAT_LABELS[preview.format] || preview.format} · Archivo: ${fileCurrency} · Catálogo: ${catalogCurrency} · ${preview.total_items} items`
+        : `${FORMAT_LABELS[preview.format] || preview.format} (${catalogCurrency}) · ${preview.total_items} items`
     : step === "importing" ? "Importando..."
-    : "Importaci\u00F3n completada";
+    : "Importación completada";
 
   return (
     <div
@@ -192,11 +192,11 @@ export default function ImportModal({ onDone, onClose }: Props) {
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                 </div>
                 <div className="text-center">
-                  <div className={clsx("text-sm font-medium", dragActive ? "text-acc" : "text-t1")}>{dragActive ? "Solt\u00E1 el archivo ac\u00E1" : "Arrastr\u00E1 un archivo o hac\u00E9 click"}</div>
-                  <div className="text-[11px] text-t3 mt-1">.xls \u00B7 .xlsx \u00B7 .csv \u2014 exportado de Dux</div>
+                  <div className={clsx("text-sm font-medium", dragActive ? "text-acc" : "text-t1")}>{dragActive ? "Soltá el archivo acá" : "Arrastrá un archivo o hacé click"}</div>
+                  <div className="text-[11px] text-t3 mt-1">.xls · .xlsx · .csv — exportado de Dux</div>
                 </div>
               </div>
-              <p className="text-[11px] text-t3 mt-3 leading-relaxed">Los precios se toman SIN IVA. No se modifica ning\u00FAn cat\u00E1logo hasta confirmar.</p>
+              <p className="text-[11px] text-t3 mt-3 leading-relaxed">Los precios se toman SIN IVA. No se modifica ningún catálogo hasta confirmar.</p>
               {error && <div className="mt-3 px-3.5 py-2.5 rounded-lg bg-red-500/[0.08] border border-red-500/20 text-xs text-red-400 flex items-start gap-2">{error}</div>}
             </div>
           )}
@@ -214,11 +214,11 @@ export default function ImportModal({ onDone, onClose }: Props) {
             <div className="flex flex-col gap-4">
               {/* File info */}
               <div className="flex items-center gap-3 px-3.5 py-2.5 bg-s3 rounded-lg border border-b1">
-                <span className="text-lg shrink-0">{"\uD83D\uDCC4"}</span>
+                <span className="text-lg shrink-0">📄</span>
                 <div className="flex-1 min-w-0">
                   <div className="text-[13px] font-medium text-t1 truncate">{file?.name}</div>
                   <div className="text-[11px] text-t3">
-                    {FORMAT_LABELS[preview.format] || preview.format} {"\u00B7"} {preview.total_items} items {"\u00B7"} Precio: <strong className="text-t2">sin IVA</strong>
+                    {FORMAT_LABELS[preview.format] || preview.format} · {preview.total_items} items · Precio: <strong className="text-t2">sin IVA</strong>
                   </div>
                 </div>
               </div>
@@ -230,20 +230,20 @@ export default function ImportModal({ onDone, onClose }: Props) {
                   <div className="flex flex-wrap gap-2 px-3.5 py-2.5 bg-white/[0.02] border-b border-amber-500/10">
                     <span className="px-2 py-1 rounded-md bg-white/[0.04] border border-b1 text-[10px] text-t3">Formato detectado: <strong className="text-t1">{FORMAT_LABELS[preview.format] || preview.format}</strong></span>
                     <span className="px-2 py-1 rounded-md bg-white/[0.04] border border-b1 text-[10px] text-t3">Moneda del archivo: <strong className="text-t1">{fileCurrency}</strong></span>
-                    <span className="px-2 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-[10px] text-amb">Moneda del cat{"\u00E1"}logo: <strong>{catalogCurrency}</strong></span>
+                    <span className="px-2 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-[10px] text-amb">Moneda del catálogo: <strong>{catalogCurrency}</strong></span>
                     <span className="px-2 py-1 rounded-md bg-white/[0.04] border border-b1 text-[10px] text-t3">Campo usado: <strong className="text-t1">{activeDiff?.price_field || "price_ars"}</strong></span>
                     <span className="px-2 py-1 rounded-md bg-white/[0.04] border border-b1 text-[10px] text-t3">Precio: <strong className="text-t1">sin IVA</strong></span>
                   </div>
                   {/* Explanation + checkbox */}
                   <div className="px-3.5 py-3 bg-amber-500/[0.04] flex flex-col gap-2.5">
                     <div className="text-xs text-t2 leading-relaxed">
-                      <strong className="text-amb">Formato del archivo y moneda del cat{"\u00E1"}logo no coinciden</strong><br/>
-                      <span className="text-t3">El archivo fue reconocido con formato <strong className="text-t2">{FORMAT_LABELS[preview.format] || preview.format} / {fileCurrency}</strong>, pero el cat{"\u00E1"}logo seleccionado usa <strong className="text-t2">{catalogCurrency}</strong>. La importaci{"\u00F3"}n comparar{"\u00E1"} y actualizar{"\u00E1"} precios en {catalogCurrency} sin IVA usando el campo <strong className="text-t2">{activeDiff?.price_field || "price_ars"}</strong> del cat{"\u00E1"}logo destino.</span>
+                      <strong className="text-amb">Formato del archivo y moneda del catálogo no coinciden</strong><br/>
+                      <span className="text-t3">El archivo fue reconocido con formato <strong className="text-t2">{FORMAT_LABELS[preview.format] || preview.format} / {fileCurrency}</strong>, pero el catálogo seleccionado usa <strong className="text-t2">{catalogCurrency}</strong>. La importación comparará y actualizará precios en {catalogCurrency} sin IVA usando el campo <strong className="text-t2">{activeDiff?.price_field || "price_ars"}</strong> del catálogo destino.</span>
                     </div>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={currencyMismatchAcked} onChange={e => setCurrencyMismatchAcked(e.target.checked)}
                         className="w-3.5 h-3.5 rounded accent-[var(--amb)]" />
-                      <span className="text-[11px] text-t1 font-medium">Confirmo que quiero importar este archivo usando la moneda y el campo del cat{"\u00E1"}logo destino</span>
+                      <span className="text-[11px] text-t1 font-medium">Confirmo que quiero importar este archivo usando la moneda y el campo del catálogo destino</span>
                     </label>
                   </div>
                 </div>
@@ -252,8 +252,8 @@ export default function ImportModal({ onDone, onClose }: Props) {
               {/* IVA warning */}
               {preview.iva_warning && (
                 <div className="px-3.5 py-3 rounded-lg bg-red-500/[0.08] border border-red-500/20 text-xs text-red-400 leading-relaxed">
-                  <strong>{"\uD83D\uDD34"} Precio con IVA detectado</strong><br/>
-                  El archivo solo tiene la columna {"\u201C"}Precio De Venta Con IVA{"\u201D"}. Los cat{"\u00E1"}logos almacenan precios SIN IVA. No se puede importar sin confirmaci{"\u00F3"}n expl{"\u00ED"}cita.
+                  <strong>🔴 Precio con IVA detectado</strong><br/>
+                  El archivo solo tiene la columna &ldquo;Precio De Venta Con IVA&rdquo;. Los catálogos almacenan precios SIN IVA. No se puede importar sin confirmación explícita.
                 </div>
               )}
 
@@ -343,7 +343,7 @@ export default function ImportModal({ onDone, onClose }: Props) {
                           <tr key={item.sku} className="bg-green-500/[0.04]">
                             <td className="px-3 py-2 font-mono text-[11px] border-b border-white/[0.03]">{item.sku}</td>
                             <td className="px-3 py-2 border-b border-white/[0.03] text-t2">{item.name}</td>
-                            <td className="px-3 py-2 text-right border-b border-white/[0.03] text-t4">\u2014</td>
+                            <td className="px-3 py-2 text-right border-b border-white/[0.03] text-t4">—</td>
                             <td className="px-3 py-2 text-right font-mono text-[11px] border-b border-white/[0.03] text-grn font-semibold">{fmtPrice(item.price)}</td>
                             <td className="px-3 py-2 text-right border-b border-white/[0.03]"><span className="text-[10px] text-grn">Nuevo</span></td>
                           </tr>
@@ -353,7 +353,7 @@ export default function ImportModal({ onDone, onClose }: Props) {
                           <tr key={item.sku} className="bg-red-500/[0.04]">
                             <td className="px-3 py-2 font-mono text-[11px] border-b border-white/[0.03]">{item.sku}</td>
                             <td className="px-3 py-2 border-b border-white/[0.03] text-t3">{item.name}</td>
-                            <td className="px-3 py-2 text-right border-b border-white/[0.03]" colSpan={2}><span className="text-[10px] text-red-400">$0 \u2014 se ignora</span></td>
+                            <td className="px-3 py-2 text-right border-b border-white/[0.03]" colSpan={2}><span className="text-[10px] text-red-400">$0 — se ignora</span></td>
                             <td className="px-3 py-2 border-b border-white/[0.03]"></td>
                           </tr>
                         ))}
@@ -364,7 +364,7 @@ export default function ImportModal({ onDone, onClose }: Props) {
                   {/* Missing items note */}
                   {currentDiff.missing.length > 0 && (
                     <div className="mt-3 px-3.5 py-2.5 rounded-lg bg-s3 border border-b1 text-[11px] text-t3 leading-relaxed">
-                      <strong className="text-t2">Faltantes</strong> ({currentDiff.missing.length} items en cat\u00E1logo pero no en archivo): {currentDiff.missing.slice(0, 5).map(m => m.sku).join(" \u00B7 ")}{currentDiff.missing.length > 5 ? ` \u00B7 +${currentDiff.missing.length - 5} m\u00E1s` : ""}. <strong>Se mantienen sin cambios.</strong>
+                      <strong className="text-t2">Faltantes</strong> ({currentDiff.missing.length} items en catálogo pero no en archivo): {currentDiff.missing.slice(0, 5).map(m => m.sku).join(" · ")}{currentDiff.missing.length > 5 ? ` · +${currentDiff.missing.length - 5} más` : ""}. <strong>Se mantienen sin cambios.</strong>
                     </div>
                   )}
                 </div>
@@ -390,7 +390,7 @@ export default function ImportModal({ onDone, onClose }: Props) {
                             <td className="px-3 py-2 border-b border-white/[0.03] text-t2">{item.name}</td>
                             <td className="px-3 py-2 text-right font-mono text-[11px] border-b border-white/[0.03]">{item.price ? `$${fmtPrice(item.price)}` : <span className="text-red-400">$0</span>}</td>
                             <td className="px-3 py-2 border-b border-white/[0.03] text-[10px]">
-                              {item.price === 0 || item.price === null ? <span className="text-red-400">Se ignora</span> : <span className="text-acc">Sin cat\u00E1logo</span>}
+                              {item.price === 0 || item.price === null ? <span className="text-red-400">Se ignora</span> : <span className="text-acc">Sin catálogo</span>}
                             </td>
                           </tr>
                         ))}
@@ -398,7 +398,7 @@ export default function ImportModal({ onDone, onClose }: Props) {
                     </table>
                   </div>
                   <div className="mt-3 px-3.5 py-2.5 rounded-lg bg-acc/[0.06] border border-acc/20 text-[11px] text-acc leading-relaxed">
-                    {"\u2139\uFE0F"} Estos items no se importan autom\u00E1ticamente. Si son v\u00E1lidos, agregalos manualmente al cat\u00E1logo correspondiente.
+                    ℹ️ Estos items no se importan automáticamente. Si son válidos, agregalos manualmente al catálogo correspondiente.
                   </div>
                 </div>
               )}
@@ -408,7 +408,7 @@ export default function ImportModal({ onDone, onClose }: Props) {
                 <div className="flex flex-col gap-1.5">
                   {preview.warnings.filter(w => !w.startsWith("Moneda del archivo")).map((w, i) => (
                     <div key={i} className="px-3.5 py-2 rounded-lg bg-amber-500/[0.06] border border-amber-500/20 text-[11px] text-amb leading-relaxed">
-                      {"\u26A0"} {w}
+                      ⚠ {w}
                     </div>
                   ))}
                 </div>
@@ -418,7 +418,7 @@ export default function ImportModal({ onDone, onClose }: Props) {
               {catNames.some(n => preview.catalogs[n].new.length > 0) && (
                 <label className="flex items-center gap-2 cursor-pointer mt-1">
                   <input type="checkbox" checked={includeNew} onChange={e => setIncludeNew(e.target.checked)} className="w-3.5 h-3.5 rounded accent-[var(--acc)]" />
-                  <span className="text-[12px] text-t2">Incluir items nuevos que no existen en el cat\u00E1logo actual</span>
+                  <span className="text-[12px] text-t2">Incluir items nuevos que no existen en el catálogo actual</span>
                 </label>
               )}
 
@@ -431,15 +431,15 @@ export default function ImportModal({ onDone, onClose }: Props) {
             <div className="flex flex-col items-center justify-center py-12 gap-4">
               <div className="w-8 h-8 border-2 border-acc border-t-transparent rounded-full animate-spin" />
               <div className="text-sm text-t2">Creando backups e importando...</div>
-              <div className="text-[11px] text-t3">{selectedCatalogs.size} cat\u00E1logos seleccionados</div>
+              <div className="text-[11px] text-t3">{selectedCatalogs.size} catálogos seleccionados</div>
             </div>
           )}
 
           {/* ── Step: Done ───────────────────────────────────── */}
           {step === "done" && applyResult && (
             <div className="flex flex-col items-center py-8 gap-4">
-              <div className="text-4xl">{"\u2705"}</div>
-              <div className="text-[16px] font-semibold">Importaci\u00F3n completada</div>
+              <div className="text-4xl">✅</div>
+              <div className="text-[16px] font-semibold">Importación completada</div>
 
               <div className="w-full max-w-[400px] flex flex-col gap-2 px-4 py-3 bg-s3 rounded-lg border border-b1">
                 <div className="flex justify-between text-[12px]"><span className="text-t3">Archivo</span><span className="text-t1 font-medium">{file?.name}</span></div>
@@ -448,14 +448,14 @@ export default function ImportModal({ onDone, onClose }: Props) {
                 {Object.entries(applyResult).map(([cat, stats]: [string, any]) => (
                   <div key={cat} className="flex justify-between text-[12px]">
                     <span className="text-t2">{cat}</span>
-                    <span className="text-t1">{stats.ok ? `${stats.updated || 0} actualizados \u00B7 ${stats.added || 0} nuevos` : <span className="text-red-400">Error</span>}</span>
+                    <span className="text-t1">{stats.ok ? `${stats.updated || 0} actualizados · ${stats.added || 0} nuevos` : <span className="text-red-400">Error</span>}</span>
                   </div>
                 ))}
                 <div className="border-t border-b1 my-1" />
                 <div className="flex justify-between text-[12px]"><span className="text-t3">Backups</span><span className="text-t1">{Object.keys(applyResult).length} backups creados</span></div>
               </div>
 
-              <p className="text-[11px] text-t3">Pod\u00E9s restaurar desde <strong className="text-t2">Historial de backups</strong> en cada cat\u00E1logo.</p>
+              <p className="text-[11px] text-t3">Podés restaurar desde <strong className="text-t2">Historial de backups</strong> en cada catálogo.</p>
             </div>
           )}
         </div>
@@ -465,7 +465,7 @@ export default function ImportModal({ onDone, onClose }: Props) {
           {step === "preview" && (
             <>
               <button onClick={onClose} className="px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans cursor-pointer border border-b2 bg-transparent text-t2 hover:text-t1 hover:border-b3 transition">Cancelar</button>
-              <button onClick={() => { setStep("upload"); setPreview(null); setError(""); }} className="px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans cursor-pointer border border-b2 bg-transparent text-t2 hover:text-t1 hover:border-b3 transition">{"\u2190"} Cambiar archivo</button>
+              <button onClick={() => { setStep("upload"); setPreview(null); setError(""); }} className="px-[18px] py-2 rounded-lg text-[13px] font-medium font-sans cursor-pointer border border-b2 bg-transparent text-t2 hover:text-t1 hover:border-b3 transition">← Cambiar archivo</button>
               <button
                 onClick={handleApply}
                 disabled={selectedCatalogs.size === 0 || !!preview?.iva_warning || (!!preview?.currency_mismatch && !currencyMismatchAcked)}

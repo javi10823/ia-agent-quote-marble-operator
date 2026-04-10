@@ -121,6 +121,29 @@ class TestItemExtraction:
         )
 
 
+    def test_prices_rounded_to_2_decimals(self):
+        """Extracted prices must have at most 2 decimal places."""
+        headers = ["Código", "Producto", "Costo", "Porc. Utilidad", "Precio de Venta"]
+        rows = [
+            ["SKU1", "Material A", 100, 50, 298448.48303928],
+            ["SKU2", "Material B", 80, 40, 180189.046773336],
+            ["SKU3", "Material C", 50, 25, 100.5],         # already 1 decimal
+            ["SKU4", "Material D", 60, 30, 200],            # integer
+        ]
+        items = extract_items(headers, rows, "dux_materials_usd")
+        for item in items:
+            price = item["price_no_vat"]
+            assert price is not None
+            # Check at most 2 decimals
+            assert price == round(price, 2), (
+                f"SKU {item['sku']}: price {price} has more than 2 decimals, expected {round(price, 2)}"
+            )
+        assert items[0]["price_no_vat"] == 298448.48
+        assert items[1]["price_no_vat"] == 180189.05
+        assert items[2]["price_no_vat"] == 100.5
+        assert items[3]["price_no_vat"] == 200.0
+
+
 # ── Classification ───────────────────────────────────────────────────────────
 
 class TestClassification:
@@ -201,6 +224,23 @@ class TestDiffGeneration:
         diff = generate_diff("test", current, new_items)
         assert len(diff["warnings"]) >= 1
         assert "100.0%" in diff["warnings"][0]
+
+    def test_diff_currency_mismatch_uses_catalog_currency(self):
+        """When file says USD but catalog is ARS, diff must use price_ars."""
+        current = [
+            {"sku": "GRAAMA", "name": "Granito Amadeus", "price_ars": 275957.91, "currency": "ARS"},
+        ]
+        new_items = [
+            {"sku": "GRAAMA", "name": "Granito Amadeus", "price_no_vat": 298448.48, "currency": "USD"},
+        ]
+        diff = generate_diff("materials-granito-nacional", current, new_items)
+        assert diff["currency"] == "ARS"
+        assert diff["file_currency"] == "USD"
+        assert diff["price_field"] == "price_ars"
+        assert len(diff["updated"]) == 1
+        assert diff["updated"][0]["old_price"] == 275957.91
+        assert diff["updated"][0]["new_price"] == 298448.48
+        assert diff["unchanged"] == 0
 
 
 # ── Full pipeline ────────────────────────────────────────────────────────────

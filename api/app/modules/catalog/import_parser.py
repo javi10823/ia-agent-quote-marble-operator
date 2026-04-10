@@ -232,8 +232,10 @@ def extract_items(headers: list[str], rows: list[list], fmt: str) -> list[dict]:
             continue
 
         name = str(row[col_name] or "").strip() if col_name is not None and len(row) > col_name else ""
-        price_no_vat = _parse_number(row[col_price]) if len(row) > col_price else None
-        price_with_vat = _parse_number(row[col_price_iva]) if col_price_iva is not None and len(row) > col_price_iva else None
+        raw_price = _parse_number(row[col_price]) if len(row) > col_price else None
+        price_no_vat = round(raw_price, 2) if raw_price is not None else None
+        raw_price_iva = _parse_number(row[col_price_iva]) if col_price_iva is not None and len(row) > col_price_iva else None
+        price_with_vat = round(raw_price_iva, 2) if raw_price_iva is not None else None
         last_updated = str(row[col_date] or "").strip() if col_date is not None and len(row) > col_date else None
 
         items.append({
