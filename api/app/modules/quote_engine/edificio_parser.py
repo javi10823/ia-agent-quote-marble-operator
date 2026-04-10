@@ -451,7 +451,13 @@ def compute_edificio_aggregates(data: NormalizedEdificioData) -> EdificioSummary
         grand_faldon_ml += ms["faldon_ml_total"]
 
     grand_m2 = round(grand_m2, 2)
-    flete_qty = math.ceil(grand_physical / 8) if grand_physical > 0 else 1
+    _per_trip = 8
+    try:
+        from app.core.company_config import get as _cfg
+        _per_trip = _cfg("building.flete_mesadas_per_trip", 8)
+    except Exception:
+        pass
+    flete_qty = math.ceil(grand_physical / _per_trip) if grand_physical > 0 else 1
 
     return EdificioSummary(
         materials=materials,
@@ -471,6 +477,12 @@ def compute_edificio_aggregates(data: NormalizedEdificioData) -> EdificioSummary
 
 def validate_edificio(data: NormalizedEdificioData, summary: EdificioSummary) -> ValidationResult:
     """Hard validation. Errors block automatic quoting."""
+    _per_trip = 8
+    try:
+        from app.core.company_config import get as _cfg
+        _per_trip = _cfg("building.flete_mesadas_per_trip", 8)
+    except Exception:
+        pass
     errors = []
     warnings = []
 
@@ -512,7 +524,7 @@ def validate_edificio(data: NormalizedEdificioData, summary: EdificioSummary) ->
 
     # ERROR: flete mismatch
     totals = summary.get("totals", {})
-    expected_flete = math.ceil(totals.get("pieces_physical_total", 0) / 8) if totals.get("pieces_physical_total", 0) > 0 else 1
+    expected_flete = math.ceil(totals.get("pieces_physical_total", 0) / _per_trip) if totals.get("pieces_physical_total", 0) > 0 else 1
     if totals.get("flete_qty") != expected_flete:
         errors.append(f"flete: {totals.get('flete_qty')} != ceil({totals.get('pieces_physical_total')}/8)={expected_flete}")
 

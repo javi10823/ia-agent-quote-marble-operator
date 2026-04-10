@@ -449,9 +449,10 @@ def calculate_quote(input_data: dict) -> dict:
                 physical_pieces = [p for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
                                    if not any(kw in (p.get("description") or "").lower() for kw in ["faldón", "faldon", "frentín", "frentin"])]
                 num_pieces = len(physical_pieces)
-                flete_qty = math.ceil(num_pieces / 8)
+                _per_trip = cfg("building.flete_mesadas_per_trip", 8)
+                flete_qty = math.ceil(num_pieces / _per_trip)
                 flete_qty = max(1, flete_qty)
-                logging.info(f"Edificio flete: {num_pieces} piezas físicas ÷ 8 = {flete_qty} fletes")
+                logging.info(f"Edificio flete: {num_pieces} piezas físicas ÷ {_per_trip} = {flete_qty} fletes")
             else:
                 flete_qty = 1
             mo_items.append({"description": f"Flete + toma medidas {localidad}", "quantity": flete_qty, "unit_price": flete_price, "base_price": flete_base, "total": round(flete_price * flete_qty)})
