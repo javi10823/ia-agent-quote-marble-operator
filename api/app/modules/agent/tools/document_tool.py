@@ -144,18 +144,18 @@ async def generate_edificio_documents(
     generated = []
 
     for ctx in contexts:
-        mat_name = ctx.pop("_mat_name_raw", "")
-        cur = ctx.pop("_currency", "ARS")
-        ctx.pop("_carries_mo", False)
+        mat_name = ctx.get("_mat_name_raw", "")
+        cur = ctx.get("_currency", "ARS")
 
         safe_mat = (ctx.get("material_name") or mat_name).replace("/", "-").replace("\\", "-")
         base_name = f"{client_name} - {safe_mat} - {date_str}"
         pdf_path = quote_dir / f"{base_name}.pdf"
         excel_path = quote_dir / f"{base_name}.xlsx"
 
+        # Use edificio-specific renderers that respect show_mo and grand_total_text
         await asyncio.gather(
-            asyncio.to_thread(_generate_pdf, pdf_path, ctx),
-            asyncio.to_thread(_generate_excel, excel_path, ctx),
+            asyncio.to_thread(_generate_edificio_pdf, pdf_path, ctx),
+            asyncio.to_thread(_generate_edificio_excel, excel_path, ctx),
         )
 
         generated.append({
@@ -173,6 +173,391 @@ async def generate_edificio_documents(
         "grand_total_ars": paso2_calc.get("grand_total_ars", 0),
         "grand_total_usd": paso2_calc.get("grand_total_usd", 0),
     }
+
+
+def _generate_edificio_pdf(pdf_path: Path, data: dict) -> None:
+    """Generate edificio PDF — same D'Angelo look, respects show_mo and grand_total_text."""
+    from fpdf import FPDF
+    import re as _re
+
+    co = _load_company_config()
+    client_name = data.get("client_name", "")
+    project = data.get("project", "")
+    date_str = datetime.now().strftime("%d/%m/%Y")
+    delivery = data.get("delivery_days", "")
+    mat_name = data.get("material_name", "")
+    mat_m2 = data.get("material_m2", 0)
+    mat_price = data.get("material_price_unit", 0)
+    currency = data.get("material_currency", "USD")
+    discount_pct = data.get("discount_pct", 0)
+    sectors = data.get("sectors", [])
+    mo_items = data.get("mo_items", [])
+    show_mo = data.get("show_mo", len(mo_items) > 0)
+    total_ars = data.get("total_ars", 0)
+    total_usd = data.get("total_usd", 0)
+    grand_text = data.get("grand_total_text", "")
+    thickness = data.get("thickness_mm", 20)
+
+    fmt_price = _fmt_usd if currency == "USD" else _fmt_ars
+
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    # Top bar
+    pdf.set_fill_color(26, 47, 94)
+    pdf.rect(0, 0, 210, 4, "F")
+
+    # Logo
+    logo_path = TEMPLATES_DIR / "logo-dangelo.png"
+    if logo_path.exists():
+        pdf.image(str(logo_path), x=10, y=10, w=55)
+        pdf.set_y(35)
+    else:
+        pdf.set_y(12)
+        pdf.set_font("Helvetica", "B", 28)
+        pdf.cell(0, 12, co["name"], new_x="LMARGIN", new_y="NEXT")
+
+    # Header — same layout as normal template
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(0, 5, f"{co['address']} | Tel: {co['phone']} | {co['email']}", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+    col_w = 95
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(col_w, 5, f"Cliente: {client_name}")
+    pdf.cell(col_w, 5, "Forma de pago", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(col_w, 5, "")
+    pdf.cell(col_w, 5, "CONTADO EFVO", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(col_w, 5, "Proyecto")
+    pdf.cell(col_w, 5, "", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(col_w, 5, project or "")
+    pdf.cell(col_w, 5, "", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(col_w, 5, "")
+    pdf.cell(col_w, 5, "Fecha de entrega", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(col_w, 5, "")
+    pdf.cell(col_w, 5, str(delivery) or "A CONVENIR", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(2)
+    pdf.set_draw_color(26, 26, 26)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(3)
+
+    # Table header
+    w = [92, 22, 38, 38]
+    rh = 5
+    total_w = sum(w)
+    row_n = [0]
+
+    def row_fill():
+        fill = row_n[0] % 2 == 1
+        if fill:
+            pdf.set_fill_color(243, 243, 243)
+        return fill
+
+    def row_done():
+        row_n[0] += 1
+
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(w[0], 6, "Descripcion")
+    pdf.cell(w[1], 6, "Cantidad", align="R")
+    pdf.cell(w[2], 6, "Precio unitario", align="R")
+    pdf.cell(w[3], 6, "Precio total", align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(2)
+
+    # Material row
+    mat_total_bruto = data.get("material_total") or round(mat_m2 * mat_price)
+    _mat_display = f"{mat_name} - {thickness}mm ESPESOR" if not _re.search(r'\d+[Mm][Mm]', mat_name) else mat_name
+
+    f = row_fill()
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(w[0], rh, _mat_display, fill=f)
+    pdf.cell(w[1], rh, _fmt_qty(mat_m2), align="R", fill=f)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(w[2], rh, fmt_price(mat_price), align="R", fill=f)
+    pdf.cell(w[3], rh, fmt_price(mat_total_bruto), align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
+    row_done()
+
+    # Sectors/despiece — first piece row shows DESC and Total
+    is_first_piece = True
+    for sector in sectors:
+        f = row_fill()
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.cell(total_w, rh, sector.get("label", ""), fill=f, new_x="LMARGIN", new_y="NEXT")
+        row_done()
+        raw_pieces = sector.get("pieces", [])
+        grouped = []
+        seen = {}
+        for p in raw_pieces:
+            if p in seen:
+                seen[p] += 1
+            else:
+                seen[p] = 1
+                grouped.append(p)
+        for piece in grouped:
+            count = seen[piece]
+            display = f"{piece} (x{count})" if count > 1 else piece
+            f = row_fill()
+            pdf.set_font("Helvetica", "", 8)
+            pdf.cell(w[0], rh, display, fill=f)
+            if is_first_piece:
+                # Show discount + total net on the first piece row
+                pdf.set_font("Helvetica", "I", 8)
+                if discount_pct:
+                    pdf.cell(w[1], rh, "", fill=f)
+                    pdf.cell(w[2], rh, f"DESC {discount_pct}%", align="R", fill=f)
+                    disc_amount = round(mat_total_bruto * discount_pct / 100)
+                    pdf.cell(w[3], rh, fmt_price(disc_amount), align="R", fill=f)
+                    pdf.ln()
+                    row_done()
+                    # Net total row
+                    f = row_fill()
+                    pdf.cell(w[0], rh, "", fill=f)
+                    pdf.set_font("Helvetica", "B", 8)
+                    pdf.cell(w[1], rh, "", fill=f)
+                    pdf.cell(w[2], rh, f"Total {currency}", align="R", fill=f)
+                    mat_net = mat_total_bruto - disc_amount
+                    pdf.cell(w[3], rh, fmt_price(mat_net), align="R", fill=f)
+                else:
+                    pdf.cell(w[1], rh, "", fill=f)
+                    pdf.cell(w[2], rh, f"Total {currency}", align="R", fill=f)
+                    pdf.cell(w[3], rh, fmt_price(mat_total_bruto), align="R", fill=f)
+                is_first_piece = False
+            else:
+                pdf.cell(w[1] + w[2] + w[3], rh, "", fill=f)
+            pdf.ln()
+            row_done()
+
+    pdf.ln(3)
+
+    # MO block — only if show_mo
+    if show_mo and mo_items:
+        f = row_fill()
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(total_w, rh, "MANO DE OBRA", fill=f, new_x="LMARGIN", new_y="NEXT")
+        row_done()
+
+        mo_subtotal = 0
+        for mo in mo_items:
+            f = row_fill()
+            pdf.set_font("Helvetica", "", 9)
+            pdf.cell(w[0], rh, mo["description"], fill=f)
+            pdf.cell(w[1], rh, _fmt_qty(mo["quantity"]), align="R", fill=f)
+            pdf.cell(w[2], rh, _fmt_ars(mo["unit_price"]), align="R", fill=f)
+            mo_total_line = mo.get("total", round(mo["unit_price"] * mo["quantity"]))
+            pdf.cell(w[3], rh, _fmt_ars(mo_total_line), align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
+            mo_subtotal += mo_total_line
+            row_done()
+
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(w[0] + w[1], 5, "")
+        pdf.cell(w[2], 5, "subtotal pesos", align="R")
+        pdf.cell(w[3], 5, _fmt_ars(mo_subtotal), align="R", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(w[0] + w[1], 5, "")
+        pdf.cell(w[2], 5, "TOTAL PESOS", align="R")
+        pdf.cell(w[3], 5, _fmt_ars(mo_subtotal), align="R", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(5)
+
+    # Grand total box — use pre-built text from view model
+    if grand_text:
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_draw_color(26, 26, 26)
+        y_box = pdf.get_y()
+        pdf.rect(10, y_box, 190, 8)
+        pdf.set_xy(10, y_box + 1.5)
+        pdf.cell(190, 5, grand_text, align="C", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(3)
+
+    # Conditions
+    pdf.set_font("Helvetica", "", 7)
+    pdf.cell(0, 3.5, f"Forma de pago: Contado", new_x="LMARGIN", new_y="NEXT")
+    if co.get("conditions_general"):
+        for line in co["conditions_general"].split("\n"):
+            pdf.cell(0, 3.5, line.strip(), new_x="LMARGIN", new_y="NEXT")
+    if co.get("conditions_payment"):
+        for line in co["conditions_payment"].split("\n"):
+            pdf.cell(0, 3.5, line.strip(), new_x="LMARGIN", new_y="NEXT")
+
+    # Footer
+    pdf.set_font("Helvetica", "I", 7)
+    pdf.cell(0, 4, "No se suben mesadas que no entren en ascensor", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.output(str(pdf_path))
+
+
+def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
+    """Generate edificio Excel — same D'Angelo template, respects show_mo."""
+    import openpyxl
+
+    TEMPLATE = TEMPLATES_DIR / "excel" / "quote-template-excel.xlsx"
+    if not TEMPLATE.exists():
+        TEMPLATE = TEMPLATES_DIR / "excel" / "quote-template.xlsx"
+    wb = openpyxl.load_workbook(str(TEMPLATE))
+    ws = wb.active
+
+    # Unmerge all cells
+    for mc in list(ws.merged_cells.ranges):
+        ws.unmerge_cells(str(mc))
+
+    from openpyxl.styles import Font
+    bold = Font(name="Calibri", bold=True, size=10)
+    normal = Font(name="Calibri", bold=False, size=10)
+    ars_fmt = '"$"#,##0'
+    qty_fmt = '#,##0.00'
+
+    client_name = data.get("client_name", "")
+    project = data.get("project", "")
+    date_str = datetime.now().strftime("%d/%m/%Y")
+    delivery = data.get("delivery_days", "A CONVENIR")
+    mat_name = data.get("material_name", "")
+    mat_m2 = data.get("material_m2", 0)
+    mat_price = data.get("material_price_unit", 0)
+    currency = data.get("material_currency", "USD")
+    discount_pct = data.get("discount_pct", 0)
+    sectors = data.get("sectors", [])
+    mo_items = data.get("mo_items", [])
+    show_mo = data.get("show_mo", len(mo_items) > 0)
+    total_ars = data.get("total_ars", 0)
+    total_usd = data.get("total_usd", 0)
+    grand_text = data.get("grand_total_text", "")
+    thickness = data.get("thickness_mm", 20)
+    import re as _re
+
+    # Header
+    ws["A13"].value = f"Fecha: {date_str}"
+    ws["A15"].value = f"Cliente: {client_name}"
+    ws["D15"].value = "Forma de pago"
+    ws["D16"].value = "CONTADO EFVO"
+    ws["A17"].value = "Proyecto"
+    ws["A18"].value = project
+    ws["D18"].value = "Fecha de entrega"
+    ws["D19"].value = delivery
+
+    # Clear dynamic rows
+    max_clear = 40 + max(0, len(mo_items))
+    for row in range(22, max_clear + 1):
+        for col in range(1, 7):
+            ws.cell(row, col).value = None
+
+    # Row 22: column headers
+    ws["A22"].value = "Descripcion"
+    ws["A22"].font = bold
+    ws["D22"].value = "Cantidad"
+    ws["D22"].font = bold
+    ws["E22"].value = "Precio unitario"
+    ws["E22"].font = bold
+    ws["F22"].value = "Precio total"
+    ws["F22"].font = bold
+
+    # Row 23: Material
+    _mat_display = f"{mat_name} - {thickness}MM ESPESOR" if not _re.search(r'\d+[Mm][Mm]', mat_name) else mat_name
+    mat_total_bruto = data.get("material_total") or round(mat_m2 * mat_price)
+
+    ws["A23"].value = _mat_display
+    ws["A23"].font = bold
+    ws["D23"].value = mat_m2
+    ws["D23"].number_format = qty_fmt
+    if currency == "USD":
+        ws["E23"].value = f"USD{mat_price}"
+        ws["F23"].value = f"USD{mat_total_bruto}"
+    else:
+        ws["E23"].value = mat_price
+        ws["E23"].number_format = ars_fmt
+        ws["F23"].value = mat_total_bruto
+        ws["F23"].number_format = ars_fmt
+
+    # Row 24+: Sectors/despiece + discount/total
+    r = 24
+    first_piece = True
+    for sector in sectors:
+        ws.cell(r, 1).value = sector.get("label", "")
+        ws.cell(r, 1).font = bold
+        r += 1
+        for piece in sector.get("pieces", []):
+            ws.cell(r, 1).value = piece
+            ws.cell(r, 1).font = normal
+            if first_piece:
+                if discount_pct:
+                    ws.cell(r, 5).value = f"DESC {discount_pct}%"
+                    ws.cell(r, 5).font = Font(name="Calibri", italic=True, size=10)
+                    disc = round(mat_total_bruto * discount_pct / 100)
+                    if currency == "USD":
+                        ws.cell(r, 6).value = f"USD{disc}"
+                    else:
+                        ws.cell(r, 6).value = disc
+                        ws.cell(r, 6).number_format = ars_fmt
+                    r += 1
+                    ws.cell(r, 5).value = f"Total {currency}"
+                    ws.cell(r, 5).font = bold
+                    mat_net = mat_total_bruto - disc
+                    if currency == "USD":
+                        ws.cell(r, 6).value = f"USD{mat_net}"
+                    else:
+                        ws.cell(r, 6).value = mat_net
+                        ws.cell(r, 6).number_format = ars_fmt
+                    ws.cell(r, 6).font = bold
+                else:
+                    ws.cell(r, 5).value = f"Total {currency}"
+                    ws.cell(r, 5).font = bold
+                    if currency == "USD":
+                        ws.cell(r, 6).value = f"USD{mat_total_bruto}"
+                    else:
+                        ws.cell(r, 6).value = mat_total_bruto
+                        ws.cell(r, 6).number_format = ars_fmt
+                    ws.cell(r, 6).font = bold
+                first_piece = False
+            r += 1
+
+    r += 1  # spacer
+
+    # MO block — only if show_mo
+    if show_mo and mo_items:
+        ws.cell(r, 1).value = "MANO DE OBRA"
+        ws.cell(r, 1).font = bold
+        r += 1
+
+        mo_start = r
+        for mo in mo_items:
+            ws.cell(r, 1).value = mo["description"]
+            ws.cell(r, 1).font = normal
+            ws.cell(r, 4).value = mo["quantity"]
+            ws.cell(r, 4).number_format = qty_fmt
+            ws.cell(r, 5).value = mo["unit_price"]
+            ws.cell(r, 5).number_format = ars_fmt
+            mo_t = mo.get("total", round(mo["unit_price"] * mo["quantity"]))
+            ws.cell(r, 6).value = mo_t
+            ws.cell(r, 6).number_format = ars_fmt
+            r += 1
+
+        r += 1
+        ws.cell(r, 5).value = "subtotal pesos"
+        ws.cell(r, 5).font = bold
+        ws.cell(r, 6).value = f"=SUM(F{mo_start}:F{mo_start + len(mo_items) - 1})"
+        ws.cell(r, 6).number_format = ars_fmt
+        r += 1
+        ws.cell(r, 5).value = "TOTAL PESOS"
+        ws.cell(r, 5).font = bold
+        ws.cell(r, 6).value = f"=F{r-1}"
+        ws.cell(r, 6).number_format = ars_fmt
+        ws.cell(r, 6).font = bold
+
+    r += 2  # spacer
+
+    # Grand total
+    if grand_text:
+        ws.cell(r, 1).value = grand_text
+        ws.cell(r, 1).font = bold
+        ws.merge_cells(f"A{r}:F{r}")
+
+    wb.save(str(excel_path))
+    _inject_locale(str(excel_path))
 
 
 def _generate_pdf(pdf_path: Path, data: dict) -> None:
