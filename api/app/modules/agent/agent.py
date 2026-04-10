@@ -681,6 +681,7 @@ class AgentService:
                         summary=edif_summary,
                         client_name=_p2quote.client_name or "",
                         project=_p2quote.project or "",
+                        localidad=_p2quote.localidad or "Rosario",
                     )
 
                     if doc_result.get("ok"):

@@ -126,120 +126,116 @@ async def generate_edificio_documents(
     summary: dict,
     client_name: str = "",
     project: str = "",
+    localidad: str = "Rosario",
 ) -> dict:
-    """Generate 4 PDF+Excel pairs for edificio using the ORIGINAL D'Angelo template.
+    """Generate 3 PDF+Excel pairs for edificio — one per material, same as always.
 
-    Uses _generate_pdf and _generate_excel (the same functions as normal quotes)
-    but feeds them data from paso2_calc — no recalculation.
-
-    Produces:
-    - 3 material documents (one per material, no MO — just material + discount)
-    - 1 services document (global MO only — piletas + faldón + flete)
+    Calls calculate_quote once per material (deterministic, same as normal quotes).
+    Each document gets its material + MO + totals from calculate_quote.
+    Uses _generate_pdf and _generate_excel (original D'Angelo template).
     """
+    from app.modules.quote_engine.calculator import calculate_quote
+
     date_str = datetime.now().strftime("%d.%m.%Y")
     quote_dir = OUTPUT_DIR / quote_id
     quote_dir.mkdir(exist_ok=True)
 
-    calc_results = paso2_calc.get("calc_results", {})
-    mo_items_raw = paso2_calc.get("mo_items", [])
-    mo_total = paso2_calc.get("mo_total", 0)
+    materials = summary.get("materials", {})
+    totals = summary.get("totals", {})
+    discount_pct = 18 if totals.get("descuento_18_aplica") else 0
 
     generated = []
+    grand_ars = 0
+    grand_usd = 0
 
-    # ── 1. Material documents (one per material, original template) ──
-    for mat_name, mr in calc_results.items():
-        if not mr.get("ok"):
+    for mat_name, mat_data in materials.items():
+        pieces = mat_data.get("pieces", [])
+        if not pieces:
             continue
 
-        cur = mr["currency"]
+        # Build pieces for calculate_quote
+        calc_pieces = []
+        for p in pieces:
+            piece = {"description": f"{p.get('id', '')} - {p.get('ubicacion') or 'Edificio'}", "largo": p.get("largo", 0)}
+            if p.get("ancho"):
+                is_zoc = "zócalo" in (p.get("id") or "").lower() or "zocalo" in (p.get("id") or "").lower()
+                if is_zoc:
+                    piece["alto"] = p["ancho"]
+                else:
+                    piece["prof"] = p["ancho"]
+            # Add quantity copies
+            qty = p.get("cantidad", 1)
+            for _ in range(qty):
+                calc_pieces.append(dict(piece))
+
+        # Add faldón pieces
+        for fp in mat_data.get("faldon_pieces", []):
+            calc_pieces.append({"description": fp.get("id", "Faldón"), "largo": fp.get("largo", 0), "alto": fp.get("alto", 0)})
+
+        # Pileta params from summary
+        pileta_pegado = mat_data.get("pileta_pegado", 0)
+        pileta_apoyo = mat_data.get("pileta_apoyo", 0)
+        pileta_type = None
+        pileta_qty = 0
+        if pileta_pegado > 0:
+            pileta_type = "empotrada_cliente"  # No physical product in edificio
+            pileta_qty = pileta_pegado
+        elif pileta_apoyo > 0:
+            pileta_type = "apoyo"
+            pileta_qty = pileta_apoyo
+
+        # Faldón params
+        faldon_ml = mat_data.get("faldon_ml_total", 0)
+
+        calc_input = {
+            "client_name": client_name,
+            "project": project,
+            "material": mat_name,
+            "pieces": calc_pieces,
+            "localidad": localidad,
+            "colocacion": False,  # Edificio: never
+            "is_edificio": True,
+            "pileta": pileta_type,
+            "pileta_qty": pileta_qty,
+            "anafe": False,
+            "frentin": faldon_ml > 0,
+            "frentin_ml": faldon_ml,
+            "plazo": "Segun cronograma de obra",
+            "discount_pct": discount_pct,
+        }
+
+        calc_result = calculate_quote(calc_input)
+        if not calc_result.get("ok"):
+            logging.warning(f"[edificio-docs] calculate_quote failed for {mat_name}: {calc_result.get('error')}")
+            continue
+
         safe_mat = mat_name.replace("/", "-").replace("\\", "-")
         base_name = f"{client_name} - {safe_mat} - {date_str}"
         pdf_path = quote_dir / f"{base_name}.pdf"
         excel_path = quote_dir / f"{base_name}.xlsx"
 
-        # Build quote_data in the format _generate_pdf/_generate_excel expect
-        quote_data = {
-            "client_name": client_name,
-            "project": project,
-            "delivery_days": "Segun cronograma de obra",
-            "material_name": mr.get("catalog_name", mat_name),
-            "material_m2": mr["m2"],
-            "material_price_unit": mr["price_unit"],
-            "material_currency": cur,
-            "discount_pct": mr.get("discount_pct", 0),
-            "thickness_mm": mr.get("thickness_mm", 20),
-            "sectors": [{"label": project or "Edificio", "pieces": mr.get("piece_labels", [f"{mr['m2']} m²"])}],
-            "sinks": [],        # No sink products in edificio
-            "mo_items": [],     # MO goes in the services document, not here
-            "total_ars": mr["material_net"] if cur == "ARS" else 0,
-            "total_usd": mr["material_net"] if cur == "USD" else 0,
-        }
-
         await asyncio.gather(
-            asyncio.to_thread(_generate_pdf, pdf_path, quote_data),
-            asyncio.to_thread(_generate_excel, excel_path, quote_data),
+            asyncio.to_thread(_generate_pdf, pdf_path, calc_result),
+            asyncio.to_thread(_generate_excel, excel_path, calc_result),
         )
 
         generated.append({
-            "type": "material",
             "material": mat_name,
             "pdf_url": f"/files/{quote_id}/{base_name}.pdf",
             "excel_url": f"/files/{quote_id}/{base_name}.xlsx",
-            "total": mr["material_net"],
-            "currency": cur,
+            "total_ars": calc_result.get("total_ars", 0),
+            "total_usd": calc_result.get("total_usd", 0),
+            "currency": calc_result.get("material_currency", "ARS"),
         })
 
-    # ── 2. Services document (global MO, original template) ──
-    svc_name = f"{client_name} - Servicios Edificio - {date_str}"
-    svc_pdf = quote_dir / f"{svc_name}.pdf"
-    svc_excel = quote_dir / f"{svc_name}.xlsx"
-
-    # Convert paso2_calc mo_items to the format _generate_pdf expects
-    mo_for_template = []
-    for mo in mo_items_raw:
-        mo_for_template.append({
-            "description": mo.get("desc", ""),
-            "quantity": mo.get("qty", 1),
-            "unit_price": mo.get("price", 0),
-            "base_price": mo.get("price_base", mo.get("price", 0)),
-            "total": mo.get("total", 0),
-        })
-
-    svc_data = {
-        "client_name": client_name,
-        "project": project,
-        "delivery_days": "Segun cronograma de obra",
-        "material_name": "SERVICIOS EDIFICIO",
-        "material_m2": 0,
-        "material_price_unit": 0,
-        "material_currency": "ARS",
-        "discount_pct": 0,
-        "sectors": [],
-        "sinks": [],
-        "mo_items": mo_for_template,
-        "total_ars": mo_total,
-        "total_usd": 0,
-    }
-
-    await asyncio.gather(
-        asyncio.to_thread(_generate_pdf, svc_pdf, svc_data),
-        asyncio.to_thread(_generate_excel, svc_excel, svc_data),
-    )
-
-    generated.append({
-        "type": "services",
-        "material": "Servicios Edificio",
-        "pdf_url": f"/files/{quote_id}/{svc_name}.pdf",
-        "excel_url": f"/files/{quote_id}/{svc_name}.xlsx",
-        "total": mo_total,
-        "currency": "ARS",
-    })
+        grand_ars += calc_result.get("total_ars", 0)
+        grand_usd += calc_result.get("total_usd", 0)
 
     return {
         "ok": True,
         "generated": generated,
-        "grand_total_ars": paso2_calc.get("grand_total_ars", 0),
-        "grand_total_usd": paso2_calc.get("grand_total_usd", 0),
+        "grand_total_ars": grand_ars,
+        "grand_total_usd": grand_usd,
     }
 
 
