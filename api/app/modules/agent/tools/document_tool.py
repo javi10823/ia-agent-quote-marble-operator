@@ -1,5 +1,6 @@
 import math
 import shutil
+import logging
 from pathlib import Path
 from datetime import datetime
 import asyncio
@@ -154,7 +155,13 @@ async def generate_edificio_documents(
         })
 
     generated = []
-    is_first = True  # First material gets all global MO
+
+    # Determine which material carries global MO.
+    # Rule: first ARS material gets it (typically Boreal). If all USD, first material.
+    valid_mats = [(n, r) for n, r in calc_results.items() if r.get("ok")]
+    ars_mats = [n for n, r in valid_mats if r["currency"] == "ARS"]
+    mo_carrier = ars_mats[0] if ars_mats else (valid_mats[0][0] if valid_mats else "")
+    logging.info(f"[edificio-docs] MO carrier material: {mo_carrier}")
 
     for mat_name, mr in calc_results.items():
         if not mr.get("ok"):
@@ -166,16 +173,13 @@ async def generate_edificio_documents(
         pdf_path = quote_dir / f"{base_name}.pdf"
         excel_path = quote_dir / f"{base_name}.xlsx"
 
-        # Material totals from paso2_calc — copied exactly, no recalculation
-        mat_total_value = mr["material_net"]
+        carries_mo = (mat_name == mo_carrier)
 
-        if is_first:
-            # First material carries all global MO
+        if carries_mo:
             this_mo = mo_for_template
-            total_ars = mr["material_net"] + mo_total if cur == "ARS" else mo_total
+            total_ars = (mr["material_net"] if cur == "ARS" else 0) + mo_total
             total_usd = mr["material_net"] if cur == "USD" else 0
         else:
-            # Subsequent materials: material only, no MO
             this_mo = []
             total_ars = mr["material_net"] if cur == "ARS" else 0
             total_usd = mr["material_net"] if cur == "USD" else 0
@@ -217,8 +221,6 @@ async def generate_edificio_documents(
             "total_usd": total_usd,
             "currency": cur,
         })
-
-        is_first = False
 
     return {
         "ok": True,
