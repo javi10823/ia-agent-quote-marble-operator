@@ -127,61 +127,57 @@ async def generate_edificio_documents(
     client_name: str = "",
     project: str = "",
 ) -> dict:
-    """Generate 4 PDF+Excel pairs for edificio — 100% from paso2_calc, no recalculation.
+    """Generate 4 PDF+Excel pairs for edificio using the ORIGINAL D'Angelo template.
+
+    Uses _generate_pdf and _generate_excel (the same functions as normal quotes)
+    but feeds them data from paso2_calc — no recalculation.
 
     Produces:
-    - 3 material documents (one per material: material + m² + discount + total)
-    - 1 services document (global MO: piletas + faldón + flete)
-
-    All values come directly from paso2_calc. Nothing is recalculated.
+    - 3 material documents (one per material, no MO — just material + discount)
+    - 1 services document (global MO only — piletas + faldón + flete)
     """
-    from app.modules.quote_engine.edificio_parser import _fmt_num
-
     date_str = datetime.now().strftime("%d.%m.%Y")
-    date_display = datetime.now().strftime("%d/%m/%Y")
-    co = _load_company_config()
     quote_dir = OUTPUT_DIR / quote_id
     quote_dir.mkdir(exist_ok=True)
 
     calc_results = paso2_calc.get("calc_results", {})
-    mo_items = paso2_calc.get("mo_items", [])
+    mo_items_raw = paso2_calc.get("mo_items", [])
     mo_total = paso2_calc.get("mo_total", 0)
 
     generated = []
 
-    # ── 1. Material documents (one per material) ──
+    # ── 1. Material documents (one per material, original template) ──
     for mat_name, mr in calc_results.items():
         if not mr.get("ok"):
             continue
 
         cur = mr["currency"]
-        cur_sym = "USD " if cur == "USD" else "$"
         safe_mat = mat_name.replace("/", "-").replace("\\", "-")
         base_name = f"{client_name} - {safe_mat} - {date_str}"
-
         pdf_path = quote_dir / f"{base_name}.pdf"
         excel_path = quote_dir / f"{base_name}.xlsx"
 
-        mat_data = {
-            "type": "material",
+        # Build quote_data in the format _generate_pdf/_generate_excel expect
+        quote_data = {
             "client_name": client_name,
             "project": project,
-            "date": date_display,
+            "delivery_days": "Segun cronograma de obra",
             "material_name": mr.get("catalog_name", mat_name),
-            "currency": cur,
-            "m2": mr["m2"],
-            "price_base": mr["price_base"],
-            "price_unit": mr["price_unit"],
-            "material_total": mr["material_total"],
+            "material_m2": mr["m2"],
+            "material_price_unit": mr["price_unit"],
+            "material_currency": cur,
             "discount_pct": mr.get("discount_pct", 0),
-            "discount_amount": mr.get("discount_amount", 0),
-            "material_net": mr["material_net"],
-            "company": co,
+            "thickness_mm": mr.get("thickness_mm", 20),
+            "sectors": [{"label": project or "Edificio", "pieces": mr.get("piece_labels", [f"{mr['m2']} m²"])}],
+            "sinks": [],        # No sink products in edificio
+            "mo_items": [],     # MO goes in the services document, not here
+            "total_ars": mr["material_net"] if cur == "ARS" else 0,
+            "total_usd": mr["material_net"] if cur == "USD" else 0,
         }
 
         await asyncio.gather(
-            asyncio.to_thread(_generate_edificio_pdf, pdf_path, mat_data),
-            asyncio.to_thread(_generate_edificio_excel, excel_path, mat_data),
+            asyncio.to_thread(_generate_pdf, pdf_path, quote_data),
+            asyncio.to_thread(_generate_excel, excel_path, quote_data),
         )
 
         generated.append({
@@ -193,24 +189,41 @@ async def generate_edificio_documents(
             "currency": cur,
         })
 
-    # ── 2. Services document (global MO) ──
+    # ── 2. Services document (global MO, original template) ──
     svc_name = f"{client_name} - Servicios Edificio - {date_str}"
     svc_pdf = quote_dir / f"{svc_name}.pdf"
     svc_excel = quote_dir / f"{svc_name}.xlsx"
 
+    # Convert paso2_calc mo_items to the format _generate_pdf expects
+    mo_for_template = []
+    for mo in mo_items_raw:
+        mo_for_template.append({
+            "description": mo.get("desc", ""),
+            "quantity": mo.get("qty", 1),
+            "unit_price": mo.get("price", 0),
+            "base_price": mo.get("price_base", mo.get("price", 0)),
+            "total": mo.get("total", 0),
+        })
+
     svc_data = {
-        "type": "services",
         "client_name": client_name,
         "project": project,
-        "date": date_display,
-        "mo_items": mo_items,
-        "mo_total": mo_total,
-        "company": co,
+        "delivery_days": "Segun cronograma de obra",
+        "material_name": "SERVICIOS EDIFICIO",
+        "material_m2": 0,
+        "material_price_unit": 0,
+        "material_currency": "ARS",
+        "discount_pct": 0,
+        "sectors": [],
+        "sinks": [],
+        "mo_items": mo_for_template,
+        "total_ars": mo_total,
+        "total_usd": 0,
     }
 
     await asyncio.gather(
-        asyncio.to_thread(_generate_edificio_pdf, svc_pdf, svc_data),
-        asyncio.to_thread(_generate_edificio_excel, svc_excel, svc_data),
+        asyncio.to_thread(_generate_pdf, svc_pdf, svc_data),
+        asyncio.to_thread(_generate_excel, svc_excel, svc_data),
     )
 
     generated.append({
@@ -228,221 +241,6 @@ async def generate_edificio_documents(
         "grand_total_ars": paso2_calc.get("grand_total_ars", 0),
         "grand_total_usd": paso2_calc.get("grand_total_usd", 0),
     }
-
-
-def _generate_edificio_pdf(pdf_path: Path, data: dict) -> None:
-    """Generate a single edificio PDF — material or services. No recalculation."""
-    from fpdf import FPDF
-    from app.modules.quote_engine.edificio_parser import _fmt_num
-
-    co = data["company"]
-    pdf = FPDF(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-
-    # Top bar
-    pdf.set_fill_color(26, 47, 94)
-    pdf.rect(0, 0, 210, 4, "F")
-
-    # Logo
-    logo_path = TEMPLATES_DIR / "logo-dangelo.png"
-    if logo_path.exists():
-        pdf.image(str(logo_path), x=10, y=10, w=55)
-        pdf.set_y(35)
-    else:
-        pdf.set_y(12)
-        pdf.set_font("Helvetica", "B", 28)
-        pdf.cell(0, 12, co["name"], new_x="LMARGIN", new_y="NEXT")
-
-    # Header info
-    pdf.set_font("Helvetica", "", 9)
-    pdf.cell(0, 5, f"{co['address']} | Tel: {co['phone']} | {co['email']}", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(4)
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 5, f"Fecha: {data['date']}", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 5, f"Cliente: {data['client_name']}", new_x="LMARGIN", new_y="NEXT")
-    if data.get("project"):
-        pdf.cell(0, 5, f"Proyecto: {data['project']}", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(4)
-
-    rh = 7  # row height
-    w_desc = 100
-    w_val = 80
-
-    if data["type"] == "material":
-        cur = data["currency"]
-        cur_sym = "USD " if cur == "USD" else "$"
-        mat = data["material_name"]
-
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, f"MATERIAL: {mat}", new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(3)
-
-        pdf.set_font("Helvetica", "", 10)
-        rows = [
-            ("Precio base (sin IVA)", f"{cur_sym}{_fmt_num(data['price_base'], 0)}/m²"),
-            ("Precio con IVA (x1,21)", f"{cur_sym}{_fmt_num(data['price_unit'], 0)}/m²"),
-            ("Superficie", f"{_fmt_num(data['m2'])} m²"),
-            ("Subtotal", f"{cur_sym}{_fmt_num(data['material_total'], 0)}"),
-        ]
-        if data.get("discount_pct"):
-            rows.append((f"Descuento {data['discount_pct']}%", f"-{cur_sym}{_fmt_num(data['discount_amount'], 0)}"))
-
-        for label, val in rows:
-            pdf.cell(w_desc, rh, label, border=1)
-            pdf.cell(w_val, rh, val, border=1, align="R", new_x="LMARGIN", new_y="NEXT")
-
-        # Total
-        pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(w_desc, rh + 2, "TOTAL MATERIAL", border=1, fill=True)
-        pdf.set_fill_color(240, 240, 240)
-        pdf.cell(w_val, rh + 2, f"{cur_sym}{_fmt_num(data['material_net'], 0)}", border=1, align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
-
-    elif data["type"] == "services":
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, "MANO DE OBRA - SERVICIOS EDIFICIO", new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(3)
-
-        # Table header
-        w = [80, 20, 40, 40]
-        pdf.set_font("Helvetica", "B", 9)
-        pdf.cell(w[0], rh, "Concepto", border=1)
-        pdf.cell(w[1], rh, "Cant", border=1, align="R")
-        pdf.cell(w[2], rh, "Precio c/IVA", border=1, align="R")
-        pdf.cell(w[3], rh, "Total", border=1, align="R", new_x="LMARGIN", new_y="NEXT")
-
-        pdf.set_font("Helvetica", "", 9)
-        for mo in data["mo_items"]:
-            qty = _fmt_num(mo["qty"], 2) if isinstance(mo["qty"], float) else str(mo["qty"])
-            pdf.cell(w[0], rh, mo["desc"], border=1)
-            pdf.cell(w[1], rh, qty, border=1, align="R")
-            pdf.cell(w[2], rh, f"${_fmt_num(mo['price'], 0)}", border=1, align="R")
-            pdf.cell(w[3], rh, f"${_fmt_num(mo['total'], 0)}", border=1, align="R", new_x="LMARGIN", new_y="NEXT")
-
-        # Total
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(w[0] + w[1] + w[2], rh + 2, "TOTAL MANO DE OBRA", border=1, fill=True)
-        pdf.set_fill_color(240, 240, 240)
-        pdf.cell(w[3], rh + 2, f"${_fmt_num(data['mo_total'], 0)}", border=1, align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
-
-        pdf.ln(4)
-        pdf.set_font("Helvetica", "I", 8)
-        pdf.cell(0, 4, "Sin colocacion (edificio). MO /1.05 excepto flete.", new_x="LMARGIN", new_y="NEXT")
-
-    # Footer — conditions
-    pdf.ln(6)
-    pdf.set_font("Helvetica", "", 7)
-    pdf.cell(0, 4, "Forma de pago: Contado", new_x="LMARGIN", new_y="NEXT")
-    if co.get("conditions_general"):
-        pdf.ln(2)
-        for line in co["conditions_general"].split("\n"):
-            pdf.cell(0, 3.5, line.strip(), new_x="LMARGIN", new_y="NEXT")
-
-    pdf.output(str(pdf_path))
-
-
-def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
-    """Generate a single edificio Excel — material or services. No recalculation."""
-    import openpyxl
-    from openpyxl.styles import Font, Alignment, Border, Side
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Presupuesto"
-
-    bold = Font(name="Calibri", bold=True, size=10)
-    normal = Font(name="Calibri", size=10)
-    header_font = Font(name="Calibri", bold=True, size=9)
-    thin = Side(style="thin")
-    box = Border(left=thin, right=thin, top=thin, bottom=thin)
-    ars_fmt = '"$"#,##0'
-
-    co = data["company"]
-    row = 1
-    ws.cell(row, 1, co["name"]).font = Font(name="Calibri", bold=True, size=14)
-    row = 2
-    ws.cell(row, 1, co["subtitle"]).font = normal
-    row = 4
-    ws.cell(row, 1, f"Fecha: {data['date']}").font = normal
-    row = 5
-    ws.cell(row, 1, f"Cliente: {data['client_name']}").font = normal
-    if data.get("project"):
-        row = 6
-        ws.cell(row, 1, f"Proyecto: {data['project']}").font = normal
-
-    row = 8
-
-    if data["type"] == "material":
-        from app.modules.quote_engine.edificio_parser import _fmt_num
-        cur = data["currency"]
-        cur_sym = "USD " if cur == "USD" else "$"
-        ws.cell(row, 1, f"MATERIAL: {data['material_name']}").font = bold
-        row += 2
-
-        labels = [
-            ("Precio base (sin IVA)", f"{cur_sym}{_fmt_num(data['price_base'], 0)}/m2"),
-            ("Precio con IVA (x1,21)", f"{cur_sym}{_fmt_num(data['price_unit'], 0)}/m2"),
-            ("Superficie", f"{_fmt_num(data['m2'])} m2"),
-            ("Subtotal", data["material_total"]),
-        ]
-        if data.get("discount_pct"):
-            labels.append((f"Descuento {data['discount_pct']}%", -data["discount_amount"]))
-
-        for label, val in labels:
-            ws.cell(row, 1, label).font = normal
-            c = ws.cell(row, 3, val)
-            c.font = normal
-            if isinstance(val, (int, float)):
-                c.number_format = ars_fmt if cur == "ARS" else '"USD "#,##0'
-            row += 1
-
-        row += 1
-        ws.cell(row, 1, "TOTAL MATERIAL").font = bold
-        c = ws.cell(row, 3, data["material_net"])
-        c.font = bold
-        c.number_format = ars_fmt if cur == "ARS" else '"USD "#,##0'
-
-    elif data["type"] == "services":
-        ws.cell(row, 1, "MANO DE OBRA - SERVICIOS EDIFICIO").font = bold
-        row += 2
-
-        # Headers
-        for ci, h in enumerate(["Concepto", "Cant", "Precio c/IVA", "Total"], 1):
-            c = ws.cell(row, ci, h)
-            c.font = header_font
-            c.border = box
-        row += 1
-
-        for mo in data["mo_items"]:
-            ws.cell(row, 1, mo["desc"]).font = normal
-            ws.cell(row, 2, mo["qty"]).font = normal
-            c3 = ws.cell(row, 3, mo["price"])
-            c3.font = normal
-            c3.number_format = ars_fmt
-            c4 = ws.cell(row, 4, mo["total"])
-            c4.font = normal
-            c4.number_format = ars_fmt
-            for ci in range(1, 5):
-                ws.cell(row, ci).border = box
-            row += 1
-
-        row += 1
-        ws.cell(row, 1, "TOTAL MANO DE OBRA").font = bold
-        c = ws.cell(row, 4, data["mo_total"])
-        c.font = bold
-        c.number_format = ars_fmt
-
-    # Conditions
-    row += 3
-    ws.cell(row, 1, "Forma de pago: Contado").font = Font(name="Calibri", size=8)
-
-    # Column widths
-    ws.column_dimensions["A"].width = 35
-    ws.column_dimensions["B"].width = 10
-    ws.column_dimensions["C"].width = 18
-    ws.column_dimensions["D"].width = 18
-
-    wb.save(str(excel_path))
 
 
 def _generate_pdf(pdf_path: Path, data: dict) -> None:
