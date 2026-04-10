@@ -293,7 +293,7 @@ def _load_material_aliases() -> dict:
     try:
         import json as _json
         from pathlib import Path
-        cfg_path = Path(__file__).parent.parent.parent / "catalog" / "config.json"
+        cfg_path = Path(__file__).parent.parent.parent.parent / "catalog" / "config.json"
         if cfg_path.exists():
             with open(cfg_path, encoding="utf-8") as f:
                 cfg = _json.load(f)
