@@ -724,14 +724,20 @@ class AgentService:
                     paso2_calc = _bd["paso2_calc"]
                     edif_summary = _bd.get("summary", {})
 
-                    doc_result = await generate_edificio_documents(
-                        quote_id=quote_id,
-                        paso2_calc=paso2_calc,
-                        summary=edif_summary,
-                        client_name=_p2quote.client_name or "",
-                        project=_p2quote.project or "",
-                        localidad=_p2quote.localidad or "Rosario",
-                    )
+                    try:
+                        doc_result = await generate_edificio_documents(
+                            quote_id=quote_id,
+                            paso2_calc=paso2_calc,
+                            summary=edif_summary,
+                            client_name=_p2quote.client_name or "",
+                            project=_p2quote.project or "",
+                            localidad=_p2quote.localidad or "Rosario",
+                        )
+                    except Exception as e:
+                        logging.error(f"[edificio-paso3] generate_edificio_documents crashed: {e}", exc_info=True)
+                        yield {"type": "text", "content": f"Error al generar documentos: {str(e)[:300]}"}
+                        yield {"type": "done", "content": ""}
+                        return
 
                     if doc_result.get("ok"):
                         # Upload to Drive
