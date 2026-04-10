@@ -730,7 +730,7 @@ class AgentService:
                             paso2_calc=paso2_calc,
                             summary=edif_summary,
                             client_name=_p2quote.client_name or "",
-                            project=_p2quote.project or "",
+                            project=_p2quote.project or f"Proyecto Edificio {_p2quote.client_name or ''}".strip(),
                             localidad=_p2quote.localidad or "Rosario",
                         )
                     except Exception as e:
