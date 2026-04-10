@@ -715,9 +715,31 @@ class AgentService:
 
                             # Build the complete response text
                             paso1_response = rendered_paso1 + "\n\n¿Confirmás las piezas y medidas?"
-                            if edif_validation.get("warnings"):
-                                warns = "\n".join(f"⚠ {w}" for w in edif_validation["warnings"][:10])
-                                paso1_response = rendered_paso1 + f"\n\n**Advertencias:**\n{warns}\n\n¿Confirmás las piezas y medidas?"
+                            all_warns = edif_validation.get("warnings", [])
+                            errors = edif_validation.get("errors", [])
+                            if errors:
+                                # Critical errors: show them explicitly
+                                err_list = "\n".join(f"❌ {e}" for e in errors)
+                                paso1_response = rendered_paso1 + f"\n\n**Errores a corregir:**\n{err_list}\n\n⛔ Corregir antes de confirmar."
+                            elif all_warns:
+                                # Non-blocking warnings: summarize, don't dump raw list
+                                ubic_warns = [w for w in all_warns if "sin ubicación" in w.lower()]
+                                m2_warns = [w for w in all_warns if "m2" in w.lower() or "m²" in w.lower()]
+                                qty_warns = [w for w in all_warns if "cantidad" in w.lower()]
+                                other_warns = [w for w in all_warns if w not in ubic_warns + m2_warns + qty_warns]
+
+                                parts = []
+                                if ubic_warns:
+                                    parts.append(f"{len(ubic_warns)} piezas sin ubicación en planilla")
+                                if m2_warns:
+                                    parts.append(f"{len(m2_warns)} diferencias de m² entre planilla y cálculo")
+                                if qty_warns:
+                                    parts.append(f"{len(qty_warns)} piezas con cantidad > 1")
+                                for w in other_warns:
+                                    parts.append(w)
+
+                                summary_text = " · ".join(parts) if parts else f"{len(all_warns)} advertencias"
+                                paso1_response = rendered_paso1 + f"\n\n*Advertencias no bloqueantes ({len(all_warns)}): {summary_text}.*\n\n¿Confirmás las piezas y medidas?"
 
                             # Save pre-calc data to quote for Paso 2
                             import json as _json
