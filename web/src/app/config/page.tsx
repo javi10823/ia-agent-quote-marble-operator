@@ -254,7 +254,7 @@ export default function ConfigPage() {
 
           {/* Editor + Backups */}
           <div className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-4">
-            <div className="flex-1 min-h-[300px] border border-b1 rounded-lg overflow-hidden">
+            <div className="min-h-[400px] max-h-[60vh] border border-b1 rounded-lg overflow-auto">
               <CatalogEditor
                 value={content}
                 onChange={setContent}
