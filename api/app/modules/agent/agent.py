@@ -656,17 +656,18 @@ class AgentService:
 
         system_prompt = build_system_prompt(has_plan=has_plan, is_building=is_building, user_message=user_message, conversation_history=messages)
 
-        # ── EDIFICIO PASO 2: server-side pricing, bypass Claude ──
-        # Condition: is_building + quote has summary (from Paso 1) + no plan attached (= confirmation)
-        # + user message looks like confirmation (short, no new pieces/data)
+        # ── EDIFICIO STATE MACHINE: server-side Paso 2 or pass to Paso 3 ──
+        # State: building_step in quote_breakdown controls which step to execute.
+        # "step1_review" → confirmation → render Paso 2 → save "step2_quote"
+        # "step2_quote"  → confirmation → fall through to Claude for generate_documents
         if is_building and not has_plan:
             try:
                 _p2q = await db.execute(select(Quote).where(Quote.id == quote_id))
                 _p2quote = _p2q.scalar_one_or_none()
                 _bd = _p2quote.quote_breakdown if _p2quote else None
-                _has_summary = _bd and isinstance(_bd, dict) and "summary" in _bd
-                _is_confirmation = len(user_message.strip()) < 200  # Short message = confirmation, not new data
-                if _has_summary and _is_confirmation:
+                _building_step = _bd.get("building_step") if isinstance(_bd, dict) else None
+                _is_confirmation = len(user_message.strip()) < 200
+                if _building_step == "step1_review" and _is_confirmation:
                     from app.modules.quote_engine.edificio_parser import render_edificio_paso2
                     yield {"type": "action", "content": "Calculando precios por material..."}
 
@@ -676,8 +677,9 @@ class AgentService:
                     paso2_data = render_edificio_paso2(edif_summary, edif_localidad)
                     paso2_response = paso2_data["rendered"] + "\n¿Confirmás para generar los presupuestos?"
 
-                    # Save calc results + conversation
+                    # Save calc results + advance state machine
                     try:
+                        _bd["building_step"] = "step2_quote"  # Next confirmation → Paso 3 (generate)
                         _bd["paso2_calc"] = {
                             "calc_results": paso2_data["calc_results"],
                             "mo_items": paso2_data["mo_items"],
@@ -795,6 +797,7 @@ class AgentService:
                             # Save pre-calc data to quote for Paso 2
                             import json as _json
                             pre_calc = {
+                                "building_step": "step1_review",  # State machine: awaiting Paso 1 confirmation
                                 "summary": edif_summary,
                                 "validation": dict(edif_validation),
                                 "normalized_pieces": [dict(p) for s in norm_data.get("sections", []) for p in s.get("pieces", [])],
