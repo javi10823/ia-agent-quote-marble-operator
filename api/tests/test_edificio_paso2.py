@@ -136,5 +136,10 @@ class TestESHPaso2:
     # ── No mixed-currency ambiguity ──────────────────────────────────────
 
     def test_total_ars_and_usd_separate(self, rendered):
-        assert "Total ARS:" in rendered
-        assert "Total USD:" in rendered
+        assert "Total ARS" in rendered
+        assert "Total USD" in rendered
+
+    def test_shows_base_and_iva_price(self, rendered):
+        """Must show both base (sin IVA) and IVA-inclusive price."""
+        assert "sin IVA" in rendered
+        assert "×1,21" in rendered

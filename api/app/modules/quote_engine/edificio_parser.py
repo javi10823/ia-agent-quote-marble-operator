@@ -812,7 +812,8 @@ def render_edificio_paso2(summary: dict, localidad: str = "Rosario") -> dict:
         if flete_result.get("found"):
             flete_price = flete_result.get("price_ars", 0)
             flete_total = flete_price * flete_qty
-            mo_items.append({"desc": f"Flete + toma medidas {localidad}", "qty": flete_qty, "price": flete_price, "total": round(flete_total)})
+            flete_label = f"Flete obra ({localidad})" if localidad.lower().strip() != "rosario" else "Flete + toma medidas"
+            mo_items.append({"desc": flete_label, "qty": flete_qty, "price": flete_price, "total": round(flete_total)})
             mo_total += round(flete_total)
 
     grand_ars += mo_total
@@ -822,7 +823,7 @@ def render_edificio_paso2(summary: dict, localidad: str = "Rosario") -> dict:
     lines.append("## Presupuesto Edificio")
     lines.append("")
 
-    # Materials
+    # Materials — show base + IVA clearly
     for mat_name, mr in mat_results.items():
         if not mr.get("ok"):
             lines.append(f"### {mat_name.upper()} — ERROR: {mr.get('error')}")
@@ -832,15 +833,15 @@ def render_edificio_paso2(summary: dict, localidad: str = "Rosario") -> dict:
         cur = mr["currency"]
         cur_sym = "USD " if cur == "USD" else "$"
         m2 = mr["m2"]
-        mat_data = materials[mat_name]
 
         lines.append(f"### {mat_name.upper()} — {_fmt_num(m2)} m²")
         lines.append("")
         lines.append("| Concepto | Valor |")
         lines.append("| --- | --- |")
-        lines.append(f"| Precio unitario (con IVA) | {cur_sym}{_fmt_num(mr['price_unit'], 0)}/m² |")
+        lines.append(f"| Precio base (sin IVA) | {cur_sym}{_fmt_num(mr['price_base'], 0)}/m² |")
+        lines.append(f"| Precio con IVA (×1,21) | {cur_sym}{_fmt_num(mr['price_unit'], 0)}/m² |")
         lines.append(f"| Superficie | {_fmt_num(m2)} m² |")
-        lines.append(f"| Subtotal material | {cur_sym}{_fmt_num(mr['material_total'], 0)} |")
+        lines.append(f"| Subtotal | {cur_sym}{_fmt_num(mr['material_total'], 0)} |")
         if mr["discount_pct"]:
             lines.append(f"| Descuento {mr['discount_pct']}% | -{cur_sym}{_fmt_num(mr['discount_amount'], 0)} |")
             lines.append(f"| **Total material** | **{cur_sym}{_fmt_num(mr['material_net'], 0)}** |")
@@ -867,22 +868,21 @@ def render_edificio_paso2(summary: dict, localidad: str = "Rosario") -> dict:
         lines.append(f"18% por volumen ({_fmt_num(totals.get('m2_total', 0))} m² > 15) — aplicado a material de cada presupuesto")
         lines.append("")
 
-    # Grand total
+    # Grand total — structured, no ambiguity
+    ars_mat = sum(mr["material_net"] for mr in mat_results.values() if mr.get("ok") and mr["currency"] == "ARS")
     lines.append("### GRAND TOTAL")
     lines.append("")
-    total_parts = []
+    lines.append("| Concepto | Moneda | Monto |")
+    lines.append("| --- | --- | --- |")
     if grand_usd > 0:
-        total_parts.append(f"**USD {_fmt_num(grand_usd, 0)}** material")
-    # ARS materials (if any)
-    ars_mat = sum(mr["material_net"] for mr in mat_results.values() if mr.get("ok") and mr["currency"] == "ARS")
+        lines.append(f"| Material (USD) | USD | **{_fmt_num(grand_usd, 0)}** |")
     if ars_mat > 0:
-        total_parts.append(f"**${_fmt_num(ars_mat, 0)}** material ARS")
-    total_parts.append(f"**${_fmt_num(mo_total, 0)}** mano de obra")
-    lines.append(" + ".join(total_parts))
-    if grand_ars > 0:
-        lines.append(f"\n**Total ARS: ${_fmt_num(grand_ars, 0)}**")
+        lines.append(f"| Material (ARS) | ARS | **${_fmt_num(ars_mat, 0)}** |")
+    lines.append(f"| Mano de obra | ARS | **${_fmt_num(mo_total, 0)}** |")
+    if ars_mat > 0 or mo_total > 0:
+        lines.append(f"| **Total ARS** | **ARS** | **${_fmt_num(grand_ars, 0)}** |")
     if grand_usd > 0:
-        lines.append(f"**Total USD: USD {_fmt_num(grand_usd, 0)}**")
+        lines.append(f"| **Total USD** | **USD** | **{_fmt_num(grand_usd, 0)}** |")
     lines.append("")
 
     rendered = "\n".join(lines)
