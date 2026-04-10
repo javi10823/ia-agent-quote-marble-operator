@@ -29,6 +29,12 @@ class Quote(Base):
     # Parent quote (for multi-material — links to the quote with the chat history)
     parent_quote_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    # Quote kind: standard | building_parent | building_child_material | variant_option
+    quote_kind: Mapped[str | None] = mapped_column(String(30), nullable=True, default="standard")
+
+    # Comparison group for variant_option quotes (same work, different materials)
+    comparison_group_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
     # Source: "operator" (chat with Valentina) or "web" (external API)
     source: Mapped[str | None] = mapped_column(String(20), nullable=True, default="operator")
 
