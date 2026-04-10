@@ -944,12 +944,16 @@ Texto libre del PDF: {raw_data.get('free_text', '')}
             # Retry loop for rate limit errors
             for attempt in range(MAX_RETRIES + 1):
                 try:
+                    # Edificio: remove list_pieces from available tools —
+                    # data comes from deterministic pipeline, not list_pieces
+                    active_tools = [t for t in TOOLS if t["name"] != "list_pieces"] if is_building else TOOLS
+
                     async with self.client.messages.stream(
                         model=current_model,
                         max_tokens=8096,
                         system=system_prompt,
                         messages=msgs_for_api + _compact_tool_results(assistant_messages),
-                        tools=TOOLS,
+                        tools=active_tools,
                     ) as stream:
                         async for event in stream:
                             if hasattr(event, "type"):
