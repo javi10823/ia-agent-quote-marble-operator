@@ -897,7 +897,42 @@ def render_edificio_paso2(summary: dict, localidad: str = "Rosario") -> dict:
     }
 
 
-# ── 8. build_edificio_doc_context — presentation model for PDF/Excel ────────
+# ── 8. distribute_flete — deterministic flete distribution ───────────────────
+
+def distribute_flete(total_qty: int, piece_counts: dict[str, int]) -> dict[str, int]:
+    """Distribute flete trips across materials using largest remainder method.
+
+    Pure function. Sum of result always equals total_qty.
+    Tie-break: alphabetical order by material name (stable).
+    """
+    total_pieces = sum(piece_counts.values())
+    if total_pieces == 0 or total_qty == 0:
+        return {k: 0 for k in piece_counts}
+
+    # Calculate raw shares and base allocations
+    raw = {}
+    base = {}
+    for mat, count in piece_counts.items():
+        share = total_qty * count / total_pieces
+        base[mat] = math.floor(share)
+        raw[mat] = share - base[mat]  # remainder
+
+    # Distribute leftover trips by largest remainder, tie-break alphabetical
+    leftover = total_qty - sum(base.values())
+    sorted_mats = sorted(raw.keys(), key=lambda m: (-raw[m], m))
+    for i in range(leftover):
+        base[sorted_mats[i]] += 1
+
+    return base
+
+
+# ── 9. build_edificio_doc_context — presentation model for PDF/Excel ────────
+
+_OCR_CLEAN = {
+    "AJAB\nATNALP": "Planta Baja",
+    "ATNALP\nATLA": "Planta Alta",
+}
+
 
 def build_edificio_doc_context(
     summary: dict,
@@ -905,35 +940,43 @@ def build_edificio_doc_context(
     client_name: str,
     project: str,
 ) -> list[dict]:
-    """Build 3 ready-to-render document contexts for edificio.
+    """Build ready-to-render document contexts for edificio. One per material.
 
-    Returns list of dicts, each compatible with _generate_pdf/_generate_excel.
-    - First ARS material carries all global MO.
-    - Others get material only (no MO block, no Total PESOS $0).
-    - Despiece uses sectors from summary pieces (grouped by ubicacion).
-    - Descuento integrated in material block.
-    - No recalculation. All values from paso2_calc.
+    MO is distributed per material (not concentrated in one):
+    - PEGADOPILETA: by material's pileta_pegado count
+    - AGUJEROAPOYO: by material's pileta_apoyo count
+    - Armado faldón: by material's faldon_ml_total
+    - Flete: distribute_flete() by piece_count_physical
+
+    Lines with qty=0 are excluded. If no MO lines → show_mo=False.
+    No recalculation. All prices from paso2_calc.
     """
     calc_results = paso2_calc.get("calc_results", {})
     mo_items_raw = paso2_calc.get("mo_items", [])
-    mo_total = paso2_calc.get("mo_total", 0)
     materials_summary = summary.get("materials", {})
+    totals = summary.get("totals", {})
 
-    # Convert MO items to template format
-    mo_for_template = []
+    # ── Get MO unit prices from paso2_calc (already with IVA, already ÷1.05) ──
+    mo_prices = {}
     for mo in mo_items_raw:
-        mo_for_template.append({
-            "description": mo.get("desc", ""),
-            "quantity": mo.get("qty", 1),
-            "unit_price": mo.get("price", 0),
-            "base_price": mo.get("price_base", mo.get("price", 0)),
-            "total": mo.get("total", 0),
-        })
+        desc = mo.get("desc", "").lower()
+        mo_prices[desc] = {"price": mo.get("price", 0), "price_base": mo.get("price_base", mo.get("price", 0))}
 
-    # Determine MO carrier: first ARS material
-    valid_mats = [(n, r) for n, r in calc_results.items() if r.get("ok")]
-    ars_mats = [n for n, r in valid_mats if r["currency"] == "ARS"]
-    mo_carrier = ars_mats[0] if ars_mats else (valid_mats[0][0] if valid_mats else "")
+    # ── Distribute flete ──
+    piece_counts = {}
+    for mat_name, mat_data in materials_summary.items():
+        piece_counts[mat_name] = mat_data.get("piece_count_physical", 0)
+    flete_total = totals.get("flete_qty", 0)
+    flete_dist = distribute_flete(flete_total, piece_counts)
+
+    # Get flete unit price
+    flete_price_info = mo_prices.get("flete + toma medidas", mo_prices.get("flete", {"price": 0, "price_base": 0}))
+    # Try to find flete price from any key containing "flete"
+    if flete_price_info["price"] == 0:
+        for k, v in mo_prices.items():
+            if "flete" in k:
+                flete_price_info = v
+                break
 
     contexts = []
 
@@ -942,52 +985,111 @@ def build_edificio_doc_context(
             continue
 
         cur = mr["currency"]
-        carries_mo = (mat_name == mo_carrier)
-        mat_summary = materials_summary.get(mat_name, {})
+        mat_data = materials_summary.get(mat_name, {})
 
-        # ── Build sectors from pieces grouped by ubicacion ──
-        pieces = mat_summary.get("pieces", [])
-        sectors_by_ubic: dict[str, list[str]] = {}
+        # ── Build piece_groups from pieces grouped by ubicacion ──
+        pieces = mat_data.get("pieces", [])
+        groups_by_ubic: dict[str, list[str]] = {}
+
         for p in pieces:
             ubic = p.get("ubicacion") or "General"
-            # Clean OCR garbage
             if "\n" in ubic:
-                ubic = {"AJAB\nATNALP": "Planta Baja", "ATNALP\nATLA": "Planta Alta"}.get(ubic, ubic.replace("\n", " "))
+                ubic = _OCR_CLEAN.get(ubic, ubic.replace("\n", " "))
             qty = p.get("cantidad", 1)
             largo = p.get("largo", 0)
             ancho = p.get("ancho", 0)
-            desc_lower = (p.get("id") or "").lower()
 
             if qty > 1:
                 label = f"{_fmt_num(largo)} X {_fmt_num(ancho)} X {qty} UNID"
             else:
                 label = f"{_fmt_num(largo)} X {_fmt_num(ancho)}"
+            groups_by_ubic.setdefault(ubic, []).append(label)
 
-            sectors_by_ubic.setdefault(ubic, []).append(label)
+        # Faldones in their own group
+        faldon_pieces = mat_data.get("faldon_pieces", [])
+        if faldon_pieces:
+            faldon_labels = []
+            for fp in faldon_pieces:
+                faldon_labels.append(f"{_fmt_num(fp.get('largo', 0))}ML X {_fmt_num(fp.get('alto', 0))} FALDON")
+            groups_by_ubic["Faldones"] = faldon_labels
 
-        # Add faldón pieces as ZOC-style labels in their sectors
-        for fp in mat_summary.get("faldon_pieces", []):
-            # Faldones go in "General" sector
-            sectors_by_ubic.setdefault("General", []).append(
-                f"{_fmt_num(fp.get('largo', 0))}ML X {_fmt_num(fp.get('alto', 0))} FALDON"
-            )
+        piece_groups = [{"label": ubic, "lines": labels} for ubic, labels in groups_by_ubic.items()]
 
-        sectors = [{"label": ubic, "pieces": labels} for ubic, labels in sectors_by_ubic.items()]
+        # ── Build MO lines for this material (only non-zero) ──
+        mo_lines = []
+        mo_subtotal = 0
 
-        # ── Build totals ──
-        if carries_mo:
-            total_ars = (mr["material_net"] if cur == "ARS" else 0) + mo_total
-            total_usd = mr["material_net"] if cur == "USD" else 0
-            this_mo = mo_for_template
+        peg = mat_data.get("pileta_pegado", 0)
+        if peg > 0:
+            p_info = mo_prices.get("agujero y pegado pileta", {"price": 0, "price_base": 0})
+            total = p_info["price"] * peg
+            mo_lines.append({"desc": "Agujero y pegado pileta", "qty": peg, "price": p_info["price"], "price_base": p_info["price_base"], "total": total})
+            mo_subtotal += total
+
+        apo = mat_data.get("pileta_apoyo", 0)
+        if apo > 0:
+            a_info = mo_prices.get("agujero pileta apoyo", {"price": 0, "price_base": 0})
+            total = a_info["price"] * apo
+            mo_lines.append({"desc": "Agujero pileta apoyo", "qty": apo, "price": a_info["price"], "price_base": a_info["price_base"], "total": total})
+            mo_subtotal += total
+
+        fald_ml = mat_data.get("faldon_ml_total", 0)
+        if fald_ml and fald_ml > 0:
+            f_info = mo_prices.get("armado faldón", mo_prices.get("armado faldon", {"price": 0, "price_base": 0}))
+            # Try any key with "fald"
+            if f_info["price"] == 0:
+                for k, v in mo_prices.items():
+                    if "fald" in k:
+                        f_info = v
+                        break
+            total = round(f_info["price"] * fald_ml)
+            mo_lines.append({"desc": "Armado faldón", "qty": round(fald_ml, 2), "price": f_info["price"], "price_base": f_info["price_base"], "total": total})
+            mo_subtotal += total
+
+        mat_flete = flete_dist.get(mat_name, 0)
+        if mat_flete > 0:
+            total = flete_price_info["price"] * mat_flete
+            mo_lines.append({"desc": "Flete + toma medidas", "qty": mat_flete, "price": flete_price_info["price"], "price_base": flete_price_info["price_base"], "total": total})
+            mo_subtotal += total
+
+        show_mo = len(mo_lines) > 0
+
+        # ── Convert mo_lines to template format ──
+        mo_for_template = []
+        for ml in mo_lines:
+            mo_for_template.append({
+                "description": ml["desc"],
+                "quantity": ml["qty"],
+                "unit_price": ml["price"],
+                "base_price": ml["price_base"],
+                "total": ml["total"],
+            })
+
+        # ── Totals ──
+        material_net = mr["material_net"]
+        if cur == "ARS":
+            total_ars = material_net + mo_subtotal
+            total_usd = 0
         else:
-            total_ars = mr["material_net"] if cur == "ARS" else 0
-            total_usd = mr["material_net"] if cur == "USD" else 0
-            this_mo = []
+            total_ars = mo_subtotal if show_mo else 0
+            total_usd = material_net
+
+        # ── Grand total text ──
+        if cur == "ARS" and show_mo:
+            gt_text = f"PRESUPUESTO TOTAL: ${_fmt_num(total_ars, 0)}"
+        elif cur == "USD" and show_mo:
+            gt_text = f"PRESUPUESTO TOTAL: ${_fmt_num(mo_subtotal, 0)} mano de obra + USD {_fmt_num(total_usd, 0)} material"
+        elif cur == "USD" and not show_mo:
+            gt_text = f"PRESUPUESTO TOTAL: USD {_fmt_num(total_usd, 0)} material"
+        else:
+            gt_text = f"PRESUPUESTO TOTAL: ${_fmt_num(material_net, 0)} material"
 
         contexts.append({
+            # Header
             "client_name": client_name,
             "project": project,
             "delivery_days": "Segun cronograma de obra",
+            # Material
             "material_name": mr.get("catalog_name", mat_name),
             "material_m2": mr["m2"],
             "material_price_unit": mr["price_unit"],
@@ -995,15 +1097,19 @@ def build_edificio_doc_context(
             "material_total": mr["material_total"],
             "discount_pct": mr.get("discount_pct", 0),
             "thickness_mm": mr.get("thickness_mm", 20),
-            "sectors": sectors,
+            # Despiece
+            "sectors": [{"label": g["label"], "pieces": g["lines"]} for g in piece_groups],
+            # MO
             "sinks": [],
-            "mo_items": this_mo,
+            "mo_items": mo_for_template,
+            "show_mo": show_mo,
+            # Totals
             "total_ars": total_ars,
             "total_usd": total_usd,
-            # Metadata for generate_edificio_documents
+            "grand_total_text": gt_text,
+            # Metadata
             "_mat_name_raw": mat_name,
             "_currency": cur,
-            "_carries_mo": carries_mo,
         })
 
     return contexts
