@@ -171,8 +171,8 @@ class TestClassification:
 class TestDiffGeneration:
     def test_diff_with_price_change(self):
         current = [
-            {"sku": "SKU1", "name": "Item 1", "price_ars": 100},
-            {"sku": "SKU2", "name": "Item 2", "price_ars": 200},
+            {"sku": "SKU1", "name": "Item 1", "price_ars": 100, "currency": "ARS"},
+            {"sku": "SKU2", "name": "Item 2", "price_ars": 200, "currency": "ARS"},
         ]
         new_items = [
             {"sku": "SKU1", "name": "Item 1", "price_no_vat": 120, "currency": "ARS"},
@@ -186,7 +186,7 @@ class TestDiffGeneration:
         assert diff["unchanged"] == 1
 
     def test_diff_with_new_item(self):
-        current = [{"sku": "SKU1", "name": "Item 1", "price_ars": 100}]
+        current = [{"sku": "SKU1", "name": "Item 1", "price_ars": 100, "currency": "ARS"}]
         new_items = [
             {"sku": "SKU1", "name": "Item 1", "price_no_vat": 100, "currency": "ARS"},
             {"sku": "SKU3", "name": "Item 3", "price_no_vat": 300, "currency": "ARS"},
@@ -197,8 +197,8 @@ class TestDiffGeneration:
 
     def test_diff_missing_items(self):
         current = [
-            {"sku": "SKU1", "name": "Item 1", "price_ars": 100},
-            {"sku": "SKU2", "name": "Item 2", "price_ars": 200},
+            {"sku": "SKU1", "name": "Item 1", "price_ars": 100, "currency": "ARS"},
+            {"sku": "SKU2", "name": "Item 2", "price_ars": 200, "currency": "ARS"},
         ]
         new_items = [
             {"sku": "SKU1", "name": "Item 1", "price_no_vat": 100, "currency": "ARS"},
@@ -208,7 +208,7 @@ class TestDiffGeneration:
         assert diff["missing"][0]["sku"] == "SKU2"
 
     def test_diff_zero_price_skipped(self):
-        current = [{"sku": "SKU1", "name": "Item 1", "price_ars": 100}]
+        current = [{"sku": "SKU1", "name": "Item 1", "price_ars": 100, "currency": "ARS"}]
         new_items = [
             {"sku": "SKU1", "name": "Item 1", "price_no_vat": 0, "currency": "ARS"},
         ]
@@ -217,7 +217,7 @@ class TestDiffGeneration:
         assert len(diff["updated"]) == 0  # $0 items are not applied
 
     def test_diff_large_change_warning(self):
-        current = [{"sku": "SKU1", "name": "Item 1", "price_ars": 100}]
+        current = [{"sku": "SKU1", "name": "Item 1", "price_ars": 100, "currency": "ARS"}]
         new_items = [
             {"sku": "SKU1", "name": "Item 1", "price_no_vat": 200, "currency": "ARS"},
         ]
