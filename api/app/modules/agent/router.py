@@ -78,7 +78,9 @@ async def list_quotes(
             or_(
                 Quote.status != "draft",
                 and_(Quote.status == "draft", Quote.client_name != "", Quote.client_name.isnot(None)),
-            )
+            ),
+            # Exclude building children — they live inside their parent
+            or_(Quote.quote_kind != "building_child_material", Quote.quote_kind.is_(None)),
         )
         .order_by(Quote.created_at.desc())
         .limit(limit)
@@ -113,13 +115,27 @@ async def check_quotes(db: AsyncSession = Depends(get_db)):
 
 # ── GET QUOTE DETAIL ─────────────────────────────────────────────────────────
 
-@router.get("/quotes/{quote_id}", response_model=QuoteDetailResponse)
+@router.get("/quotes/{quote_id}")
 async def get_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Quote).where(Quote.id == quote_id))
     quote = result.scalar_one_or_none()
     if not quote:
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
-    return quote
+
+    # For building_parent, include children in the response
+    response = QuoteDetailResponse.model_validate(quote)
+    if quote.quote_kind == "building_parent":
+        children_result = await db.execute(
+            select(Quote)
+            .where(Quote.parent_quote_id == quote_id, Quote.quote_kind == "building_child_material")
+            .order_by(Quote.created_at)
+        )
+        children = children_result.scalars().all()
+        response_dict = response.model_dump()
+        response_dict["children"] = [QuoteListResponse.model_validate(c).model_dump() for c in children]
+        return response_dict
+
+    return response
 
 
 # ── COMPARE QUOTES ───────────────────────────────────────────────────────────

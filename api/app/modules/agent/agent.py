@@ -770,26 +770,65 @@ class AgentService:
                             lines.append(f"**Total USD: USD {doc_result['grand_total_usd']:,.0f}".replace(",", ".") + "**")
                         paso3_response = "\n".join(lines)
 
-                        # Save state
+                        # Save docs to children + update parent
                         try:
                             _bd["building_step"] = "step3_done"
-                            first_gen = doc_result["generated"][0] if doc_result["generated"] else {}
+
+                            # Match generated docs to child quotes by material name
+                            children_result = await db.execute(
+                                select(Quote).where(
+                                    Quote.parent_quote_id == quote_id,
+                                    Quote.quote_kind == "building_child_material",
+                                )
+                            )
+                            children = {(c.material or "").upper(): c for c in children_result.scalars().all()}
+
+                            resumen_gen = None
+                            for gen in doc_result["generated"]:
+                                mat_upper = (gen.get("material") or "").upper()
+                                if "RESUMEN" in mat_upper:
+                                    resumen_gen = gen
+                                    continue
+                                # Find matching child
+                                child = children.get(mat_upper)
+                                if not child:
+                                    # Try partial match
+                                    for cmat, cq in children.items():
+                                        if mat_upper in cmat or cmat in mat_upper:
+                                            child = cq
+                                            break
+                                if child:
+                                    await db.execute(
+                                        update(Quote).where(Quote.id == child.id).values(
+                                            pdf_url=gen.get("pdf_url"),
+                                            excel_url=gen.get("excel_url"),
+                                            drive_url=gen.get("drive_url"),
+                                            status=QuoteStatus.VALIDATED,
+                                        )
+                                    )
+                                    logging.info(f"[edificio-paso3] Updated child {child.id} ({child.material}) with docs")
+
+                            # Update parent with resumen + state
                             updated_msgs = list(_p2quote.messages or []) + [
                                 {"role": "user", "content": [{"type": "text", "text": user_message}]},
                                 {"role": "assistant", "content": [{"type": "text", "text": paso3_response}]},
                             ]
+                            parent_update = {
+                                "quote_breakdown": _bd,
+                                "messages": updated_msgs,
+                                "status": QuoteStatus.VALIDATED,
+                            }
+                            if resumen_gen:
+                                parent_update["pdf_url"] = resumen_gen.get("pdf_url")
+                                parent_update["excel_url"] = resumen_gen.get("excel_url")
+                                parent_update["drive_url"] = resumen_gen.get("drive_url")
+
                             await db.execute(
-                                update(Quote).where(Quote.id == quote_id).values(
-                                    quote_breakdown=_bd,
-                                    messages=updated_msgs,
-                                    status=QuoteStatus.VALIDATED,
-                                    pdf_url=first_gen.get("pdf_url"),
-                                    drive_url=drive_urls[0] if drive_urls else None,
-                                )
+                                update(Quote).where(Quote.id == quote_id).values(**parent_update)
                             )
                             await db.commit()
                         except Exception as e:
-                            logging.error(f"Failed to save edificio Paso 3: {e}")
+                            logging.error(f"Failed to save edificio Paso 3: {e}", exc_info=True)
 
                         yield {"type": "text", "content": paso3_response}
                         yield {"type": "done", "content": ""}
@@ -833,8 +872,45 @@ class AgentService:
                             )
                         )
                         await db.commit()
+
+                        # ── Create building_child_material quotes ──
+                        from app.modules.quote_engine.edificio_parser import build_edificio_doc_context
+                        import uuid as _uuid_mod
+                        child_contexts = build_edificio_doc_context(
+                            edif_summary, _bd["paso2_calc"],
+                            _p2quote.client_name or "", _p2quote.project or "",
+                        )
+                        child_ids = []
+                        for ctx in child_contexts:
+                            child_id = str(_uuid_mod.uuid4())
+                            mat_raw = ctx.get("_mat_name_raw", "")
+                            child_quote = Quote(
+                                id=child_id,
+                                quote_kind="building_child_material",
+                                parent_quote_id=quote_id,
+                                client_name=_p2quote.client_name,
+                                project=_p2quote.project or f"Proyecto Edificio {_p2quote.client_name or ''}".strip(),
+                                material=ctx.get("material_name", mat_raw),
+                                localidad=_p2quote.localidad,
+                                is_building=True,
+                                status=QuoteStatus.DRAFT,
+                                source=_p2quote.source,
+                                is_read=True,
+                                total_ars=ctx.get("total_ars", 0),
+                                total_usd=ctx.get("total_usd", 0),
+                                quote_breakdown={
+                                    k: v for k, v in ctx.items()
+                                    if not k.startswith("_")
+                                },
+                            )
+                            db.add(child_quote)
+                            child_ids.append(child_id)
+                            logging.info(f"[edificio] Created child {child_id} for {mat_raw}")
+                        await db.commit()
+                        logging.info(f"[edificio] Created {len(child_ids)} children for parent {quote_id}")
+
                     except Exception as e:
-                        logging.error(f"Failed to save edificio Paso 2: {e}")
+                        logging.error(f"Failed to save edificio Paso 2: {e}", exc_info=True)
 
                     yield {"type": "text", "content": paso2_response}
                     yield {"type": "done", "content": ""}
@@ -939,6 +1015,7 @@ class AgentService:
                                 await db.execute(
                                     update(Quote).where(Quote.id == quote_id).values(
                                         is_building=True,
+                                        quote_kind="building_parent",
                                         quote_breakdown=pre_calc,
                                     )
                                 )
