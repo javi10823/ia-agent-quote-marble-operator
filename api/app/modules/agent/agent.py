@@ -669,6 +669,12 @@ class AgentService:
 
                 # ── PASO 3: Generate documents ──
                 if _building_step == "step2_quote" and _is_confirmation and _bd.get("paso2_calc"):
+                    # Validate client_name before generating
+                    if not (_p2quote.client_name or "").strip():
+                        yield {"type": "text", "content": "Para generar los presupuestos necesito el nombre del cliente. Por favor completalo antes de confirmar."}
+                        yield {"type": "done", "content": ""}
+                        return
+
                     from app.modules.agent.tools.document_tool import generate_edificio_documents
                     yield {"type": "action", "content": "Generando presupuestos..."}
 
