@@ -676,6 +676,8 @@ class AgentService:
                             content.append({"type": "text", "text": f"""[EDIFICIO PRE-CALCULADO — CONTRATO ESTRICTO]
 ⛔ Todos los valores fueron calculados por el sistema con precisión 100%.
 ⛔ NO recalcular ningún valor. NO modificar campos numéricos. NO inferir datos faltantes.
+⛔ NO llamar list_pieces — este JSON YA ES la fuente de verdad para Paso 1.
+⛔ Presentar separado por material, con totales del JSON. NO aplanar en una sola tabla.
 ⛔ null = desconocido. "-" = no aplica. NUNCA inventar.
 ⛔ Usar los totales del JSON para redactar el presupuesto.
 
