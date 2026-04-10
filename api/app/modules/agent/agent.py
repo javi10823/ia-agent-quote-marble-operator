@@ -667,11 +667,54 @@ class AgentService:
                 _building_step = _bd.get("building_step") if isinstance(_bd, dict) else None
                 _is_confirmation = len(user_message.strip()) < 200
 
+                # ── Awaiting client name: capture and resume ──
+                if _building_step == "awaiting_client_name" and user_message.strip():
+                    new_name = user_message.strip()
+                    try:
+                        _bd["building_step"] = "step2_quote"  # Resume to Paso 3
+                        await db.execute(
+                            update(Quote).where(Quote.id == quote_id).values(
+                                client_name=new_name,
+                                quote_breakdown=_bd,
+                                messages=list(_p2quote.messages or []) + [
+                                    {"role": "user", "content": [{"type": "text", "text": new_name}]},
+                                    {"role": "assistant", "content": [{"type": "text", "text": f"Cliente: {new_name}. Generando presupuestos..."}]},
+                                ],
+                            )
+                        )
+                        await db.commit()
+                        # Re-read quote with updated client_name
+                        _p2q = await db.execute(select(Quote).where(Quote.id == quote_id))
+                        _p2quote = _p2q.scalar_one_or_none()
+                        _bd = _p2quote.quote_breakdown
+                        _building_step = "step2_quote"
+                        # Fall through to Paso 3 below
+                    except Exception as e:
+                        logging.error(f"Failed to save client name: {e}")
+                        yield {"type": "text", "content": "Error al guardar el nombre del cliente."}
+                        yield {"type": "done", "content": ""}
+                        return
+
                 # ── PASO 3: Generate documents ──
-                if _building_step == "step2_quote" and _is_confirmation and _bd.get("paso2_calc"):
+                if _building_step == "step2_quote" and _bd.get("paso2_calc"):
                     # Validate client_name before generating
                     if not (_p2quote.client_name or "").strip():
-                        yield {"type": "text", "content": "Para generar los presupuestos necesito el nombre del cliente. Por favor completalo antes de confirmar."}
+                        # Save state and ask for client name
+                        try:
+                            _bd["building_step"] = "awaiting_client_name"
+                            await db.execute(
+                                update(Quote).where(Quote.id == quote_id).values(
+                                    quote_breakdown=_bd,
+                                    messages=list(_p2quote.messages or []) + [
+                                        {"role": "user", "content": [{"type": "text", "text": user_message}]},
+                                        {"role": "assistant", "content": [{"type": "text", "text": "Para generar los presupuestos necesito el nombre del cliente. Escribilo y continúo."}]},
+                                    ],
+                                )
+                            )
+                            await db.commit()
+                        except Exception as e:
+                            logging.error(f"Failed to save awaiting_client_name state: {e}")
+                        yield {"type": "text", "content": "Para generar los presupuestos necesito el nombre del cliente. Escribilo y continúo."}
                         yield {"type": "done", "content": ""}
                         return
 
