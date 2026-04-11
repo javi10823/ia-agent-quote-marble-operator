@@ -801,6 +801,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     )
     center_align = Alignment(horizontal="center")
     right_align = Alignment(horizontal="right")
+    left_align = Alignment(horizontal="left")
 
     # Zebra fill — PDF uses rgb(243,243,243) on odd rows
     zebra_fill = PatternFill(start_color="F3F3F3", end_color="F3F3F3", fill_type="solid")
@@ -860,6 +861,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     ws.merge_cells("A22:C22")
     ws["A22"].value = "Descripcion"
     ws["A22"].font = bold_9
+    ws["A22"].alignment = left_align
     ws["D22"].value = "Cantidad"
     ws["D22"].font = bold_9
     ws["D22"].alignment = right_align
@@ -878,6 +880,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     ws.merge_cells("A23:C23")
     ws["A23"].value = _mat_display
     ws["A23"].font = bold_9
+    ws["A23"].alignment = left_align
     ws["D23"].value = _fmt_qty(mat_m2)
     ws["D23"].font = normal_9
     ws["D23"].alignment = right_align
@@ -897,6 +900,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
         ws.merge_cells(f"A{r}:C{r}")
         ws.cell(r, 1).value = sector.get("label", "")
         ws.cell(r, 1).font = bold_8
+        ws.cell(r, 1).alignment = left_align
         zebra_done()
         r += 1
 
@@ -917,6 +921,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
             ws.merge_cells(f"A{r}:C{r}")
             ws.cell(r, 1).value = display
             ws.cell(r, 1).font = normal_8
+            ws.cell(r, 1).alignment = left_align
             if first_piece:
                 # Total on same row as first piece (matching PDF)
                 if discount_pct:
@@ -956,6 +961,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
         ws.merge_cells(f"A{r}:C{r}")
         ws.cell(r, 1).value = "MANO DE OBRA"
         ws.cell(r, 1).font = bold_9
+        ws.cell(r, 1).alignment = left_align
         zebra_done()
         r += 1
 
@@ -964,6 +970,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
             ws.merge_cells(f"A{r}:C{r}")
             ws.cell(r, 1).value = mo["description"]
             ws.cell(r, 1).font = normal_9
+            ws.cell(r, 1).alignment = left_align
             # Qty: integer → no decimals, decimal → 2 decimals (matching PDF _fmt_qty)
             ws.cell(r, 4).value = _fmt_qty(mo["quantity"])
             ws.cell(r, 4).font = normal_9
