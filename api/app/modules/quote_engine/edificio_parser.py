@@ -1101,7 +1101,7 @@ def build_edificio_doc_context(
 
         # ── Grand total text ──
         if cur == "ARS" and show_mo:
-            gt_text = f"PRESUPUESTO TOTAL: ${_fmt_num(total_ars, 0)}"
+            gt_text = f"PRESUPUESTO TOTAL: ${_fmt_num(total_ars, 0)} de mano de obra y material"
         elif cur == "USD" and show_mo:
             gt_text = f"PRESUPUESTO TOTAL: ${_fmt_num(mo_subtotal, 0)} mano de obra + USD {_fmt_num(total_usd, 0)} material"
         elif cur == "USD" and not show_mo:
