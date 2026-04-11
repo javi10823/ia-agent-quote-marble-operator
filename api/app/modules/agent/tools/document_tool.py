@@ -712,7 +712,7 @@ def _generate_edificio_pdf(pdf_path: Path, data: dict) -> None:
         pdf.set_font("Helvetica", "B", 9)
         pdf.cell(w[0] + w[1], 5, "")
         pdf.cell(w[2], 5, "TOTAL PESOS", align="R")
-        pdf.cell(w[3], 5, _fmt_ars(mo_subtotal), align="R", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(w[3], 5, _fmt_ars(total_ars), align="R", new_x="LMARGIN", new_y="NEXT")
 
     pdf.ln(5)
 
@@ -890,7 +890,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
         r += 1
         ws.cell(r, 5).value = "TOTAL PESOS"
         ws.cell(r, 5).font = bold
-        ws.cell(r, 6).value = f"=SUM(F{mo_start}:F{mo_start + len(mo_items) - 1})"
+        ws.cell(r, 6).value = total_ars
         ws.cell(r, 6).number_format = ars_fmt
         ws.cell(r, 6).font = bold
 
@@ -1288,7 +1288,7 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     total_pesos_row = mo_end_row + 1
     ws.cell(total_pesos_row, 5).value = "Total PESOS"
     ws.cell(total_pesos_row, 5).font = bold
-    ws.cell(total_pesos_row, 6).value = f"=SUM(F{MO_START_ROW}:F{mo_end_row})"
+    ws.cell(total_pesos_row, 6).value = total_ars
     ws.cell(total_pesos_row, 6).number_format = ars_fmt
     ws.cell(total_pesos_row, 6).font = bold
 
