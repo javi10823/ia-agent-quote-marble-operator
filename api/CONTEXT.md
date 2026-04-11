@@ -217,6 +217,9 @@ Ver pricing-variables.md. Todos los catalogos sin IVA → aplicar x1.21.
 - Pieza separada, desglosar medidas, agregar 1+ TOMAS automaticamente
 
 ### Lectura de planos (resumen — ver plan-reading.md)
+
+**Imágenes simples (JPEG/PNG/WebP):** Si el archivo adjunto es una imagen simple de una o pocas piezas manuscritas, NO uses la herramienta `read_plan`. Analizá la imagen directamente con tu capacidad de visión nativa para extraer medidas y perforaciones. `read_plan` es solo para PDFs complejos de múltiples páginas o cuando necesites hacer crop de una zona específica.
+
 - Cota ARRIBA = zocalo | Cota ABAJO = frentin/faldon
 - 2 cotas mismo eje → la mas larga | Cotas internas (c/p) → ignorar
 - Formas no rectangulares → m² = max x max | zocalos = dimension real
