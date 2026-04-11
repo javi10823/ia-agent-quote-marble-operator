@@ -857,6 +857,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
         row_n[0] += 1
 
     # Row 22: column headers (PDF: bold 9pt)
+    ws.merge_cells("A22:C22")
     ws["A22"].value = "Descripcion"
     ws["A22"].font = bold_9
     ws["D22"].value = "Cantidad"
@@ -874,6 +875,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     mat_total_bruto = data.get("material_total") or round(mat_m2 * mat_price)
 
     apply_zebra(23)
+    ws.merge_cells("A23:C23")
     ws["A23"].value = _mat_display
     ws["A23"].font = bold_9
     ws["D23"].value = _fmt_qty(mat_m2)
@@ -892,6 +894,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     first_piece = True
     for sector in sectors:
         apply_zebra(r)
+        ws.merge_cells(f"A{r}:C{r}")
         ws.cell(r, 1).value = sector.get("label", "")
         ws.cell(r, 1).font = bold_8
         zebra_done()
@@ -911,11 +914,9 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
             count = seen[piece]
             display = f"{piece} (x{count})" if count > 1 else piece
             apply_zebra(r)
+            ws.merge_cells(f"A{r}:C{r}")
             ws.cell(r, 1).value = display
             ws.cell(r, 1).font = normal_8
-            # Auto-adjust row height for long piece text that wraps in Google Sheets
-            if len(display) > 25:
-                ws.row_dimensions[r].height = 30  # 2 lines
             if first_piece:
                 # Total on same row as first piece (matching PDF)
                 if discount_pct:
@@ -952,6 +953,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     # MO block — only if show_mo (PDF: header bold 9pt, items normal 9pt)
     if show_mo and mo_items:
         apply_zebra(r)
+        ws.merge_cells(f"A{r}:C{r}")
         ws.cell(r, 1).value = "MANO DE OBRA"
         ws.cell(r, 1).font = bold_9
         zebra_done()
@@ -959,6 +961,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
 
         for mo in mo_items:
             apply_zebra(r)
+            ws.merge_cells(f"A{r}:C{r}")
             ws.cell(r, 1).value = mo["description"]
             ws.cell(r, 1).font = normal_9
             # Qty: integer → no decimals, decimal → 2 decimals (matching PDF _fmt_qty)
