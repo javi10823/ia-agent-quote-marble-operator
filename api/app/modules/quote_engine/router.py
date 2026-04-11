@@ -252,12 +252,27 @@ async def upload_source_files(
             (sources_dir / safe_name).write_bytes(data)
             logging.warning(f"Wrote {safe_name} to /tmp fallback for {quote_id}")
 
+        # Upload source file to Drive for durable storage
+        source_drive_info = {}
+        try:
+            from app.modules.agent.tools.drive_tool import upload_single_file_to_drive
+            dr = await upload_single_file_to_drive(str(sources_dir / safe_name), "Archivos Origen")
+            if dr.get("ok"):
+                source_drive_info = {
+                    "drive_file_id": dr["file_id"],
+                    "drive_url": dr["drive_url"],
+                    "drive_download_url": dr["drive_download_url"],
+                }
+        except Exception as e:
+            logging.warning(f"Drive upload of source file failed: {e}")
+
         saved.append({
             "filename": safe_name,
             "type": ct,
             "size": len(data),
             "url": f"/files/{quote_id}/sources/{safe_name}",
             "uploaded_at": datetime.now().isoformat(),
+            **source_drive_info,
         })
 
     # Update DB

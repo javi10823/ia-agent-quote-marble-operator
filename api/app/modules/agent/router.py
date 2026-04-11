@@ -103,11 +103,19 @@ async def _find_drive_url_in_files_v2(db: AsyncSession, quote_id: str, filename:
         quote = result.scalar_one_or_none()
         if not quote or not quote.quote_breakdown:
             return None
-        files_v2 = quote.quote_breakdown.get("files_v2", {})
+        # Check files_v2 in breakdown
+        files_v2 = quote.quote_breakdown.get("files_v2", {}) if quote.quote_breakdown else {}
         for item in files_v2.get("items", []):
             item_filename = urllib.parse.unquote(item.get("filename", ""))
             if item_filename == filename or item.get("local_url", "").endswith(filename):
                 return item.get("drive_download_url") or item.get("drive_url")
+
+        # Also check source_files (for source/plan files with drive info)
+        for sf in (quote.source_files or []):
+            if sf.get("filename") == filename or (sf.get("url") or "").endswith(filename):
+                drive_dl = sf.get("drive_download_url") or sf.get("drive_url")
+                if drive_dl:
+                    return drive_dl
     except Exception:
         pass
     return None
@@ -809,6 +817,21 @@ async def chat(
         sources_dir.mkdir(parents=True, exist_ok=True)
         (sources_dir / safe_filename).write_bytes(file_bytes)
 
+        # Upload source file to Drive for durable storage
+        source_drive_info = {}
+        try:
+            from app.modules.agent.tools.drive_tool import upload_single_file_to_drive
+            local_source_path = str(sources_dir / safe_filename)
+            dr = await upload_single_file_to_drive(local_source_path, "Archivos Origen")
+            if dr.get("ok"):
+                source_drive_info = {
+                    "drive_file_id": dr["file_id"],
+                    "drive_url": dr["drive_url"],
+                    "drive_download_url": dr["drive_download_url"],
+                }
+        except Exception as e:
+            logging.warning(f"Drive upload of source file failed: {e}")
+
         # Update DB with source file metadata
         existing_files = quote.source_files or []
         if not any(f["filename"] == safe_filename for f in existing_files):
@@ -818,9 +841,27 @@ async def chat(
                 "size": len(file_bytes),
                 "url": f"/files/{quote_id}/sources/{safe_filename}",
                 "uploaded_at": datetime.now().isoformat(),
+                **source_drive_info,
             })
             await db.execute(
                 update(Quote).where(Quote.id == quote_id).values(source_files=existing_files)
+            )
+
+            # Also persist in files_v2 for Drive-first resolution
+            bd = quote.quote_breakdown or {}
+            fv2 = bd.get("files_v2", {"items": []})
+            fv2["items"].append({
+                "kind": "source",
+                "scope": "parent",
+                "file_key": "parent:source",
+                "filename": safe_filename,
+                "local_path": str(sources_dir / safe_filename),
+                "local_url": f"/files/{quote_id}/sources/{safe_filename}",
+                **({f"drive_{k}": v for k, v in source_drive_info.items()} if source_drive_info else {}),
+            })
+            bd["files_v2"] = fv2
+            await db.execute(
+                update(Quote).where(Quote.id == quote_id).values(quote_breakdown=bd)
             )
             await db.commit()
 
