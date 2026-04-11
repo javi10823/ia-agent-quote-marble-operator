@@ -312,6 +312,16 @@ export default function ImportModal({ onDone, onClose }: Props) {
                     )}
                   </div>
 
+                  {/* No changes message */}
+                  {currentDiff.updated.length === 0 && (currentDiff.normalized?.length ?? 0) === 0 && currentDiff.new.length === 0 && currentDiff.zero_price.length === 0 && (
+                    <div className="px-4 py-6 rounded-lg border border-b1 bg-white/[0.01] flex flex-col items-center gap-2 mb-3">
+                      <div className="text-[13px] text-t2 font-medium">Sin cambios de precio</div>
+                      <div className="text-[11px] text-t3 text-center leading-relaxed max-w-[400px]">
+                        Los {currentDiff.unchanged} items del archivo coinciden exactamente con los precios actuales del catálogo. No hay nada para importar.
+                      </div>
+                    </div>
+                  )}
+
                   {/* Table */}
                   <div className="overflow-x-auto rounded-lg border border-b1">
                     <table className="w-full border-collapse text-[12px]">
