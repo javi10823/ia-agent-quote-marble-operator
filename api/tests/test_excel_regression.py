@@ -397,3 +397,68 @@ class TestExcelPdfParity:
             heights = re.findall(r'ht="([\d.]+)"', sheet_xml)
             for h in heights:
                 assert float(h) <= 50, f"Row height {h}px too large in {xlsx.name} — template height leak"
+
+    @pytest.mark.skipif(not ESH_PDF.exists(), reason="ESH PDF not available")
+    @pytest.mark.asyncio
+    async def test_edificio_excel_grand_total_has_border(self):
+        """Grand total row in edificio Excel must have a border (matching PDF box)."""
+        import re as _re
+        paso2, summary = _build_esh_paso2()
+        qid = "test-excel-parity-007"
+        await generate_edificio_documents(qid, paso2, summary, "ESH", "Test")
+
+        for xlsx in (OUTPUT_DIR / qid).glob("*.xlsx"):
+            if "Resumen" in xlsx.name:
+                continue
+            # Read raw XML — openpyxl can't load due to locale injection
+            with zipfile.ZipFile(str(xlsx)) as z:
+                styles_xml = z.read("xl/styles.xml").decode("utf-8")
+            # Check that styles.xml has a border with "thin" style (our injected border)
+            assert "thin" in styles_xml, f"No thin border style found in {xlsx.name}"
+            # Check styles.xml has horizontal="center" alignment (grand total cell)
+            assert 'horizontal="center"' in styles_xml, f"No centered alignment style in {xlsx.name}"
+
+    @pytest.mark.skipif(not ESH_PDF.exists(), reason="ESH PDF not available")
+    @pytest.mark.asyncio
+    async def test_edificio_excel_usd_format(self):
+        """USD values in edificio Excel must use 'USD 1.937' format (space + dots), not 'USD1937'."""
+        paso2, summary = _build_esh_paso2()
+        qid = "test-excel-parity-008"
+        await generate_edificio_documents(qid, paso2, summary, "ESH", "Test")
+
+        for xlsx in (OUTPUT_DIR / qid).glob("*.xlsx"):
+            if "Resumen" in xlsx.name:
+                continue
+            xml = _read_excel_xml(xlsx)
+            shared = ""
+            try:
+                with zipfile.ZipFile(str(xlsx)) as z:
+                    shared = z.read("xl/sharedStrings.xml").decode("utf-8")
+            except Exception:
+                pass
+            all_text = xml + shared
+            # Should NOT have "USD" immediately followed by a digit (no space)
+            import re
+            bad_usd = re.findall(r'USD\d', all_text)
+            assert len(bad_usd) == 0, f"USD values without space found in {xlsx.name}: {bad_usd}"
+
+    @pytest.mark.skipif(not ESH_PDF.exists(), reason="ESH PDF not available")
+    @pytest.mark.asyncio
+    async def test_edificio_excel_has_footer(self):
+        """Edificio Excel must have 'No se suben mesadas' footer like PDF."""
+        paso2, summary = _build_esh_paso2()
+        qid = "test-excel-parity-009"
+        await generate_edificio_documents(qid, paso2, summary, "ESH", "Test")
+
+        for xlsx in (OUTPUT_DIR / qid).glob("*.xlsx"):
+            if "Resumen" in xlsx.name:
+                continue
+            xml = _read_excel_xml(xlsx)
+            shared = ""
+            try:
+                with zipfile.ZipFile(str(xlsx)) as z:
+                    shared = z.read("xl/sharedStrings.xml").decode("utf-8")
+            except Exception:
+                pass
+            all_text = (xml + shared).lower()
+            assert "no se suben mesadas" in all_text, f"Footer missing from {xlsx.name}"
