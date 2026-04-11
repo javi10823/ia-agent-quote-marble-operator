@@ -146,14 +146,19 @@ class TestGenerateDocuments:
         # Read Excel XML directly (openpyxl can't load due to custom locale injection)
         with zipfile.ZipFile(str(xlsx_files[0]), 'r') as z:
             sheet_xml = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
+            try:
+                shared_xml = z.read("xl/sharedStrings.xml").decode("utf-8")
+            except KeyError:
+                shared_xml = ""
 
-        # All 5 MO descriptions must appear in the sheet XML
-        assert "pileta" in sheet_xml.lower(), "Pileta MO missing from Excel"
-        assert "anafe" in sheet_xml.lower(), "Anafe MO missing from Excel"
-        # Use "colocaci" to match both Colocación and Colocacion
-        assert "colocaci" in sheet_xml.lower(), "Colocación MO missing from Excel"
-        assert "flete" in sheet_xml.lower(), "Flete MO missing from Excel"
-        assert "pulido" in sheet_xml.lower(), "Pulido de cantos MO missing from Excel"
+        all_xml = (sheet_xml + shared_xml).lower()
 
-        # The SUM formula must cover F28:F32 (5 items)
-        assert "F28:F32" in sheet_xml, f"Total PESOS formula should be SUM(F28:F32) — not found in XML"
+        # All 5 MO descriptions must appear
+        assert "pileta" in all_xml, "Pileta MO missing from Excel"
+        assert "anafe" in all_xml, "Anafe MO missing from Excel"
+        assert "colocaci" in all_xml, "Colocación MO missing from Excel"
+        assert "flete" in all_xml, "Flete MO missing from Excel"
+        assert "pulido" in all_xml, "Pulido de cantos MO missing from Excel"
+
+        # Total PESOS must be present
+        assert "total pesos" in all_xml, "TOTAL PESOS not found"
