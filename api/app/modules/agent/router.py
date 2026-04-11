@@ -772,13 +772,14 @@ async def backfill_drive(db: AsyncSession = Depends(get_db)):
     from app.core.static import OUTPUT_DIR
 
     # Find quotes that are validated but missing Drive URLs
+    from sqlalchemy import or_ as _or
     result = await db.execute(
         select(Quote).where(
             Quote.status.in_(["validated", "sent"]),
             Quote.drive_pdf_url.is_(None),
             Quote.quote_breakdown.isnot(None),
             # Skip building children — they get handled via parent
-            or_(Quote.quote_kind != "building_child_material", Quote.quote_kind.is_(None)),
+            _or(Quote.quote_kind != "building_child_material", Quote.quote_kind.is_(None)),
         )
     )
     quotes = result.scalars().all()
