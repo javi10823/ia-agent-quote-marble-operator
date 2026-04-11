@@ -740,28 +740,63 @@ class AgentService:
                         return
 
                     if doc_result.get("ok"):
-                        # Upload to Drive
-                        drive_urls = []
-                        for gen in doc_result["generated"]:
-                            try:
-                                drive_result = await upload_to_drive(
-                                    quote_id,
-                                    _p2quote.client_name or "",
-                                    gen["material"],
-                                    datetime.now().strftime("%d.%m.%Y"),
-                                )
-                                if drive_result.get("ok"):
-                                    gen["drive_url"] = drive_result.get("drive_url")
-                                    drive_urls.append(drive_result.get("drive_url"))
-                            except Exception as e:
-                                logging.warning(f"Drive upload failed for {gen['material']}: {e}")
+                        from app.modules.agent.tools.drive_tool import upload_single_file_to_drive
+                        from app.core.static import OUTPUT_DIR as _OUT
 
-                        # Build response with download links
+                        # ── Upload each file to Drive individually + build files_v2 ──
+                        files_v2_items = []
+                        subfolder = f"{_p2quote.client_name or 'Edificio'}"
+
+                        for gen in doc_result["generated"]:
+                            mat = gen.get("material", "")
+                            is_resumen = "RESUMEN" in mat.upper()
+                            mat_key = "resumen" if is_resumen else mat.replace(" ", "_").lower()[:30]
+
+                            for kind, url_key in [("pdf", "pdf_url"), ("excel", "excel_url")]:
+                                local_url = gen.get(url_key)
+                                if not local_url:
+                                    continue
+                                # Derive local path from URL: /files/{qid}/filename → OUTPUT_DIR/{qid}/filename
+                                local_path = str(_OUT / local_url.replace("/files/", "", 1)) if local_url.startswith("/files/") else ""
+                                filename = local_url.split("/")[-1] if local_url else ""
+
+                                # Upload to Drive
+                                drive_info = {}
+                                if local_path:
+                                    try:
+                                        dr = await upload_single_file_to_drive(local_path, subfolder)
+                                        if dr.get("ok"):
+                                            drive_info = {
+                                                "file_id": dr["file_id"],
+                                                "drive_url": dr["drive_url"],
+                                                "drive_download_url": dr["drive_download_url"],
+                                            }
+                                            gen[f"drive_{kind}_url"] = dr["drive_url"]
+                                    except Exception as e:
+                                        logging.warning(f"Drive upload failed for {filename}: {e}")
+
+                                scope = "parent" if is_resumen else "child"
+                                file_key = f"parent:summary_{kind}" if is_resumen else f"{mat_key}:{kind}"
+
+                                files_v2_items.append({
+                                    "kind": f"summary_{kind}" if is_resumen else kind,
+                                    "scope": scope,
+                                    "file_key": file_key,
+                                    "owner_quote_id": quote_id if is_resumen else None,  # filled per-child below
+                                    "filename": filename,
+                                    "local_path": local_path,
+                                    "local_url": local_url or "",
+                                    **({f"drive_{k}": v for k, v in drive_info.items()} if drive_info else {}),
+                                })
+
+                            # Set drive_url on gen (legacy compat — use first Drive URL found)
+                            gen["drive_url"] = gen.get("drive_pdf_url") or gen.get("drive_excel_url") or ""
+
+                        # ── Build response ──
                         lines = ["Documentos generados:\n"]
                         for gen in doc_result["generated"]:
-                            emoji = "📄"
-                            lines.append(f"{emoji} **{gen['material']}**")
-                            lines.append(f"  - [Descargar PDF]({gen['pdf_url']})")
+                            lines.append(f"📄 **{gen['material']}**")
+                            lines.append(f"  - [Descargar PDF]({gen.get('pdf_url', '')})")
                             if gen.get("drive_url"):
                                 lines.append(f"  - [Ver en Drive]({gen['drive_url']})")
                         lines.append("")
@@ -770,11 +805,12 @@ class AgentService:
                             lines.append(f"**Total USD: USD {doc_result['grand_total_usd']:,.0f}".replace(",", ".") + "**")
                         paso3_response = "\n".join(lines)
 
-                        # Save docs to children + update parent
+                        # ── Persist to DB ──
                         try:
                             _bd["building_step"] = "step3_done"
+                            _bd["files_v2"] = {"items": files_v2_items}
 
-                            # Match generated docs to child quotes by material name
+                            # Match generated docs to children
                             children_result = await db.execute(
                                 select(Quote).where(
                                     Quote.parent_quote_id == quote_id,
@@ -789,26 +825,39 @@ class AgentService:
                                 if "RESUMEN" in mat_upper:
                                     resumen_gen = gen
                                     continue
-                                # Find matching child
                                 child = children.get(mat_upper)
                                 if not child:
-                                    # Try partial match
                                     for cmat, cq in children.items():
                                         if mat_upper in cmat or cmat in mat_upper:
                                             child = cq
                                             break
                                 if child:
+                                    # Build child's own files_v2
+                                    child_files = [
+                                        {**item, "owner_quote_id": child.id}
+                                        for item in files_v2_items
+                                        if item["scope"] == "child" and item.get("filename", "").startswith(gen.get("material", "XXX")[:15])
+                                    ]
+                                    # Simpler match: just grab items for this material
+                                    mat_key = mat_upper.replace(" ", "_").lower()[:30]
+                                    child_files = [item for item in files_v2_items if item.get("file_key", "").startswith(mat_key)]
+                                    for cf in child_files:
+                                        cf["owner_quote_id"] = child.id
+
+                                    child_bd = child.quote_breakdown or {}
+                                    child_bd["files_v2"] = {"items": child_files}
+
                                     await db.execute(
                                         update(Quote).where(Quote.id == child.id).values(
                                             pdf_url=gen.get("pdf_url"),
                                             excel_url=gen.get("excel_url"),
                                             drive_url=gen.get("drive_url"),
+                                            quote_breakdown=child_bd,
                                             status=QuoteStatus.VALIDATED,
                                         )
                                     )
-                                    logging.info(f"[edificio-paso3] Updated child {child.id} ({child.material}) with docs")
 
-                            # Update parent with resumen + state
+                            # Update parent
                             updated_msgs = list(_p2quote.messages or []) + [
                                 {"role": "user", "content": [{"type": "text", "text": user_message}]},
                                 {"role": "assistant", "content": [{"type": "text", "text": paso3_response}]},

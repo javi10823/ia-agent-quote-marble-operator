@@ -259,3 +259,90 @@ async def upload_to_drive(
     return await asyncio.to_thread(
         _upload_to_drive_sync, quote_id, client_name, material, date_str
     )
+
+
+async def upload_single_file_to_drive(file_path: str, subfolder_name: str = "") -> dict:
+    """Upload a single specific file to Drive. Returns file_id + URLs.
+
+    Unlike upload_to_drive which globs a directory, this uploads exactly one file.
+    """
+    from pathlib import Path
+    fp = Path(file_path)
+    if not fp.exists():
+        return {"ok": False, "error": f"File not found: {file_path}"}
+
+    def _upload():
+        try:
+            service = _get_drive_service()
+            if not service:
+                return {"ok": False, "error": "Drive service not configured"}
+
+            # Get or create target folder
+            now = datetime.now()
+            year = str(now.year)
+            month_folder = f"{now.month:02d}-{now.strftime('%B')}"
+
+            root_id = _get_or_create_folder(service, year, settings.GOOGLE_DRIVE_FOLDER_ID)
+            month_id = _get_or_create_folder(service, month_folder, root_id)
+            if subfolder_name:
+                target_id = _get_or_create_folder(service, subfolder_name, month_id)
+            else:
+                target_id = month_id
+
+            # Determine MIME type
+            ext = fp.suffix.lower()
+            if ext == ".xlsx":
+                mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                drive_mime = "application/vnd.google-apps.spreadsheet"
+            elif ext == ".pdf":
+                mime = "application/pdf"
+                drive_mime = "application/pdf"
+            else:
+                mime = "application/octet-stream"
+                drive_mime = mime
+
+            # Delete existing with same name
+            query = f"name='{fp.name}' and '{target_id}' in parents and trashed=false"
+            existing = service.files().list(q=query, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+            for f in existing.get("files", []):
+                try:
+                    service.files().delete(fileId=f["id"], supportsAllDrives=True).execute()
+                except Exception:
+                    pass
+
+            file_metadata = {"name": fp.name, "parents": [target_id]}
+            if ext == ".xlsx":
+                file_metadata["mimeType"] = "application/vnd.google-apps.spreadsheet"
+
+            media = MediaFileUpload(str(fp), mimetype=mime, resumable=True)
+            uploaded = service.files().create(
+                body=file_metadata, media_body=media,
+                fields="id, webViewLink", supportsAllDrives=True,
+            ).execute()
+
+            file_id = uploaded.get("id", "")
+            web_link = uploaded.get("webViewLink", "")
+
+            # Set locale for spreadsheets
+            if ext == ".xlsx" and file_id:
+                try:
+                    sheets = _get_sheets_service()
+                    sheets.spreadsheets().batchUpdate(
+                        spreadsheetId=file_id,
+                        body={"requests": [{"updateSpreadsheetProperties": {"properties": {"locale": "es_AR"}, "fields": "locale"}}]},
+                    ).execute()
+                except Exception:
+                    pass
+
+            return {
+                "ok": True,
+                "file_id": file_id,
+                "drive_url": web_link,
+                "drive_download_url": f"https://drive.google.com/uc?id={file_id}&export=download" if file_id else "",
+                "filename": fp.name,
+            }
+        except Exception as e:
+            logging.error(f"Drive single file upload error: {e}")
+            return {"ok": False, "error": str(e)}
+
+    return await asyncio.to_thread(_upload)
