@@ -14,14 +14,44 @@ TEMP_DIR = Path(tempfile.gettempdir()) / "marble_plans"
 TEMP_DIR.mkdir(exist_ok=True)
 
 
+def _fuzzy_find_file(filename: str) -> Optional[Path]:
+    """Find file in TEMP_DIR with fuzzy matching for LLM-hallucinated filenames.
+
+    Tries exact match first, then normalizes (lowercase, strip spaces/dashes)
+    to find a unique candidate. Returns None if no match or ambiguous.
+    """
+    exact = TEMP_DIR / filename
+    if exact.exists():
+        return exact
+
+    # Normalize: lowercase, remove spaces/dashes/underscores
+    import re
+    def _normalize(s: str) -> str:
+        return re.sub(r'[\s\-_]+', '', s.lower())
+
+    target = _normalize(filename)
+    candidates = []
+    for f in TEMP_DIR.iterdir():
+        if f.is_file() and _normalize(f.name) == target:
+            candidates.append(f)
+
+    if len(candidates) == 1:
+        import logging
+        logging.info(f"[read_plan] fuzzy match: '{filename}' → '{candidates[0].name}'")
+        return candidates[0]
+
+    return None
+
+
 async def read_plan(filename: str, crop_instructions: list) -> dict:
     """
-    Rasterize a plan file at 300 DPI and optionally crop individual mesadas.
+    Rasterize a plan file at 200 DPI and optionally crop individual mesadas.
     Returns base64-encoded images for Claude to analyze.
     """
-    plan_path = TEMP_DIR / filename
-    if not plan_path.exists():
-        return {"error": f"Archivo no encontrado: {filename}"}
+    plan_path = _fuzzy_find_file(filename)
+    if plan_path is None:
+        available = [f.name for f in TEMP_DIR.iterdir() if f.is_file()] if TEMP_DIR.exists() else []
+        return {"error": f"Archivo no encontrado: {filename}", "available_files": available}
 
     ext = plan_path.suffix.lower()
     images = []
