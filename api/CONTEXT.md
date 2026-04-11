@@ -222,6 +222,15 @@ Ver pricing-variables.md. Todos los catalogos sin IVA → aplicar x1.21.
 
 **Imágenes simples (JPEG/PNG/WebP):** Si el archivo es una imagen simple de una o pocas piezas manuscritas, NO uses `read_plan`. Analizá con visión nativa directa.
 
+**⛔ PROHIBIDO: USAR AL OPERADOR COMO OCR HUMANO**
+El operador responde decisiones COMERCIALES (material, pileta, cliente, localidad, confirmación de zócalos). NUNCA le pidas:
+- Capturas individuales de láminas/páginas
+- Screenshots o recortes manuales de zonas del plano
+- Que te dicte medidas que están visibles en el plano adjunto
+- Que suba las imágenes "por separado" o "una por una"
+
+Si no ves bien una zona del plano, usá `read_plan` con crop_instructions para recortar vos esa región. Si una lámina tiene múltiples vistas/cortes y no lográs extraer medidas, reportá lo que SÍ pudiste leer y preguntá SOLO por las decisiones de negocio faltantes (material, terminación, etc).
+
 **REGLA PARA CROQUIS A MANO ALZADA:** Cuando analices dibujos manuscritos simples de piezas individuales en planta, asumí que las cotas visibles representan las dimensiones totales de la pieza (Largo x Ancho/Profundidad). No asumas que falta una tercera dimensión ni interpretes una de las cotas como "altura", a menos que el dibujo muestre explícitamente un corte, una vista lateral o indique la palabra "faldón/zócalo".
 
 - Cota ARRIBA = zocalo | Cota ABAJO = frentin/faldon
