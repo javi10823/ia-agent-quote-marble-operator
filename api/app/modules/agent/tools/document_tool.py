@@ -440,10 +440,10 @@ def _generate_resumen_obra_excel(excel_path: Path, data: dict) -> None:
         ws.cell(r, 2).number_format = '#,##0.00'
         ws.cell(r, 3, cur).font = normal
         if cur == "USD":
-            ws.cell(r, 4, f"USD{m['price_unit']}").font = normal
-            ws.cell(r, 5, f"USD{m['subtotal']}").font = normal
-            ws.cell(r, 6, f"-USD{m['discount_amount']}" if m['discount_amount'] else "-").font = normal
-            ws.cell(r, 7, f"USD{m['net']}").font = bold
+            ws.cell(r, 4, _fmt_usd(m['price_unit'])).font = normal
+            ws.cell(r, 5, _fmt_usd(m['subtotal'])).font = normal
+            ws.cell(r, 6, f"-{_fmt_usd(m['discount_amount'])}" if m['discount_amount'] else "-").font = normal
+            ws.cell(r, 7, _fmt_usd(m['net'])).font = bold
         else:
             ws.cell(r, 4, m["price_unit"]).font = normal
             ws.cell(r, 4).number_format = ars_fmt
@@ -463,7 +463,7 @@ def _generate_resumen_obra_excel(excel_path: Path, data: dict) -> None:
         r += 1
     if data["total_mat_usd"]:
         ws.cell(r, 1, "Total materiales USD").font = bold
-        ws.cell(r, 7, f"USD{data['total_mat_usd']}").font = bold
+        ws.cell(r, 7, _fmt_usd(data['total_mat_usd'])).font = bold
         r += 1
 
     # MO table
@@ -499,7 +499,7 @@ def _generate_resumen_obra_excel(excel_path: Path, data: dict) -> None:
         r += 1
     if data["total_mat_usd"]:
         ws.cell(r, 1, "Total materiales USD").font = normal
-        ws.cell(r, 5, f"USD{data['total_mat_usd']}").font = normal
+        ws.cell(r, 5, _fmt_usd(data['total_mat_usd'])).font = normal
         r += 1
     ws.cell(r, 1, "Total mano de obra ARS").font = normal
     ws.cell(r, 5, data["mo_total"]).font = normal
@@ -511,7 +511,7 @@ def _generate_resumen_obra_excel(excel_path: Path, data: dict) -> None:
     r += 1
     if data["grand_total_usd"]:
         ws.cell(r, 1, "TOTAL FINAL USD").font = bold
-        ws.cell(r, 5, f"USD{data['grand_total_usd']}").font = bold
+        ws.cell(r, 5, _fmt_usd(data['grand_total_usd'])).font = bold
 
     # Clarification
     r += 2
@@ -523,9 +523,26 @@ def _generate_resumen_obra_excel(excel_path: Path, data: dict) -> None:
         ws.cell(r, 1, f"  - {name}").font = italic
         r += 1
 
-    # Conditions
+    # Conditions — match PDF
     r += 1
-    ws.cell(r, 1, "Forma de pago: Contado").font = Font(name="Calibri", size=8)
+    co = _load_company_config()
+    cond_font = Font(name="Calibri", size=7)
+    ws.cell(r, 1, "Forma de pago: Contado").font = cond_font
+    r += 1
+    if co.get("conditions_general"):
+        for line in co["conditions_general"].split("\n"):
+            if line.strip():
+                ws.cell(r, 1, line.strip()).font = cond_font
+                r += 1
+    if co.get("conditions_payment"):
+        r += 1
+        for line in co["conditions_payment"].split("\n"):
+            if line.strip():
+                ws.cell(r, 1, line.strip()).font = cond_font
+                r += 1
+    # Footer
+    r += 1
+    ws.cell(r, 1, "No se suben mesadas que no entren en ascensor").font = Font(name="Calibri", italic=True, size=7)
 
     wb.save(str(excel_path))
 
@@ -757,11 +774,18 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     for mc in list(ws.merged_cells.ranges):
         ws.unmerge_cells(str(mc))
 
-    from openpyxl.styles import Font
+    from openpyxl.styles import Font, Alignment, Border, Side
     bold = Font(name="Calibri", bold=True, size=10)
     normal = Font(name="Calibri", bold=False, size=10)
     ars_fmt = '"$"#,##0'
     qty_fmt = '#,##0.00'
+    thin_border = Border(
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
+    )
+    center_align = Alignment(horizontal="center")
 
     client_name = data.get("client_name", "")
     project = data.get("project", "")
@@ -817,8 +841,8 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     ws["D23"].value = mat_m2
     ws["D23"].number_format = qty_fmt
     if currency == "USD":
-        ws["E23"].value = f"USD{mat_price}"
-        ws["F23"].value = f"USD{mat_total_bruto}"
+        ws["E23"].value = _fmt_usd(mat_price)
+        ws["F23"].value = _fmt_usd(mat_total_bruto)
     else:
         ws["E23"].value = mat_price
         ws["E23"].number_format = ars_fmt
@@ -832,8 +856,21 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
         ws.cell(r, 1).value = sector.get("label", "")
         ws.cell(r, 1).font = bold
         r += 1
-        for piece in sector.get("pieces", []):
-            ws.cell(r, 1).value = piece
+        # Group duplicate pieces: "1,66ML X 0,10 FALDON" x2 → "(x2)"
+        raw_pieces = sector.get("pieces", [])
+        grouped = []
+        seen = {}
+        for p in raw_pieces:
+            if p in seen:
+                seen[p] += 1
+            else:
+                seen[p] = 1
+                grouped.append(p)
+
+        for piece in grouped:
+            count = seen[piece]
+            display = f"{piece} (x{count})" if count > 1 else piece
+            ws.cell(r, 1).value = display
             ws.cell(r, 1).font = normal
             if first_piece:
                 if discount_pct:
@@ -841,7 +878,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
                     ws.cell(r, 5).font = Font(name="Calibri", italic=True, size=10)
                     disc = round(mat_total_bruto * discount_pct / 100)
                     if currency == "USD":
-                        ws.cell(r, 6).value = f"USD{disc}"
+                        ws.cell(r, 6).value = _fmt_usd(disc)
                     else:
                         ws.cell(r, 6).value = disc
                         ws.cell(r, 6).number_format = ars_fmt
@@ -850,7 +887,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
                     ws.cell(r, 5).font = bold
                     mat_net = mat_total_bruto - disc
                     if currency == "USD":
-                        ws.cell(r, 6).value = f"USD{mat_net}"
+                        ws.cell(r, 6).value = _fmt_usd(mat_net)
                     else:
                         ws.cell(r, 6).value = mat_net
                         ws.cell(r, 6).number_format = ars_fmt
@@ -859,7 +896,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
                     ws.cell(r, 5).value = f"Total {currency}"
                     ws.cell(r, 5).font = bold
                     if currency == "USD":
-                        ws.cell(r, 6).value = f"USD{mat_total_bruto}"
+                        ws.cell(r, 6).value = _fmt_usd(mat_total_bruto)
                     else:
                         ws.cell(r, 6).value = mat_total_bruto
                         ws.cell(r, 6).number_format = ars_fmt
@@ -897,11 +934,43 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
 
     r += 2  # spacer
 
-    # Grand total
+    # Grand total — bordered box, centered (matching PDF exactly)
     if grand_text:
-        ws.cell(r, 1).value = grand_text
-        ws.cell(r, 1).font = bold
         ws.merge_cells(f"A{r}:F{r}")
+        cell_gt = ws.cell(r, 1)
+        cell_gt.value = grand_text
+        cell_gt.font = Font(name="Calibri", bold=True, size=9)
+        cell_gt.alignment = center_align
+        cell_gt.border = thin_border
+        # Apply border to all merged cells in the row
+        for col in range(2, 7):
+            ws.cell(r, col).border = thin_border
+
+    # Conditions — same as PDF
+    r += 2
+    co = _load_company_config()
+    cond_font = Font(name="Calibri", size=7)  # Match PDF 7pt
+    ws.cell(r, 1).value = "Forma de pago: Contado"
+    ws.cell(r, 1).font = cond_font
+    r += 1
+    if co.get("conditions_general"):
+        for line in co["conditions_general"].split("\n"):
+            if line.strip():
+                ws.cell(r, 1).value = line.strip()
+                ws.cell(r, 1).font = cond_font
+                r += 1
+    if co.get("conditions_payment"):
+        r += 1
+        for line in co["conditions_payment"].split("\n"):
+            if line.strip():
+                ws.cell(r, 1).value = line.strip()
+                ws.cell(r, 1).font = cond_font
+                r += 1
+
+    # Footer — match PDF exactly
+    r += 1
+    ws.cell(r, 1).value = "No se suben mesadas que no entren en ascensor"
+    ws.cell(r, 1).font = Font(name="Calibri", italic=True, size=7)
 
     wb.save(str(excel_path))
     _inject_locale(str(excel_path))
@@ -1216,8 +1285,8 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     ws["D22"].value = mat_m2
     ws["D22"].number_format = qty_fmt
     if currency == "USD":
-        ws["E22"].value = f"USD{mat_price}"
-        ws["F22"].value = f"USD{total_mat}"  # Bruto (before discount)
+        ws["E22"].value = _fmt_usd(mat_price)
+        ws["F22"].value = _fmt_usd(total_mat)  # Bruto (before discount)
     else:
         ws["E22"].value = mat_price
         ws["E22"].number_format = ars_fmt
@@ -1256,7 +1325,7 @@ def _generate_excel(output_path: Path, data: dict) -> None:
         ws.cell(24, 1).value = all_pieces[1]
     if currency == "USD":
         ws.cell(24, 5).value = f"TOTAL {currency}"
-        ws.cell(24, 6).value = f"USD{total_mat_net}"
+        ws.cell(24, 6).value = _fmt_usd(total_mat_net)
     else:
         # ARS-only: clear template's hardcoded "TOTAL USD" from E24/F24
         ws.cell(24, 5).value = None
