@@ -4,7 +4,7 @@ import { A, I, DOT, DASH } from "@/lib/chars";
 
 const VALID_TYPES = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const MAX_FILES = 5;
+const MAX_FILES = 10;
 
 export interface ChatInputProps {
   input: string;

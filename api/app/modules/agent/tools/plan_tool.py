@@ -30,7 +30,7 @@ async def read_plan(filename: str, crop_instructions: list) -> dict:
         if ext == ".pdf" and PDF2IMAGE_AVAILABLE:
             pages = convert_from_bytes(
                 plan_path.read_bytes(),
-                dpi=300,
+                dpi=200,  # 200 default; 300 only as fallback for ambiguous pages
                 fmt="jpeg",
             )
             if pages:

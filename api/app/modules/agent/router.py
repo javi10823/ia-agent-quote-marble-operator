@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 # File upload constants
 ALLOWED_MIME_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-MAX_FILES = 5
+MAX_FILES = 10
 
 from app.core.database import get_db
 from app.models.quote import Quote, QuoteStatus
