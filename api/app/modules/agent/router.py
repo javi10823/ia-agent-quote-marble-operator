@@ -773,6 +773,124 @@ async def create_quote(
     return {"id": quote.id}
 
 
+# ── ADMIN: Backfill Drive URLs for existing quotes ───────────────────────────
+
+@router.post("/admin/backfill-drive")
+async def backfill_drive(db: AsyncSession = Depends(get_db)):
+    """Regenerate PDF/Excel and upload to Drive for quotes missing drive_pdf_url.
+
+    Safe: reads from existing quote_breakdown, regenerates docs, uploads to Drive.
+    Does NOT recalculate anything. Idempotent — skips quotes that already have Drive URLs.
+    """
+    from app.modules.agent.tools.document_tool import generate_documents
+    from app.modules.agent.tools.drive_tool import upload_single_file_to_drive
+    from app.core.static import OUTPUT_DIR
+
+    # Find quotes that are validated but missing Drive URLs
+    result = await db.execute(
+        select(Quote).where(
+            Quote.status.in_(["validated", "sent"]),
+            Quote.drive_pdf_url.is_(None),
+            Quote.quote_breakdown.isnot(None),
+            # Skip building children — they get handled via parent
+            or_(Quote.quote_kind != "building_child_material", Quote.quote_kind.is_(None)),
+        )
+    )
+    quotes = result.scalars().all()
+    logging.info(f"[backfill-drive] Found {len(quotes)} quotes to backfill")
+
+    results = []
+    for q in quotes:
+        bd = q.quote_breakdown
+        if not bd or not bd.get("ok", True):
+            results.append({"id": q.id, "status": "skipped", "reason": "no valid breakdown"})
+            continue
+
+        try:
+            # Regenerate docs from breakdown
+            doc_result = await generate_documents(q.id, bd)
+            if not doc_result.get("ok"):
+                results.append({"id": q.id, "status": "error", "reason": f"generate failed: {doc_result.get('error', '')[:100]}"})
+                continue
+
+            # Upload each file to Drive
+            drive_pdf = None
+            drive_excel = None
+            subfolder = q.client_name or ""
+
+            for url_key, kind in [("pdf_url", "pdf"), ("excel_url", "excel")]:
+                local_url = doc_result.get(url_key)
+                if not local_url:
+                    continue
+                local_path = str(OUTPUT_DIR / local_url.replace("/files/", "", 1))
+                try:
+                    dr = await upload_single_file_to_drive(local_path, subfolder)
+                    if dr.get("ok"):
+                        if kind == "pdf":
+                            drive_pdf = dr["drive_url"]
+                        else:
+                            drive_excel = dr["drive_url"]
+                except Exception as e:
+                    logging.warning(f"[backfill] Drive upload failed for {q.id} {kind}: {e}")
+
+            # Update quote
+            update_vals = {
+                "pdf_url": doc_result.get("pdf_url"),
+                "excel_url": doc_result.get("excel_url"),
+            }
+            if drive_pdf:
+                update_vals["drive_pdf_url"] = drive_pdf
+                update_vals["drive_url"] = drive_pdf
+            if drive_excel:
+                update_vals["drive_excel_url"] = drive_excel
+
+            # Build files_v2
+            files_v2_items = []
+            mat_label = (q.material or "").replace(" ", "_").lower()[:30]
+            for kind, url in [("pdf", doc_result.get("pdf_url")), ("excel", doc_result.get("excel_url"))]:
+                if url:
+                    item = {
+                        "kind": kind,
+                        "scope": "self",
+                        "owner_quote_id": q.id,
+                        "file_key": f"{mat_label}:{kind}",
+                        "filename": url.split("/")[-1],
+                        "local_url": url,
+                        "local_path": str(OUTPUT_DIR / url.replace("/files/", "", 1)),
+                    }
+                    if kind == "pdf" and drive_pdf:
+                        item["drive_url"] = drive_pdf
+                        item["drive_download_url"] = drive_pdf.replace("/view", "/export?format=pdf") if "/view" in drive_pdf else drive_pdf
+                    elif kind == "excel" and drive_excel:
+                        item["drive_url"] = drive_excel
+                        item["drive_download_url"] = drive_excel
+                    files_v2_items.append(item)
+
+            if files_v2_items:
+                bd_copy = dict(bd)
+                bd_copy["files_v2"] = {"items": files_v2_items}
+                update_vals["quote_breakdown"] = bd_copy
+
+            await db.execute(update(Quote).where(Quote.id == q.id).values(**update_vals))
+            await db.commit()
+
+            results.append({
+                "id": q.id,
+                "client": q.client_name,
+                "material": q.material,
+                "status": "ok",
+                "drive_pdf": bool(drive_pdf),
+                "drive_excel": bool(drive_excel),
+            })
+            logging.info(f"[backfill] {q.id} ({q.client_name} / {q.material}): pdf={bool(drive_pdf)}, excel={bool(drive_excel)}")
+
+        except Exception as e:
+            logging.error(f"[backfill] Failed for {q.id}: {e}", exc_info=True)
+            results.append({"id": q.id, "status": "error", "reason": str(e)[:200]})
+
+    return {"total": len(quotes), "results": results}
+
+
 # ── CHAT — SSE STREAMING ──────────────────────────────────────────────────────
 
 @router.post("/quotes/{quote_id}/chat")
