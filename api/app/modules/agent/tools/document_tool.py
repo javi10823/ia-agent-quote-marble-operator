@@ -828,12 +828,15 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     ws["A18"].value = project
     ws["C19"].value = delivery
 
-    # Clear dynamic rows — values AND row heights
+    # Clear dynamic rows — values, fills, AND borders from template
+    no_border = Border()
     max_clear = 60 + max(0, len(mo_items)) + len(sectors) * 5
     for row in range(22, max_clear + 1):
         for col in range(1, 7):
-            ws.cell(row, col).value = None
-            ws.cell(row, col).fill = no_fill
+            cell = ws.cell(row, col)
+            cell.value = None
+            cell.fill = no_fill
+            cell.border = no_border
         ws.row_dimensions[row].height = 15
 
     # Zebra row counter — mirrors PDF row_n[0] counter
@@ -986,31 +989,37 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
         for col in range(2, 7):
             ws.cell(r, col).border = thin_border
 
-    # Conditions — match PDF 7pt
+    # Conditions — match PDF 7pt, merge A:F + wrap so text flows full width
     r += 2
     co = _load_company_config()
     cond_font = Font(name="Calibri", size=7)
-    ws.cell(r, 1).value = "Forma de pago: Contado"
-    ws.cell(r, 1).font = cond_font
+    wrap_align = Alignment(wrap_text=True)
+
+    def _write_cond_line(row, text, font=None):
+        ws.merge_cells(f"A{row}:F{row}")
+        cell = ws.cell(row, 1)
+        cell.value = text
+        cell.font = font or cond_font
+        cell.alignment = wrap_align
+
+    _write_cond_line(r, "Forma de pago: Contado")
     r += 1
     if co.get("conditions_general"):
         for line in co["conditions_general"].split("\n"):
             if line.strip():
-                ws.cell(r, 1).value = line.strip()
-                ws.cell(r, 1).font = cond_font
+                _write_cond_line(r, line.strip())
                 r += 1
     if co.get("conditions_payment"):
         r += 1
         for line in co["conditions_payment"].split("\n"):
             if line.strip():
-                ws.cell(r, 1).value = line.strip()
-                ws.cell(r, 1).font = cond_font
+                _write_cond_line(r, line.strip())
                 r += 1
 
     # Footer — match PDF italic 7pt
     r += 1
-    ws.cell(r, 1).value = "No se suben mesadas que no entren en ascensor"
-    ws.cell(r, 1).font = Font(name="Calibri", italic=True, size=7)
+    _write_cond_line(r, "No se suben mesadas que no entren en ascensor",
+                     Font(name="Calibri", italic=True, size=7))
 
     wb.save(str(excel_path))
     _inject_locale(str(excel_path))
