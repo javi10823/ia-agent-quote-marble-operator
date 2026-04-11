@@ -796,9 +796,14 @@ class AgentService:
                         lines = ["Documentos generados:\n"]
                         for gen in doc_result["generated"]:
                             lines.append(f"📄 **{gen['material']}**")
-                            lines.append(f"  - [Descargar PDF]({gen.get('pdf_url', '')})")
-                            if gen.get("drive_url"):
-                                lines.append(f"  - [Ver en Drive]({gen['drive_url']})")
+                            if gen.get("drive_pdf_url"):
+                                lines.append(f"  - [PDF en Drive]({gen['drive_pdf_url']})")
+                            elif gen.get("pdf_url"):
+                                lines.append(f"  - [Descargar PDF]({gen['pdf_url']})")
+                            if gen.get("drive_excel_url"):
+                                lines.append(f"  - [Excel en Drive]({gen['drive_excel_url']})")
+                            elif gen.get("excel_url"):
+                                lines.append(f"  - [Descargar Excel]({gen['excel_url']})")
                         lines.append("")
                         lines.append(f"**Total ARS: ${doc_result['grand_total_ars']:,.0f}".replace(",", ".") + "**")
                         if doc_result["grand_total_usd"]:
