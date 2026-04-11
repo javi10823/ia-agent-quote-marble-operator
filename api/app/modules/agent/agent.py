@@ -857,6 +857,8 @@ class AgentService:
                                             pdf_url=gen.get("pdf_url"),
                                             excel_url=gen.get("excel_url"),
                                             drive_url=gen.get("drive_url"),
+                                            drive_pdf_url=gen.get("drive_pdf_url"),
+                                            drive_excel_url=gen.get("drive_excel_url"),
                                             quote_breakdown=child_bd,
                                             status=QuoteStatus.VALIDATED,
                                         )
@@ -1789,6 +1791,8 @@ class AgentService:
                     files_v2_items = []
                     first_drive_url = None
                     first_drive_file_id = None
+                    _drive_pdf_url = None
+                    _drive_excel_url = None
                     mat_label = (qdata.get("material_name") or "").replace(" ", "_").lower()[:30]
                     subfolder = qdata.get("client_name", "")
 
@@ -1812,6 +1816,10 @@ class AgentService:
                                     if not first_drive_url:
                                         first_drive_url = dr["drive_url"]
                                         first_drive_file_id = dr["file_id"]
+                                    if kind == "pdf":
+                                        _drive_pdf_url = dr["drive_url"]
+                                    elif kind == "excel":
+                                        _drive_excel_url = dr["drive_url"]
                             except Exception as e:
                                 logging.warning(f"Drive upload failed for {filename}: {e}")
 
@@ -1834,6 +1842,10 @@ class AgentService:
                         if first_drive_url:
                             drive_update["drive_url"] = first_drive_url
                             drive_update["drive_file_id"] = first_drive_file_id
+                        if _drive_pdf_url:
+                            drive_update["drive_pdf_url"] = _drive_pdf_url
+                        if _drive_excel_url:
+                            drive_update["drive_excel_url"] = _drive_excel_url
                         await db.execute(
                             update(Quote).where(Quote.id == target_qid).values(**drive_update)
                         )

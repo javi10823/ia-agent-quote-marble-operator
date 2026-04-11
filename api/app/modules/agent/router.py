@@ -123,7 +123,26 @@ async def _find_drive_url_in_files_v2(db: AsyncSession, quote_id: str, filename:
 
 # ── LIST QUOTES ──────────────────────────────────────────────────────────────
 
-@router.get("/quotes", response_model=list[QuoteListResponse])
+def _extract_drive_urls(quote) -> dict:
+    """Extract drive_pdf_url and drive_excel_url from files_v2 in breakdown."""
+    bd = quote.quote_breakdown if quote.quote_breakdown else {}
+    files_v2 = bd.get("files_v2", {})
+    result = {"drive_pdf_url": None, "drive_excel_url": None}
+    for item in files_v2.get("items", []):
+        kind = item.get("kind", "")
+        url = item.get("drive_url") or item.get("drive_download_url")
+        if kind == "pdf" and url and not result["drive_pdf_url"]:
+            result["drive_pdf_url"] = url
+        elif kind == "excel" and url and not result["drive_excel_url"]:
+            result["drive_excel_url"] = url
+        elif kind == "summary_pdf" and url and not result["drive_pdf_url"]:
+            result["drive_pdf_url"] = url
+        elif kind == "summary_excel" and url and not result["drive_excel_url"]:
+            result["drive_excel_url"] = url
+    return result
+
+
+@router.get("/quotes")
 async def list_quotes(
     limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),

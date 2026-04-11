@@ -386,8 +386,8 @@ export default function DashboardPage() {
                       {/* Archivos */}
                       <td className="px-[18px] py-[13px]">
                         <div className="flex gap-1 justify-end" onClick={e => e.stopPropagation()}>
-                          {q.pdf_url && <FileBtn href={q.pdf_url} emoji="📄" label="PDF" />}
-                          {q.excel_url && <FileBtn href={q.excel_url} emoji="📊" label="Excel" />}
+                          {(q.drive_pdf_url || q.pdf_url) && <FileBtn href={q.drive_pdf_url || q.pdf_url!} emoji="📄" label="PDF" />}
+                          {(q.drive_excel_url || q.excel_url) && <FileBtn href={q.drive_excel_url || q.excel_url!} emoji="📊" label="Excel" />}
                         </div>
                       </td>
                       {/* Duplicar material */}

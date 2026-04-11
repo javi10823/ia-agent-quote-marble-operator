@@ -21,6 +21,8 @@ class QuoteListResponse(BaseModel):
     pdf_url: Optional[str]
     excel_url: Optional[str]
     drive_url: Optional[str]
+    drive_pdf_url: Optional[str] = None
+    drive_excel_url: Optional[str] = None
     parent_quote_id: Optional[str] = None
     quote_kind: Optional[str] = "standard"
     comparison_group_id: Optional[str] = None
