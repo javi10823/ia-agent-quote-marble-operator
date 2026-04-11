@@ -386,8 +386,8 @@ export default function DashboardPage() {
                       {/* Archivos */}
                       <td className="px-[18px] py-[13px]">
                         <div className="flex gap-1 justify-end" onClick={e => e.stopPropagation()}>
-                          {q.pdf_url && <FileBtn href={q.pdf_url} emoji="📄" />}
-                          {q.drive_url && <FileBtn href={q.drive_url} emoji="☁" />}
+                          {q.pdf_url && <FileBtn href={q.pdf_url} emoji="📄" label="PDF" />}
+                          {q.excel_url && <FileBtn href={q.excel_url} emoji="📊" label="Excel" />}
                         </div>
                       </td>
                       {/* Duplicar material */}
@@ -587,15 +587,19 @@ export default function DashboardPage() {
   );
 }
 
-function FileBtn({ href, emoji }: { href: string; emoji: string }) {
+function FileBtn({ href, emoji, label }: { href: string; emoji: string; label?: string }) {
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="w-[26px] h-[26px] rounded-[5px] border border-b1 bg-transparent flex items-center justify-center text-[11px] cursor-pointer no-underline text-t2 transition-all hover:border-b2 hover:bg-white/[0.06]"
+      title={label}
+      className={clsx(
+        "rounded-[5px] border border-b1 bg-transparent flex items-center justify-center text-[11px] cursor-pointer no-underline text-t2 transition-all hover:border-b2 hover:bg-white/[0.06]",
+        label ? "px-1.5 h-[26px] gap-1" : "w-[26px] h-[26px]",
+      )}
     >
-      {emoji}
+      {emoji}{label && <span className="text-[9px] font-medium">{label}</span>}
     </a>
   );
 }
