@@ -913,6 +913,9 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
             apply_zebra(r)
             ws.cell(r, 1).value = display
             ws.cell(r, 1).font = normal_8
+            # Auto-adjust row height for long piece text that wraps in Google Sheets
+            if len(display) > 25:
+                ws.row_dimensions[r].height = 30  # 2 lines
             if first_piece:
                 # Total on same row as first piece (matching PDF)
                 if discount_pct:
