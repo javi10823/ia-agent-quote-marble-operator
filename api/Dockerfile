@@ -31,4 +31,4 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 
 # Run entrypoint as root to fix volume permissions, then start app as appuser
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["su", "-s", "/bin/sh", "appuser", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+CMD ["su", "-s", "/bin/sh", "appuser", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 3"]
