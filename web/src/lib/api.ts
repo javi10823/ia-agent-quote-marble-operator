@@ -18,6 +18,8 @@ export interface Quote {
   pdf_url: string | null;
   excel_url: string | null;
   drive_url: string | null;
+  drive_pdf_url: string | null;
+  drive_excel_url: string | null;
   parent_quote_id: string | null;
   quote_kind: "standard" | "building_parent" | "building_child_material" | "variant_option" | null;
   comparison_group_id: string | null;

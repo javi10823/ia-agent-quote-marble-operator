@@ -46,6 +46,8 @@ class Quote(Base):
     excel_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     drive_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     drive_file_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    drive_pdf_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    drive_excel_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Structured quote breakdown (pieces, MO, merma, discount)
     quote_breakdown: Mapped[dict | None] = mapped_column(JSON, nullable=True)

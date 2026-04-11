@@ -523,8 +523,8 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
                   </div>
                 </div>
                 <div className="flex gap-1.5 shrink-0">
-                  {child.pdf_url && <a href={child.pdf_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[11px] px-2 py-1 rounded border border-b1 text-t3 hover:text-t1 hover:border-b2 transition no-underline">{"\uD83D\uDCC4"} PDF</a>}
-                  {child.excel_url && <a href={child.excel_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[11px] px-2 py-1 rounded border border-b1 text-t3 hover:text-t1 hover:border-b2 transition no-underline">{"\uD83D\uDCCA"} Excel</a>}
+                  {(child.drive_pdf_url || child.pdf_url) && <a href={child.drive_pdf_url || child.pdf_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[11px] px-2 py-1 rounded border border-b1 text-t3 hover:text-t1 hover:border-b2 transition no-underline">{"\uD83D\uDCC4"} PDF</a>}
+                  {(child.drive_excel_url || child.excel_url) && <a href={child.drive_excel_url || child.excel_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[11px] px-2 py-1 rounded border border-b1 text-t3 hover:text-t1 hover:border-b2 transition no-underline">{"\uD83D\uDCCA"} Excel</a>}
                 </div>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-t4 shrink-0"><polyline points="9 18 15 12 9 6"/></svg>
               </div>
