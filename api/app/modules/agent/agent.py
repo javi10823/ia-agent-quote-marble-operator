@@ -1778,23 +1778,62 @@ class AgentService:
                         await delete_drive_file(_cur.drive_file_id)
                         logging.info(f"Deleted old Drive file {_cur.drive_file_id} for quote {target_qid}")
 
-                    # Upload to Drive
-                    date_str = qdata.get("date", "")
-                    drive_result = await upload_to_drive(
-                        target_qid,
-                        qdata.get("client_name", ""),
-                        qdata.get("material_name", ""),
-                        date_str,
-                    )
-                    logging.info(f"upload_to_drive [{idx}]: {drive_result.get('ok')}")
-                    if drive_result.get("ok"):
+                    # Upload PDF + Excel to Drive individually + build files_v2
+                    from app.modules.agent.tools.drive_tool import upload_single_file_to_drive
+                    from app.core.static import OUTPUT_DIR as _FOUT
+                    files_v2_items = []
+                    first_drive_url = None
+                    first_drive_file_id = None
+                    mat_label = (qdata.get("material_name") or "").replace(" ", "_").lower()[:30]
+                    subfolder = qdata.get("client_name", "")
+
+                    for kind, url_key in [("pdf", "pdf_url"), ("excel", "excel_url")]:
+                        local_url = result.get(url_key)
+                        if not local_url:
+                            continue
+                        local_path = str(_FOUT / local_url.replace("/files/", "", 1)) if local_url.startswith("/files/") else ""
+                        filename = local_url.split("/")[-1] if local_url else ""
+
+                        drive_info = {}
+                        if local_path:
+                            try:
+                                dr = await upload_single_file_to_drive(local_path, subfolder)
+                                if dr.get("ok"):
+                                    drive_info = {
+                                        "drive_file_id": dr["file_id"],
+                                        "drive_url": dr["drive_url"],
+                                        "drive_download_url": dr["drive_download_url"],
+                                    }
+                                    if not first_drive_url:
+                                        first_drive_url = dr["drive_url"]
+                                        first_drive_file_id = dr["file_id"]
+                            except Exception as e:
+                                logging.warning(f"Drive upload failed for {filename}: {e}")
+
+                        files_v2_items.append({
+                            "kind": kind,
+                            "scope": "self",
+                            "owner_quote_id": target_qid,
+                            "file_key": f"{mat_label}:{kind}",
+                            "filename": filename,
+                            "local_path": local_path,
+                            "local_url": local_url,
+                            **({f"drive_{k}": v for k, v in drive_info.items()} if drive_info else {}),
+                        })
+
+                    # Persist files_v2 + legacy drive_url
+                    try:
+                        _cur_bd = _cur.quote_breakdown if _cur and _cur.quote_breakdown else {}
+                        _cur_bd["files_v2"] = {"items": files_v2_items}
+                        drive_update = {"quote_breakdown": _cur_bd}
+                        if first_drive_url:
+                            drive_update["drive_url"] = first_drive_url
+                            drive_update["drive_file_id"] = first_drive_file_id
                         await db.execute(
-                            update(Quote).where(Quote.id == target_qid).values(
-                                drive_url=drive_result.get("drive_url"),
-                                drive_file_id=drive_result.get("drive_file_id"),
-                            )
+                            update(Quote).where(Quote.id == target_qid).values(**drive_update)
                         )
-                    # If upload failed, do NOT overwrite existing drive_url with None
+                    except Exception as e:
+                        logging.warning(f"files_v2 persist failed for {target_qid}: {e}")
 
                 # Single atomic commit per quote — all DB changes together
                 try:
@@ -1808,7 +1847,7 @@ class AgentService:
                     return {"ok": False, "error": f"Error guardando quote: {str(e)[:200]}"}
 
                 # Use new drive_url if upload succeeded, else preserve existing
-                final_drive_url = drive_result.get("drive_url") or existing_drive_url
+                final_drive_url = first_drive_url or existing_drive_url
                 all_results.append({
                     "quote_id": target_qid,
                     "material": qdata.get("material_name"),

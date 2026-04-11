@@ -36,6 +36,10 @@ async def _create_quote(db_session, quote_id=None):
 
 
 DRIVE_MOCK = {"ok": True, "drive_url": "https://drive.google.com/test"}
+DRIVE_SINGLE_MOCK = {"ok": True, "file_id": "test-file-id", "drive_url": "https://drive.google.com/test", "drive_download_url": "https://drive.google.com/uc?id=test-file-id&export=download", "filename": "test.pdf"}
+
+async def _mock_upload_single(*args, **kwargs):
+    return DRIVE_SINGLE_MOCK
 
 
 # ── Tool dispatch ────────────────────────────────────────────────────────────
@@ -86,7 +90,7 @@ class TestSingleMaterialReal:
         qid = await _create_quote(db_session)
 
         agent = AgentService()
-        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK):
+        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK), patch("app.modules.agent.tools.drive_tool.upload_single_file_to_drive", side_effect=_mock_upload_single):
             result = await agent._execute_tool(
                 "generate_documents",
                 {"quotes": [sample_quote_data]},
@@ -153,7 +157,7 @@ class TestMultiMaterialReal:
         qid = await _create_quote(db_session)
 
         agent = AgentService()
-        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK):
+        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK), patch("app.modules.agent.tools.drive_tool.upload_single_file_to_drive", side_effect=_mock_upload_single):
             result = await agent._execute_tool(
                 "generate_documents",
                 {"quotes": sample_multi_material_data},
@@ -195,7 +199,7 @@ class TestMultiMaterialReal:
         qid = await _create_quote(db_session)
 
         agent = AgentService()
-        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK):
+        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK), patch("app.modules.agent.tools.drive_tool.upload_single_file_to_drive", side_effect=_mock_upload_single):
             result = await agent._execute_tool(
                 "generate_documents",
                 {"quotes": sample_multi_material_data},
@@ -218,7 +222,7 @@ class TestMultiMaterialReal:
         qid = await _create_quote(db_session)
 
         agent = AgentService()
-        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK):
+        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK), patch("app.modules.agent.tools.drive_tool.upload_single_file_to_drive", side_effect=_mock_upload_single):
             result = await agent._execute_tool(
                 "generate_documents",
                 {"quotes": sample_multi_material_data},
@@ -247,7 +251,7 @@ class TestRegenerateDocuments:
 
         # First generation — creates breakdown
         agent = AgentService()
-        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK):
+        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK), patch("app.modules.agent.tools.drive_tool.upload_single_file_to_drive", side_effect=_mock_upload_single):
             result1 = await agent._execute_tool(
                 "generate_documents",
                 {"quotes": [sample_quote_data]},
@@ -257,7 +261,7 @@ class TestRegenerateDocuments:
         assert result1["ok"] is True
 
         # Second generation — quote already has breakdown (regression: mat_key NameError)
-        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK):
+        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK), patch("app.modules.agent.tools.drive_tool.upload_single_file_to_drive", side_effect=_mock_upload_single):
             result2 = await agent._execute_tool(
                 "generate_documents",
                 {"quotes": [sample_quote_data]},
@@ -349,7 +353,7 @@ class TestRequiredDataValidation:
         qid = await _create_quote(db_session)
 
         agent = AgentService()
-        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK):
+        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK), patch("app.modules.agent.tools.drive_tool.upload_single_file_to_drive", side_effect=_mock_upload_single):
             result = await agent._execute_tool(
                 "generate_documents",
                 {"quotes": [sample_quote_data]},
@@ -571,7 +575,7 @@ class TestOperatorFlowSmoke:
         assert len(pileta_after) == 1
 
         # ── Step 5: Validate — generate docs from updated breakdown ──
-        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK):
+        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK), patch("app.modules.agent.tools.drive_tool.upload_single_file_to_drive", side_effect=_mock_upload_single):
             gen_result = await agent._execute_tool(
                 "generate_documents",
                 {"quotes": [bd]},
@@ -663,7 +667,7 @@ class TestOperatorFlowSmoke:
         agent = AgentService()
 
         # First generation — success with Drive
-        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK):
+        with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK), patch("app.modules.agent.tools.drive_tool.upload_single_file_to_drive", side_effect=_mock_upload_single):
             result1 = await agent._execute_tool(
                 "generate_documents",
                 {"quotes": [sample_quote_data]},
