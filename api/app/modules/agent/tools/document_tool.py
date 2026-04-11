@@ -761,8 +761,9 @@ def _generate_edificio_pdf(pdf_path: Path, data: dict) -> None:
 
 
 def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
-    """Generate edificio Excel — same D'Angelo template, respects show_mo."""
+    """Generate edificio Excel — pixel-perfect match with PDF output."""
     import openpyxl
+    import re as _re
 
     TEMPLATE = TEMPLATES_DIR / "excel" / "quote-template-excel.xlsx"
     if not TEMPLATE.exists():
@@ -774,11 +775,20 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     for mc in list(ws.merged_cells.ranges):
         ws.unmerge_cells(str(mc))
 
-    from openpyxl.styles import Font, Alignment, Border, Side
-    bold = Font(name="Calibri", bold=True, size=10)
-    normal = Font(name="Calibri", bold=False, size=10)
-    ars_fmt = '"$"#,##0'
-    qty_fmt = '#,##0.00'
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+
+    # ── Font sizes matching PDF exactly ──
+    # PDF: table header = bold 9pt, material = bold 9pt, sector = bold 8pt,
+    #       piece = normal 8pt, MO header = bold 9pt, MO item = normal 9pt
+    bold_9 = Font(name="Calibri", bold=True, size=9)
+    normal_9 = Font(name="Calibri", bold=False, size=9)
+    bold_8 = Font(name="Calibri", bold=True, size=8)
+    normal_8 = Font(name="Calibri", bold=False, size=8)
+    italic_8 = Font(name="Calibri", italic=True, size=8)
+
+    # ARS with 2 decimals matching PDF _fmt_ars → "$65.147,34"
+    ars_fmt = '"$"#,##0.00'
+
     thin_border = Border(
         left=Side(style="thin"),
         right=Side(style="thin"),
@@ -786,6 +796,11 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
         bottom=Side(style="thin"),
     )
     center_align = Alignment(horizontal="center")
+    right_align = Alignment(horizontal="right")
+
+    # Zebra fill — PDF uses rgb(243,243,243) on odd rows
+    zebra_fill = PatternFill(start_color="F3F3F3", end_color="F3F3F3", fill_type="solid")
+    no_fill = PatternFill(fill_type=None)
 
     client_name = data.get("client_name", "")
     project = data.get("project", "")
@@ -803,60 +818,77 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     total_usd = data.get("total_usd", 0)
     grand_text = data.get("grand_total_text", "")
     thickness = data.get("thickness_mm", 20)
-    import re as _re
+
+    fmt_price = _fmt_usd if currency == "USD" else _fmt_ars
 
     # Header — overwrite template placeholders in their exact cells
     ws["A13"].value = f"Fecha: {date_str}"
-    # Row 15: "Cliente:" label (keep), row 16: client value
     ws["A16"].value = client_name
     ws["C16"].value = "CONTADO EFVO"
-    # Row 18: project value
     ws["A18"].value = project
-    # Row 19: delivery value
     ws["C19"].value = delivery
 
-    # Clear dynamic rows — values AND row heights (template has oversized rows like R42=210px)
-    max_clear = 50 + max(0, len(mo_items)) + len(sectors) * 5
+    # Clear dynamic rows — values AND row heights
+    max_clear = 60 + max(0, len(mo_items)) + len(sectors) * 5
     for row in range(22, max_clear + 1):
         for col in range(1, 7):
             ws.cell(row, col).value = None
-        ws.row_dimensions[row].height = 15  # Reset to default
+            ws.cell(row, col).fill = no_fill
+        ws.row_dimensions[row].height = 15
 
-    # Row 22: column headers
+    # Zebra row counter — mirrors PDF row_n[0] counter
+    row_n = [0]
+
+    def apply_zebra(sheet_row, cols=6):
+        """Apply zebra fill to ALL columns in the row (matching PDF full-width fill)."""
+        fill = zebra_fill if row_n[0] % 2 == 1 else no_fill
+        for c in range(1, cols + 1):
+            ws.cell(sheet_row, c).fill = fill
+
+    def zebra_done():
+        row_n[0] += 1
+
+    # Row 22: column headers (PDF: bold 9pt)
     ws["A22"].value = "Descripcion"
-    ws["A22"].font = bold
+    ws["A22"].font = bold_9
     ws["D22"].value = "Cantidad"
-    ws["D22"].font = bold
+    ws["D22"].font = bold_9
+    ws["D22"].alignment = right_align
     ws["E22"].value = "Precio unitario"
-    ws["E22"].font = bold
+    ws["E22"].font = bold_9
+    ws["E22"].alignment = right_align
     ws["F22"].value = "Precio total"
-    ws["F22"].font = bold
+    ws["F22"].font = bold_9
+    ws["F22"].alignment = right_align
 
-    # Row 23: Material
-    _mat_display = f"{mat_name} - {thickness}MM ESPESOR" if not _re.search(r'\d+[Mm][Mm]', mat_name) else mat_name
+    # Row 23: Material (PDF: bold 9pt)
+    _mat_display = f"{mat_name} - {thickness}mm ESPESOR" if not _re.search(r'\d+[Mm][Mm]', mat_name) else mat_name
     mat_total_bruto = data.get("material_total") or round(mat_m2 * mat_price)
 
+    apply_zebra(23)
     ws["A23"].value = _mat_display
-    ws["A23"].font = bold
-    ws["D23"].value = mat_m2
-    ws["D23"].number_format = qty_fmt
-    if currency == "USD":
-        ws["E23"].value = _fmt_usd(mat_price)
-        ws["F23"].value = _fmt_usd(mat_total_bruto)
-    else:
-        ws["E23"].value = mat_price
-        ws["E23"].number_format = ars_fmt
-        ws["F23"].value = mat_total_bruto
-        ws["F23"].number_format = ars_fmt
+    ws["A23"].font = bold_9
+    ws["D23"].value = _fmt_qty(mat_m2)
+    ws["D23"].font = normal_9
+    ws["D23"].alignment = right_align
+    ws["E23"].value = fmt_price(mat_price)
+    ws["E23"].font = normal_9
+    ws["E23"].alignment = right_align
+    ws["F23"].value = fmt_price(mat_total_bruto)
+    ws["F23"].font = normal_9
+    ws["F23"].alignment = right_align
+    zebra_done()
 
-    # Row 24+: Sectors/despiece + discount/total
+    # Row 24+: Sectors/despiece + discount/total on FIRST piece row
     r = 24
     first_piece = True
     for sector in sectors:
+        apply_zebra(r)
         ws.cell(r, 1).value = sector.get("label", "")
-        ws.cell(r, 1).font = bold
+        ws.cell(r, 1).font = bold_8
+        zebra_done()
         r += 1
-        # Group duplicate pieces: "1,66ML X 0,10 FALDON" x2 → "(x2)"
+
         raw_pieces = sector.get("pieces", [])
         grouped = []
         seen = {}
@@ -870,71 +902,80 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
         for piece in grouped:
             count = seen[piece]
             display = f"{piece} (x{count})" if count > 1 else piece
+            apply_zebra(r)
             ws.cell(r, 1).value = display
-            ws.cell(r, 1).font = normal
+            ws.cell(r, 1).font = normal_8
             if first_piece:
+                # Total on same row as first piece (matching PDF)
                 if discount_pct:
                     ws.cell(r, 5).value = f"DESC {discount_pct}%"
-                    ws.cell(r, 5).font = Font(name="Calibri", italic=True, size=10)
+                    ws.cell(r, 5).font = italic_8
+                    ws.cell(r, 5).alignment = right_align
                     disc = round(mat_total_bruto * discount_pct / 100)
-                    if currency == "USD":
-                        ws.cell(r, 6).value = _fmt_usd(disc)
-                    else:
-                        ws.cell(r, 6).value = disc
-                        ws.cell(r, 6).number_format = ars_fmt
+                    ws.cell(r, 6).value = fmt_price(disc)
+                    ws.cell(r, 6).font = italic_8
+                    ws.cell(r, 6).alignment = right_align
+                    zebra_done()
                     r += 1
+                    apply_zebra(r)
                     ws.cell(r, 5).value = f"Total {currency}"
-                    ws.cell(r, 5).font = bold
+                    ws.cell(r, 5).font = bold_8
+                    ws.cell(r, 5).alignment = right_align
                     mat_net = mat_total_bruto - disc
-                    if currency == "USD":
-                        ws.cell(r, 6).value = _fmt_usd(mat_net)
-                    else:
-                        ws.cell(r, 6).value = mat_net
-                        ws.cell(r, 6).number_format = ars_fmt
-                    ws.cell(r, 6).font = bold
+                    ws.cell(r, 6).value = fmt_price(mat_net)
+                    ws.cell(r, 6).font = bold_8
+                    ws.cell(r, 6).alignment = right_align
                 else:
                     ws.cell(r, 5).value = f"Total {currency}"
-                    ws.cell(r, 5).font = bold
-                    if currency == "USD":
-                        ws.cell(r, 6).value = _fmt_usd(mat_total_bruto)
-                    else:
-                        ws.cell(r, 6).value = mat_total_bruto
-                        ws.cell(r, 6).number_format = ars_fmt
-                    ws.cell(r, 6).font = bold
+                    ws.cell(r, 5).font = bold_8
+                    ws.cell(r, 5).alignment = right_align
+                    ws.cell(r, 6).value = fmt_price(mat_total_bruto)
+                    ws.cell(r, 6).font = bold_8
+                    ws.cell(r, 6).alignment = right_align
                 first_piece = False
+            zebra_done()
             r += 1
 
     r += 1  # spacer
 
-    # MO block — only if show_mo
+    # MO block — only if show_mo (PDF: header bold 9pt, items normal 9pt)
     if show_mo and mo_items:
+        apply_zebra(r)
         ws.cell(r, 1).value = "MANO DE OBRA"
-        ws.cell(r, 1).font = bold
+        ws.cell(r, 1).font = bold_9
+        zebra_done()
         r += 1
 
-        mo_start = r
         for mo in mo_items:
+            apply_zebra(r)
             ws.cell(r, 1).value = mo["description"]
-            ws.cell(r, 1).font = normal
-            ws.cell(r, 4).value = mo["quantity"]
-            ws.cell(r, 4).number_format = qty_fmt
-            ws.cell(r, 5).value = mo["unit_price"]
-            ws.cell(r, 5).number_format = ars_fmt
+            ws.cell(r, 1).font = normal_9
+            # Qty: integer → no decimals, decimal → 2 decimals (matching PDF _fmt_qty)
+            ws.cell(r, 4).value = _fmt_qty(mo["quantity"])
+            ws.cell(r, 4).font = normal_9
+            ws.cell(r, 4).alignment = right_align
+            # MO prices always ARS with 2 decimals
+            ws.cell(r, 5).value = _fmt_ars(mo["unit_price"])
+            ws.cell(r, 5).font = normal_9
+            ws.cell(r, 5).alignment = right_align
             mo_t = mo.get("total", round(mo["unit_price"] * mo["quantity"]))
-            ws.cell(r, 6).value = mo_t
-            ws.cell(r, 6).number_format = ars_fmt
+            ws.cell(r, 6).value = _fmt_ars(mo_t)
+            ws.cell(r, 6).font = normal_9
+            ws.cell(r, 6).alignment = right_align
+            zebra_done()
             r += 1
 
         r += 1
         ws.cell(r, 5).value = "TOTAL PESOS"
-        ws.cell(r, 5).font = bold
-        ws.cell(r, 6).value = total_ars
-        ws.cell(r, 6).number_format = ars_fmt
-        ws.cell(r, 6).font = bold
+        ws.cell(r, 5).font = bold_9
+        ws.cell(r, 5).alignment = right_align
+        ws.cell(r, 6).value = _fmt_ars(total_ars)
+        ws.cell(r, 6).font = bold_9
+        ws.cell(r, 6).alignment = right_align
 
     r += 2  # spacer
 
-    # Grand total — bordered box, centered (matching PDF exactly)
+    # Grand total — bordered box, centered (matching PDF rect + align="C")
     if grand_text:
         ws.merge_cells(f"A{r}:F{r}")
         cell_gt = ws.cell(r, 1)
@@ -942,14 +983,13 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
         cell_gt.font = Font(name="Calibri", bold=True, size=9)
         cell_gt.alignment = center_align
         cell_gt.border = thin_border
-        # Apply border to all merged cells in the row
         for col in range(2, 7):
             ws.cell(r, col).border = thin_border
 
-    # Conditions — same as PDF
+    # Conditions — match PDF 7pt
     r += 2
     co = _load_company_config()
-    cond_font = Font(name="Calibri", size=7)  # Match PDF 7pt
+    cond_font = Font(name="Calibri", size=7)
     ws.cell(r, 1).value = "Forma de pago: Contado"
     ws.cell(r, 1).font = cond_font
     r += 1
@@ -967,7 +1007,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
                 ws.cell(r, 1).font = cond_font
                 r += 1
 
-    # Footer — match PDF exactly
+    # Footer — match PDF italic 7pt
     r += 1
     ws.cell(r, 1).value = "No se suben mesadas que no entren en ascensor"
     ws.cell(r, 1).font = Font(name="Calibri", italic=True, size=7)
