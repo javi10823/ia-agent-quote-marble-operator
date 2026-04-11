@@ -791,11 +791,12 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     # Row 19: delivery value
     ws["C19"].value = delivery
 
-    # Clear dynamic rows
-    max_clear = 40 + max(0, len(mo_items))
+    # Clear dynamic rows — values AND row heights (template has oversized rows like R42=210px)
+    max_clear = 50 + max(0, len(mo_items)) + len(sectors) * 5
     for row in range(22, max_clear + 1):
         for col in range(1, 7):
             ws.cell(row, col).value = None
+        ws.row_dimensions[row].height = 15  # Reset to default
 
     # Row 22: column headers
     ws["A22"].value = "Descripcion"
