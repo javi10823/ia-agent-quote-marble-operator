@@ -1090,10 +1090,12 @@ class AgentService:
                 # Pasada 1: Extract text/tables from PDF with pdfplumber (exact, no hallucination)
                 extracted_text = ""
                 tables_all = []  # Collect all tables for summary
+                num_pages = 0
                 try:
                     import pdfplumber
                     import io as _io
                     with pdfplumber.open(_io.BytesIO(plan_bytes)) as pdf:
+                        num_pages = len(pdf.pages)
                         for i, page in enumerate(pdf.pages):
                             # Extract tables first (structured data)
                             tables = page.extract_tables()
@@ -1108,12 +1110,36 @@ class AgentService:
                             page_text = page.extract_text()
                             if page_text:
                                 extracted_text += f"\n--- Texto página {i+1} ---\n{page_text}\n"
-                            # Check if page has large images (drawings/plans, not logos)
+
+                            # ── Vision detection: 3-condition heuristic ──
+                            # Condition 1: Raster images > 200x200px
                             for img in (page.images or []):
                                 w = img.get("width", 0) or img.get("x1", 0) - img.get("x0", 0)
                                 h = img.get("height", 0) or img.get("top", 0) - img.get("bottom", 0)
-                                if abs(w) > 200 and abs(h) > 200:  # Significant image, not a logo
+                                if abs(w) > 200 and abs(h) > 200:
                                     pdf_has_images = True
+                                    logging.info(f"Vision trigger: raster image {abs(w)}x{abs(h)} on page {i+1}")
+
+                            # Condition 2: High vector density (CAD/architectural drawings)
+                            VECTOR_LINES_THRESHOLD = 20
+                            VECTOR_RECTS_THRESHOLD = 10
+                            VECTOR_CURVES_THRESHOLD = 20
+                            n_lines = len(page.lines or [])
+                            n_rects = len(page.rects or [])
+                            n_curves = len(page.curves or [])
+                            if n_lines > VECTOR_LINES_THRESHOLD or n_rects > VECTOR_RECTS_THRESHOLD or n_curves > VECTOR_CURVES_THRESHOLD:
+                                pdf_has_images = True
+                                logging.info(f"Vision trigger: vector density on page {i+1} (lines={n_lines}, rects={n_rects}, curves={n_curves})")
+
+                    # Condition 3: Low useful text + domain context (plano/obra keywords)
+                    if not pdf_has_images and num_pages > 0:
+                        avg_chars = len(extracted_text.strip()) / num_pages
+                        PLAN_KEYWORDS = {"plano", "lámina", "lamina", "cocina", "obra", "escala", "corte", "planta", "tipología", "tipologia", "desarrollo", "mesada"}
+                        text_lower = extracted_text.lower()
+                        has_plan_context = any(kw in text_lower for kw in PLAN_KEYWORDS)
+                        if avg_chars < 200 and has_plan_context:
+                            pdf_has_images = True
+                            logging.info(f"Vision trigger: low text ({avg_chars:.0f} chars/page avg) + plan keywords detected")
                     if extracted_text.strip():
                         # Check if this is an edificio — use deterministic parser
                         from app.modules.quote_engine.edificio_parser import (
