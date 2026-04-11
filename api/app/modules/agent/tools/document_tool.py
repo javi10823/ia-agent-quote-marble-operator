@@ -775,6 +775,10 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     for mc in list(ws.merged_cells.ranges):
         ws.unmerge_cells(str(mc))
 
+    # Remove template conditional formatting (isodd zebra on A23:F36)
+    # — we apply our own zebra via PatternFill to match PDF exactly
+    ws.conditional_formatting._cf_rules.clear()
+
     from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 
     # ── Font sizes matching PDF exactly ──
@@ -828,7 +832,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     ws["A18"].value = project
     ws["C19"].value = delivery
 
-    # Clear dynamic rows — values, fills, AND borders from template
+    # Clear dynamic rows — values, fills, borders, AND hidden state from template
     no_border = Border()
     max_clear = 60 + max(0, len(mo_items)) + len(sectors) * 5
     for row in range(22, max_clear + 1):
@@ -838,6 +842,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
             cell.fill = no_fill
             cell.border = no_border
         ws.row_dimensions[row].height = 15
+        ws.row_dimensions[row].hidden = False  # Unhide template row 36
 
     # Zebra row counter — mirrors PDF row_n[0] counter
     row_n = [0]
