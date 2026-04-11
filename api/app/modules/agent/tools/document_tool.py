@@ -781,15 +781,15 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     thickness = data.get("thickness_mm", 20)
     import re as _re
 
-    # Header
+    # Header — overwrite template placeholders in their exact cells
     ws["A13"].value = f"Fecha: {date_str}"
-    ws["A15"].value = f"Cliente: {client_name}"
-    ws["D15"].value = "Forma de pago"
-    ws["D16"].value = "CONTADO EFVO"
-    ws["A17"].value = "Proyecto"
+    # Row 15: "Cliente:" label (keep), row 16: client value
+    ws["A16"].value = client_name
+    ws["C16"].value = "CONTADO EFVO"
+    # Row 18: project value
     ws["A18"].value = project
-    ws["D18"].value = "Fecha de entrega"
-    ws["D19"].value = delivery
+    # Row 19: delivery value
+    ws["C19"].value = delivery
 
     # Clear dynamic rows
     max_clear = 40 + max(0, len(mo_items))
