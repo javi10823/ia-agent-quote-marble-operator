@@ -1068,12 +1068,23 @@ class AgentService:
                                 "normalized_pieces": [dict(p) for s in norm_data.get("sections", []) for p in s.get("pieces", [])],
                             }
                             try:
+                                # Extract client/project from message if quote doesn't have them yet
+                                _update_vals = {
+                                    "is_building": True,
+                                    "quote_kind": "building_parent",
+                                    "quote_breakdown": pre_calc,
+                                }
+                                _cur_q = await db.execute(select(Quote).where(Quote.id == quote_id))
+                                _cur_quote = _cur_q.scalar_one_or_none()
+                                if _cur_quote:
+                                    extracted = _extract_quote_info(user_message)
+                                    if not (_cur_quote.client_name or "").strip() and extracted.get("client_name"):
+                                        _update_vals["client_name"] = extracted["client_name"]
+                                    if not (_cur_quote.project or "").strip() and extracted.get("project"):
+                                        _update_vals["project"] = extracted["project"]
+
                                 await db.execute(
-                                    update(Quote).where(Quote.id == quote_id).values(
-                                        is_building=True,
-                                        quote_kind="building_parent",
-                                        quote_breakdown=pre_calc,
-                                    )
+                                    update(Quote).where(Quote.id == quote_id).values(**_update_vals)
                                 )
                                 await db.commit()
                             except Exception as e:
