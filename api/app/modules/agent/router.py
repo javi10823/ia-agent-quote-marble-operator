@@ -47,17 +47,70 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
 files_router = APIRouter(tags=["files"])
 
 @files_router.get("/files/{file_path:path}")
-async def serve_file(file_path: str):
-    """Serve generated files (PDFs, Excel, sources) with auth protection."""
+async def serve_file(file_path: str, db: AsyncSession = Depends(get_db)):
+    """Serve files with Drive-first fallback for ephemeral filesystems.
+
+    Resolution order:
+    1. If local file exists → serve it
+    2. If not local, search files_v2 metadata for Drive URL → redirect 302
+    3. If parent has files_v2 for this file → redirect 302
+    4. Nothing found → 404
+    """
     from app.core.static import OUTPUT_DIR
-    import mimetypes
+    from starlette.responses import RedirectResponse
+    import mimetypes, urllib.parse
+
+    # 1. Try local filesystem first
     full_path = (OUTPUT_DIR / file_path).resolve()
-    if not full_path.is_relative_to(OUTPUT_DIR.resolve()):
-        raise HTTPException(status_code=403, detail="Acceso denegado")
-    if not full_path.exists() or not full_path.is_file():
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    media_type = mimetypes.guess_type(str(full_path))[0] or "application/octet-stream"
-    return FileResponse(full_path, media_type=media_type)
+    if full_path.is_relative_to(OUTPUT_DIR.resolve()) and full_path.exists() and full_path.is_file():
+        media_type = mimetypes.guess_type(str(full_path))[0] or "application/octet-stream"
+        return FileResponse(full_path, media_type=media_type)
+
+    # 2. File not local — try Drive fallback via files_v2
+    # Extract quote_id from path: "{quote_id}/filename"
+    parts = file_path.split("/", 1)
+    if len(parts) == 2:
+        req_quote_id, req_filename = parts[0], urllib.parse.unquote(parts[1])
+
+        # Search in the quote itself
+        drive_url = await _find_drive_url_in_files_v2(db, req_quote_id, req_filename)
+        if drive_url:
+            return RedirectResponse(url=drive_url, status_code=302)
+
+        # If this is a child, search in parent
+        try:
+            quote_result = await db.execute(select(Quote).where(Quote.id == req_quote_id))
+            quote = quote_result.scalar_one_or_none()
+            if quote and quote.parent_quote_id:
+                drive_url = await _find_drive_url_in_files_v2(db, quote.parent_quote_id, req_filename)
+                if drive_url:
+                    return RedirectResponse(url=drive_url, status_code=302)
+            # If this is a parent, search children (files might be stored under parent ID)
+            if quote and quote.quote_kind == "building_parent":
+                drive_url = await _find_drive_url_in_files_v2(db, req_quote_id, req_filename)
+                if drive_url:
+                    return RedirectResponse(url=drive_url, status_code=302)
+        except Exception as e:
+            logging.warning(f"files_v2 lookup failed: {e}")
+
+    raise HTTPException(status_code=404, detail="Archivo no encontrado")
+
+
+async def _find_drive_url_in_files_v2(db: AsyncSession, quote_id: str, filename: str) -> str | None:
+    """Search files_v2 in a quote's breakdown for a matching file. Returns drive_download_url or None."""
+    try:
+        result = await db.execute(select(Quote).where(Quote.id == quote_id))
+        quote = result.scalar_one_or_none()
+        if not quote or not quote.quote_breakdown:
+            return None
+        files_v2 = quote.quote_breakdown.get("files_v2", {})
+        for item in files_v2.get("items", []):
+            item_filename = urllib.parse.unquote(item.get("filename", ""))
+            if item_filename == filename or item.get("local_url", "").endswith(filename):
+                return item.get("drive_download_url") or item.get("drive_url")
+    except Exception:
+        pass
+    return None
 
 
 # ── LIST QUOTES ──────────────────────────────────────────────────────────────
