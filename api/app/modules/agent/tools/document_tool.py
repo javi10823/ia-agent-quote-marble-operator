@@ -832,8 +832,21 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
         ws.cell(r, 1).value = sector.get("label", "")
         ws.cell(r, 1).font = bold
         r += 1
-        for piece in sector.get("pieces", []):
-            ws.cell(r, 1).value = piece
+        # Group duplicate pieces: "1,66ML X 0,10 FALDON" x2 → "(x2)"
+        raw_pieces = sector.get("pieces", [])
+        grouped = []
+        seen = {}
+        for p in raw_pieces:
+            if p in seen:
+                seen[p] += 1
+            else:
+                seen[p] = 1
+                grouped.append(p)
+
+        for piece in grouped:
+            count = seen[piece]
+            display = f"{piece} (x{count})" if count > 1 else piece
+            ws.cell(r, 1).value = display
             ws.cell(r, 1).font = normal
             if first_piece:
                 if discount_pct:
@@ -902,6 +915,27 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
         ws.cell(r, 1).value = grand_text
         ws.cell(r, 1).font = bold
         ws.merge_cells(f"A{r}:F{r}")
+
+    # Conditions — same as PDF
+    r += 2
+    co = _load_company_config()
+    cond_font = Font(name="Calibri", size=8)
+    ws.cell(r, 1).value = "Forma de pago: Contado"
+    ws.cell(r, 1).font = cond_font
+    r += 1
+    if co.get("conditions_general"):
+        for line in co["conditions_general"].split("\n"):
+            if line.strip():
+                ws.cell(r, 1).value = line.strip()
+                ws.cell(r, 1).font = cond_font
+                r += 1
+    if co.get("conditions_payment"):
+        r += 1
+        for line in co["conditions_payment"].split("\n"):
+            if line.strip():
+                ws.cell(r, 1).value = line.strip()
+                ws.cell(r, 1).font = cond_font
+                r += 1
 
     wb.save(str(excel_path))
     _inject_locale(str(excel_path))

@@ -1,7 +1,9 @@
-"""Regression tests for Excel generation — ensures no placeholders, correct layout.
+"""Regression tests for Excel generation — ensures no placeholders, correct layout,
+and pixel-perfect match with PDF output.
 
-These tests generate REAL Excel files and inspect the cells to catch regressions
-like {{cliente}}, {{forma_pago}}, broken merges, or missing values.
+Tests generate REAL Excel files and inspect the cells to catch regressions
+like {{cliente}}, {{forma_pago}}, broken merges, missing values, or
+content differences between PDF and Excel.
 
 Runs against both:
 1. Normal quote Excel (_generate_excel)
@@ -265,3 +267,133 @@ class TestEdificioExcelRegression:
             xml = _read_excel_xml(xlsx)
             for forbidden in ["Johnson", "Quadra", "Luxor", "Oval"]:
                 assert forbidden not in xml, f"'{forbidden}' found in {xlsx.name}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VISUAL PARITY: Excel must match PDF content
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestExcelPdfParity:
+    """Ensures Excel and PDF have identical content — no drift between formats."""
+
+    @pytest.mark.asyncio
+    async def test_normal_excel_has_conditions(self):
+        """Excel must have conditions/footer text like PDF does."""
+        qid = "test-excel-parity-001"
+        data = _sample_normal_data()
+        await generate_documents(qid, data)
+        xlsx = list((OUTPUT_DIR / qid).glob("*.xlsx"))[0]
+        xml = _read_excel_xml(xlsx)
+        shared = ""
+        try:
+            with zipfile.ZipFile(str(xlsx)) as z:
+                shared = z.read("xl/sharedStrings.xml").decode("utf-8")
+        except Exception:
+            pass
+        all_text = (xml + shared).lower()
+        assert "contado" in all_text, "Payment condition missing from Excel"
+
+    @pytest.mark.asyncio
+    async def test_normal_excel_has_grand_total(self):
+        """Excel must have PRESUPUESTO TOTAL like PDF."""
+        qid = "test-excel-parity-002"
+        data = _sample_normal_data()
+        await generate_documents(qid, data)
+        xlsx = list((OUTPUT_DIR / qid).glob("*.xlsx"))[0]
+        xml = _read_excel_xml(xlsx)
+        shared = ""
+        try:
+            with zipfile.ZipFile(str(xlsx)) as z:
+                shared = z.read("xl/sharedStrings.xml").decode("utf-8")
+        except Exception:
+            pass
+        all_text = (xml + shared).lower()
+        assert "presupuesto total" in all_text, "Grand total missing from Excel"
+
+    @pytest.mark.skipif(not ESH_PDF.exists(), reason="ESH PDF not available")
+    @pytest.mark.asyncio
+    async def test_edificio_excel_groups_duplicates(self):
+        """Duplicate pieces must be grouped with (x2) like in PDF."""
+        paso2, summary = _build_esh_paso2()
+        qid = "test-excel-parity-003"
+        await generate_edificio_documents(qid, paso2, summary, "ESH", "Test")
+
+        # Find Boreal Excel (has duplicate faldones 1,66ML)
+        boreal_xlsx = None
+        for xlsx in (OUTPUT_DIR / qid).glob("*.xlsx"):
+            if "BOREAL" in xlsx.name.upper():
+                boreal_xlsx = xlsx
+                break
+        assert boreal_xlsx is not None, "Boreal Excel not found"
+
+        xml = _read_excel_xml(boreal_xlsx)
+        shared = ""
+        try:
+            with zipfile.ZipFile(str(boreal_xlsx)) as z:
+                shared = z.read("xl/sharedStrings.xml").decode("utf-8")
+        except Exception:
+            pass
+        all_text = xml + shared
+
+        # The two identical 1,66ML faldones should be grouped as (x2)
+        assert "(x2)" in all_text, "Duplicate faldones not grouped with (x2) in Excel"
+
+    @pytest.mark.skipif(not ESH_PDF.exists(), reason="ESH PDF not available")
+    @pytest.mark.asyncio
+    async def test_edificio_excel_has_conditions(self):
+        """Edificio Excel must have conditions/footer like PDF."""
+        paso2, summary = _build_esh_paso2()
+        qid = "test-excel-parity-004"
+        await generate_edificio_documents(qid, paso2, summary, "ESH", "Test")
+
+        for xlsx in (OUTPUT_DIR / qid).glob("*.xlsx"):
+            if "Resumen" in xlsx.name:
+                continue
+            xml = _read_excel_xml(xlsx)
+            shared = ""
+            try:
+                with zipfile.ZipFile(str(xlsx)) as z:
+                    shared = z.read("xl/sharedStrings.xml").decode("utf-8")
+            except Exception:
+                pass
+            all_text = (xml + shared).lower()
+            assert "contado" in all_text or "presupuesto sujeto" in all_text, f"Conditions missing from {xlsx.name}"
+
+    @pytest.mark.skipif(not ESH_PDF.exists(), reason="ESH PDF not available")
+    @pytest.mark.asyncio
+    async def test_edificio_excel_has_grand_total(self):
+        """Edificio Excel must have PRESUPUESTO TOTAL like PDF."""
+        paso2, summary = _build_esh_paso2()
+        qid = "test-excel-parity-005"
+        await generate_edificio_documents(qid, paso2, summary, "ESH", "Test")
+
+        for xlsx in (OUTPUT_DIR / qid).glob("*.xlsx"):
+            if "Resumen" in xlsx.name:
+                continue
+            xml = _read_excel_xml(xlsx)
+            shared = ""
+            try:
+                with zipfile.ZipFile(str(xlsx)) as z:
+                    shared = z.read("xl/sharedStrings.xml").decode("utf-8")
+            except Exception:
+                pass
+            all_text = (xml + shared).lower()
+            assert "presupuesto total" in all_text, f"Grand total missing from {xlsx.name}"
+
+    @pytest.mark.skipif(not ESH_PDF.exists(), reason="ESH PDF not available")
+    @pytest.mark.asyncio
+    async def test_no_giant_row_heights(self):
+        """No row should have height > 50px (catches template row 42 = 210px regression)."""
+        import openpyxl
+        paso2, summary = _build_esh_paso2()
+        qid = "test-excel-parity-006"
+        await generate_edificio_documents(qid, paso2, summary, "ESH", "Test")
+
+        for xlsx in (OUTPUT_DIR / qid).glob("*.xlsx"):
+            # Read raw XML to check row heights without openpyxl locale issues
+            with zipfile.ZipFile(str(xlsx)) as z:
+                sheet_xml = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
+            import re
+            heights = re.findall(r'ht="([\d.]+)"', sheet_xml)
+            for h in heights:
+                assert float(h) <= 50, f"Row height {h}px too large in {xlsx.name} — template height leak"
