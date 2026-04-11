@@ -220,6 +220,8 @@ Ver pricing-variables.md. Todos los catalogos sin IVA → aplicar x1.21.
 
 **Imágenes simples (JPEG/PNG/WebP):** Si el archivo adjunto es una imagen simple de una o pocas piezas manuscritas, NO uses la herramienta `read_plan`. Analizá la imagen directamente con tu capacidad de visión nativa para extraer medidas y perforaciones. `read_plan` es solo para PDFs complejos de múltiples páginas o cuando necesites hacer crop de una zona específica.
 
+**REGLA PARA CROQUIS A MANO ALZADA:** Cuando analices dibujos manuscritos simples de piezas individuales en planta, asumí que las cotas visibles representan las dimensiones totales de la pieza (Largo x Ancho/Profundidad). No asumas que falta una tercera dimensión ni interpretes una de las cotas como "altura", a menos que el dibujo muestre explícitamente un corte, una vista lateral o indique la palabra "faldón/zócalo".
+
 - Cota ARRIBA = zocalo | Cota ABAJO = frentin/faldon
 - 2 cotas mismo eje → la mas larga | Cotas internas (c/p) → ignorar
 - Formas no rectangulares → m² = max x max | zocalos = dimension real
