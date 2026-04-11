@@ -127,17 +127,41 @@ def _find_column_index(header: list[str], keywords: list[str]) -> Optional[int]:
 # ── 1. detect_edificio ───────────────────────────────────────────────────────
 
 def detect_edificio(user_message: str, tables: list[list[list]]) -> DetectionResult:
-    """Detect if PDF is an edificio. Returns structured result with reasons and confidence."""
+    """Detect if PDF is an edificio. Returns structured result with reasons, confidence,
+    and detection_mode for auditability.
+
+    detection_mode values:
+    - "manual_override": operator explicitly declared edificio (confidence=1.0)
+    - "keyword": detected via keyword signals + table analysis
+    - "tabular": would be set by caller when tabular path is used
+    - "visual_auto": would be set by caller when visual path is used
+    """
     reasons = []
     confidence = 0.0
+    msg_lower = (user_message or "").lower()
+
+    # Signal 0: EXPLICIT operator override — confidence=1.0 immediately
+    # These phrases are unambiguous declarations, not just keywords
+    _explicit_override = [
+        "es edificio", "es obra", "obra padre", "es una obra",
+        "tratalo como edificio", "tratalo como obra",
+        "modo edificio", "modo obra",
+    ]
+    if any(phrase in msg_lower for phrase in _explicit_override):
+        reasons.append("operador forzó modo edificio explícitamente")
+        return DetectionResult(
+            is_edificio=True, confidence=1.0, reasons=reasons,
+            detection_mode="manual_override",
+        )
 
     # Signal 1: operator says "edificio" or similar (strong)
-    msg_lower = (user_message or "").lower()
     if any(kw in msg_lower for kw in [
         "edificio", "edificios", "building", "concesionario",
         "departamento", "departamentos", "unidades",
         "torre", "torres", "constructora", "consorcio",
-        "obra nueva",
+        "obra nueva", "fideicomiso",
+        "planos", "láminas", "laminas", "tipología", "tipologia",
+        "cocinas",  # "309 cocinas" = building, not single kitchen
     ]):
         reasons.append("operador indicó edificio en el enunciado")
         confidence += 0.5
@@ -177,6 +201,7 @@ def detect_edificio(user_message: str, tables: list[list[list]]) -> DetectionRes
         is_edificio=confidence >= 0.5,
         confidence=min(confidence, 1.0),
         reasons=reasons,
+        detection_mode="keyword",
     )
 
 

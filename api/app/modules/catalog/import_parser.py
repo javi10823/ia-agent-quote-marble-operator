@@ -223,6 +223,14 @@ def extract_items(headers: list[str], rows: list[list], fmt: str) -> list[dict]:
         raise ValueError("No se encontró columna de precio sin IVA. "
                          "Columnas disponibles: " + ", ".join(headers))
 
+    # Dux XLS category header rows — these are section titles, not real materials.
+    # They have very short generic SKUs and category names like "GRANITO", "SILESTONE".
+    _DUX_CATEGORY_NAMES = {
+        "granito", "granitos", "silestone", "dekton", "neolith",
+        "puraprima", "purastone", "laminatto", "marmol", "mármol",
+        "cuarzo", "piedra", "materiales", "servicios", "flete",
+    }
+
     items = []
     for row in rows:
         if len(row) <= col_sku:
@@ -232,6 +240,12 @@ def extract_items(headers: list[str], rows: list[list], fmt: str) -> list[dict]:
             continue
 
         name = str(row[col_name] or "").strip() if col_name is not None and len(row) > col_name else ""
+
+        # Filter Dux category header rows: short SKU + generic category name
+        if len(sku) <= 3 and name.lower().strip() in _DUX_CATEGORY_NAMES:
+            logging.info(f"[import] Skipping Dux category header: SKU={sku}, name={name}")
+            continue
+
         raw_price = _parse_number(row[col_price]) if len(row) > col_price else None
         price_no_vat = round(raw_price, 2) if raw_price is not None else None
         raw_price_iva = _parse_number(row[col_price_iva]) if col_price_iva is not None and len(row) > col_price_iva else None
