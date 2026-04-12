@@ -271,6 +271,8 @@ def compute_field_confidence(tipologia: dict) -> FieldConfidence:
     # Shape: must be explicit
     if shape in ("L", "linear"):
         conf.shape = 0.9
+    elif shape == "unknown":
+        conf.shape = 0.3  # Needs review
     else:
         conf.shape = 0.4
 
@@ -544,6 +546,20 @@ def build_visual_pending_questions(
         if conf.get("backsplash", 0) < CONF_HIGH:
             questions.append(f"confirm_backsplash_{t.get('id', '?')}")
             break  # Only ask once, not per tipología
+
+    # Tipologías with non-direct extraction need review
+    for t in tipologias:
+        method = t.get("extraction_method", "fallback")
+        if method != "direct_read":
+            tid = t.get("id", "?")
+            questions.append(f"{tid}_extraction_needs_review")
+
+    # Tipologías with unknown shape need review
+    for t in tipologias:
+        if t.get("shape") == "unknown":
+            tid = t.get("id", "?")
+            if f"{tid}_extraction_needs_review" not in questions:
+                questions.append(f"{tid}_extraction_needs_review")
 
     return questions
 
@@ -847,8 +863,8 @@ def parse_visual_extraction(claude_response: str) -> Optional[dict]:
             qty = 1
 
         shape = t.get("shape", "linear")
-        if shape not in ("L", "linear"):
-            shape = "linear"
+        if shape not in ("L", "linear", "unknown"):
+            shape = "unknown"
 
         segs = t.get("segments_m", [])
         if not isinstance(segs, list) or not segs:
@@ -883,6 +899,7 @@ def parse_visual_extraction(claude_response: str) -> Optional[dict]:
             "embedded_sink_count": t.get("embedded_sink_count", 0),
             "hob_count": t.get("hob_count", 0),
             "notes": t.get("notes", []),
+            "extraction_method": t.get("extraction_method", "fallback"),
         })
 
     if not cleaned:
