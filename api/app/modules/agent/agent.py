@@ -1540,10 +1540,6 @@ class AgentService:
             full_text = ""
             tool_uses = []
 
-            # Show a brief status for visual PDF processing (operator sees blank otherwise)
-            if needs_vision and pdf_has_images and _loop_iterations == 0:
-                yield {"type": "action", "content": "📐 Analizando plano..."}
-
             # Model selection:
             # - Opus: first iteration with plan, OR iteration after visual tool call
             # - Sonnet: everything else (prices, MO, docs)
@@ -1551,6 +1547,10 @@ class AgentService:
             VISUAL_TOOLS = {"read_plan"}  # Tools that need visual context preserved
             ai_cfg = get_ai_config()
             needs_vision = has_plan and pdf_has_images
+
+            # Show a brief status for visual PDF processing (operator sees blank otherwise)
+            if needs_vision and pdf_has_images and _loop_iterations == 0:
+                yield {"type": "action", "content": "📐 Analizando plano..."}
             # Use Opus on first iteration OR when previous iteration used a visual tool
             use_opus = needs_vision and (_loop_iterations == 0 or _last_had_visual_tool) and ai_cfg.get("use_opus_for_plans", True)
             current_model = OPUS_MODEL if use_opus else settings.ANTHROPIC_MODEL
