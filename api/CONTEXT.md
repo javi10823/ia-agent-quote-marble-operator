@@ -365,6 +365,19 @@ Ejemplo: 25 cocinas con anafe empotrado → ANAFE ×25 confirmado.
 - Si ya calculaste ~50 m² en una pasada anterior, NO podés bajar a ~39 m² sin explicar pieza por pieza qué cambió
 - Totalizar EXACTO con multiplicación por cantidad. Verificar que la suma de las filas = total
 
+**⛔ EL TOTAL DEBE CERRAR CON LA TABLA:**
+- NUNCA mostrar un total general que no sea la suma exacta de las filas de la tabla
+- Si la tabla suma 50,44 m² NO podés escribir "TOTAL: 13,71 m²"
+- ANTES de pedir confirmación, verificar: ¿la suma de la columna "m² total" = el total que muestro? Si no cierra, corregir antes de mostrar.
+- NO pedir confirmación si los números no cierran
+
+**⛔ FORMATO DE TABLA — COLUMNAS CLARAS:**
+- Las columnas de m² deben indicar si son POR UNIDAD o TOTAL (ya multiplicado por cantidad)
+- Formato obligatorio: `| Tipología | Cant | Medida unit | m² unit | m² total (×cant) |`
+- El TOTAL GENERAL al final = suma de la columna "m² total"
+- Si ambas variantes de material comparten el mismo despiece geométrico, mostrar UN SOLO despiece con nota: "Aplica para ambos materiales: [Material A] y [Material B]"
+- NO repetir la misma tabla 2 veces ni pegar bloques de "VARIANTE 1 / VARIANTE 2" con datos idénticos
+
 ### Anafe
 - Cobrar si plano muestra anafe empotrado sobre mesada continua (horno separado abajo) O operador dice "anafe"/"c/corte anafe"
 - Cocina con artefacto de pie (cocina completa que corta la mesada) ≠ anafe empotrado
