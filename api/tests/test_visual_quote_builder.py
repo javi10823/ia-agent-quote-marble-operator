@@ -196,6 +196,42 @@ class TestPendingQuestions:
         pending = build_visual_pending_questions(mat, services, [], {})
         assert pending[0] == "planilla_marmoleria"
 
+    def test_unknown_shape_goes_to_pending(self):
+        """Tipología with shape unknown must appear in pending questions."""
+        mat = MaterialResolution("x", ["Silestone"], "single", [], 20)
+        tipologias = [{"id": "DC-08", "qty": 1, "shape": "unknown",
+                       "segments_m": [2.0], "depth_m": 0.60,
+                       "extraction_method": "fallback",
+                       "_confidence": {"backsplash": 0.9}}]
+        geo = compute_visual_geometry(tipologias, mat)
+        services = infer_visual_services(tipologias, geo)
+        pending = build_visual_pending_questions(mat, services, tipologias, {"client_name": "X"})
+        assert "DC-08_extraction_needs_review" in pending
+
+    def test_inferred_extraction_goes_to_pending(self):
+        """Tipología with extraction_method inferred must appear in pending."""
+        mat = MaterialResolution("x", ["Silestone"], "single", [], 20)
+        tipologias = [{"id": "DC-05", "qty": 1, "shape": "linear",
+                       "segments_m": [1.88], "depth_m": 0.62,
+                       "extraction_method": "inferred",
+                       "_confidence": {"backsplash": 0.9}}]
+        geo = compute_visual_geometry(tipologias, mat)
+        services = infer_visual_services(tipologias, geo)
+        pending = build_visual_pending_questions(mat, services, tipologias, {"client_name": "X"})
+        assert "DC-05_extraction_needs_review" in pending
+
+    def test_direct_read_not_in_pending(self):
+        """Tipología with direct_read should NOT appear in extraction pending."""
+        mat = MaterialResolution("x", ["Silestone"], "single", [], 20)
+        tipologias = [{"id": "DC-02", "qty": 2, "shape": "L",
+                       "segments_m": [2.35, 1.15], "depth_m": 0.62,
+                       "extraction_method": "direct_read",
+                       "_confidence": {"backsplash": 0.9}}]
+        geo = compute_visual_geometry(tipologias, mat)
+        services = infer_visual_services(tipologias, geo)
+        pending = build_visual_pending_questions(mat, services, tipologias, {"client_name": "X"})
+        assert "DC-02_extraction_needs_review" not in pending
+
 
 # ── Operator Corrections ─────────────────────────────────────────────────────
 
