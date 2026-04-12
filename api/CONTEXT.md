@@ -604,10 +604,17 @@ Leer columna "Perforaciones/Calados". Contar total bachas → pileta_qty. "2 bac
 ```
 VERIFICACIÓN EDIFICIO — [Cliente] / [Obra]
 DESPIECE POR MATERIAL: tabla con ID, Ubicación, Medida, m², Pileta, Faldón
-SERVICIOS (MO): sin colocación, PEGADOPILETA×N, armado frentín×ml, flete×X
+SERVICIOS (MO):
+  - Colocación: NO (edificio)
+  - PEGADOPILETA: ×N
+  - ANAFE: ×N (si corresponde)
+  - Armado frentín: ×ml
+  - Flete + toma de medidas: pendiente de cálculo según reglas de edificio (ceil(piezas/6))
 DESCUENTOS: 18% si total m² > 15
 ¿Confirmás?
 ```
+
+**⛔ NUNCA sumar totales de m² a mano.** Usar `list_pieces` para calcular m² exactos. Los totales manuales del agente son aproximaciones que pueden tener errores de redondeo.
 
 ### Solías = sin colocación
 
