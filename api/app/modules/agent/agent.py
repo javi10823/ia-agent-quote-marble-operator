@@ -981,6 +981,7 @@ class AgentService:
                 # ── Skip remaining pre-loop handlers if auto-advancing visual pages ──
                 if _auto_advance_visual:
                     _visual_builder_done = False  # Reset for next page processing in while loop
+                    logging.info(f"[visual-pages] Auto-advance: PDF in context = {plan_bytes is not None}, strip_disabled = True")
                     # Fall through to while True loop with injected system message
 
                 # ── PASO 3: Generate documents ──
@@ -1757,9 +1758,10 @@ class AgentService:
             elif has_plan and _loop_iterations == 0 and not pdf_has_images:
                 logging.info(f"PDF is text-only — using Sonnet (no Opus needed)")
 
-            # Strip plan images from messages — BUT preserve if previous iteration
-            # used a visual tool (read_plan) that needs the document context
-            _should_strip = _loop_iterations > 0 and has_plan and not _last_had_visual_tool
+            # Strip plan images from messages — BUT preserve if:
+            # - previous iteration used a visual tool (read_plan)
+            # - auto-advancing to next page (needs PDF for zone detection)
+            _should_strip = _loop_iterations > 0 and has_plan and not _last_had_visual_tool and not _auto_advance_visual
             if _should_strip:
                 msgs_for_api = []
                 for msg in new_messages:
