@@ -1060,7 +1060,15 @@ def parse_zone_detection(claude_response: str) -> list[dict]:
                 bbox = [0, 0, 700, 700]
         else:
             bbox = [0, 0, 700, 700]
-        cleaned.append({"name": name, "bbox": bbox})
+        view_type = z.get("view_type", "unknown")
+        if view_type not in ("top_view", "section", "detail", "unknown"):
+            view_type = "unknown"
+        try:
+            zone_conf = float(z.get("confidence", 0.5))
+            zone_conf = max(0.0, min(1.0, zone_conf))
+        except (TypeError, ValueError):
+            zone_conf = 0.5
+        cleaned.append({"name": name, "bbox": bbox, "view_type": view_type, "confidence": zone_conf})
 
     return cleaned
 
@@ -1073,36 +1081,43 @@ def auto_select_zone(
 
     Priority:
     1. zone_default (learned from previous page) — exact match case-insensitive
-    2. Zone containing "PLANTA" in name
-    3. Largest zone by bbox area (excluding CORTE/DETALLE names)
-    4. Largest zone overall
-    5. None if empty list
+    2. view_type == "top_view" — vista cenital = marmolería
+    3. Zone containing "PLANTA" in name — fallback if no view_type
+    4. Largest zone by bbox area (excluding CORTE/DETALLE names)
+    5. Largest zone overall
+    6. None if empty list
     """
     if not zones:
         return None
 
-    # 1. zone_default
+    def bbox_area(z):
+        b = z.get("bbox", [0, 0, 0, 0])
+        return abs(b[2] - b[0]) * abs(b[3] - b[1])
+
+    # 1. zone_default (learned from previous page)
     if zone_default:
         for z in zones:
             if z["name"].lower() == zone_default.lower():
                 return z
 
-    # 2. Contains "PLANTA"
+    # 2. view_type == "top_view" — most reliable signal
+    top_views = [z for z in zones if z.get("view_type") == "top_view"]
+    if top_views:
+        # Prefer highest confidence, then largest area as tiebreaker
+        return max(top_views, key=lambda z: (z.get("confidence", 0.5), bbox_area(z)))
+
+    # 3. Contains "PLANTA" in name
     for z in zones:
         if "planta" in z["name"].lower():
             return z
 
-    # 3. Largest non-corte zone
-    def bbox_area(z):
-        b = z.get("bbox", [0, 0, 0, 0])
-        return abs(b[2] - b[0]) * abs(b[3] - b[1])
-
+    # 4. Largest non-corte zone
     corte_keywords = ["corte", "detalle", "vista", "sección", "seccion"]
     non_corte = [z for z in zones if not any(kw in z["name"].lower() for kw in corte_keywords)]
     if non_corte:
         return max(non_corte, key=bbox_area)
 
-    # 4. Largest overall
+    # 5. Largest overall
     return max(zones, key=bbox_area)
 
 

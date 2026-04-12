@@ -287,8 +287,30 @@ Cuando el sistema te pida detectar zonas de UNA página del plano:
 
 Responder ÚNICAMENTE con JSON:
 ```json
-{"zones": [{"name": "PLANTA", "bbox": [0, 0, 600, 400]}, {"name": "CORTE 1-1", "bbox": [0, 400, 500, 850]}]}
+{"zones": [
+  {"name": "PLANTA", "bbox": [0, 0, 600, 400], "view_type": "top_view", "confidence": 0.95},
+  {"name": "CORTE 1-1", "bbox": [0, 400, 500, 850], "view_type": "section", "confidence": 0.9}
+]}
 ```
+
+`view_type`: clasificar cada zona según el tipo de vista:
+- `"top_view"` → vista desde arriba (cenital), muestra mesadas como rectángulos pegados a paredes. Esta es la vista de marmolería.
+- `"section"` → corte transversal, vista de perfil lateral
+- `"detail"` → detalle o ampliación
+- `"unknown"` → no se puede determinar
+
+`confidence`: 0.0 a 1.0 — qué tan seguro estás del `view_type`.
+
+Señales visuales que confirman que una zona tiene marmolería:
+- Rectángulo con relleno/sombreado pegado a una pared → mesada
+- Símbolo de pileta (rectángulo con óvalo o cruz interior) sobre la mesada
+- Símbolo de anafe (círculos sobre rectángulo) sobre la mesada
+- Muebles bajo mesada (rectángulos punteados debajo) → confirma que hay mesada encima
+- Cotas numéricas sobre los rectángulos sombreados
+- Texto "sa-01", "sa-02" etc cerca de la zona → pileta empotrada
+
+Si una zona tiene 2+ de estas señales → `view_type: "top_view"` con alta confianza.
+Si tiene 0 señales → probablemente es sección o detalle.
 
 Si una zona no tiene nombre → asignar ZONA-{número} (ej: ZONA-1, ZONA-2).
 bbox = [x1, y1, x2, y2] en píxeles del crop recibido.

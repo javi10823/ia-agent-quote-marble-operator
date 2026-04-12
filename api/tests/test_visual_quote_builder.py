@@ -626,6 +626,24 @@ class TestAutoSelectZone:
         selected = auto_select_zone(zones)
         assert selected["name"] == "CORTE 2-2"
 
+    def test_selects_top_view_over_name(self):
+        """view_type top_view should win over name containing PLANTA."""
+        zones = [
+            {"name": "DESARROLLO", "bbox": [0, 0, 600, 500], "view_type": "top_view", "confidence": 0.9},
+            {"name": "PLANTA TÉCNICA", "bbox": [0, 500, 600, 900], "view_type": "section", "confidence": 0.9},
+        ]
+        selected = auto_select_zone(zones)
+        assert selected["name"] == "DESARROLLO"
+
+    def test_selects_highest_confidence_top_view(self):
+        """Multiple top_views → select highest confidence."""
+        zones = [
+            {"name": "ZONA-1", "bbox": [0, 0, 300, 400], "view_type": "top_view", "confidence": 0.6},
+            {"name": "ZONA-2", "bbox": [300, 0, 600, 400], "view_type": "top_view", "confidence": 0.95},
+        ]
+        selected = auto_select_zone(zones)
+        assert selected["name"] == "ZONA-2"
+
 
 class TestParsePageConfirmation:
     def test_confirm_si(self):
