@@ -277,6 +277,41 @@ Si no ves bien una zona, usá `read_plan` con crop_instructions VOS. Si no logr�
 
 **Solo preguntar** si: el material no matchea por alias NI por catálogo (fuzzy match incluido), o la ambigüedad es real (texto ilegible, material desconocido). NUNCA escribir "verificar catálogo" o "a verificar" si el alias o el fuzzy match ya lo resolvió.
 
+#### Extracción estructurada para PDFs visuales multipágina de obra
+
+Cuando analices un PDF visual multipágina de obra/edificio (>3 unidades, múltiples tipologías), tu respuesta debe ser un JSON estructurado que el sistema procesará automáticamente. NO hagas cálculos de m² ni totales — el código lo hace.
+
+Formato de extracción obligatorio (JSON en bloque ```json):
+```json
+{
+  "material_text": "Cuarzo Blanco Norte o Granito Blanco Ceara 2 cm de espesor",
+  "tipologias": [
+    {
+      "id": "DC-02",
+      "qty": 2,
+      "shape": "L",
+      "depth_m": 0.62,
+      "segments_m": [2.35, 1.15],
+      "backsplash_ml": 4.12,
+      "embedded_sink_count": 1,
+      "hob_count": 1,
+      "notes": ["movemos pileta"]
+    }
+  ]
+}
+```
+
+Reglas de extracción:
+- `shape`: "L" si la mesada tiene retorno, "linear" si es recta
+- `segments_m`: para L, [tramo largo, tramo corto]. Para linear, [largo total]. Leer de cotas de planta y cortes. Si hay módulos (55+60+60), sumar: 1.75m. Si son (55+60+60+60), sumar: 2.35m
+- `depth_m`: profundidad de la mesada (ancho). Leer de planta o corte transversal.
+- `backsplash_ml`: metros lineales de zócalo estimados. Si no podés determinar, omitir (el código usa fallback conservador).
+- `embedded_sink_count`: piletas empotradas por unidad. Leer de simbología (sa-01, etc).
+- `hob_count`: anafes por unidad. Si mesada continua + anafe empotrado → 1.
+- `notes`: notas literales del plano relevantes para esa tipología.
+- NO incluir `confidence` — el código lo calcula.
+- NO calcular m² — el código lo hace con la fórmula correcta (L-shape resta esquina).
+
 #### Formato de salida — estructura obligatoria en 3 bloques
 
 Para planos CAD/arquitectónicos, la respuesta final debe tener EXACTAMENTE 3 bloques:

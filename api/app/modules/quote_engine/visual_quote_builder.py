@@ -1,0 +1,894 @@
+"""Deterministic pipeline for visual/CAD building quotes.
+
+Separates LLM extraction (soft) from computation (hard):
+- Claude extracts JSON per tipología from plan pages
+- This module resolves materials, validates, computes geometry, infers services
+
+Only applies to visual/CAD multipágina path. Does NOT affect:
+- ESH tabular pipeline (edificio_parser.py)
+- Normal text quotes
+- Simple image quotes
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import math
+import re
+import unicodedata
+from dataclasses import dataclass, field, asdict
+from pathlib import Path
+from typing import Optional
+
+# ── Constants ──────────────────────────────────────────────────────────────────
+
+CATALOG_DIR = Path(__file__).parent.parent.parent.parent / "catalog"
+
+# Material max slab length (m) — for physical piece count / flete calculation
+MATERIAL_MAX_LENGTHS = {
+    "silestone": 3.20,
+    "purastone": 3.20,
+    "puraprima": 3.20,
+    "dekton": 3.20,
+    "neolith": 3.20,
+    "laminatto": 3.20,
+    "granito nacional": 2.80,
+    "granito importado": 3.00,
+    "marmol": 2.80,
+    "default": 3.00,
+}
+
+# Confidence thresholds
+CONF_HIGH = 0.80
+CONF_REVIEW = 0.55
+
+# Validation limits
+VALIDATION_ALWAYS_THRESHOLD = 10  # Always show validation if total units > this
+
+
+# ── Data classes ───────────────────────────────────────────────────────────────
+
+@dataclass
+class MaterialResolution:
+    raw_text: str
+    resolved: list[str]
+    mode: str  # "single" | "variants" | "needs_clarification"
+    unresolved: list[str]
+    thickness_mm: int = 20
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class FieldConfidence:
+    shape: float = 0.0
+    depth: float = 0.0
+    segments: float = 0.0
+    backsplash: float = 0.0
+    sink: float = 0.0
+    hob: float = 0.0
+
+    def min_score(self) -> float:
+        return min(self.shape, self.depth, self.segments)
+
+    def has_review_needed(self) -> bool:
+        return any(v < CONF_HIGH for v in [self.shape, self.depth, self.segments,
+                                            self.backsplash, self.sink, self.hob])
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class TipologiaGeometry:
+    id: str
+    qty: int
+    shape: str  # "L" | "linear"
+    segments_m: list[float]
+    depth_m: float
+    m2_unit: float
+    m2_total: float
+    backsplash_ml_unit: float
+    backsplash_m2_unit: float
+    backsplash_m2_total: float
+    physical_pieces_per_unit: int
+    physical_pieces_total: int
+    notes: list[str] = field(default_factory=list)
+    confidence: FieldConfidence = field(default_factory=FieldConfidence)
+
+
+@dataclass
+class GeometrySummary:
+    tipologias: list[TipologiaGeometry]
+    total_mesada_m2: float
+    total_backsplash_m2: float
+    total_m2: float
+    total_physical_pieces: int
+    flete_qty: int
+
+    def to_dict(self) -> dict:
+        return {
+            "tipologias": [asdict(t) for t in self.tipologias],
+            "total_mesada_m2": self.total_mesada_m2,
+            "total_backsplash_m2": self.total_backsplash_m2,
+            "total_m2": self.total_m2,
+            "total_physical_pieces": self.total_physical_pieces,
+            "flete_qty": self.flete_qty,
+        }
+
+
+@dataclass
+class ServiceInference:
+    is_building: bool = True
+    colocacion: bool = False  # edificio → no
+    pegadopileta_qty: int = 0
+    pegadopileta_confidence: float = 0.0
+    anafe_qty: int = 0
+    anafe_confidence: float = 0.0
+    backsplash_height_m: float = 0.075
+    flete_qty: int = 0
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+# ── 1. Material Resolution ─────────────────────────────────────────────────────
+
+def _normalize_text(text: str) -> str:
+    """Lowercase, strip, remove accents, collapse whitespace."""
+    text = text.lower().strip()
+    # Remove accents
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    # Collapse whitespace
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+
+def _load_material_aliases() -> dict[str, str]:
+    """Load material_aliases from config.json."""
+    try:
+        with open(CATALOG_DIR / "config.json") as f:
+            cfg = json.load(f)
+        return cfg.get("material_aliases", {})
+    except Exception:
+        return {}
+
+
+def _fuzzy_alias_match(text: str, aliases: dict[str, str]) -> Optional[str]:
+    """Try exact match first, then normalized match."""
+    norm = _normalize_text(text)
+
+    # Exact match (case-insensitive)
+    for alias_key, canonical in aliases.items():
+        if _normalize_text(alias_key) == norm:
+            return canonical
+
+    # Substring match: if normalized text contains an alias
+    for alias_key, canonical in sorted(aliases.items(), key=lambda x: -len(x[0])):
+        if _normalize_text(alias_key) in norm:
+            return canonical
+
+    return None
+
+
+def _catalog_exists(material_name: str) -> bool:
+    """Check if a material name exists in any catalog (fuzzy)."""
+    norm = _normalize_text(material_name)
+    for catalog_file in CATALOG_DIR.glob("materials-*.json"):
+        try:
+            with open(catalog_file) as f:
+                items = json.load(f)
+            for item in items:
+                if _normalize_text(item.get("name", "")) == norm:
+                    return True
+                # Also check partial match
+                if norm in _normalize_text(item.get("name", "")):
+                    return True
+        except Exception:
+            continue
+    return False
+
+
+def resolve_visual_materials(raw_text: str) -> MaterialResolution:
+    """Resolve material text from plan into canonical catalog names.
+
+    Rules:
+    - Try alias match first
+    - If 2-3 resolved materials → mode="variants" (auto)
+    - If 1 resolved → mode="single"
+    - If any unresolved → mode="needs_clarification"
+    """
+    aliases = _load_material_aliases()
+
+    # Parse "Material A o Material B" patterns
+    # Also handle "Material A / Material B"
+    # Strip thickness info first
+    clean = re.sub(r"\d+\s*(cm|mm)\s*(de\s+)?espesor", "", raw_text, flags=re.IGNORECASE).strip()
+    thickness_match = re.search(r"(\d+)\s*(cm|mm)", raw_text, re.IGNORECASE)
+    thickness_mm = 20
+    if thickness_match:
+        val = int(thickness_match.group(1))
+        unit = thickness_match.group(2).lower()
+        thickness_mm = val * 10 if unit == "cm" else val
+
+    # Split by "o" / "or" / "/"
+    parts = re.split(r"\s+o\s+|\s*/\s*", clean, flags=re.IGNORECASE)
+    parts = [p.strip() for p in parts if p.strip()]
+
+    resolved = []
+    unresolved = []
+
+    for part in parts:
+        # Try alias first
+        canonical = _fuzzy_alias_match(part, aliases)
+        if canonical:
+            if canonical not in resolved:
+                resolved.append(canonical)
+            continue
+
+        # Try direct catalog match
+        if _catalog_exists(part):
+            if part not in resolved:
+                resolved.append(part)
+            continue
+
+        unresolved.append(part)
+
+    if unresolved:
+        mode = "needs_clarification"
+    elif len(resolved) >= 2:
+        mode = "variants"
+    elif len(resolved) == 1:
+        mode = "single"
+    else:
+        mode = "needs_clarification"
+
+    return MaterialResolution(
+        raw_text=raw_text,
+        resolved=resolved,
+        mode=mode,
+        unresolved=unresolved,
+        thickness_mm=thickness_mm,
+    )
+
+
+# ── 2. Field Confidence (deterministic, not from LLM) ─────────────────────────
+
+def compute_field_confidence(tipologia: dict) -> FieldConfidence:
+    """Compute confidence per field using deterministic range checks."""
+    segs = tipologia.get("segments_m", [])
+    depth = tipologia.get("depth_m", 0)
+    shape = tipologia.get("shape", "unknown")
+    sink = tipologia.get("embedded_sink_count", 0)
+    hob = tipologia.get("hob_count", 0)
+    backsplash = tipologia.get("backsplash_ml")
+
+    conf = FieldConfidence()
+
+    # Shape: must be explicit
+    if shape in ("L", "linear"):
+        conf.shape = 0.9
+    else:
+        conf.shape = 0.4
+
+    # Shape-segment consistency
+    if shape == "L" and len(segs) != 2:
+        conf.segments = 0.3
+    elif shape == "linear" and len(segs) != 1:
+        conf.segments = 0.3
+    elif all(0.3 <= s <= 5.0 for s in segs) and len(segs) > 0:
+        conf.segments = 0.9
+    else:
+        conf.segments = 0.5
+
+    # Depth: typical mesada range
+    if 0.40 <= depth <= 0.80:
+        conf.depth = 0.9
+    elif 0.20 <= depth <= 1.0:
+        conf.depth = 0.6
+    else:
+        conf.depth = 0.3
+
+    # Sink: expected 0 or 1 per unit
+    if 0 <= sink <= 2:
+        conf.sink = 0.9
+    else:
+        conf.sink = 0.5
+
+    # Hob: expected 0 or 1
+    if 0 <= hob <= 1:
+        conf.hob = 0.9
+    else:
+        conf.hob = 0.5
+
+    # Backsplash: always needs review (visually weak)
+    if backsplash is not None:
+        total_seg = sum(segs) if segs else 1
+        if backsplash > total_seg * 2.5:
+            conf.backsplash = 0.3  # incoherent
+        elif backsplash < depth * 0.5:
+            conf.backsplash = 0.4  # suspiciously low
+        else:
+            conf.backsplash = 0.6  # plausible but always review
+    else:
+        conf.backsplash = 0.5  # no data → will use fallback
+
+    return conf
+
+
+# ── 3. Validate Visual Extraction ──────────────────────────────────────────────
+
+@dataclass
+class ValidationResult:
+    all_tipologias: list[dict]  # original + confidence added
+    high_confidence: list[dict]
+    needs_review: list[dict]
+    unusable: list[dict]
+    soft_field_warnings: list[str]
+    requires_operator_validation: bool
+
+
+def validate_visual_extraction(tipologias: list[dict]) -> ValidationResult:
+    """Validate extracted tipologías and classify by confidence."""
+    high = []
+    review = []
+    unusable = []
+    warnings = []
+
+    total_units = sum(t.get("qty", 1) for t in tipologias)
+
+    for t in tipologias:
+        conf = compute_field_confidence(t)
+        t["_confidence"] = conf.to_dict()
+
+        min_core = min(conf.shape, conf.depth, conf.segments)
+        if min_core >= CONF_HIGH:
+            high.append(t)
+        elif min_core >= CONF_REVIEW:
+            review.append(t)
+        else:
+            unusable.append(t)
+
+        # Soft field warnings
+        if conf.backsplash < CONF_HIGH:
+            warnings.append(f"{t.get('id', '?')}: zócalo/backsplash requiere confirmación")
+        if conf.sink < CONF_HIGH:
+            warnings.append(f"{t.get('id', '?')}: cantidad de piletas requiere confirmación")
+        if conf.hob < CONF_HIGH:
+            warnings.append(f"{t.get('id', '?')}: anafe requiere confirmación")
+
+    # Always validate if large project or if there are review/unusable items
+    requires_validation = (
+        len(review) > 0
+        or len(unusable) > 0
+        or total_units > VALIDATION_ALWAYS_THRESHOLD
+    )
+
+    return ValidationResult(
+        all_tipologias=tipologias,
+        high_confidence=high,
+        needs_review=review,
+        unusable=unusable,
+        soft_field_warnings=warnings,
+        requires_operator_validation=requires_validation,
+    )
+
+
+# ── 4. Compute Geometry (deterministic) ────────────────────────────────────────
+
+def _get_material_max_length(material_name: str) -> float:
+    """Get max slab length for a material."""
+    norm = _normalize_text(material_name)
+    for key, length in MATERIAL_MAX_LENGTHS.items():
+        if key in norm:
+            return length
+    return MATERIAL_MAX_LENGTHS["default"]
+
+
+def compute_physical_pieces(segments_m: list[float], material_max_length: float) -> int:
+    """Each segment divided into physical pieces by material max slab length."""
+    total = 0
+    for seg in segments_m:
+        total += math.ceil(seg / material_max_length)
+    return total
+
+
+def compute_visual_geometry(
+    tipologias: list[dict],
+    material_resolution: MaterialResolution,
+    backsplash_height_m: float = 0.075,
+) -> GeometrySummary:
+    """Compute exact m², backsplash, physical pieces from validated tipologías."""
+    # Use first resolved material for max length (both variants share geometry)
+    mat_name = material_resolution.resolved[0] if material_resolution.resolved else ""
+    max_length = _get_material_max_length(mat_name)
+
+    results = []
+    total_mesada = 0
+    total_backsplash = 0
+    total_pieces = 0
+
+    for t in tipologias:
+        tid = t.get("id", "?")
+        qty = t.get("qty", 1)
+        shape = t.get("shape", "linear")
+        segs = t.get("segments_m", [])
+        depth = t.get("depth_m", 0.60)
+        notes = t.get("notes", [])
+
+        # m² per unit — L-shape subtracts corner overlap
+        if shape == "L" and len(segs) == 2:
+            m2_unit = (segs[0] * depth) + (segs[1] * depth) - (depth * depth)
+        else:
+            m2_unit = sum(s * depth for s in segs)
+        m2_unit = round(m2_unit, 2)
+        m2_total = round(m2_unit * qty, 2)
+
+        # Backsplash ml per unit
+        backsplash_ml = t.get("backsplash_ml")
+        if backsplash_ml is None:
+            # Fallback: conservative (all segments + depth for L)
+            # TODO: this overestimates if not all sides have backsplash
+            backsplash_ml = sum(segs)
+            if shape == "L":
+                backsplash_ml += depth  # return side
+        backsplash_m2_unit = round(backsplash_ml * backsplash_height_m, 2)
+        backsplash_m2_total = round(backsplash_m2_unit * qty, 2)
+
+        # Physical pieces per unit
+        pieces_unit = compute_physical_pieces(segs, max_length)
+        pieces_total = pieces_unit * qty
+
+        geo = TipologiaGeometry(
+            id=tid,
+            qty=qty,
+            shape=shape,
+            segments_m=segs,
+            depth_m=depth,
+            m2_unit=m2_unit,
+            m2_total=m2_total,
+            backsplash_ml_unit=round(backsplash_ml, 2),
+            backsplash_m2_unit=backsplash_m2_unit,
+            backsplash_m2_total=backsplash_m2_total,
+            physical_pieces_per_unit=pieces_unit,
+            physical_pieces_total=pieces_total,
+            notes=notes,
+        )
+        results.append(geo)
+        total_mesada += m2_total
+        total_backsplash += backsplash_m2_total
+        total_pieces += pieces_total
+
+    flete_qty = math.ceil(total_pieces / 6)
+
+    return GeometrySummary(
+        tipologias=results,
+        total_mesada_m2=round(total_mesada, 2),
+        total_backsplash_m2=round(total_backsplash, 2),
+        total_m2=round(total_mesada + total_backsplash, 2),
+        total_physical_pieces=total_pieces,
+        flete_qty=flete_qty,
+    )
+
+
+# ── 5. Infer Services ─────────────────────────────────────────────────────────
+
+def infer_visual_services(
+    tipologias: list[dict],
+    geometry: GeometrySummary,
+) -> ServiceInference:
+    """Infer building services from tipologías."""
+    total_sinks = 0
+    total_hobs = 0
+    min_sink_conf = 1.0
+    min_hob_conf = 1.0
+
+    for t in tipologias:
+        qty = t.get("qty", 1)
+        total_sinks += t.get("embedded_sink_count", 0) * qty
+        total_hobs += t.get("hob_count", 0) * qty
+
+        conf = t.get("_confidence", {})
+        min_sink_conf = min(min_sink_conf, conf.get("sink", 0.5))
+        min_hob_conf = min(min_hob_conf, conf.get("hob", 0.5))
+
+    return ServiceInference(
+        is_building=True,
+        colocacion=False,
+        pegadopileta_qty=total_sinks,
+        pegadopileta_confidence=min_sink_conf,
+        anafe_qty=total_hobs,
+        anafe_confidence=min_hob_conf,
+        backsplash_height_m=0.075,
+        flete_qty=geometry.flete_qty,
+    )
+
+
+# ── 6. Pending Questions (deterministic) ───────────────────────────────────────
+
+def build_visual_pending_questions(
+    material_res: MaterialResolution,
+    services: ServiceInference,
+    tipologias: list[dict],
+    quote: Optional[dict] = None,
+) -> list[str]:
+    """Build list of genuinely pending commercial questions."""
+    questions = []
+
+    # Planilla always first
+    questions.append("planilla_marmoleria")
+
+    # Client name
+    q = quote or {}
+    if not q.get("client_name"):
+        questions.append("client_name")
+
+    # Locality — only if not already set (NOT defaulting to Rosario)
+    if not q.get("locality"):
+        questions.append("locality")
+
+    # Material — only if needs clarification
+    if material_res.mode == "needs_clarification":
+        questions.append("material_definition")
+
+    # Pileta provision — only if sinks detected
+    if services.pegadopileta_qty > 0:
+        questions.append("pileta_provision")
+
+    # Low confidence fields
+    for t in tipologias:
+        conf = t.get("_confidence", {})
+        if conf.get("backsplash", 0) < CONF_HIGH:
+            questions.append(f"confirm_backsplash_{t.get('id', '?')}")
+            break  # Only ask once, not per tipología
+
+    return questions
+
+
+# ── 7. Parse Operator Corrections (deterministic regex) ────────────────────────
+
+# Flexible ID pattern: DC-02, BAÑ-01, COC-03, TIPO-A, etc.
+CORRECTION_PATTERN = re.compile(
+    r"(\S+[-]\S+|\S+\d+)\s+"                    # tipología ID (flexible)
+    r"(profundidad|depth|tramo\d?|tramo_?\d?|"
+    r"zocalo_ml|zocalo|backsplash|"
+    r"qty|cantidad|largo|ancho|"
+    r"segments?|segmento?\d?)\s*"
+    r"[=:]\s*"
+    r"([\d]+[.,]?\d*)",
+    re.IGNORECASE,
+)
+
+
+def normalize_field_name(raw: str) -> str:
+    """Normalize correction field name to canonical."""
+    raw = raw.lower().strip()
+    mapping = {
+        "profundidad": "depth_m",
+        "depth": "depth_m",
+        "ancho": "depth_m",
+        "tramo": "segments_m_0",
+        "tramo1": "segments_m_0",
+        "tramo_1": "segments_m_0",
+        "tramo2": "segments_m_1",
+        "tramo_2": "segments_m_1",
+        "segmento1": "segments_m_0",
+        "segmento2": "segments_m_1",
+        "segment1": "segments_m_0",
+        "segment2": "segments_m_1",
+        "largo": "segments_m_0",
+        "zocalo_ml": "backsplash_ml",
+        "zocalo": "backsplash_ml",
+        "backsplash": "backsplash_ml",
+        "qty": "qty",
+        "cantidad": "qty",
+    }
+    return mapping.get(raw, raw)
+
+
+def parse_number(raw: str) -> float:
+    """Parse number with comma or dot decimal."""
+    raw = raw.strip().replace(",", ".")
+    return float(raw)
+
+
+def looks_like_correction(text: str) -> bool:
+    """Detect if text looks like it INTENDS to be a correction but failed regex."""
+    indicators = ["=", ":", "tramo", "profundidad", "zocalo", "zócalo", "largo", "ancho"]
+    text_lower = text.lower()
+    return any(ind in text_lower for ind in indicators)
+
+
+def parse_operator_corrections(text: str, known_ids: list[str] = None) -> Optional[list[dict]]:
+    """Parse operator corrections using deterministic regex.
+
+    Returns list of corrections, or None if text looks like a correction
+    but couldn't be parsed (→ ask for format).
+    Returns empty list if text is not a correction (e.g., "confirmo").
+    """
+    corrections = []
+    for match in CORRECTION_PATTERN.finditer(text):
+        raw_id = match.group(1).upper()
+        raw_field = match.group(2)
+        raw_value = match.group(3)
+
+        # Validate against known IDs if provided
+        if known_ids and raw_id not in [k.upper() for k in known_ids]:
+            logging.warning(f"[correction] Unknown tipología ID: {raw_id}")
+            continue
+
+        corrections.append({
+            "tipologia_id": raw_id,
+            "field": normalize_field_name(raw_field),
+            "value": parse_number(raw_value),
+        })
+
+    if not corrections and looks_like_correction(text):
+        return None  # Tried to correct but format didn't match
+
+    return corrections
+
+
+def apply_corrections(tipologias: list[dict], corrections: list[dict]) -> list[dict]:
+    """Apply parsed corrections to tipologías."""
+    tip_map = {t.get("id", "").upper(): t for t in tipologias}
+
+    for corr in corrections:
+        tid = corr["tipologia_id"]
+        field = corr["field"]
+        value = corr["value"]
+
+        if tid not in tip_map:
+            logging.warning(f"[correction] Tipología {tid} not found")
+            continue
+
+        t = tip_map[tid]
+
+        if field == "depth_m":
+            t["depth_m"] = value
+        elif field == "qty":
+            t["qty"] = int(value)
+        elif field == "backsplash_ml":
+            t["backsplash_ml"] = value
+        elif field.startswith("segments_m_"):
+            idx = int(field.split("_")[-1])
+            segs = t.get("segments_m", [])
+            if idx < len(segs):
+                segs[idx] = value
+            else:
+                segs.append(value)
+            t["segments_m"] = segs
+
+        logging.info(f"[correction] Applied: {tid} {field} = {value}")
+
+    return tipologias
+
+
+# ── 8. Render Functions ────────────────────────────────────────────────────────
+
+def render_visual_extraction_summary(
+    validation: ValidationResult,
+    material_res: MaterialResolution,
+) -> str:
+    """Render validation summary for operator review."""
+    lines = []
+
+    # Material
+    if material_res.mode == "variants":
+        lines.append(f"**Material:** {' / '.join(material_res.resolved)} (se generan ambas variantes)")
+    elif material_res.mode == "single":
+        lines.append(f"**Material:** {material_res.resolved[0]}")
+    else:
+        lines.append(f"**Material:** ⚠️ {material_res.raw_text} — requiere definición")
+
+    lines.append(f"**Espesor:** {material_res.thickness_mm}mm")
+    lines.append("")
+    lines.append("**Tipologías extraídas del plano:**")
+    lines.append("")
+
+    for t in validation.all_tipologias:
+        conf = t.get("_confidence", {})
+        tid = t.get("id", "?")
+        qty = t.get("qty", 1)
+        shape = t.get("shape", "?")
+        segs = t.get("segments_m", [])
+        depth = t.get("depth_m", 0)
+
+        # Format segments
+        if shape == "L" and len(segs) == 2:
+            seg_str = f"{segs[0]}m + {segs[1]}m"
+        else:
+            seg_str = " + ".join(f"{s}m" for s in segs)
+
+        # Confidence indicator
+        min_core = min(conf.get("shape", 0), conf.get("depth", 0), conf.get("segments", 0))
+        if min_core >= CONF_HIGH:
+            icon = "✅"
+        elif min_core >= CONF_REVIEW:
+            icon = "⚠️"
+        else:
+            icon = "❌"
+
+        lines.append(f"- {icon} **{tid}** ×{qty} — {shape} — {seg_str} — prof {depth}m")
+
+        # Soft field notes
+        if conf.get("backsplash", 0) < CONF_HIGH:
+            bl = t.get("backsplash_ml")
+            lines.append(f"  ↳ zócalo: {f'{bl}ml' if bl else 'sin dato'} (requiere confirmación)")
+
+    if validation.soft_field_warnings:
+        lines.append("")
+        lines.append("**Campos que requieren confirmación:**")
+        for w in validation.soft_field_warnings[:5]:  # Max 5 warnings
+            lines.append(f"- {w}")
+
+    lines.append("")
+    if validation.requires_operator_validation:
+        lines.append("¿Confirmás estos datos? Si hay que corregir, usá el formato:")
+        lines.append("`DC-02 profundidad = 0.65` o `DC-07 tramo2 = 1.54`")
+    else:
+        lines.append("Datos validados automáticamente. Calculando despiece...")
+
+    return "\n".join(lines)
+
+
+def render_visual_building_step1(
+    geometry: GeometrySummary,
+    services: ServiceInference,
+    material_res: MaterialResolution,
+    pending: list[str],
+) -> str:
+    """Render PASO 1 with deterministic geometry."""
+    lines = []
+
+    # Material header
+    if material_res.mode == "variants":
+        lines.append(f"**Despiece geométrico** (aplica para ambos materiales: {' y '.join(material_res.resolved)})")
+    else:
+        mat_name = material_res.resolved[0] if material_res.resolved else "?"
+        lines.append(f"**Despiece — {mat_name}**")
+
+    lines.append("")
+    lines.append("| Tipología | Cant | Forma | Medida unit | m² unit | m² total |")
+    lines.append("|-----------|------|-------|-------------|---------|----------|")
+
+    for t in geometry.tipologias:
+        if t.shape == "L":
+            medida = f"{t.segments_m[0]}×{t.depth_m} + {t.segments_m[1]}×{t.depth_m}"
+        else:
+            medida = f"{t.segments_m[0]}×{t.depth_m}" if t.segments_m else "?"
+        lines.append(f"| {t.id} | {t.qty} | {t.shape} | {medida} | {t.m2_unit} | {t.m2_total} |")
+
+    lines.append(f"| **TOTAL MESADA** | | | | | **{geometry.total_mesada_m2}** |")
+    lines.append(f"| **TOTAL ZÓCALO** | | | | | **{geometry.total_backsplash_m2}** |")
+    lines.append(f"| **TOTAL GENERAL** | | | | | **{geometry.total_m2}** |")
+
+    lines.append("")
+    lines.append("**Servicios:**")
+    lines.append(f"- Colocación: NO (edificio)")
+    lines.append(f"- PEGADOPILETA: ×{services.pegadopileta_qty}")
+    lines.append(f"- ANAFE: ×{services.anafe_qty}")
+    lines.append(f"- Flete + toma medidas: {services.flete_qty} viaje(s) (ceil({geometry.total_physical_pieces} piezas / 6))")
+
+    # Pending questions
+    if pending:
+        lines.append("")
+        lines.append("**Para avanzar con la cotización, confirmame:**")
+
+        q_labels = {
+            "planilla_marmoleria": "¿Tenés la planilla de marmolería? Si la tenés, subila para acelerar. Si no, avanzo con los planos.",
+            "client_name": "Nombre del cliente",
+            "locality": "Localidad de la obra",
+            "material_definition": f"Material: {material_res.raw_text} — ¿cuál corresponde?",
+            "pileta_provision": "Piletas: ¿las provee el cliente o D'Angelo?",
+        }
+
+        for i, q in enumerate(pending, 1):
+            if q.startswith("confirm_backsplash_"):
+                lines.append(f"{i}. Zócalo: confirmar ml por tipología")
+            elif q in q_labels:
+                lines.append(f"{i}. {q_labels[q]}")
+
+    return "\n".join(lines)
+
+
+# ── 9. JSON Parser (robust) ───────────────────────────────────────────────────
+
+def parse_visual_extraction(claude_response: str) -> Optional[dict]:
+    """Extract and validate JSON from Claude's response.
+
+    Returns dict with 'material_text' and 'tipologias', or None on failure.
+    """
+    # Try to find JSON block in markdown
+    json_match = re.search(r"```json\s*(.*?)```", claude_response, re.DOTALL)
+    if json_match:
+        raw_json = json_match.group(1).strip()
+    else:
+        # Try to find raw JSON object
+        json_match = re.search(r"\{[\s\S]*\"tipologias\"[\s\S]*\}", claude_response)
+        if json_match:
+            raw_json = json_match.group(0)
+        else:
+            logging.warning("[visual_parse] No JSON found in Claude response")
+            return None
+
+    try:
+        data = json.loads(raw_json)
+    except json.JSONDecodeError as e:
+        logging.error(f"[visual_parse] JSON decode error: {e}")
+        return None
+
+    # Validate required fields
+    tipologias = data.get("tipologias", [])
+    if not tipologias:
+        logging.warning("[visual_parse] No tipologías in JSON")
+        return None
+
+    # Validate and clean each tipología
+    cleaned = []
+    seen_ids = set()
+    for t in tipologias:
+        tid = t.get("id", "")
+        if not tid:
+            continue
+
+        # Dedup
+        if tid in seen_ids:
+            logging.warning(f"[visual_parse] Duplicate tipología: {tid}")
+            continue
+        seen_ids.add(tid)
+
+        # Required fields with defaults
+        qty = t.get("qty", 1)
+        if not isinstance(qty, int) or qty < 1 or qty > 100:
+            qty = 1
+
+        shape = t.get("shape", "linear")
+        if shape not in ("L", "linear"):
+            shape = "linear"
+
+        segs = t.get("segments_m", [])
+        if not isinstance(segs, list) or not segs:
+            continue
+        # Validate segment ranges
+        valid_segs = []
+        for s in segs:
+            try:
+                s = float(s)
+                if 0.1 <= s <= 10.0:
+                    valid_segs.append(round(s, 2))
+            except (TypeError, ValueError):
+                pass
+        if not valid_segs:
+            continue
+
+        depth = t.get("depth_m", 0.60)
+        try:
+            depth = float(depth)
+            if not (0.1 <= depth <= 2.0):
+                depth = 0.60
+        except (TypeError, ValueError):
+            depth = 0.60
+
+        cleaned.append({
+            "id": tid,
+            "qty": qty,
+            "shape": shape,
+            "depth_m": round(depth, 2),
+            "segments_m": valid_segs,
+            "backsplash_ml": t.get("backsplash_ml"),
+            "embedded_sink_count": t.get("embedded_sink_count", 0),
+            "hob_count": t.get("hob_count", 0),
+            "notes": t.get("notes", []),
+        })
+
+    if not cleaned:
+        return None
+
+    return {
+        "material_text": data.get("material_text", ""),
+        "tipologias": cleaned,
+    }
