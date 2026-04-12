@@ -216,9 +216,9 @@ Ver pricing-variables.md. Todos los catalogos sin IVA → aplicar x1.21.
 ### Piletas — CRITICO
 - **Johnson → SIEMPRE PEGADOPILETA** (empotradas)
 - **AGUJEROAPOYO** → solo banos, pileta de apoyo
-- **PEGADOPILETA** → 1 por pileta (no por mesada)
+- **PEGADOPILETA** → 1 por pileta (no por mesada). SIEMPRE cobrar independientemente de quién provee la pileta (cliente o D'Angelo). La mano de obra de pegado aplica siempre.
 - **Griferia** → NUNCA cobrar aparte, incluida en SKU
-- Pileta no mencionada → asumir cliente ya la tiene → solo PEGADOPILETA
+- Pileta no mencionada → asumir cliente ya la tiene → igual cobrar PEGADOPILETA
 - Duda tipo → buscar web antes de preguntar
 
 ### Zocalos
@@ -299,7 +299,7 @@ Para planos CAD/arquitectónicos, la respuesta final debe tener EXACTAMENTE 3 bl
 
 **C. Definiciones Comerciales Pendientes**
 - Solo lo que NO se pudo resolver automáticamente
-- Pileta: ¿la provee el cliente o D'Angelo?
+- Pileta: ¿la provee el cliente o D'Angelo? (solo afecta si se cobra el artefacto, NO la mano de obra — PEGADOPILETA se cobra SIEMPRE)
 - Cliente / localidad si faltan
 - Laterales/revestimiento si aplica
 - Si material ya se resolvió por alias o variantes → NO volver a preguntarlo acá
@@ -322,8 +322,17 @@ Si `material_aliases` resuelve un alias → usar el nombre canónico y NO escrib
 Si un material NO matchea alias ni catálogo (ni fuzzy), decirlo claro: "X no se encontró en catálogo — ¿con qué nombre figura?"
 Ejemplo correcto: "Granito Blanco Ceara" → alias resuelve a "Granito Ceara" → usar "Granito Ceara" directamente. NO escribir "Granito Blanco Ceara → a verificar en catálogo".
 
-#### Anafes — prudencia obligatoria
-Que aparezca un símbolo de anafe en el plano NO significa automáticamente que haya que cobrarlo. NO escribir "ANAFE ×25" como ítem confirmado. Presentar como observación: "Se observan anafes en las tipologías. Confirmar si corresponde contemplar perforación/encastre y quién los provee."
+#### Anafes — lectura técnica del plano
+Si del plano surge que:
+- la mesada es continua (no cortada por artefacto de pie)
+- el anafe está dibujado sobre la piedra (empotrado)
+- el horno va separado debajo en nicho independiente
+
+entonces corresponde ANAFE/traforo como ítem confirmado. NO preguntar "¿corresponde contemplar perforación?".
+
+Lo que SÍ se puede preguntar como dato comercial: marca/modelo exacto del anafe, plantilla de corte, medidas finales antes de fabricación. Pero el ítem de perforación entra directo en la cotización.
+
+Ejemplo: 25 cocinas con anafe empotrado → ANAFE ×25 confirmado.
 
 #### Reglas de lectura de cotas
 
@@ -338,8 +347,9 @@ Que aparezca un símbolo de anafe en el plano NO significa automáticamente que 
 **⛔ SOLO incluir piezas EXPLICITAS del plano con medidas escritas. NUNCA inventar piezas ni cambiar medidas.**
 
 ### Anafe
-- SOLO cobrar si plano muestra simbolo O operador dice "anafe"/"c/corte anafe"
-- Cocina ≠ anafe automatico (ref: quote-034)
+- Cobrar si plano muestra anafe empotrado sobre mesada continua (horno separado abajo) O operador dice "anafe"/"c/corte anafe"
+- Cocina con artefacto de pie (cocina completa que corta la mesada) ≠ anafe empotrado
+- Si mesada continua + anafe dibujado sobre piedra → ANAFE confirmado, no preguntar
 
 ### Islas
 - NUNCA zocalos ni alzada. Despiece: tapa + patas si las tiene.
