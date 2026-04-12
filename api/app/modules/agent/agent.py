@@ -1603,6 +1603,12 @@ class AgentService:
                     # data comes from deterministic pipeline, not list_pieces
                     active_tools = [t for t in TOOLS if t["name"] != "list_pieces"] if is_building else TOOLS
 
+                    # Visual building: remove read_plan on first iteration to force JSON extraction
+                    # Claude must use native vision on the PDF document, not call read_plan
+                    # read_plan comes back in later iterations if needed for corrections/zoom
+                    if is_visual_building and not _visual_builder_done:
+                        active_tools = [t for t in active_tools if t["name"] != "read_plan"]
+
                     # Dynamic max_tokens: higher for visual PDFs (7+ láminas need space for analysis + tool_use)
                     _max_tokens = 16384 if (needs_vision and pdf_has_images) else 8096
 
