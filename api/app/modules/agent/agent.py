@@ -1579,9 +1579,12 @@ class AgentService:
                     # data comes from deterministic pipeline, not list_pieces
                     active_tools = [t for t in TOOLS if t["name"] != "list_pieces"] if is_building else TOOLS
 
+                    # Dynamic max_tokens: higher for visual PDFs (7+ láminas need space for analysis + tool_use)
+                    _max_tokens = 16384 if (needs_vision and pdf_has_images) else 8096
+
                     async with self.client.messages.stream(
                         model=current_model,
-                        max_tokens=8096,
+                        max_tokens=_max_tokens,
                         system=system_prompt,
                         messages=msgs_for_api + _compact_tool_results(assistant_messages),
                         tools=active_tools,
@@ -1696,6 +1699,20 @@ class AgentService:
                             logging.info(f"[plan-verifier] No discrepancies found for {quote_id}")
                 except Exception as e:
                     logging.warning(f"[plan-verifier] Verification skipped: {e}")
+
+            # ── Handle max_tokens truncation ──
+            # If response was cut off by token limit, the agent may have been mid-analysis
+            # or about to emit a tool_use. Continue the loop so Claude can finish.
+            if getattr(final_message, "stop_reason", None) == "max_tokens":
+                logging.warning(f"[max_tokens] Response truncated at iteration {_loop_iterations} — continuing loop")
+                assistant_messages.append({"role": "assistant", "content": _serialize_content(final_message.content)})
+                assistant_messages.append({"role": "user", "content": [{"type": "text", "text": (
+                    "[SISTEMA] Tu respuesta se cortó por límite de tokens. "
+                    "Continuá EXACTAMENTE donde quedaste. NO repitas lo que ya dijiste. "
+                    "Si ibas a ejecutar una herramienta, ejecutala ahora."
+                )}]})
+                await asyncio.sleep(0.1)
+                continue
 
             # Check if we need to handle tool calls
             tool_use_blocks = [b for b in final_message.content if b.type == "tool_use"]
