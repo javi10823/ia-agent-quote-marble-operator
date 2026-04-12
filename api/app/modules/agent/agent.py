@@ -1540,6 +1540,10 @@ class AgentService:
             full_text = ""
             tool_uses = []
 
+            # Show a brief status for visual PDF processing (operator sees blank otherwise)
+            if needs_vision and pdf_has_images and _loop_iterations == 0:
+                yield {"type": "action", "content": "📐 Analizando plano..."}
+
             # Model selection:
             # - Opus: first iteration with plan, OR iteration after visual tool call
             # - Sonnet: everything else (prices, MO, docs)
@@ -1597,11 +1601,13 @@ class AgentService:
                                 if event.type == "content_block_delta":
                                     if hasattr(event.delta, "text"):
                                         full_text += event.delta.text
-                                        # Buffer text during visual tool iterations to suppress
-                                        # internal monologue ("voy a hacer crops", "ajustando coords")
-                                        # _suppress_text is set when we're in a read_plan loop
-                                        if not _suppress_text:
+                                        # For visual PDFs: buffer ALL text until we know if this
+                                        # iteration has tool calls. If it does, text is monologue
+                                        # and gets suppressed. If not, it's the final response
+                                        # and gets flushed in the no-tool-calls branch below.
+                                        if not (needs_vision and pdf_has_images):
                                             yield {"type": "text", "content": event.delta.text}
+                                        # For non-visual flows, stream text normally
                                 elif event.type == "content_block_start":
                                     if hasattr(event.content_block, "type") and event.content_block.type == "tool_use":
                                         tool_uses.append({
@@ -1725,10 +1731,11 @@ class AgentService:
             tool_use_blocks = [b for b in final_message.content if b.type == "tool_use"]
 
             if not tool_use_blocks:
-                # No tool calls — this is the final response. Flush suppressed text.
-                if _suppress_text and full_text:
+                # No tool calls — this is the final response.
+                # For visual PDFs: flush the buffered final response text now
+                if needs_vision and pdf_has_images and full_text:
                     yield {"type": "text", "content": full_text}
-                    logging.info(f"[suppress] Flushed {len(full_text)} chars of final response")
+                    logging.info(f"[visual-pdf] Flushed {len(full_text)} chars of final consolidated response")
                 _suppress_text = False
 
                 # ── Guardrail: Paso 1 must use list_pieces ──
