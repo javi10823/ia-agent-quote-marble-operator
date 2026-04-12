@@ -618,6 +618,7 @@ class AgentService:
         # ── Building detection: DB flag (sticky) > history > current message ──
         # Once a quote enters building mode, it stays there for all turns.
         is_building = False
+        _auto_advance_visual = False  # Set to True when page confirmed → skip to while loop
         try:
             _bq = await db.execute(select(Quote).where(Quote.id == quote_id))
             _bquote = _bq.scalar_one_or_none()
@@ -802,8 +803,189 @@ class AgentService:
                     yield {"type": "done", "content": ""}
                     return
 
+                # ── VISUAL PAGES: Operator confirming a page ──
+                if _building_step and _building_step.startswith("visual_page_") and _building_step.endswith("_confirm"):
+                    from app.modules.quote_engine.visual_quote_builder import (
+                        parse_page_confirmation,
+                        apply_corrections,
+                        compute_visual_geometry,
+                        compute_field_confidence,
+                        infer_visual_services,
+                        build_visual_pending_questions,
+                        render_page_confirmation,
+                        render_final_paso1,
+                        resolve_visual_materials,
+                        MaterialResolution,
+                        TipologiaGeometry,
+                    )
+                    import re as _re_page
+
+                    _page_match = _re_page.search(r"visual_page_(\d+)_confirm", _building_step)
+                    _conf_page = int(_page_match.group(1)) if _page_match else 1
+                    _page_key = str(_conf_page)
+                    _page_data = _bd.get("page_data", {})
+                    _pd = _page_data.get(_page_key, {})
+                    _tips = _pd.get("tipologias", [])
+                    _zones = _pd.get("detected_zones", [])
+                    _total_pages = _bd.get("total_pages", 1)
+
+                    action_result = parse_page_confirmation(user_message, _tips, _zones)
+                    action = action_result.get("action", "unclear")
+
+                    if action == "confirm" or action == "value_correction":
+                        if action == "value_correction":
+                            _tips = apply_corrections(_tips, action_result["corrections"])
+                            # Recalculate geometry
+                            mat_res_d = _bd.get("material_resolution", {})
+                            mat_res = MaterialResolution(**mat_res_d) if mat_res_d else resolve_visual_materials("")
+                            geo = compute_visual_geometry(_tips, mat_res)
+                            _pd["tipologias"] = _tips
+                            _pd["geometries"] = [
+                                {"id": g.id, "m2_unit": g.m2_unit, "m2_total": g.m2_total,
+                                 "backsplash_ml_unit": g.backsplash_ml_unit,
+                                 "backsplash_m2_total": g.backsplash_m2_total,
+                                 "physical_pieces_total": g.physical_pieces_total}
+                                for g in geo.tipologias
+                            ]
+
+                        _pd["confirmed"] = True
+                        # Learn zone_default from first confirmed page
+                        if not _bd.get("zone_default") and _pd.get("selected_zone"):
+                            _bd["zone_default"] = _pd["selected_zone"]["name"]
+
+                        _pages_completed = _bd.get("pages_completed", [])
+                        if _conf_page not in _pages_completed:
+                            _pages_completed.append(_conf_page)
+                        _bd["pages_completed"] = _pages_completed
+                        _page_data[_page_key] = _pd
+                        _bd["page_data"] = _page_data
+
+                        next_page = _conf_page + 1
+                        if next_page <= _total_pages:
+                            _bd["current_page"] = next_page
+                            _bd["building_step"] = f"visual_page_{next_page}"
+                            try:
+                                await db.execute(
+                                    update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd)
+                                )
+                                await db.commit()
+                            except Exception as e:
+                                logging.error(f"[visual-pages] Failed to persist: {e}")
+                            yield {"type": "action", "content": f"✅ Página {_conf_page} confirmada. Procesando página {next_page}..."}
+                            yield {"type": "action", "content": f"📐 Analizando página {next_page}/{_total_pages}..."}
+
+                            # Auto-advance: directly process next page without waiting for operator
+                            # Inject system instruction as user message → while loop calls Claude for zone detection
+                            assistant_messages.append({"role": "user", "content": [{"type": "text", "text": (
+                                f"[SISTEMA] Página {_conf_page} confirmada. "
+                                f"Analizar página {next_page}/{_total_pages} del PDF. "
+                                f"Detectar zonas nombradas (PLANTA, CORTE, etc). Solo JSON de zones."
+                            )}]})
+                            _auto_advance_visual = True
+                        else:
+                            # ── ALL PAGES CONFIRMED → render final PASO 1 ──
+                            # Build confirmed_tipologias from page_data (NOT by append)
+                            all_tips = []
+                            for pg in sorted(_page_data.keys(), key=lambda x: int(x)):
+                                pd = _page_data[pg]
+                                if pd.get("confirmed") and not pd.get("skipped"):
+                                    all_tips.extend(pd.get("tipologias", []))
+
+                            mat_res_d = _bd.get("material_resolution", {})
+                            mat_res = MaterialResolution(**mat_res_d) if mat_res_d else resolve_visual_materials("")
+                            geometry = compute_visual_geometry(all_tips, mat_res)
+                            services = infer_visual_services(all_tips, geometry)
+                            pending = build_visual_pending_questions(mat_res, services, all_tips)
+                            final_text = render_final_paso1(geometry.tipologias, services, mat_res, pending)
+
+                            _bd["building_step"] = "visual_all_confirmed"
+                            _bd["confirmed_tipologias"] = all_tips
+                            try:
+                                await db.execute(
+                                    update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd)
+                                )
+                                await db.commit()
+                            except Exception as e:
+                                logging.error(f"[visual-pages] Failed to persist final: {e}")
+
+                            yield {"type": "text", "content": final_text}
+                            yield {"type": "done", "content": ""}
+                            return
+
+                    elif action == "zone_correction":
+                        new_zone = action_result["zone"]
+                        _pd["selected_zone"] = new_zone
+                        _pd["zone_was_auto"] = False
+                        _bd["zone_default"] = new_zone["name"]
+                        # Clear tipologias to force re-extraction with new zone
+                        _pd.pop("tipologias", None)
+                        _pd.pop("geometries", None)
+                        _page_data[_page_key] = _pd
+                        _bd["page_data"] = _page_data
+                        _bd["building_step"] = f"visual_page_{_conf_page}"
+                        try:
+                            await db.execute(
+                                update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd)
+                            )
+                            await db.commit()
+                        except Exception as e:
+                            logging.error(f"[visual-pages] Failed to persist zone correction: {e}")
+                        yield {"type": "text", "content": f"Zona cambiada a '{new_zone['name']}'. Re-analizando..."}
+                        yield {"type": "done", "content": ""}
+                        return
+
+                    elif action == "skip":
+                        _pd["confirmed"] = True
+                        _pd["skipped"] = True
+                        _pages_completed = _bd.get("pages_completed", [])
+                        if _conf_page not in _pages_completed:
+                            _pages_completed.append(_conf_page)
+                        _bd["pages_completed"] = _pages_completed
+                        _page_data[_page_key] = _pd
+                        _bd["page_data"] = _page_data
+
+                        next_page = _conf_page + 1
+                        if next_page <= _total_pages:
+                            _bd["current_page"] = next_page
+                            _bd["building_step"] = f"visual_page_{next_page}"
+                        else:
+                            _bd["building_step"] = "visual_all_confirmed"
+
+                        try:
+                            await db.execute(
+                                update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd)
+                            )
+                            await db.commit()
+                        except Exception as e:
+                            logging.error(f"[visual-pages] Failed to persist skip: {e}")
+
+                        if next_page <= _total_pages:
+                            yield {"type": "action", "content": f"Página {_conf_page} salteada. Procesando página {next_page}..."}
+                            assistant_messages.append({"role": "user", "content": [{"type": "text", "text": (
+                                f"[SISTEMA] Página {_conf_page} salteada. "
+                                f"Analizar página {next_page}/{_total_pages}. Solo JSON de zones."
+                            )}]})
+                            _auto_advance_visual = True
+                        # Fall through to render final if last page
+                    else:
+                        yield {"type": "text", "content": (
+                            "No entendí la respuesta. Opciones:\n"
+                            "- **Confirmar**: sí / ok / dale\n"
+                            "- **Corregir medida**: `DC-02 profundidad = 0.65`\n"
+                            "- **Cambiar zona**: `zona = CORTE 1-1`\n"
+                            "- **Sin marmolería**: skip"
+                        )}
+                        yield {"type": "done", "content": ""}
+                        return
+
+                # ── Skip remaining pre-loop handlers if auto-advancing visual pages ──
+                if _auto_advance_visual:
+                    _visual_builder_done = False  # Reset for next page processing in while loop
+                    logging.info(f"[visual-pages] Auto-advance: PDF in context = {plan_bytes is not None}, strip_disabled = True")
+                    # Fall through to while True loop with injected system message
+
                 # ── PASO 3: Generate documents ──
-                if _building_step == "step2_quote" and _bd.get("paso2_calc"):
+                elif _building_step == "step2_quote" and _bd.get("paso2_calc"):
                     # Validate client_name before generating
                     if not (_p2quote.client_name or "").strip():
                         # Save state and ask for client name
@@ -1576,9 +1758,10 @@ class AgentService:
             elif has_plan and _loop_iterations == 0 and not pdf_has_images:
                 logging.info(f"PDF is text-only — using Sonnet (no Opus needed)")
 
-            # Strip plan images from messages — BUT preserve if previous iteration
-            # used a visual tool (read_plan) that needs the document context
-            _should_strip = _loop_iterations > 0 and has_plan and not _last_had_visual_tool
+            # Strip plan images from messages — BUT preserve if:
+            # - previous iteration used a visual tool (read_plan)
+            # - auto-advancing to next page (needs PDF for zone detection)
+            _should_strip = _loop_iterations > 0 and has_plan and not _last_had_visual_tool and not _auto_advance_visual
             if _should_strip:
                 msgs_for_api = []
                 for msg in new_messages:
@@ -1756,11 +1939,14 @@ class AgentService:
             if not tool_use_blocks:
                 # No tool calls — this is the final response.
 
-                # ── Visual building pipeline: intercept JSON and compute deterministically ──
-                # Only for multipágina CAD buildings (Ventus-type), NOT simple images or single-page PDFs
+                # ── Visual building pipeline: page-by-page zone detection + extraction ──
+                # Only for multipágina CAD buildings (Ventus-type), NOT simple images
                 if is_visual_building and full_text and not _visual_builder_done:
                     from app.modules.quote_engine.visual_quote_builder import (
                         parse_visual_extraction,
+                        parse_zone_detection,
+                        auto_select_zone,
+                        parse_page_confirmation,
                         resolve_visual_materials,
                         validate_visual_extraction,
                         compute_visual_geometry,
@@ -1768,176 +1954,215 @@ class AgentService:
                         infer_visual_services,
                         build_visual_pending_questions,
                         get_tipologias_needing_second_pass,
-                        get_tipologia_page,
                         merge_second_pass,
                         parse_focused_response,
-                        render_visual_extraction_summary,
-                        render_visual_building_step1,
+                        render_page_confirmation,
+                        render_final_paso1,
+                        MaterialResolution,
+                        TipologiaGeometry,
                     )
+                    from app.modules.agent.tools.plan_tool import read_plan as _read_plan_fn
+                    import copy as _copy
 
-                    parsed = parse_visual_extraction(full_text)
-                    if parsed and parsed.get("tipologias"):
-                        logging.info(f"[visual-builder] Parsed {len(parsed['tipologias'])} tipologías from Claude response")
+                    # Load or init page-by-page state from quote_breakdown
+                    try:
+                        _qr = await db.execute(select(Quote).where(Quote.id == quote_id))
+                        _qt = _qr.scalar_one_or_none()
+                        _bd = (_qt.quote_breakdown if _qt and _qt.quote_breakdown else {}) or {}
+                    except Exception:
+                        _bd = {}
 
-                        # Resolve materials
-                        mat_res = resolve_visual_materials(parsed.get("material_text", ""))
-                        logging.info(f"[visual-builder] Material resolution: {mat_res.mode} → {mat_res.resolved}")
+                    _step = _bd.get("building_step", "")
+                    _current_page = _bd.get("current_page", 1)
+                    _total_pages = _bd.get("total_pages", num_pages if 'num_pages' in dir() else 1)
+                    _page_data = _bd.get("page_data", {})
+                    _zone_default = _bd.get("zone_default")
+                    _pages_completed = _bd.get("pages_completed", [])
 
-                        # ── Second pass for doubtful tipologías ──
-                        total_units = sum(t.get("qty", 1) for t in parsed["tipologias"])
-                        # Compute field confidences for second pass decision
-                        _field_confs = {}
-                        for t in parsed["tipologias"]:
-                            conf = compute_field_confidence(t)
-                            t["_confidence"] = conf.to_dict()
-                            _field_confs[t.get("id", "")] = conf.to_dict()
+                    # ── Init on first entry ──
+                    if not _step or _step in ("awaiting_visual_confirmation", "visual_step1_shown"):
+                        # First time or re-entry: detect material + init state
+                        # Try to get material from the first extraction
+                        _mat_text = ""
+                        _parsed_init = parse_visual_extraction(full_text)
+                        if _parsed_init:
+                            _mat_text = _parsed_init.get("material_text", "")
+                        mat_res = resolve_visual_materials(_mat_text)
+                        _bd["material_resolution"] = mat_res.to_dict()
+                        _bd["total_pages"] = _total_pages
+                        _bd["current_page"] = 1
+                        _bd["page_data"] = {}
+                        _bd["pages_completed"] = []
+                        _bd["pdf_filename"] = plan_filename if plan_filename else ""
+                        _current_page = 1
+                        _page_data = {}
+                        _pages_completed = []
+                        _step = f"visual_page_{_current_page}"
+                        _bd["building_step"] = _step
+                        logging.info(f"[visual-pages] Init: {_total_pages} pages, material={mat_res.mode} → {mat_res.resolved}")
 
-                        ids_for_second_pass = get_tipologias_needing_second_pass(
-                            parsed["tipologias"], _field_confs
+                    # ── Process current page state ──
+                    _page_key = str(_current_page)
+                    _pd = _page_data.get(_page_key, {})
+
+                    # STEP A: Zone detection (pasada 0)
+                    if _step == f"visual_page_{_current_page}" and "detected_zones" not in _pd:
+                        zones = parse_zone_detection(full_text)
+                        if not zones:
+                            # No zones parsed — use full page
+                            zones = [{"name": "PÁGINA COMPLETA", "bbox": [0, 0, 700, 700]}]
+                        _pd["detected_zones"] = zones
+                        _page_data[_page_key] = _pd
+                        _bd["page_data"] = _page_data
+                        logging.info(f"[visual-pages] Page {_current_page}: {len(zones)} zones detected")
+
+                    # STEP B: Auto-select zone
+                    if "detected_zones" in _pd and "selected_zone" not in _pd:
+                        zones = _pd["detected_zones"]
+                        selected = auto_select_zone(zones, _zone_default)
+                        if selected:
+                            _pd["selected_zone"] = selected
+                            _pd["zone_was_auto"] = True
+                            _page_data[_page_key] = _pd
+                            _bd["page_data"] = _page_data
+                            logging.info(f"[visual-pages] Page {_current_page}: auto-selected zone '{selected['name']}'")
+
+                    # STEP C: Extract tipología from zone crop
+                    if "selected_zone" in _pd and "tipologias" not in _pd:
+                        zone = _pd["selected_zone"]
+                        # Crop the selected zone
+                        try:
+                            crop_result = await _read_plan_fn(
+                                _bd.get("pdf_filename", plan_filename or ""),
+                                [{"label": zone["name"],
+                                  "x1": zone["bbox"][0], "y1": zone["bbox"][1],
+                                  "x2": zone["bbox"][2], "y2": zone["bbox"][3]}],
+                                page=_current_page,
+                            )
+                        except Exception as e:
+                            logging.error(f"[visual-pages] Crop failed page {_current_page}: {e}")
+                            crop_result = []
+
+                        # Claude extracts tipología from crop
+                        if crop_result:
+                            extraction_content = list(crop_result) if isinstance(crop_result, list) else []
+                            extraction_content.append({
+                                "type": "text",
+                                "text": (
+                                    f"Extraer tipología de esta zona (página {_current_page}). "
+                                    f"Solo JSON con tipologias. No calcular m². "
+                                    f"Filtrar SOLO sección MESADAS."
+                                ),
+                            })
+
+                            try:
+                                extraction_resp = await self.client.messages.create(
+                                    model="claude-opus-4-6",
+                                    max_tokens=1000,
+                                    system=(
+                                        "Sos un extractor de tipologías de marmolería de planos CAD. "
+                                        "Responder ÚNICAMENTE con JSON. "
+                                        "Filtrar solo MESADAS — ignorar muebles/carpintería/herrería. "
+                                        "No calcular m². Aplicar reglas de plan-reading-cotas.md."
+                                    ),
+                                    messages=[{"role": "user", "content": extraction_content}],
+                                )
+                                resp_text = extraction_resp.content[0].text if extraction_resp.content else ""
+                                page_parsed = parse_visual_extraction(resp_text)
+                            except Exception as e:
+                                logging.error(f"[visual-pages] Extraction failed page {_current_page}: {e}")
+                                page_parsed = None
+
+                            if page_parsed and page_parsed.get("tipologias"):
+                                tips = page_parsed["tipologias"]
+                                # Compute confidence + Fix C second pass within zone bbox
+                                for t in tips:
+                                    conf = compute_field_confidence(t)
+                                    t["_confidence"] = conf.to_dict()
+
+                                # Second pass for doubtful tipologías (within same zone crop)
+                                _field_confs = {t.get("id", ""): t.get("_confidence", {}) for t in tips}
+                                ids_needing = get_tipologias_needing_second_pass(tips, _field_confs)
+                                for tid in ids_needing[:3]:
+                                    try:
+                                        existing = _copy.deepcopy(next((t for t in tips if t.get("id") == tid), {}))
+                                        existing.pop("_confidence", None)
+                                        focused_resp = await self.client.messages.create(
+                                            model="claude-opus-4-6",
+                                            max_tokens=300,
+                                            system=(
+                                                f"Verificar tipología {tid}. "
+                                                f"Extracción anterior: {json.dumps(existing, ensure_ascii=False)}. "
+                                                f"Corregir shape/segments_m/depth_m. Solo JSON."
+                                            ),
+                                            messages=[{"role": "user", "content": extraction_content}],
+                                        )
+                                        sp_text = focused_resp.content[0].text if focused_resp.content else ""
+                                        sp_data = parse_focused_response(sp_text)
+                                        if sp_data:
+                                            tips = merge_second_pass(tips, sp_data, tid)
+                                            logging.info(f"[visual-pages] Second pass {tid}: {sp_data.get('second_pass_notes', 'updated')}")
+                                    except Exception as e:
+                                        logging.error(f"[visual-pages] Second pass {tid} failed: {e}")
+
+                                # Compute geometry for this page's tipologías
+                                mat_res_dict = _bd.get("material_resolution", {})
+                                mat_res = MaterialResolution(**mat_res_dict) if mat_res_dict else resolve_visual_materials("")
+                                geo = compute_visual_geometry(tips, mat_res)
+
+                                _pd["tipologias"] = tips
+                                _pd["geometries"] = [
+                                    {"id": g.id, "m2_unit": g.m2_unit, "m2_total": g.m2_total,
+                                     "backsplash_ml_unit": g.backsplash_ml_unit,
+                                     "backsplash_m2_total": g.backsplash_m2_total,
+                                     "physical_pieces_total": g.physical_pieces_total}
+                                    for g in geo.tipologias
+                                ]
+                            else:
+                                _pd["tipologias"] = []
+                                _pd["geometries"] = []
+
+                            _page_data[_page_key] = _pd
+                            _bd["page_data"] = _page_data
+
+                    # STEP D: Show page confirmation to operator
+                    if "tipologias" in _pd and not _pd.get("confirmed"):
+                        tips = _pd.get("tipologias", [])
+                        geos = _pd.get("geometries", [])
+                        zone = _pd.get("selected_zone", {"name": "?"})
+                        zone_auto = _pd.get("zone_was_auto", False)
+
+                        # Build TipologiaGeometry objects for render
+                        mat_res_dict = _bd.get("material_resolution", {})
+                        mat_res = MaterialResolution(**mat_res_dict) if mat_res_dict else resolve_visual_materials("")
+                        geo_full = compute_visual_geometry(tips, mat_res) if tips else None
+                        geo_list = geo_full.tipologias if geo_full else []
+
+                        confirmation_text = render_page_confirmation(
+                            _current_page, _total_pages, zone, tips, geo_list, zone_auto
                         )
+                        yield {"type": "text", "content": confirmation_text}
 
-                        _second_pass_calls = 0
-                        if ids_for_second_pass and total_units >= 3 and plan_bytes:
-                            logging.info(f"[visual-builder] Second pass needed for: {ids_for_second_pass}")
-                            yield {"type": "action", "content": f"🔍 Verificando {len(ids_for_second_pass)} tipologías dudosas..."}
+                        _bd["building_step"] = f"visual_page_{_current_page}_confirm"
+                        _bd["page_data"] = _page_data
+                        try:
+                            await db.execute(
+                                update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd)
+                            )
+                            await db.commit()
+                        except Exception as e:
+                            logging.error(f"[visual-pages] Failed to persist page {_current_page}: {e}")
 
-                            from app.modules.agent.tools.plan_tool import read_plan as _read_plan_fn
-                            import copy as _copy
+                        _visual_builder_done = True
+                        assistant_messages.append({
+                            "role": "assistant",
+                            "content": _serialize_content(final_message.content),
+                        })
+                        break
 
-                            for tid in ids_for_second_pass[:5]:  # Max 5 second pass calls
-                                page_num = get_tipologia_page(tid, parsed["tipologias"])
-                                try:
-                                    # Get crop of this tipología's specific page
-                                    crop_result = await _read_plan_fn(plan_filename, [{
-                                        "label": f"{tid} planta+corte",
-                                        "x1": 30, "y1": 10, "x2": 700, "y2": 700,
-                                    }], page=page_num)
-
-                                    # Deep copy to avoid mutable reference bugs
-                                    existing = _copy.deepcopy(
-                                        next((t for t in parsed["tipologias"] if t.get("id") == tid), {})
-                                    )
-                                    # Remove internal fields from prompt
-                                    existing.pop("_confidence", None)
-
-                                    logging.info(f"[second-pass] {tid}: página={page_num}, antes={existing.get('segments_m')}")
-
-                                    # Focused call to Claude for verification
-                                    focused_system = (
-                                        f"Sos un asistente de lectura de planos CAD.\n"
-                                        f"Te muestro el plano de la tipología {tid}.\n"
-                                        f"La extracción anterior fue: {json.dumps(existing, ensure_ascii=False)}\n\n"
-                                        f"Tu tarea: verificar y corregir SOLO estos campos:\n"
-                                        f"- shape: 'L' (retorno con cota visible) o 'linear' (módulos en línea recta) o 'unknown'\n"
-                                        f"- segments_m: largo real de cada tramo con cota explícita\n"
-                                        f"- depth_m: profundidad real leída de planta o corte\n\n"
-                                        f"Responder ÚNICAMENTE con JSON sin texto adicional."
-                                    )
-
-                                    # Build content with crop images
-                                    focused_content = []
-                                    if isinstance(crop_result, list):
-                                        focused_content = list(crop_result)  # Copy to avoid mutation
-                                    focused_content.append({
-                                        "type": "text",
-                                        "text": f"Verificar tipología {tid} en página {page_num}. Responder solo JSON.",
-                                    })
-
-                                    focused_response = await self.client.messages.create(
-                                        model="claude-opus-4-6",
-                                        max_tokens=300,
-                                        system=focused_system,
-                                        messages=[{"role": "user", "content": focused_content}],
-                                    )
-
-                                    _second_pass_calls += 1
-                                    resp_text = focused_response.content[0].text if focused_response.content else ""
-                                    second_pass_data = parse_focused_response(resp_text)
-
-                                    if second_pass_data:
-                                        logging.info(
-                                            f"[second-pass] {tid}: página={page_num}, "
-                                            f"antes={existing.get('segments_m')}, "
-                                            f"después={second_pass_data.get('segments_m')}, "
-                                            f"notas={second_pass_data.get('second_pass_notes', '')}"
-                                        )
-                                        parsed["tipologias"] = merge_second_pass(
-                                            parsed["tipologias"], second_pass_data, tid
-                                        )
-                                    else:
-                                        logging.warning(f"[visual-builder] Second pass {tid}: could not parse response")
-
-                                except Exception as e:
-                                    logging.error(f"[visual-builder] Second pass {tid} failed: {e}")
-
-                            logging.info(f"[visual-builder] Second pass complete: {_second_pass_calls} calls")
-
-                        # Validate extraction (with second pass corrections applied)
-                        validation = validate_visual_extraction(parsed["tipologias"])
-
-                        if validation.requires_operator_validation:
-                            # Show validation summary, wait for confirmation
-                            summary = render_visual_extraction_summary(validation, mat_res)
-                            yield {"type": "text", "content": summary}
-                            logging.info(f"[visual-builder] Showing validation summary — awaiting operator confirmation")
-
-                            # Persist to quote_breakdown for next message
-                            try:
-                                await db.execute(
-                                    update(Quote).where(Quote.id == quote_id).values(
-                                        quote_breakdown={
-                                            "visual_extraction": parsed["tipologias"],
-                                            "material_resolution": mat_res.to_dict(),
-                                            "building_step": "awaiting_visual_confirmation",
-                                        }
-                                    )
-                                )
-                                await db.commit()
-                            except Exception as e:
-                                logging.error(f"[visual-builder] Failed to persist: {e}")
-
-                            _visual_builder_done = True
-                            assistant_messages.append({
-                                "role": "assistant",
-                                "content": _serialize_content(final_message.content),
-                            })
-                            break
-                        else:
-                            # All high confidence → compute directly
-                            geometry = compute_visual_geometry(parsed["tipologias"], mat_res)
-                            services = infer_visual_services(parsed["tipologias"], geometry)
-                            pending = build_visual_pending_questions(mat_res, services, parsed["tipologias"])
-                            step1 = render_visual_building_step1(geometry, services, mat_res, pending)
-                            yield {"type": "text", "content": step1}
-                            logging.info(f"[visual-builder] Rendered PASO 1: {geometry.total_m2} m²")
-
-                            # Persist
-                            try:
-                                await db.execute(
-                                    update(Quote).where(Quote.id == quote_id).values(
-                                        quote_breakdown={
-                                            "visual_extraction": parsed["tipologias"],
-                                            "material_resolution": mat_res.to_dict(),
-                                            "geometry": geometry.to_dict(),
-                                            "services": services.to_dict(),
-                                            "building_step": "visual_step1_shown",
-                                        }
-                                    )
-                                )
-                                await db.commit()
-                            except Exception as e:
-                                logging.error(f"[visual-builder] Failed to persist: {e}")
-
-                            _visual_builder_done = True
-                            assistant_messages.append({
-                                "role": "assistant",
-                                "content": _serialize_content(final_message.content),
-                            })
-                            break
-                    else:
-                        # Couldn't parse JSON — fall through to normal display
-                        logging.warning(f"[visual-builder] Could not parse JSON from Claude response — showing raw")
-                        yield {"type": "text", "content": full_text}
+                    # Shouldn't reach here — fallback
+                    logging.warning(f"[visual-pages] Unexpected state: step={_step}, page={_current_page}")
+                    yield {"type": "text", "content": full_text}
 
                 elif needs_vision and pdf_has_images and full_text and not is_visual_building:
                     # Non-building visual PDF (simple plan, single page) — flush text
