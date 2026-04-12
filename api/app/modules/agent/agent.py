@@ -1801,41 +1801,49 @@ class AgentService:
                             logging.info(f"[visual-builder] Second pass needed for: {ids_for_second_pass}")
                             yield {"type": "action", "content": f"🔍 Verificando {len(ids_for_second_pass)} tipologías dudosas..."}
 
+                            from app.modules.agent.tools.plan_tool import read_plan as _read_plan_fn
+                            import copy as _copy
+
                             for tid in ids_for_second_pass[:5]:  # Max 5 second pass calls
                                 page_num = get_tipologia_page(tid, parsed["tipologias"])
                                 try:
                                     # Get crop of this tipología's specific page
-                                    from app.modules.agent.tools.plan_tool import read_plan as _read_plan_fn
-                                    page_num = get_tipologia_page(tid, parsed["tipologias"])
                                     crop_result = await _read_plan_fn(plan_filename, [{
                                         "label": f"{tid} planta+corte",
                                         "x1": 30, "y1": 10, "x2": 700, "y2": 700,
                                     }], page=page_num)
 
-                                    # Get existing extraction for this tipología
-                                    existing = next(
-                                        (t for t in parsed["tipologias"] if t.get("id") == tid), {}
+                                    # Deep copy to avoid mutable reference bugs
+                                    existing = _copy.deepcopy(
+                                        next((t for t in parsed["tipologias"] if t.get("id") == tid), {})
                                     )
+                                    # Remove internal fields from prompt
+                                    existing.pop("_confidence", None)
+
+                                    logging.info(f"[second-pass] {tid}: página={page_num}, antes={existing.get('segments_m')}")
 
                                     # Focused call to Claude for verification
                                     focused_system = (
                                         f"Sos un asistente de lectura de planos CAD.\n"
-                                        f"Te muestro el plano de la tipología {tid}.\n"
+                                        f"Te muestro la PÁGINA {page_num} del PDF — la lámina de tipología {tid}.\n"
                                         f"La extracción anterior fue: {json.dumps(existing, ensure_ascii=False)}\n\n"
                                         f"Tu tarea: verificar y corregir SOLO estos campos:\n"
-                                        f"- shape: 'L' (retorno con cota visible) o 'linear' (módulos en línea recta) o 'unknown'\n"
-                                        f"- segments_m: largo real de cada tramo con cota explícita\n"
+                                        f"- shape: 'L' (retorno con cota visible en PLANTA) o 'linear' (módulos en línea recta) o 'unknown'\n"
+                                        f"- segments_m: largo real de cada tramo con cota explícita.\n"
+                                        f"  Para L: [tramo principal, retorno]. El retorno de una L de cocina típica es entre 0.50m y 1.20m.\n"
+                                        f"  Si leés un retorno mayor a 1.20m, revisá si es realmente el retorno o si estás leyendo el tramo principal.\n"
                                         f"- depth_m: profundidad real leída de planta o corte\n\n"
+                                        f"IMPORTANTE: Solo leé las cotas de ESTA lámina ({tid}), no de otras tipologías.\n"
                                         f"Responder ÚNICAMENTE con JSON sin texto adicional."
                                     )
 
                                     # Build content with crop images
                                     focused_content = []
                                     if isinstance(crop_result, list):
-                                        focused_content = crop_result
+                                        focused_content = list(crop_result)  # Copy to avoid mutation
                                     focused_content.append({
                                         "type": "text",
-                                        "text": f"Verificar tipología {tid}. Responder solo JSON.",
+                                        "text": f"Verificar tipología {tid} en página {page_num}. Responder solo JSON.",
                                     })
 
                                     focused_response = await self.client.messages.create(
@@ -1850,12 +1858,14 @@ class AgentService:
                                     second_pass_data = parse_focused_response(resp_text)
 
                                     if second_pass_data:
+                                        logging.info(
+                                            f"[second-pass] {tid}: página={page_num}, "
+                                            f"antes={existing.get('segments_m')}, "
+                                            f"después={second_pass_data.get('segments_m')}, "
+                                            f"notas={second_pass_data.get('second_pass_notes', '')}"
+                                        )
                                         parsed["tipologias"] = merge_second_pass(
                                             parsed["tipologias"], second_pass_data, tid
-                                        )
-                                        logging.info(
-                                            f"[visual-builder] Second pass {tid}: "
-                                            f"{second_pass_data.get('second_pass_notes', 'updated')}"
                                         )
                                     else:
                                         logging.warning(f"[visual-builder] Second pass {tid}: could not parse response")
