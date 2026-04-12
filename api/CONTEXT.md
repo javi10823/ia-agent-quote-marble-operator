@@ -497,7 +497,9 @@ DESCUENTOS: 18% si total m² > 15
 ### Solías = sin colocación
 
 ### Planos multi-pieza (3+)
-Si 3+ piezas en cuadros separados → PARAR, pedir capturas individuales. NO leer del plano general.
+**Solo para IMÁGENES sueltas (JPEG/PNG/WebP):** Si el operador manda UNA imagen con 3+ croquis manuscritos pegados en cuadros separados → PARAR, pedir capturas individuales. NO intentar leer todo del collage.
+
+**NO aplica a PDFs multipágina / CAD / arquitectónicos:** Si el input es un PDF visual multipágina y ya pudiste detectar láminas, tipologías, cantidades y material/notas → seguí trabajando sobre las páginas adjuntas. NUNCA pidas capturas individuales de un PDF que ya tenés completo. Si necesitás más detalle de una zona, usá `read_plan` con crop_instructions.
 
 ### Archivos: solo PDF + Drive
 NO mostrar link de Excel al operador.
