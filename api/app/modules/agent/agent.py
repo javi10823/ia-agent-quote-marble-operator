@@ -873,9 +873,14 @@ class AgentService:
                                 logging.error(f"[visual-pages] Failed to persist: {e}")
                             yield {"type": "action", "content": f"✅ Página {_conf_page} confirmada. Procesando página {next_page}..."}
                             yield {"type": "action", "content": f"📐 Analizando página {next_page}/{_total_pages}..."}
-                            # Auto-advance: DON'T return — fall through to while loop
-                            # The while loop will detect is_visual_building + new page state
-                            # and process the next page automatically
+
+                            # Auto-advance: directly process next page without waiting for operator
+                            # Inject system instruction as user message → while loop calls Claude for zone detection
+                            assistant_messages.append({"role": "user", "content": [{"type": "text", "text": (
+                                f"[SISTEMA] Página {_conf_page} confirmada. "
+                                f"Analizar página {next_page}/{_total_pages} del PDF. "
+                                f"Detectar zonas nombradas (PLANTA, CORTE, etc). Solo JSON de zones."
+                            )}]})
                             _auto_advance_visual = True
                         else:
                             # ── ALL PAGES CONFIRMED → render final PASO 1 ──
@@ -956,6 +961,10 @@ class AgentService:
 
                         if next_page <= _total_pages:
                             yield {"type": "action", "content": f"Página {_conf_page} salteada. Procesando página {next_page}..."}
+                            assistant_messages.append({"role": "user", "content": [{"type": "text", "text": (
+                                f"[SISTEMA] Página {_conf_page} salteada. "
+                                f"Analizar página {next_page}/{_total_pages}. Solo JSON de zones."
+                            )}]})
                             _auto_advance_visual = True
                         # Fall through to render final if last page
                     else:
@@ -971,7 +980,8 @@ class AgentService:
 
                 # ── Skip remaining pre-loop handlers if auto-advancing visual pages ──
                 if _auto_advance_visual:
-                    pass  # Fall through to while True loop for next page processing
+                    _visual_builder_done = False  # Reset for next page processing in while loop
+                    # Fall through to while True loop with injected system message
 
                 # ── PASO 3: Generate documents ──
                 elif _building_step == "step2_quote" and _bd.get("paso2_calc"):

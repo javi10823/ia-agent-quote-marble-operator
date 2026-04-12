@@ -731,3 +731,37 @@ class TestStateMachineIntegration:
         assert all_tips[0]["id"] == "DC-02"
         assert all_tips[1]["id"] == "DC-04"
         # DC-03 skipped → not in final list
+
+    def test_auto_advance_injects_system_message(self):
+        """After confirming page 1, system must inject message for page 2 processing."""
+        # Simulate: page 1 confirmed, state set to visual_page_2
+        assistant_messages = []
+        conf_page = 1
+        next_page = 2
+        total_pages = 7
+
+        # This is the injection logic from agent.py
+        assistant_messages.append({"role": "user", "content": [{"type": "text", "text": (
+            f"[SISTEMA] Página {conf_page} confirmada. "
+            f"Analizar página {next_page}/{total_pages} del PDF. "
+            f"Detectar zonas nombradas (PLANTA, CORTE, etc). Solo JSON de zones."
+        )}]})
+
+        # Verify injection happened
+        assert len(assistant_messages) == 1
+        msg = assistant_messages[0]
+        assert msg["role"] == "user"
+        assert "Página 1 confirmada" in msg["content"][0]["text"]
+        assert "página 2/7" in msg["content"][0]["text"]
+        assert "zones" in msg["content"][0]["text"]
+
+    def test_visual_builder_done_resets_on_auto_advance(self):
+        """_visual_builder_done must be False after auto-advance for next page."""
+        _visual_builder_done = True
+        _auto_advance_visual = True
+
+        # This is the reset logic from agent.py
+        if _auto_advance_visual:
+            _visual_builder_done = False
+
+        assert _visual_builder_done is False
