@@ -330,7 +330,7 @@ Si del plano surge que:
 
 entonces corresponde ANAFE/traforo como ítem confirmado. NO preguntar "¿corresponde contemplar perforación?".
 
-Lo que SÍ se puede preguntar como dato comercial: marca/modelo exacto del anafe, plantilla de corte, medidas finales antes de fabricación. Pero el ítem de perforación entra directo en la cotización.
+D'Angelo NO vende anafes — solo cobra el servicio de perforación (traforo). NO preguntar marca/modelo/plantilla. El ítem ANAFE (perforación) entra directo en la cotización sin preguntas adicionales.
 
 Ejemplo: 25 cocinas con anafe empotrado → ANAFE ×25 confirmado.
 
