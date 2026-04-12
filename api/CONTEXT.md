@@ -303,7 +303,7 @@ Formato de extracción obligatorio (JSON en bloque ```json):
 
 Reglas de extracción:
 - `shape`: "L" si la mesada tiene retorno, "linear" si es recta
-- `segments_m`: para L, [tramo largo, tramo corto]. Para linear, [largo total]. Leer de cotas de planta y cortes. Si hay módulos (55+60+60), sumar: 2.35m
+- `segments_m`: para L, [tramo largo, tramo corto]. Para linear, [largo total]. Leer de cotas de planta y cortes. Si hay módulos (55+60+60), sumar: 1.75m. Si son (55+60+60+60), sumar: 2.35m
 - `depth_m`: profundidad de la mesada (ancho). Leer de planta o corte transversal.
 - `backsplash_ml`: metros lineales de zócalo estimados. Si no podés determinar, omitir (el código usa fallback conservador).
 - `embedded_sink_count`: piletas empotradas por unidad. Leer de simbología (sa-01, etc).

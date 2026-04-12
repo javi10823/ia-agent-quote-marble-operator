@@ -1084,6 +1084,7 @@ class AgentService:
         # Build user message content
         content = []
         pdf_has_images = False  # Track if PDF has drawings (needs vision pass)
+        is_visual_building = False  # Track if this is a multipágina CAD building (Ventus-type)
         if plan_bytes and plan_filename:
             # Persist plan file to temp so read_plan tool can access it later
             save_plan_to_temp(plan_filename, plan_bytes)
@@ -1332,6 +1333,16 @@ class AgentService:
                         },
                     })
                     logging.info(f"PDF has images/drawings — sending as document for vision pass")
+
+                    # Detect visual building: multipágina CAD with building keywords
+                    # Only applies to visual path — tabular ESH is handled separately above
+                    _building_keywords = ["tipolog", "cantidad", "unidad", "piso", "fideicomiso",
+                                          "edificio", "obra", "cocina", "desarrollo", "lamina", "lámina"]
+                    _text_lower = extracted_text.lower()
+                    _keyword_hits = sum(1 for kw in _building_keywords if kw in _text_lower)
+                    if num_pages >= 3 and pdf_has_images and _keyword_hits >= 2:
+                        is_visual_building = True
+                        logging.info(f"Visual building detected: {num_pages} pages, {_keyword_hits} keyword hits")
                 else:
                     logging.info(f"PDF is text-only (no images) — skipping vision pass, using extracted text only")
             else:
@@ -1735,7 +1746,8 @@ class AgentService:
                 # No tool calls — this is the final response.
 
                 # ── Visual building pipeline: intercept JSON and compute deterministically ──
-                if needs_vision and pdf_has_images and full_text and not _visual_builder_done:
+                # Only for multipágina CAD buildings (Ventus-type), NOT simple images or single-page PDFs
+                if is_visual_building and full_text and not _visual_builder_done:
                     from app.modules.quote_engine.visual_quote_builder import (
                         parse_visual_extraction,
                         resolve_visual_materials,
@@ -1822,9 +1834,10 @@ class AgentService:
                         logging.warning(f"[visual-builder] Could not parse JSON from Claude response — showing raw")
                         yield {"type": "text", "content": full_text}
 
-                elif needs_vision and pdf_has_images and full_text:
+                elif needs_vision and pdf_has_images and full_text and not is_visual_building:
+                    # Non-building visual PDF (simple plan, single page) — flush text
                     yield {"type": "text", "content": full_text}
-                    logging.info(f"[visual-pdf] Flushed {len(full_text)} chars (no JSON found or builder already done)")
+                    logging.info(f"[visual-pdf] Flushed {len(full_text)} chars (non-building visual)")
 
                 _suppress_text = False
 
