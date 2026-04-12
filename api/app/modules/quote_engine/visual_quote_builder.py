@@ -363,11 +363,17 @@ def validate_visual_extraction(tipologias: list[dict]) -> ValidationResult:
             warnings.append(f"{t.get('id', '?')}: anafe requiere confirmación")
 
     # Always validate if large project or if there are review/unusable items
+    forced_by_unit_count = total_units > VALIDATION_ALWAYS_THRESHOLD
     requires_validation = (
         len(review) > 0
         or len(unusable) > 0
-        or total_units > VALIDATION_ALWAYS_THRESHOLD
+        or forced_by_unit_count
     )
+
+    # For large projects, ALL tipologías need review (even high confidence)
+    if forced_by_unit_count and high:
+        review.extend(high)
+        high = []
 
     return ValidationResult(
         all_tipologias=tipologias,
@@ -540,12 +546,11 @@ def build_visual_pending_questions(
     if services.pegadopileta_qty > 0:
         questions.append("pileta_provision")
 
-    # Low confidence fields
+    # Low confidence backsplash — list ALL tipologías that need confirmation
     for t in tipologias:
         conf = t.get("_confidence", {})
         if conf.get("backsplash", 0) < CONF_HIGH:
             questions.append(f"confirm_backsplash_{t.get('id', '?')}")
-            break  # Only ask once, not per tipología
 
     # Tipologías with non-direct extraction need review
     for t in tipologias:
