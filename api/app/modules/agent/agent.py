@@ -1526,6 +1526,7 @@ class AgentService:
 
         _list_pieces_called = False  # Track if list_pieces was called (guardrail for Paso 1)
         _list_pieces_retry_done = False  # Prevent infinite retry
+        _last_had_visual_tool = False  # Track if previous iteration used a visual tool (read_plan)
 
         while True:
             if _loop_iterations >= MAX_ITERATIONS:
@@ -1537,33 +1538,39 @@ class AgentService:
             tool_uses = []
 
             # Model selection:
-            # - Opus: first iteration with plan (accurate measurement reading)
+            # - Opus: first iteration with plan, OR iteration after visual tool call
             # - Sonnet: everything else (prices, MO, docs)
             OPUS_MODEL = "claude-opus-4-6"
+            VISUAL_TOOLS = {"read_plan"}  # Tools that need visual context preserved
             ai_cfg = get_ai_config()
-            # Only use Opus if PDF has images/drawings (not for text-only planillas)
             needs_vision = has_plan and pdf_has_images
-            use_opus = needs_vision and _loop_iterations == 0 and ai_cfg.get("use_opus_for_plans", True)
+            # Use Opus on first iteration OR when previous iteration used a visual tool
+            use_opus = needs_vision and (_loop_iterations == 0 or _last_had_visual_tool) and ai_cfg.get("use_opus_for_plans", True)
             current_model = OPUS_MODEL if use_opus else settings.ANTHROPIC_MODEL
             if use_opus:
-                logging.info(f"Using Opus for plan reading (iteration {_loop_iterations + 1})")
+                logging.info(f"Using Opus for plan reading (iteration {_loop_iterations + 1}, visual_tool_prev={_last_had_visual_tool})")
             elif has_plan and _loop_iterations == 0 and not pdf_has_images:
                 logging.info(f"PDF is text-only — using Sonnet (no Opus needed)")
 
-            # Strip plan images from messages after first iteration (saves ~50K tokens)
-            if _loop_iterations > 0 and has_plan:
+            # Strip plan images from messages — BUT preserve if previous iteration
+            # used a visual tool (read_plan) that needs the document context
+            _should_strip = _loop_iterations > 0 and has_plan and not _last_had_visual_tool
+            if _should_strip:
                 msgs_for_api = []
                 for msg in new_messages:
                     content = msg.get("content", "")
                     if isinstance(content, list):
                         filtered = [b for b in content if not (isinstance(b, dict) and b.get("type") in ("image", "document"))]
                         if not filtered:
-                            filtered = [{"type": "text", "text": "(plano ya leído en iteración 1)"}]
+                            filtered = [{"type": "text", "text": "(plano ya leído en iteración anterior)"}]
                         msgs_for_api.append({**msg, "content": filtered})
                     else:
                         msgs_for_api.append(msg)
+                logging.info(f"Stripped visual content from messages (iteration {_loop_iterations + 1})")
             else:
                 msgs_for_api = new_messages
+                if _loop_iterations > 0 and _last_had_visual_tool:
+                    logging.info(f"Preserving visual content (iteration {_loop_iterations + 1} — previous used visual tool)")
 
             # Retry loop for rate limit errors
             for attempt in range(MAX_RETRIES + 1):
@@ -1777,6 +1784,9 @@ class AgentService:
 
             assistant_messages.append({"role": "assistant", "content": _serialize_content(final_message.content)})
             assistant_messages.append({"role": "user", "content": tool_results})
+
+            # Track if this iteration used visual tools (preserve context for next iteration)
+            _last_had_visual_tool = any(t.name in VISUAL_TOOLS for t in tool_use_blocks)
 
             # Brief pause between loop iterations (minimal with Tier 1)
             await asyncio.sleep(0.1)
