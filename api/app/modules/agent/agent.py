@@ -2005,12 +2005,45 @@ class AgentService:
                     _page_key = str(_current_page)
                     _pd = _page_data.get(_page_key, {})
 
-                    # STEP A: Zone detection (pasada 0)
+                    # STEP A: Zone detection (pasada 0) — separate Claude call
                     if _step == f"visual_page_{_current_page}" and "detected_zones" not in _pd:
-                        zones = parse_zone_detection(full_text)
+                        # Get a crop of the full page for zone detection
+                        from app.modules.agent.tools.plan_tool import read_plan as _read_plan_fn
+                        _pdf_fn = _bd.get("pdf_filename", plan_filename or "")
+                        try:
+                            page_crop = await _read_plan_fn(_pdf_fn, [], page=_current_page)
+                        except Exception as e:
+                            logging.error(f"[visual-pages] Page {_current_page} crop failed: {e}")
+                            page_crop = []
+
+                        zone_content = list(page_crop) if isinstance(page_crop, list) else []
+                        zone_content.append({
+                            "type": "text",
+                            "text": "Detectar todas las zonas nombradas de esta página. Solo JSON de zones.",
+                        })
+
+                        try:
+                            zone_resp = await self.client.messages.create(
+                                model="claude-opus-4-6",
+                                max_tokens=500,
+                                system=(
+                                    "Sos un detector de zonas de planos CAD. "
+                                    "Detectar TODAS las zonas nombradas de esta página: PLANTA, CORTE 1-1, CORTE 2-2, DETALLE, etc. "
+                                    "Para cada zona: name, bbox [x1,y1,x2,y2] en píxeles, view_type (top_view/section/detail/unknown), confidence (0-1). "
+                                    "Si no tiene nombre → ZONA-N. "
+                                    "Responder ÚNICAMENTE con JSON: {\"zones\": [...]}"
+                                ),
+                                messages=[{"role": "user", "content": zone_content}],
+                            )
+                            resp_text = zone_resp.content[0].text if zone_resp.content else ""
+                            logging.info(f"[visual-pages] Zone detection response: {resp_text[:200]}")
+                            zones = parse_zone_detection(resp_text)
+                        except Exception as e:
+                            logging.error(f"[visual-pages] Zone detection call failed: {e}")
+                            zones = []
+
                         if not zones:
-                            # No zones parsed — use full page
-                            zones = [{"name": "PÁGINA COMPLETA", "bbox": [0, 0, 700, 700]}]
+                            zones = [{"name": "PÁGINA COMPLETA", "bbox": [0, 0, 700, 700], "view_type": "unknown", "confidence": 0.5}]
                         _pd["detected_zones"] = zones
                         _page_data[_page_key] = _pd
                         _bd["page_data"] = _page_data
