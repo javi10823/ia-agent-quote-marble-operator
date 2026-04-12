@@ -782,10 +782,17 @@ def apply_corrections(tipologias: list[dict], corrections: list[dict]) -> list[d
 # ── 8. Render Functions ────────────────────────────────────────────────────────
 
 def render_field(value: str, conf: float, method: str) -> str:
-    """Render a field value with confidence marker."""
+    """Render a field value with confidence marker.
+
+    Rules:
+    - ❌: fallback method OR very low confidence (< CONF_REVIEW)
+    - ⚠️: low confidence (< CONF_HIGH) regardless of method
+    - ✅: high confidence (>= CONF_HIGH) — even if method is "inferred"
+           (high conf inferred = Claude read it clearly from the plan)
+    """
     if method == "fallback" or conf < CONF_REVIEW:
         return f"{value} ❌"
-    elif method == "inferred" or conf < CONF_HIGH:
+    elif conf < CONF_HIGH:
         return f"{value} ⚠️"
     return f"{value} ✅"
 

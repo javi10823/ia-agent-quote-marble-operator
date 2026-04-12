@@ -390,7 +390,8 @@ class TestRender:
         """Fields show correct markers based on confidence and method."""
         assert "✅" in render_field("2.35m", 0.9, "direct_read")
         assert "⚠️" in render_field("0.87m", 0.7, "direct_read")
-        assert "⚠️" in render_field("0.87m", 0.9, "inferred")
+        assert "✅" in render_field("0.87m", 0.9, "inferred")  # high conf inferred = ✅
+        assert "⚠️" in render_field("0.87m", 0.6, "inferred")  # low conf inferred = ⚠️
         assert "❌" in render_field("1.50m", 0.9, "fallback")
         assert "❌" in render_field("1.50m", 0.3, "direct_read")
 
