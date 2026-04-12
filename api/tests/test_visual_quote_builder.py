@@ -220,6 +220,37 @@ class TestPendingQuestions:
         pending = build_visual_pending_questions(mat, services, tipologias, {"client_name": "X"})
         assert "DC-05_extraction_needs_review" in pending
 
+    def test_all_backsplash_confirmations_listed(self):
+        """ALL tipologías with low backsplash conf should appear, not just first."""
+        mat = MaterialResolution("x", ["Silestone"], "single", [], 20)
+        tipologias = [
+            {"id": "DC-02", "qty": 2, "shape": "L", "segments_m": [2.35, 1.15],
+             "depth_m": 0.62, "extraction_method": "direct_read",
+             "_confidence": {"backsplash": 0.6, "shape": 0.9, "depth": 0.9, "segments": 0.9}},
+            {"id": "DC-07", "qty": 6, "shape": "L", "segments_m": [1.96, 1.54],
+             "depth_m": 0.62, "extraction_method": "direct_read",
+             "_confidence": {"backsplash": 0.5, "shape": 0.9, "depth": 0.9, "segments": 0.9}},
+        ]
+        geo = compute_visual_geometry(tipologias, mat)
+        services = infer_visual_services(tipologias, geo)
+        pending = build_visual_pending_questions(mat, services, tipologias, {"client_name": "X"})
+        assert "confirm_backsplash_DC-02" in pending
+        assert "confirm_backsplash_DC-07" in pending  # Must NOT be skipped by break
+
+    def test_large_obra_all_in_needs_review(self):
+        """When total units > threshold, ALL tipologías go to needs_review."""
+        tipologias = [
+            {"id": "DC-02", "qty": 5, "shape": "L", "segments_m": [2.35, 1.15],
+             "depth_m": 0.62, "embedded_sink_count": 1, "hob_count": 1},
+            {"id": "DC-03", "qty": 6, "shape": "L", "segments_m": [2.29, 1.15],
+             "depth_m": 0.62, "embedded_sink_count": 1, "hob_count": 1},
+        ]
+        validation = validate_visual_extraction(tipologias)
+        # Total units = 11 > VALIDATION_ALWAYS_THRESHOLD (10)
+        assert validation.requires_operator_validation is True
+        assert len(validation.high_confidence) == 0  # All moved to review
+        assert len(validation.needs_review) == 2
+
     def test_direct_read_not_in_pending(self):
         """Tipología with direct_read should NOT appear in extraction pending."""
         mat = MaterialResolution("x", ["Silestone"], "single", [], 20)
