@@ -355,6 +355,16 @@ Ejemplo: 25 cocinas con anafe empotrado → ANAFE ×25 confirmado.
 
 **⛔ SOLO incluir piezas EXPLICITAS del plano con medidas escritas. NUNCA inventar piezas ni cambiar medidas.**
 
+**⛔ MATEMÁTICA DISCIPLINADA — PROHIBIDO ESTIMAR / PROMEDIAR:**
+- NUNCA usar promedios tipo "~3,5 ml por cocina" o "profundidad promedio ~60cm"
+- NUNCA simplificar un despiece anterior detallado con un estimado vago
+- Cada tipología debe tener su propia fila con: largo real × profundidad real
+- Mesadas en L: separar tramo 1 + tramo 2 con medidas individuales
+- Zócalos: calcular ml real por tipología según lados contra pared, NO promediar
+- Si una mesada tiene módulos visibles en corte (55+60+60+60), sumar todos los módulos
+- Si ya calculaste ~50 m² en una pasada anterior, NO podés bajar a ~39 m² sin explicar pieza por pieza qué cambió
+- Totalizar EXACTO con multiplicación por cantidad. Verificar que la suma de las filas = total
+
 ### Anafe
 - Cobrar si plano muestra anafe empotrado sobre mesada continua (horno separado abajo) O operador dice "anafe"/"c/corte anafe"
 - Cocina con artefacto de pie (cocina completa que corta la mesada) ≠ anafe empotrado
