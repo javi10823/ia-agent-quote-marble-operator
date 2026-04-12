@@ -21,6 +21,11 @@ from app.modules.quote_engine.visual_quote_builder import (
     infer_visual_services,
     build_visual_pending_questions,
     parse_visual_extraction,
+    parse_zone_detection,
+    auto_select_zone,
+    parse_page_confirmation,
+    render_page_confirmation,
+    render_final_paso1,
     parse_operator_corrections,
     apply_corrections,
     normalize_field_name,
@@ -557,3 +562,172 @@ class TestSecondPass:
         text = '{"shape": "L", "segments_m": [2.0, 1.0], "depth_m": 5.0}'
         result = parse_focused_response(text)
         assert "depth_m" not in result  # 5.0 out of range
+
+
+# ── Fix D: Zone Detection + Page-by-Page ─────────────────────────────────────
+
+class TestZoneDetection:
+    def test_parse_zones_valid(self):
+        response = '```json\n{"zones": [{"name": "PLANTA", "bbox": [0,0,600,400]}, {"name": "CORTE 1-1", "bbox": [0,400,500,850]}]}\n```'
+        zones = parse_zone_detection(response)
+        assert len(zones) == 2
+        assert zones[0]["name"] == "PLANTA"
+        assert zones[1]["bbox"] == [0, 400, 500, 850]
+
+    def test_parse_zones_no_names(self):
+        response = '```json\n{"zones": [{"bbox": [0,0,600,400]}, {"bbox": [0,400,500,850]}]}\n```'
+        zones = parse_zone_detection(response)
+        assert zones[0]["name"] == "ZONA-1"
+        assert zones[1]["name"] == "ZONA-2"
+
+    def test_parse_zones_invalid_json(self):
+        zones = parse_zone_detection("No JSON here")
+        assert zones == []
+
+    def test_parse_zones_empty(self):
+        response = '```json\n{"zones": []}\n```'
+        zones = parse_zone_detection(response)
+        assert zones == []
+
+
+class TestAutoSelectZone:
+    def test_selects_planta(self):
+        zones = [
+            {"name": "CORTE 1-1", "bbox": [0, 400, 500, 850]},
+            {"name": "PLANTA", "bbox": [0, 0, 600, 400]},
+        ]
+        selected = auto_select_zone(zones)
+        assert selected["name"] == "PLANTA"
+
+    def test_uses_zone_default(self):
+        zones = [
+            {"name": "PLANTA", "bbox": [0, 0, 600, 400]},
+            {"name": "CORTE 1-1", "bbox": [0, 400, 500, 850]},
+        ]
+        selected = auto_select_zone(zones, zone_default="CORTE 1-1")
+        assert selected["name"] == "CORTE 1-1"
+
+    def test_excludes_corte_when_alternatives(self):
+        zones = [
+            {"name": "CORTE 1-1", "bbox": [0, 0, 100, 100]},
+            {"name": "VISTA GENERAL", "bbox": [0, 0, 800, 600]},
+        ]
+        selected = auto_select_zone(zones)
+        assert selected["name"] == "VISTA GENERAL"
+
+    def test_returns_none_for_empty(self):
+        assert auto_select_zone([]) is None
+
+    def test_largest_when_all_cortes(self):
+        zones = [
+            {"name": "CORTE 1-1", "bbox": [0, 0, 100, 100]},
+            {"name": "CORTE 2-2", "bbox": [0, 0, 800, 600]},
+        ]
+        selected = auto_select_zone(zones)
+        assert selected["name"] == "CORTE 2-2"
+
+
+class TestParsePageConfirmation:
+    def test_confirm_si(self):
+        result = parse_page_confirmation("sí", [], [])
+        assert result["action"] == "confirm"
+
+    def test_confirm_ok(self):
+        result = parse_page_confirmation("ok", [], [])
+        assert result["action"] == "confirm"
+
+    def test_confirm_dale(self):
+        result = parse_page_confirmation("dale", [], [])
+        assert result["action"] == "confirm"
+
+    def test_skip(self):
+        result = parse_page_confirmation("skip", [], [])
+        assert result["action"] == "skip"
+
+    def test_skip_ninguna(self):
+        result = parse_page_confirmation("ninguna", [], [])
+        assert result["action"] == "skip"
+
+    def test_zone_correction(self):
+        zones = [{"name": "PLANTA", "bbox": [0,0,600,400]}, {"name": "CORTE 1-1", "bbox": [0,400,500,850]}]
+        result = parse_page_confirmation("zona = CORTE 1-1", [], zones)
+        assert result["action"] == "zone_correction"
+        assert result["zone"]["name"] == "CORTE 1-1"
+
+    def test_value_correction(self):
+        tips = [{"id": "DC-02", "segments_m": [2.35]}]
+        result = parse_page_confirmation("DC-02 profundidad = 0.65", tips, [])
+        assert result["action"] == "value_correction"
+        assert len(result["corrections"]) == 1
+
+    def test_unclear(self):
+        result = parse_page_confirmation("no sé qué hacer con esto", [], [])
+        assert result["action"] == "unclear"
+
+
+class TestRenderPageConfirmation:
+    def test_contains_progress(self):
+        zone = {"name": "PLANTA", "bbox": [0,0,600,400]}
+        tips = [{"id": "DC-02", "qty": 2, "shape": "L", "segments_m": [2.35, 0.87],
+                 "depth_m": 0.62, "extraction_method": "direct_read",
+                 "_confidence": {"shape": 0.9, "segments": 0.9, "depth": 0.9, "backsplash": 0.6}}]
+        mat = MaterialResolution("x", ["Silestone"], "single", [], 20)
+        geos = compute_visual_geometry(tips, mat).tipologias
+        text = render_page_confirmation(1, 7, zone, tips, geos, True)
+        assert "Página 1/7" in text
+        assert "DC-02" in text
+        assert "auto: PLANTA" in text
+
+    def test_no_tipologias_shows_options(self):
+        zone = {"name": "PLANTA", "bbox": [0,0,600,400]}
+        text = render_page_confirmation(3, 7, zone, [], [], True)
+        assert "No se detectaron" in text
+        assert "skip" in text
+
+
+class TestRenderFinalPaso1:
+    def test_totals_close(self):
+        mat = MaterialResolution("x", ["Silestone", "Granito"], "variants", [], 20)
+        geos_data = [
+            {"id": "A", "qty": 5, "shape": "linear", "segments_m": [2.0], "depth_m": 0.60},
+            {"id": "B", "qty": 3, "shape": "L", "segments_m": [1.5, 0.8], "depth_m": 0.55},
+        ]
+        geo = compute_visual_geometry(geos_data, mat)
+        services = infer_visual_services(
+            [{"qty": 5, "embedded_sink_count": 1, "hob_count": 1, "_confidence": {"sink": 0.9, "hob": 0.9}},
+             {"qty": 3, "embedded_sink_count": 1, "hob_count": 0, "_confidence": {"sink": 0.9, "hob": 0.9}}],
+            geo,
+        )
+        text = render_final_paso1(geo.tipologias, services, mat, ["planilla_marmoleria"])
+        assert "TOTAL GENERAL" in text
+        assert "ambos materiales" in text
+        assert "PEGADOPILETA" in text
+
+
+class TestStateMachineIntegration:
+    def test_zone_learned_persists(self):
+        """zone_default from first page should be used in subsequent pages."""
+        zones_p2 = [
+            {"name": "PLANTA", "bbox": [0, 0, 600, 400]},
+            {"name": "CORTE 1-1", "bbox": [0, 400, 500, 850]},
+        ]
+        # If zone_default is "PLANTA" from page 1
+        selected = auto_select_zone(zones_p2, zone_default="PLANTA")
+        assert selected["name"] == "PLANTA"
+
+    def test_confirmed_tipologias_from_page_data(self):
+        """confirmed_tipologias must be built from page_data, not incremental append."""
+        page_data = {
+            "1": {"confirmed": True, "skipped": False, "tipologias": [{"id": "DC-02"}]},
+            "2": {"confirmed": True, "skipped": True, "tipologias": [{"id": "DC-03"}]},
+            "3": {"confirmed": True, "skipped": False, "tipologias": [{"id": "DC-04"}]},
+        }
+        all_tips = []
+        for pg in sorted(page_data.keys(), key=lambda x: int(x)):
+            pd = page_data[pg]
+            if pd.get("confirmed") and not pd.get("skipped"):
+                all_tips.extend(pd.get("tipologias", []))
+        assert len(all_tips) == 2
+        assert all_tips[0]["id"] == "DC-02"
+        assert all_tips[1]["id"] == "DC-04"
+        # DC-03 skipped → not in final list

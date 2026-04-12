@@ -1020,6 +1020,281 @@ def render_visual_building_step1(
     return "\n".join(lines)
 
 
+# ── 9b. Fix D — Zone Detection + Page-by-Page ─────────────────────────────────
+
+def parse_zone_detection(claude_response: str) -> list[dict]:
+    """Parse zone detection JSON from Claude's pasada 0 response.
+
+    Expected format: {"zones": [{"name": "PLANTA", "bbox": [x1,y1,x2,y2]}, ...]}
+    """
+    json_match = re.search(r"```json\s*(.*?)```", claude_response, re.DOTALL)
+    if json_match:
+        raw = json_match.group(1).strip()
+    else:
+        json_match = re.search(r"\{[\s\S]*\"zones\"[\s\S]*\}", claude_response)
+        if json_match:
+            raw = json_match.group(0)
+        else:
+            return []
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+
+    zones = data.get("zones", [])
+    cleaned = []
+    for idx, z in enumerate(zones):
+        name = z.get("name", "")
+        if not name:
+            name = f"ZONA-{idx + 1}"
+        bbox = z.get("bbox", [])
+        if isinstance(bbox, list) and len(bbox) == 4:
+            try:
+                bbox = [int(b) for b in bbox]
+            except (TypeError, ValueError):
+                bbox = [0, 0, 700, 700]
+        else:
+            bbox = [0, 0, 700, 700]
+        cleaned.append({"name": name, "bbox": bbox})
+
+    return cleaned
+
+
+def auto_select_zone(
+    zones: list[dict],
+    zone_default: Optional[str] = None,
+) -> Optional[dict]:
+    """Auto-select the most likely marmolería zone.
+
+    Priority:
+    1. zone_default (learned from previous page) — exact match case-insensitive
+    2. Zone containing "PLANTA" in name
+    3. Largest zone by bbox area (excluding CORTE/DETALLE names)
+    4. Largest zone overall
+    5. None if empty list
+    """
+    if not zones:
+        return None
+
+    # 1. zone_default
+    if zone_default:
+        for z in zones:
+            if z["name"].lower() == zone_default.lower():
+                return z
+
+    # 2. Contains "PLANTA"
+    for z in zones:
+        if "planta" in z["name"].lower():
+            return z
+
+    # 3. Largest non-corte zone
+    def bbox_area(z):
+        b = z.get("bbox", [0, 0, 0, 0])
+        return abs(b[2] - b[0]) * abs(b[3] - b[1])
+
+    corte_keywords = ["corte", "detalle", "vista", "sección", "seccion"]
+    non_corte = [z for z in zones if not any(kw in z["name"].lower() for kw in corte_keywords)]
+    if non_corte:
+        return max(non_corte, key=bbox_area)
+
+    # 4. Largest overall
+    return max(zones, key=bbox_area)
+
+
+_CONFIRM_WORDS = {"sí", "si", "ok", "dale", "correcto", "confirmo", "confirmar", "bien", "perfecto", "listo"}
+_SKIP_WORDS = {"skip", "ninguna", "saltar", "no hay", "no tiene", "sin marmolería"}
+
+
+def parse_page_confirmation(
+    text: str,
+    current_tipologias: list[dict],
+    available_zones: list[dict],
+) -> dict:
+    """Parse operator's response to page confirmation.
+
+    Returns dict with 'action' key:
+    - confirm: operator approved
+    - zone_correction: operator wants a different zone → includes 'zone' key
+    - value_correction: operator corrected measurements → includes 'corrections' key
+    - skip: page has no marmolería
+    - unclear: couldn't parse
+    """
+    text_lower = text.strip().lower()
+
+    # Skip
+    if any(w in text_lower for w in _SKIP_WORDS):
+        return {"action": "skip"}
+
+    # Confirm
+    if text_lower in _CONFIRM_WORDS or text_lower.rstrip(".!") in _CONFIRM_WORDS:
+        return {"action": "confirm"}
+
+    # Zone correction: "zona = CORTE 1-1" or "zona: planta"
+    zone_match = re.search(r"zona\s*[=:]\s*(.+)", text, re.IGNORECASE)
+    if zone_match:
+        zone_name = zone_match.group(1).strip()
+        for z in available_zones:
+            if z["name"].lower() == zone_name.lower() or zone_name.lower() in z["name"].lower():
+                return {"action": "zone_correction", "zone": z}
+        return {"action": "unclear"}
+
+    # Value corrections (reuse existing parser)
+    known_ids = [t.get("id", "") for t in current_tipologias]
+    corrections = parse_operator_corrections(text, known_ids)
+    if corrections:
+        return {"action": "value_correction", "corrections": corrections}
+    if corrections is None:
+        return {"action": "unclear"}  # Looked like correction but didn't parse
+
+    # Confirm if very short affirmative
+    if len(text_lower) <= 5 and any(c in text_lower for c in ["si", "sí", "ok"]):
+        return {"action": "confirm"}
+
+    return {"action": "unclear"}
+
+
+def render_page_confirmation(
+    page: int,
+    total_pages: int,
+    selected_zone: dict,
+    tipologias: list[dict],
+    geometries: list,
+    zone_was_auto: bool,
+) -> str:
+    """Render page confirmation message for operator."""
+    lines = []
+
+    lines.append(f"**Página {page}/{total_pages}**")
+    zone_label = f"(auto: {selected_zone['name']})" if zone_was_auto else f"({selected_zone['name']})"
+    lines.append(f"Zona analizada: {zone_label}")
+    lines.append("")
+
+    if not tipologias:
+        lines.append("No se detectaron tipologías de marmolería en esta zona.")
+        lines.append("")
+        lines.append("Si hay marmolería en otra zona, indicá: `zona = CORTE 1-1`")
+        lines.append("Si no hay marmolería en esta página: `skip`")
+        return "\n".join(lines)
+
+    for tip, geo in zip(tipologias, geometries):
+        tid = tip.get("id", "?")
+        qty = tip.get("qty", 1)
+        shape = tip.get("shape", "?")
+        method = tip.get("extraction_method", "fallback")
+        conf = tip.get("_confidence", {})
+
+        # Segments with markers
+        segs = tip.get("segments_m", [])
+        seg_parts = [render_field(f"{s}m", conf.get("segments", 0), method) for s in segs]
+        seg_str = " + ".join(seg_parts) if seg_parts else "?"
+
+        depth = tip.get("depth_m", 0)
+        depth_str = render_field(f"prof {depth}m", conf.get("depth", 0), method)
+
+        # Shape
+        if shape == "unknown":
+            shape_str = f"{shape} ❌"
+        elif conf.get("shape", 0) >= CONF_HIGH:
+            shape_str = f"{shape} ✅"
+        else:
+            shape_str = f"{shape} ⚠️"
+
+        lines.append(f"**{tid}** ×{qty} — {shape_str} — {seg_str} — {depth_str}")
+
+        # Geometry summary
+        if hasattr(geo, "m2_unit"):
+            lines.append(f"  m² unit: {geo.m2_unit} — m² total: {geo.m2_total}")
+
+        # Backsplash
+        bl = tip.get("backsplash_ml")
+        if backsplash_needs_confirmation(bl, segs, shape):
+            lines.append(f"  ↳ zócalo {bl}ml ⚠️" if bl else "  ↳ zócalo sin dato ⚠️")
+        else:
+            lines.append(f"  ↳ zócalo {bl}ml ✅" if bl else "  ↳ zócalo (fallback) ✅")
+
+        lines.append("")
+
+    lines.append("¿Confirmás? Si hay que corregir:")
+    lines.append("- Medidas: `DC-02 profundidad = 0.65`")
+    lines.append("- Zona: `zona = CORTE 1-1`")
+    lines.append("- Sin marmolería: `skip`")
+
+    return "\n".join(lines)
+
+
+def render_final_paso1(
+    all_geometries: list[TipologiaGeometry],
+    services: ServiceInference,
+    material_res: MaterialResolution,
+    pending_questions: list[str],
+) -> str:
+    """Render final PASO 1 from all confirmed page geometries."""
+    lines = []
+
+    # Material header
+    if material_res.mode == "variants":
+        lines.append(f"**Despiece geométrico** (aplica para ambos materiales: {' y '.join(material_res.resolved)})")
+    else:
+        mat_name = material_res.resolved[0] if material_res.resolved else "?"
+        lines.append(f"**Despiece — {mat_name}**")
+
+    lines.append("")
+    lines.append("| Tipología | Cant | Forma | Medida unit | m² unit | m² total |")
+    lines.append("|-----------|------|-------|-------------|---------|----------|")
+
+    total_mesada = 0
+    total_backsplash = 0
+    total_pieces = 0
+
+    for t in all_geometries:
+        if t.shape == "L" and len(t.segments_m) == 2:
+            medida = f"{t.segments_m[0]}×{t.depth_m} + {t.segments_m[1]}×{t.depth_m}"
+        else:
+            medida = f"{t.segments_m[0]}×{t.depth_m}" if t.segments_m else "?"
+        lines.append(f"| {t.id} | {t.qty} | {t.shape} | {medida} | {t.m2_unit} | {t.m2_total} |")
+        total_mesada += t.m2_total
+        total_backsplash += t.backsplash_m2_total
+        total_pieces += t.physical_pieces_total
+
+    total_mesada = round(total_mesada, 2)
+    total_backsplash = round(total_backsplash, 2)
+    total_m2 = round(total_mesada + total_backsplash, 2)
+
+    lines.append(f"| **TOTAL MESADA** | | | | | **{total_mesada}** |")
+    lines.append(f"| **TOTAL ZÓCALO** | | | | | **{total_backsplash}** |")
+    lines.append(f"| **TOTAL GENERAL** | | | | | **{total_m2}** |")
+
+    lines.append("")
+    lines.append("**Servicios:**")
+    lines.append(f"- Colocación: NO (edificio)")
+    lines.append(f"- PEGADOPILETA: ×{services.pegadopileta_qty}")
+    lines.append(f"- ANAFE: ×{services.anafe_qty}")
+    flete_qty = math.ceil(total_pieces / 6) if total_pieces > 0 else 1
+    lines.append(f"- Flete + toma medidas: {flete_qty} viaje(s)")
+
+    if pending_questions:
+        lines.append("")
+        lines.append("**Para avanzar con la cotización, confirmame:**")
+        q_labels = {
+            "planilla_marmoleria": "¿Tenés la planilla de marmolería? Si la tenés, subila para acelerar. Si no, avanzo con los planos.",
+            "client_name": "Nombre del cliente",
+            "locality": "Localidad de la obra",
+            "material_definition": f"Material: {material_res.raw_text} — ¿cuál corresponde?",
+            "pileta_provision": "Piletas: ¿las provee el cliente o D'Angelo?",
+        }
+        for i, q in enumerate(pending_questions, 1):
+            if q in q_labels:
+                lines.append(f"{i}. {q_labels[q]}")
+            elif q.startswith("confirm_backsplash_"):
+                lines.append(f"{i}. Zócalo: confirmar ml por tipología")
+            elif q.endswith("_extraction_needs_review"):
+                tid = q.replace("_extraction_needs_review", "")
+                lines.append(f"{i}. {tid}: medidas requieren confirmación")
+
+    return "\n".join(lines)
+
+
 # ── 9. JSON Parser (robust) ───────────────────────────────────────────────────
 
 def parse_visual_extraction(claude_response: str) -> Optional[dict]:

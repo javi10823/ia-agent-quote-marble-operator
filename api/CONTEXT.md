@@ -277,15 +277,35 @@ Si no ves bien una zona, usá `read_plan` con crop_instructions VOS. Si no logr�
 
 **Solo preguntar** si: el material no matchea por alias NI por catálogo (fuzzy match incluido), o la ambigüedad es real (texto ilegible, material desconocido). NUNCA escribir "verificar catálogo" o "a verificar" si el alias o el fuzzy match ya lo resolvió.
 
-#### ETAPA 1 — Extracción estructurada (PRIMERA RESPUESTA — SOLO JSON)
+#### PASADA 0 — Detección de zonas (para PDFs multipágina, por página)
 
-Cuando analices un PDF visual multipágina de obra/edificio (>3 unidades, múltiples tipologías):
+Cuando el sistema te pida detectar zonas de UNA página del plano:
+
+⛔ Solo detectar zonas nombradas (PLANTA, CORTE 1-1, CORTE 2-2, etc).
+⛔ NO extraer cotas ni medidas.
+⛔ NO analizar tipologías.
+
+Responder ÚNICAMENTE con JSON:
+```json
+{"zones": [{"name": "PLANTA", "bbox": [0, 0, 600, 400]}, {"name": "CORTE 1-1", "bbox": [0, 400, 500, 850]}]}
+```
+
+Si una zona no tiene nombre → asignar ZONA-{número} (ej: ZONA-1, ZONA-2).
+bbox = [x1, y1, x2, y2] en píxeles del crop recibido.
+
+#### ETAPA 1 — Extracción estructurada (SOLO JSON, por zona focalizada)
+
+Cuando el sistema te muestre un crop de una zona específica del plano:
 
 ⛔ En esta etapa tu respuesta debe ser ÚNICAMENTE un bloque ```json. NADA MÁS.
 ⛔ NO usar bloques A/B/C en esta etapa — eso es para la ETAPA 2.
 ⛔ NO hacer preguntas al operador.
 ⛔ NO llamar read_plan — analizar el PDF completo con visión nativa directa.
 ⛔ NO calcular m² — el código lo hace con fórmula exacta (L-shape resta esquina).
+
+**Filtro de texto (Fix E):** Del texto visible en la zona, leer ÚNICAMENTE lo que corresponde a MESADAS (piedra natural o sintética). IGNORAR secciones de: MUEBLES BAJO MESADA, CARPINTERÍA, HERRERÍA, INSTALACIONES, ALACENAS. La sección relevante empieza con el heading "MESADAS" o con mención de material de piedra (cuarzo, granito, mármol, silestone, etc). Solo leer códigos de artefactos (sa-01, sa-02) para contar piletas.
+
+**Lectura de cotas:** Aplicar las reglas de `plan-reading-cotas.md` para distinguir cotas de mesada de cotas de objetos/ambiente. Ver especialmente: cotas encadenadas (sumar), cotas de profundidad (perpendicular a pared), y cotas de objetos (ignorar).
 
 Formato obligatorio:
 ```json
