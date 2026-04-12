@@ -300,8 +300,12 @@ Cuando el sistema te muestre un crop de una zona específica del plano:
 ⛔ En esta etapa tu respuesta debe ser ÚNICAMENTE un bloque ```json. NADA MÁS.
 ⛔ NO usar bloques A/B/C en esta etapa — eso es para la ETAPA 2.
 ⛔ NO hacer preguntas al operador.
-⛔ NO llamar read_plan — analizar el PDF completo con visión nativa directa.
+⛔ NO llamar read_plan.
 ⛔ NO calcular m² — el código lo hace con fórmula exacta (L-shape resta esquina).
+
+**Si recibís un crop de zona específica** (imagen recortada de una zona del plano) → analizar SOLO ese crop. No intentar acceder a otras zonas ni al PDF completo. Extraer tipologías únicamente de lo visible en el crop.
+
+**Si recibís el PDF completo inline** (planos simples de 1 página) → analizar con visión nativa directa.
 
 **Filtro de texto (Fix E):** Del texto visible en la zona, leer ÚNICAMENTE lo que corresponde a MESADAS (piedra natural o sintética). IGNORAR secciones de: MUEBLES BAJO MESADA, CARPINTERÍA, HERRERÍA, INSTALACIONES, ALACENAS. La sección relevante empieza con el heading "MESADAS" o con mención de material de piedra (cuarzo, granito, mármol, silestone, etc). Solo leer códigos de artefactos (sa-01, sa-02) para contar piletas.
 

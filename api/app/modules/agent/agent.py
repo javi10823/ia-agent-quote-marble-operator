@@ -618,6 +618,7 @@ class AgentService:
         # ── Building detection: DB flag (sticky) > history > current message ──
         # Once a quote enters building mode, it stays there for all turns.
         is_building = False
+        _auto_advance_visual = False  # Set to True when page confirmed → skip to while loop
         try:
             _bq = await db.execute(select(Quote).where(Quote.id == quote_id))
             _bquote = _bq.scalar_one_or_none()
@@ -871,11 +872,11 @@ class AgentService:
                             except Exception as e:
                                 logging.error(f"[visual-pages] Failed to persist: {e}")
                             yield {"type": "action", "content": f"✅ Página {_conf_page} confirmada. Procesando página {next_page}..."}
-                            # Auto-advance: inject system message for next page zone detection
-                            yield {"type": "text", "content": f"📐 Analizando página {next_page}/{_total_pages}..."}
-                            # Continue to normal flow — next message will trigger zone detection
-                            yield {"type": "done", "content": ""}
-                            return
+                            yield {"type": "action", "content": f"📐 Analizando página {next_page}/{_total_pages}..."}
+                            # Auto-advance: DON'T return — fall through to while loop
+                            # The while loop will detect is_visual_building + new page state
+                            # and process the next page automatically
+                            _auto_advance_visual = True
                         else:
                             # ── ALL PAGES CONFIRMED → render final PASO 1 ──
                             # Build confirmed_tipologias from page_data (NOT by append)
@@ -955,8 +956,7 @@ class AgentService:
 
                         if next_page <= _total_pages:
                             yield {"type": "action", "content": f"Página {_conf_page} salteada. Procesando página {next_page}..."}
-                            yield {"type": "done", "content": ""}
-                            return
+                            _auto_advance_visual = True
                         # Fall through to render final if last page
                     else:
                         yield {"type": "text", "content": (
@@ -969,8 +969,12 @@ class AgentService:
                         yield {"type": "done", "content": ""}
                         return
 
+                # ── Skip remaining pre-loop handlers if auto-advancing visual pages ──
+                if _auto_advance_visual:
+                    pass  # Fall through to while True loop for next page processing
+
                 # ── PASO 3: Generate documents ──
-                if _building_step == "step2_quote" and _bd.get("paso2_calc"):
+                elif _building_step == "step2_quote" and _bd.get("paso2_calc"):
                     # Validate client_name before generating
                     if not (_p2quote.client_name or "").strip():
                         # Save state and ask for client name

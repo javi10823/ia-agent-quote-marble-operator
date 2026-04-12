@@ -472,7 +472,11 @@ def compute_visual_geometry(
         total_backsplash += backsplash_m2_total
         total_pieces += pieces_total
 
-    flete_qty = math.ceil(total_pieces / 6)
+    if total_pieces > 0:
+        flete_qty = math.ceil(total_pieces / 6)
+    else:
+        logging.warning("[geometry] total_physical_pieces=0 — using fallback flete=1")
+        flete_qty = 1
 
     return GeometrySummary(
         tipologias=results,
