@@ -1804,12 +1804,13 @@ class AgentService:
                             for tid in ids_for_second_pass[:5]:  # Max 5 second pass calls
                                 page_num = get_tipologia_page(tid, parsed["tipologias"])
                                 try:
-                                    # Get crop of this tipología's page
+                                    # Get crop of this tipología's specific page
                                     from app.modules.agent.tools.plan_tool import read_plan as _read_plan_fn
+                                    page_num = get_tipologia_page(tid, parsed["tipologias"])
                                     crop_result = await _read_plan_fn(plan_filename, [{
                                         "label": f"{tid} planta+corte",
                                         "x1": 30, "y1": 10, "x2": 700, "y2": 700,
-                                    }])
+                                    }], page=page_num)
 
                                     # Get existing extraction for this tipología
                                     existing = next(

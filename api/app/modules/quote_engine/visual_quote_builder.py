@@ -903,7 +903,7 @@ def render_visual_extraction_summary(
     if validation.soft_field_warnings:
         lines.append("")
         lines.append("**Campos que requieren confirmación:**")
-        for w in validation.soft_field_warnings[:5]:  # Max 5 warnings
+        for w in validation.soft_field_warnings:  # Show ALL warnings
             lines.append(f"- {w}")
 
     lines.append("")

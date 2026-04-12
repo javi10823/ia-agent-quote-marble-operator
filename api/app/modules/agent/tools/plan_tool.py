@@ -61,11 +61,14 @@ def _image_to_b64(img: Image.Image, max_width: int, quality: int = CROP_JPEG_QUA
     return base64.b64encode(buf.getvalue()).decode()
 
 
-async def read_plan(filename: str, crop_instructions: list) -> list:
+async def read_plan(filename: str, crop_instructions: list, page: int = 1) -> list:
     """Rasterize a plan file at 200 DPI and return crops as native image content blocks.
 
     AUXILIARY tool for tactical zoom/crop only. PDF visual analysis should
     use native vision on the document already attached inline.
+
+    Args:
+        page: 1-indexed page number for multi-page PDFs. Default=1.
 
     Returns a LIST of Anthropic-native content blocks (type: "image" + type: "text")
     instead of a JSON dict, so images don't inflate the text context.
@@ -91,7 +94,10 @@ async def read_plan(filename: str, crop_instructions: list) -> list:
                 fmt="jpeg",
             )
             if pages:
-                base_image = pages[0]
+                # Use specified page (1-indexed), fallback to first
+                page_idx = max(0, min(page - 1, len(pages) - 1))
+                base_image = pages[page_idx]
+                logging.info(f"[read_plan] Rasterized page {page_idx + 1}/{len(pages)} of {filename}")
         else:
             base_image = Image.open(plan_path)
     except Exception as e:
