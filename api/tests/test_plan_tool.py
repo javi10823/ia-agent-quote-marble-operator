@@ -66,32 +66,30 @@ class TestReadPlanImage:
         save_plan_to_temp("test_read.jpg", data)
 
         result = await read_plan("test_read.jpg", [])
-        assert result["ok"] is True
-        assert result["filename"] == "test_read.jpg"
-        assert len(result["images"]) == 1  # Full plan only
-        assert result["images"][0]["label"] == "plano_completo"
-        assert result["original_size"]["width"] == 800
-        assert result["original_size"]["height"] == 600
-
+        # read_plan returns a list of native content blocks
+        assert isinstance(result, list)
+        # Should have 1 image block + 1 text block (full plan)
+        image_blocks = [b for b in result if b.get("type") == "image"]
+        assert len(image_blocks) == 1
         # Base64 should be valid
-        decoded = base64.b64decode(result["images"][0]["base64"])
+        decoded = base64.b64decode(image_blocks[0]["source"]["data"])
         assert len(decoded) > 0
 
-        # Cleanup
         (TEMP_DIR / "test_read.jpg").unlink()
 
     @pytest.mark.asyncio
-    async def test_large_image_scaled_to_2000px(self):
-        """Images wider than 2000px should be scaled down."""
+    async def test_large_image_scaled(self):
+        """Images wider than FULL_PLAN_MAX_WIDTH should be scaled down."""
         data = _create_test_image(4000, 3000)
         save_plan_to_temp("test_large.jpg", data)
 
         result = await read_plan("test_large.jpg", [])
-        assert result["ok"] is True
-        # The base64 image should be scaled
-        decoded = base64.b64decode(result["images"][0]["base64"])
+        assert isinstance(result, list)
+        image_blocks = [b for b in result if b.get("type") == "image"]
+        assert len(image_blocks) == 1
+        decoded = base64.b64decode(image_blocks[0]["source"]["data"])
         img = Image.open(io.BytesIO(decoded))
-        assert img.width <= 2000
+        assert img.width <= 1200  # FULL_PLAN_MAX_WIDTH
 
         (TEMP_DIR / "test_large.jpg").unlink()
 
@@ -100,7 +98,7 @@ class TestReadPlanImage:
 
 class TestReadPlanCrop:
     @pytest.mark.asyncio
-    async def test_crop_returns_extra_images(self):
+    async def test_crop_returns_image_blocks(self):
         data = _create_test_image(800, 600)
         save_plan_to_temp("test_crop.jpg", data)
 
@@ -109,24 +107,43 @@ class TestReadPlanCrop:
             {"label": "mesada_2", "x1": 400, "y1": 0, "x2": 800, "y2": 300},
         ]
         result = await read_plan("test_crop.jpg", crops)
-        assert result["ok"] is True
-        # 1 full plan + 2 crops = 3 images
-        assert len(result["images"]) == 3
-        assert result["images"][1]["label"] == "mesada_1"
-        assert result["images"][2]["label"] == "mesada_2"
+        assert isinstance(result, list)
+        # 2 crops = 2 image blocks + 2 text blocks
+        image_blocks = [b for b in result if b.get("type") == "image"]
+        assert len(image_blocks) == 2
 
         (TEMP_DIR / "test_crop.jpg").unlink()
 
     @pytest.mark.asyncio
-    async def test_invalid_crop_returns_error(self):
+    async def test_max_2_crops_per_call(self):
+        """More than 2 crops should be truncated to 2."""
+        data = _create_test_image(800, 600)
+        save_plan_to_temp("test_maxcrop.jpg", data)
+
+        crops = [
+            {"label": "c1", "x1": 0, "y1": 0, "x2": 200, "y2": 200},
+            {"label": "c2", "x1": 200, "y1": 0, "x2": 400, "y2": 200},
+            {"label": "c3", "x1": 400, "y1": 0, "x2": 600, "y2": 200},
+        ]
+        result = await read_plan("test_maxcrop.jpg", crops)
+        image_blocks = [b for b in result if b.get("type") == "image"]
+        assert len(image_blocks) == 2  # Max 2, not 3
+        # Should have a truncation warning
+        text_blocks = [b for b in result if b.get("type") == "text"]
+        warning = [b for b in text_blocks if "Límite" in b.get("text", "")]
+        assert len(warning) == 1
+
+        (TEMP_DIR / "test_maxcrop.jpg").unlink()
+
+    @pytest.mark.asyncio
+    async def test_invalid_crop_returns_error_text(self):
         data = _create_test_image(100, 100)
         save_plan_to_temp("test_badcrop.jpg", data)
 
         crops = [{"label": "bad", "x1": -10, "y1": -10, "x2": 50, "y2": 50}]
         result = await read_plan("test_badcrop.jpg", crops)
-        assert result["ok"] is True
-        # Full plan should still work even if crop has issues
-        assert len(result["images"]) >= 1
+        assert isinstance(result, list)
+        assert len(result) >= 1
 
         (TEMP_DIR / "test_badcrop.jpg").unlink()
 
@@ -147,11 +164,9 @@ class TestReadPlanPDF:
         save_plan_to_temp("test_plan.pdf", pdf_data)
 
         result = await read_plan("test_plan.pdf", [])
-        assert result["ok"] is True
-        assert len(result["images"]) >= 1
-        assert result["images"][0]["label"] == "plano_completo"
-        # 300 DPI A4 should be roughly 2480x3508
-        assert result["original_size"]["width"] > 1000
+        assert isinstance(result, list)
+        image_blocks = [b for b in result if b.get("type") == "image"]
+        assert len(image_blocks) >= 1
 
         (TEMP_DIR / "test_plan.pdf").unlink()
 
@@ -162,13 +177,14 @@ class TestReadPlanErrors:
     @pytest.mark.asyncio
     async def test_file_not_found(self):
         result = await read_plan("nonexistent_file.pdf", [])
-        assert "error" in result
-        assert "no encontrado" in result["error"].lower()
+        assert isinstance(result, list)
+        assert any("no encontrado" in b.get("text", "").lower() for b in result)
 
     @pytest.mark.asyncio
     async def test_corrupted_file(self):
         save_plan_to_temp("corrupted.jpg", b"not a real image")
         result = await read_plan("corrupted.jpg", [])
-        assert "error" in result
+        assert isinstance(result, list)
+        assert any("error" in b.get("text", "").lower() for b in result)
 
         (TEMP_DIR / "corrupted.jpg").unlink()
