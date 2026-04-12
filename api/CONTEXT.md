@@ -303,8 +303,9 @@ Orden estricto:
 
 1. **Planilla** (siempre primero): "¿Tenés la planilla de marmolería del proyecto? Si la tenés, subila para acelerar el despiece exacto. Si no, avanzo con los planos."
 2. **Cliente**: nombre si no se indicó
-3. **Localidad**: si no se indicó
-4. **Provisión de piletas**: ¿las compra el cliente o D'Angelo? (solo afecta si se cobra el artefacto — PEGADOPILETA se cobra SIEMPRE)
+3. **Provisión de piletas**: ¿las compra el cliente o D'Angelo? (solo afecta si se cobra el artefacto — PEGADOPILETA se cobra SIEMPRE)
+
+NO preguntar localidad — default Rosario siempre. Solo usar otra si el plano o enunciado la especifica.
 
 Solo estas preguntas. NO preguntar:
 - Dudas arquitectónicas del plano (van en bloque B como advertencias)
