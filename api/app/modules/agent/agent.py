@@ -1527,6 +1527,9 @@ class AgentService:
         _list_pieces_called = False  # Track if list_pieces was called (guardrail for Paso 1)
         _list_pieces_retry_done = False  # Prevent infinite retry
         _last_had_visual_tool = False  # Track if previous iteration used a visual tool (read_plan)
+        _suppress_text = False        # Suppress streaming text during visual tool loops
+        _read_plan_calls = 0          # Count read_plan calls to enforce limit
+        MAX_READ_PLAN_CALLS = 3       # Hard limit: max 3 read_plan calls per conversation
 
         while True:
             if _loop_iterations >= MAX_ITERATIONS:
@@ -1594,7 +1597,11 @@ class AgentService:
                                 if event.type == "content_block_delta":
                                     if hasattr(event.delta, "text"):
                                         full_text += event.delta.text
-                                        yield {"type": "text", "content": event.delta.text}
+                                        # Buffer text during visual tool iterations to suppress
+                                        # internal monologue ("voy a hacer crops", "ajustando coords")
+                                        # _suppress_text is set when we're in a read_plan loop
+                                        if not _suppress_text:
+                                            yield {"type": "text", "content": event.delta.text}
                                 elif event.type == "content_block_start":
                                     if hasattr(event.content_block, "type") and event.content_block.type == "tool_use":
                                         tool_uses.append({
@@ -1718,7 +1725,12 @@ class AgentService:
             tool_use_blocks = [b for b in final_message.content if b.type == "tool_use"]
 
             if not tool_use_blocks:
-                # No tool calls — conversation turn is done.
+                # No tool calls — this is the final response. Flush suppressed text.
+                if _suppress_text and full_text:
+                    yield {"type": "text", "content": full_text}
+                    logging.info(f"[suppress] Flushed {len(full_text)} chars of final response")
+                _suppress_text = False
+
                 # ── Guardrail: Paso 1 must use list_pieces ──
                 # If this is likely Paso 1 (no breakdown yet, no calculate_quote called),
                 # and list_pieces was never called, force a retry with explicit instruction.
@@ -1817,6 +1829,26 @@ class AgentService:
 
             # Track if this iteration used visual tools (preserve context for next iteration)
             _last_had_visual_tool = any(t.name in VISUAL_TOOLS for t in tool_use_blocks)
+
+            # Suppress text streaming during visual tool loops (hide monologue from operator)
+            if _last_had_visual_tool:
+                _suppress_text = True
+                # Count read_plan calls and enforce limit
+                for t in tool_use_blocks:
+                    if t.name == "read_plan":
+                        _read_plan_calls += 1
+                if _read_plan_calls >= MAX_READ_PLAN_CALLS:
+                    logging.warning(f"[read_plan limit] Hit {MAX_READ_PLAN_CALLS} calls — forcing analysis with what we have")
+                    assistant_messages.append({"role": "assistant", "content": _serialize_content(final_message.content)})
+                    assistant_messages.append({"role": "user", "content": tool_results})
+                    assistant_messages.append({"role": "user", "content": [{"type": "text", "text": (
+                        f"[SISTEMA] Alcanzaste el límite de {MAX_READ_PLAN_CALLS} llamadas a read_plan. "
+                        "DEJÁ de hacer crops. Usá TODA la información que ya extrajiste de las páginas "
+                        "y del PDF inline para dar tu análisis consolidado. Presentá: tipologías, cantidades, "
+                        "medidas extraídas, material, notas, y preguntas comerciales faltantes. NO hagas más crops."
+                    )}]})
+                    await asyncio.sleep(0.1)
+                    continue
 
             # Brief pause between loop iterations (minimal with Tier 1)
             await asyncio.sleep(0.1)
