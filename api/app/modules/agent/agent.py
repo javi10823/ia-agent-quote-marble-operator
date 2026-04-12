@@ -1530,6 +1530,7 @@ class AgentService:
         _suppress_text = False        # Suppress streaming text during visual tool loops
         _read_plan_calls = 0          # Count read_plan calls to enforce limit
         MAX_READ_PLAN_CALLS = 3       # Hard limit: max 3 read_plan calls per conversation
+        _visual_builder_done = False  # Track if visual builder already processed
 
         while True:
             if _loop_iterations >= MAX_ITERATIONS:
@@ -1732,10 +1733,99 @@ class AgentService:
 
             if not tool_use_blocks:
                 # No tool calls — this is the final response.
-                # For visual PDFs: flush the buffered final response text now
-                if needs_vision and pdf_has_images and full_text:
+
+                # ── Visual building pipeline: intercept JSON and compute deterministically ──
+                if needs_vision and pdf_has_images and full_text and not _visual_builder_done:
+                    from app.modules.quote_engine.visual_quote_builder import (
+                        parse_visual_extraction,
+                        resolve_visual_materials,
+                        validate_visual_extraction,
+                        compute_visual_geometry,
+                        infer_visual_services,
+                        build_visual_pending_questions,
+                        render_visual_extraction_summary,
+                        render_visual_building_step1,
+                    )
+
+                    parsed = parse_visual_extraction(full_text)
+                    if parsed and parsed.get("tipologias"):
+                        logging.info(f"[visual-builder] Parsed {len(parsed['tipologias'])} tipologías from Claude response")
+
+                        # Resolve materials
+                        mat_res = resolve_visual_materials(parsed.get("material_text", ""))
+                        logging.info(f"[visual-builder] Material resolution: {mat_res.mode} → {mat_res.resolved}")
+
+                        # Validate extraction
+                        validation = validate_visual_extraction(parsed["tipologias"])
+
+                        if validation.requires_operator_validation:
+                            # Show validation summary, wait for confirmation
+                            summary = render_visual_extraction_summary(validation, mat_res)
+                            yield {"type": "text", "content": summary}
+                            logging.info(f"[visual-builder] Showing validation summary — awaiting operator confirmation")
+
+                            # Persist to quote_breakdown for next message
+                            try:
+                                await db.execute(
+                                    update(Quote).where(Quote.id == quote_id).values(
+                                        quote_breakdown={
+                                            "visual_extraction": parsed["tipologias"],
+                                            "material_resolution": mat_res.to_dict(),
+                                            "building_step": "awaiting_visual_confirmation",
+                                        }
+                                    )
+                                )
+                                await db.commit()
+                            except Exception as e:
+                                logging.error(f"[visual-builder] Failed to persist: {e}")
+
+                            _visual_builder_done = True
+                            assistant_messages.append({
+                                "role": "assistant",
+                                "content": _serialize_content(final_message.content),
+                            })
+                            break
+                        else:
+                            # All high confidence → compute directly
+                            geometry = compute_visual_geometry(parsed["tipologias"], mat_res)
+                            services = infer_visual_services(parsed["tipologias"], geometry)
+                            pending = build_visual_pending_questions(mat_res, services, parsed["tipologias"])
+                            step1 = render_visual_building_step1(geometry, services, mat_res, pending)
+                            yield {"type": "text", "content": step1}
+                            logging.info(f"[visual-builder] Rendered PASO 1: {geometry.total_m2} m²")
+
+                            # Persist
+                            try:
+                                await db.execute(
+                                    update(Quote).where(Quote.id == quote_id).values(
+                                        quote_breakdown={
+                                            "visual_extraction": parsed["tipologias"],
+                                            "material_resolution": mat_res.to_dict(),
+                                            "geometry": geometry.to_dict(),
+                                            "services": services.to_dict(),
+                                            "building_step": "visual_step1_shown",
+                                        }
+                                    )
+                                )
+                                await db.commit()
+                            except Exception as e:
+                                logging.error(f"[visual-builder] Failed to persist: {e}")
+
+                            _visual_builder_done = True
+                            assistant_messages.append({
+                                "role": "assistant",
+                                "content": _serialize_content(final_message.content),
+                            })
+                            break
+                    else:
+                        # Couldn't parse JSON — fall through to normal display
+                        logging.warning(f"[visual-builder] Could not parse JSON from Claude response — showing raw")
+                        yield {"type": "text", "content": full_text}
+
+                elif needs_vision and pdf_has_images and full_text:
                     yield {"type": "text", "content": full_text}
-                    logging.info(f"[visual-pdf] Flushed {len(full_text)} chars of final consolidated response")
+                    logging.info(f"[visual-pdf] Flushed {len(full_text)} chars (no JSON found or builder already done)")
+
                 _suppress_text = False
 
                 # ── Guardrail: Paso 1 must use list_pieces ──
