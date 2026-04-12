@@ -781,6 +781,15 @@ def apply_corrections(tipologias: list[dict], corrections: list[dict]) -> list[d
 
 # ── 8. Render Functions ────────────────────────────────────────────────────────
 
+def render_field(value: str, conf: float, method: str) -> str:
+    """Render a field value with confidence marker."""
+    if method == "fallback" or conf < CONF_REVIEW:
+        return f"{value} ❌"
+    elif method == "inferred" or conf < CONF_HIGH:
+        return f"{value} ⚠️"
+    return f"{value} ✅"
+
+
 def render_visual_extraction_summary(
     validation: ValidationResult,
     material_res: MaterialResolution,
@@ -808,28 +817,30 @@ def render_visual_extraction_summary(
         shape = t.get("shape", "?")
         segs = t.get("segments_m", [])
         depth = t.get("depth_m", 0)
+        method = t.get("extraction_method", "fallback")
+        bl = t.get("backsplash_ml")
 
-        # Format segments
-        if shape == "L" and len(segs) == 2:
-            seg_str = f"{segs[0]}m + {segs[1]}m"
+        # Per-field markers
+        seg_parts = []
+        for s in segs:
+            seg_parts.append(render_field(f"{s}m", conf.get("segments", 0), method))
+        seg_str = " + ".join(seg_parts) if seg_parts else "?"
+
+        depth_str = render_field(f"prof {depth}m", conf.get("depth", 0), method)
+
+        # Shape marker
+        if shape == "unknown":
+            shape_str = f"{shape} ❌"
+        elif conf.get("shape", 0) >= CONF_HIGH:
+            shape_str = f"{shape} ✅"
         else:
-            seg_str = " + ".join(f"{s}m" for s in segs)
+            shape_str = f"{shape} ⚠️"
 
-        # Confidence indicator
-        min_core = min(conf.get("shape", 0), conf.get("depth", 0), conf.get("segments", 0))
-        if min_core >= CONF_HIGH:
-            icon = "✅"
-        elif min_core >= CONF_REVIEW:
-            icon = "⚠️"
-        else:
-            icon = "❌"
+        lines.append(f"- **{tid}** ×{qty} — {shape_str} — {seg_str} — {depth_str}")
 
-        lines.append(f"- {icon} **{tid}** ×{qty} — {shape} — {seg_str} — prof {depth}m")
-
-        # Soft field notes
-        if conf.get("backsplash", 0) < CONF_HIGH:
-            bl = t.get("backsplash_ml")
-            lines.append(f"  ↳ zócalo: {f'{bl}ml' if bl else 'sin dato'} (requiere confirmación)")
+        # Backsplash always needs review (visually weak)
+        bl_str = render_field(f"zócalo {bl}ml" if bl else "zócalo sin dato", conf.get("backsplash", 0), "inferred")
+        lines.append(f"  ↳ {bl_str}")
 
     if validation.soft_field_warnings:
         lines.append("")

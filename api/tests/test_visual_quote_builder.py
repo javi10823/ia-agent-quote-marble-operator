@@ -16,6 +16,7 @@ from app.modules.quote_engine.visual_quote_builder import (
     merge_second_pass,
     get_tipologia_page,
     parse_focused_response,
+    render_field,
     infer_visual_services,
     build_visual_pending_questions,
     parse_visual_extraction,
@@ -384,6 +385,28 @@ class TestRender:
         assert "TOTAL GENERAL" in text
         assert str(geo.total_m2) in text
         assert "ambos materiales" in text
+
+    def test_render_field_markers(self):
+        """Fields show correct markers based on confidence and method."""
+        assert "✅" in render_field("2.35m", 0.9, "direct_read")
+        assert "⚠️" in render_field("0.87m", 0.7, "direct_read")
+        assert "⚠️" in render_field("0.87m", 0.9, "inferred")
+        assert "❌" in render_field("1.50m", 0.9, "fallback")
+        assert "❌" in render_field("1.50m", 0.3, "direct_read")
+
+    def test_render_summary_field_level_markers(self):
+        """Summary must show per-field markers, not just per-tipología."""
+        validation = validate_visual_extraction([
+            {"id": "DC-02", "qty": 2, "shape": "L", "depth_m": 0.62,
+             "segments_m": [2.35, 1.15], "embedded_sink_count": 1, "hob_count": 1,
+             "extraction_method": "direct_read", "backsplash_ml": 4.12},
+        ])
+        mat = MaterialResolution("x", ["Silestone Blanco Norte"], "single", [], 20)
+        text = render_visual_extraction_summary(validation, mat)
+        # Segments should have ✅ (high conf + direct_read)
+        assert "2.35m ✅" in text
+        # Backsplash always ⚠️ (inferred)
+        assert "⚠️" in text
 
 
 # ── Second Pass ──────────────────────────────────────────────────────────────
