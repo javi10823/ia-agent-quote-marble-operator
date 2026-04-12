@@ -149,6 +149,11 @@
   },
   "material_aliases": {
     "granito new beige": "Marmol Sahara",
-    "new beige": "Marmol Sahara"
+    "new beige": "Marmol Sahara",
+    "cuarzo blanco norte": "Silestone Blanco Norte",
+    "blanco norte": "Silestone Blanco Norte",
+    "granito blanco ceara": "Granito Ceara",
+    "blanco ceara": "Granito Ceara",
+    "ceara": "Granito Ceara"
   }
 }
