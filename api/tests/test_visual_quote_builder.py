@@ -12,6 +12,10 @@ from app.modules.quote_engine.visual_quote_builder import (
     validate_visual_extraction,
     compute_visual_geometry,
     compute_physical_pieces,
+    get_tipologias_needing_second_pass,
+    merge_second_pass,
+    get_tipologia_page,
+    parse_focused_response,
     infer_visual_services,
     build_visual_pending_questions,
     parse_visual_extraction,
@@ -380,3 +384,89 @@ class TestRender:
         assert "TOTAL GENERAL" in text
         assert str(geo.total_m2) in text
         assert "ambos materiales" in text
+
+
+# ── Second Pass ──────────────────────────────────────────────────────────────
+
+class TestSecondPass:
+    def test_second_pass_triggers_for_inferred(self):
+        """Tipología inferred must go to second pass."""
+        tipologias = [{"id": "DC-02", "qty": 2, "extraction_method": "inferred",
+                       "shape": "linear", "segments_m": [2.35], "depth_m": 0.62}]
+        ids = get_tipologias_needing_second_pass(tipologias, {})
+        assert "DC-02" in ids
+
+    def test_second_pass_skips_direct_read_high_conf(self):
+        """direct_read with high confidence doesn't go to second pass."""
+        tipologias = [{"id": "DC-08", "qty": 1, "extraction_method": "direct_read",
+                       "shape": "linear", "segments_m": [2.99], "depth_m": 0.60}]
+        conf = {"DC-08": {"shape": 0.9, "segments": 0.9}}
+        ids = get_tipologias_needing_second_pass(tipologias, conf)
+        assert "DC-08" not in ids
+
+    def test_second_pass_triggers_for_unknown_shape(self):
+        tipologias = [{"id": "DC-07", "qty": 6, "extraction_method": "direct_read",
+                       "shape": "unknown", "segments_m": [1.96], "depth_m": 0.62}]
+        ids = get_tipologias_needing_second_pass(tipologias, {})
+        assert "DC-07" in ids
+
+    def test_second_pass_triggers_for_low_segment_conf(self):
+        tipologias = [{"id": "DC-04", "qty": 8, "extraction_method": "direct_read",
+                       "shape": "linear", "segments_m": [1.88], "depth_m": 0.62}]
+        conf = {"DC-04": {"shape": 0.9, "segments": 0.5}}
+        ids = get_tipologias_needing_second_pass(tipologias, conf)
+        assert "DC-04" in ids
+
+    def test_single_page_complex_multiple_doubtful(self):
+        """Multiple doubtful tipologías all need second pass."""
+        tipologias = [
+            {"id": "A", "qty": 1, "extraction_method": "inferred", "shape": "unknown"},
+            {"id": "B", "qty": 1, "extraction_method": "inferred", "shape": "L",
+             "segments_m": [1.5, 0.8], "depth_m": 0.6},
+            {"id": "C", "qty": 1, "extraction_method": "fallback", "shape": "unknown"},
+            {"id": "D", "qty": 1, "extraction_method": "direct_read", "shape": "linear",
+             "segments_m": [2.0], "depth_m": 0.6},
+        ]
+        conf = {"D": {"shape": 0.9, "segments": 0.9}}
+        ids = get_tipologias_needing_second_pass(tipologias, conf)
+        assert len(ids) == 3
+        assert "D" not in ids
+
+    def test_merge_preserves_untouched_fields(self):
+        original = [{"id": "DC-02", "qty": 2, "shape": "linear",
+                     "segments_m": [2.35], "embedded_sink_count": 1,
+                     "extraction_method": "inferred", "depth_m": 0.62}]
+        correction = {"id": "DC-02", "shape": "L", "segments_m": [2.35, 0.87],
+                      "depth_m": 0.62, "extraction_method": "direct_read",
+                      "second_pass_notes": "retorno visible en planta con cota 0.87"}
+        result = merge_second_pass(original, correction, "DC-02")
+        assert result[0]["shape"] == "L"
+        assert result[0]["segments_m"] == [2.35, 0.87]
+        assert result[0]["embedded_sink_count"] == 1  # Untouched
+        assert result[0]["extraction_method"] == "direct_read"
+
+    def test_merge_records_notes(self):
+        original = [{"id": "DC-02", "qty": 2, "shape": "linear",
+                     "segments_m": [2.35], "depth_m": 0.62}]
+        correction = {"shape": "L", "segments_m": [2.35, 0.87],
+                      "second_pass_notes": "retorno con cota"}
+        result = merge_second_pass(original, correction, "DC-02")
+        assert result[0]["second_pass_notes"] == "retorno con cota"
+
+    def test_get_tipologia_page_explicit(self):
+        tipologias = [{"id": "DC-02", "page": 3}, {"id": "DC-03", "page": 4}]
+        assert get_tipologia_page("DC-03", tipologias) == 4
+
+    def test_get_tipologia_page_fallback_to_index(self):
+        tipologias = [{"id": "DC-02"}, {"id": "DC-03"}, {"id": "DC-04"}]
+        assert get_tipologia_page("DC-04", tipologias) == 3  # 0-indexed + 1
+
+    def test_parse_focused_response_valid(self):
+        text = '{"shape": "L", "segments_m": [2.35, 0.87], "depth_m": 0.62}'
+        result = parse_focused_response(text)
+        assert result is not None
+        assert result["shape"] == "L"
+
+    def test_parse_focused_response_invalid(self):
+        result = parse_focused_response("No pude leer el plano")
+        assert result is None

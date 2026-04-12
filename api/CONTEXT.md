@@ -302,7 +302,8 @@ Formato obligatorio:
       "embedded_sink_count": 1,
       "hob_count": 1,
       "notes": ["movemos pileta"],
-      "extraction_method": "direct_read"
+      "extraction_method": "direct_read",
+      "page": 1
     }
   ]
 }
@@ -321,6 +322,7 @@ Reglas de extracción:
 - `hob_count`: anafes por unidad. Si mesada continua + anafe empotrado → 1.
 - `notes`: notas literales del plano relevantes para esa tipología.
 - `extraction_method`: indicar cómo se obtuvo la medida principal. "direct_read" solo si la cota es visible y no ambigua. "inferred" si se dedujo de módulos o posición. "fallback" si no se pudo leer.
+- `page`: número de página (1-indexed) donde está esta tipología en el PDF.
 - NO incluir `confidence` — el código lo calcula.
 
 El sistema procesará el JSON automáticamente y te devolverá el resultado calculado.
