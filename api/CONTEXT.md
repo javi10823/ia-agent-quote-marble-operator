@@ -277,11 +277,17 @@ Si no ves bien una zona, usá `read_plan` con crop_instructions VOS. Si no logr�
 
 **Solo preguntar** si: el material no matchea por alias NI por catálogo (fuzzy match incluido), o la ambigüedad es real (texto ilegible, material desconocido). NUNCA escribir "verificar catálogo" o "a verificar" si el alias o el fuzzy match ya lo resolvió.
 
-#### Extracción estructurada para PDFs visuales multipágina de obra
+#### ETAPA 1 — Extracción estructurada (PRIMERA RESPUESTA — SOLO JSON)
 
-Cuando analices un PDF visual multipágina de obra/edificio (>3 unidades, múltiples tipologías), tu respuesta debe ser un JSON estructurado que el sistema procesará automáticamente. NO hagas cálculos de m² ni totales — el código lo hace.
+Cuando analices un PDF visual multipágina de obra/edificio (>3 unidades, múltiples tipologías):
 
-Formato de extracción obligatorio (JSON en bloque ```json):
+⛔ En esta etapa tu respuesta debe ser ÚNICAMENTE un bloque ```json. NADA MÁS.
+⛔ NO usar bloques A/B/C en esta etapa — eso es para la ETAPA 2.
+⛔ NO hacer preguntas al operador.
+⛔ NO llamar read_plan — analizar el PDF completo con visión nativa directa.
+⛔ NO calcular m² — el código lo hace con fórmula exacta (L-shape resta esquina).
+
+Formato obligatorio:
 ```json
 {
   "material_text": "Cuarzo Blanco Norte o Granito Blanco Ceara 2 cm de espesor",
@@ -310,11 +316,13 @@ Reglas de extracción:
 - `hob_count`: anafes por unidad. Si mesada continua + anafe empotrado → 1.
 - `notes`: notas literales del plano relevantes para esa tipología.
 - NO incluir `confidence` — el código lo calcula.
-- NO calcular m² — el código lo hace con la fórmula correcta (L-shape resta esquina).
 
-#### Formato de salida — estructura obligatoria en 3 bloques
+El sistema procesará el JSON automáticamente y te devolverá el resultado calculado.
 
-Para planos CAD/arquitectónicos, la respuesta final debe tener EXACTAMENTE 3 bloques:
+#### ETAPA 2 — Respuesta final al operador (SOLO después de que el sistema procesó el JSON)
+
+Esta etapa la maneja el sistema — el código renderiza el PASO 1 con los datos calculados.
+Si el sistema te devuelve un resultado con tipologías validadas y necesita confirmación del operador, recién ahí responder con los 3 bloques:
 
 **A. Datos Detectados**
 - Tipologías identificadas (nombre + cantidad de unidades)
