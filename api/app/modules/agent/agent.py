@@ -1825,15 +1825,12 @@ class AgentService:
                                     # Focused call to Claude for verification
                                     focused_system = (
                                         f"Sos un asistente de lectura de planos CAD.\n"
-                                        f"Te muestro la PÁGINA {page_num} del PDF — la lámina de tipología {tid}.\n"
+                                        f"Te muestro el plano de la tipología {tid}.\n"
                                         f"La extracción anterior fue: {json.dumps(existing, ensure_ascii=False)}\n\n"
                                         f"Tu tarea: verificar y corregir SOLO estos campos:\n"
-                                        f"- shape: 'L' (retorno con cota visible en PLANTA) o 'linear' (módulos en línea recta) o 'unknown'\n"
-                                        f"- segments_m: largo real de cada tramo con cota explícita.\n"
-                                        f"  Para L: [tramo principal, retorno]. El retorno de una L de cocina típica es entre 0.50m y 1.20m.\n"
-                                        f"  Si leés un retorno mayor a 1.20m, revisá si es realmente el retorno o si estás leyendo el tramo principal.\n"
+                                        f"- shape: 'L' (retorno con cota visible) o 'linear' (módulos en línea recta) o 'unknown'\n"
+                                        f"- segments_m: largo real de cada tramo con cota explícita\n"
                                         f"- depth_m: profundidad real leída de planta o corte\n\n"
-                                        f"IMPORTANTE: Solo leé las cotas de ESTA lámina ({tid}), no de otras tipologías.\n"
                                         f"Responder ÚNICAMENTE con JSON sin texto adicional."
                                     )
 
