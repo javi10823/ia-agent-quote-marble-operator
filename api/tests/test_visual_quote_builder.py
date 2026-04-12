@@ -16,6 +16,7 @@ from app.modules.quote_engine.visual_quote_builder import (
     merge_second_pass,
     get_tipologia_page,
     parse_focused_response,
+    backsplash_needs_confirmation,
     render_field,
     infer_visual_services,
     build_visual_pending_questions,
@@ -226,21 +227,23 @@ class TestPendingQuestions:
         assert "DC-05_extraction_needs_review" in pending
 
     def test_all_backsplash_confirmations_listed(self):
-        """ALL tipologías with low backsplash conf should appear, not just first."""
+        """Tipologías with INCOHERENT backsplash should appear in pending."""
         mat = MaterialResolution("x", ["Silestone"], "single", [], 20)
         tipologias = [
             {"id": "DC-02", "qty": 2, "shape": "L", "segments_m": [2.35, 1.15],
              "depth_m": 0.62, "extraction_method": "direct_read",
+             "backsplash_ml": 9.0,  # Incoherent: > 1.5 × (2.35+1.15) = 5.25
              "_confidence": {"backsplash": 0.6, "shape": 0.9, "depth": 0.9, "segments": 0.9}},
             {"id": "DC-07", "qty": 6, "shape": "L", "segments_m": [1.96, 1.54],
              "depth_m": 0.62, "extraction_method": "direct_read",
+             "backsplash_ml": 8.0,  # Incoherent: > 1.5 × (1.96+1.54) = 5.25
              "_confidence": {"backsplash": 0.5, "shape": 0.9, "depth": 0.9, "segments": 0.9}},
         ]
         geo = compute_visual_geometry(tipologias, mat)
         services = infer_visual_services(tipologias, geo)
         pending = build_visual_pending_questions(mat, services, tipologias, {"client_name": "X"})
         assert "confirm_backsplash_DC-02" in pending
-        assert "confirm_backsplash_DC-07" in pending  # Must NOT be skipped by break
+        assert "confirm_backsplash_DC-07" in pending
 
     def test_large_obra_all_in_needs_review(self):
         """When total units > threshold, ALL tipologías go to needs_review."""
@@ -406,8 +409,48 @@ class TestRender:
         text = render_visual_extraction_summary(validation, mat)
         # Segments should have ✅ (high conf + direct_read)
         assert "2.35m ✅" in text
-        # Backsplash always ⚠️ (inferred)
-        assert "⚠️" in text
+        # Backsplash 4.12ml with segments [2.35, 1.15] is reasonable → ✅
+        assert "zócalo 4.12ml ✅" in text
+
+
+# ── Backsplash Confirmation ──────────────────────────────────────────────────
+
+class TestBacksplashConfirmation:
+    def test_reasonable_no_confirmation(self):
+        assert backsplash_needs_confirmation(3.91, [2.35, 0.94], "L") is False
+
+    def test_too_large_needs_confirmation(self):
+        assert backsplash_needs_confirmation(8.0, [2.35, 0.94], "L") is True
+
+    def test_too_small_needs_confirmation(self):
+        assert backsplash_needs_confirmation(0.3, [2.35, 0.94], "L") is True
+
+    def test_none_no_confirmation(self):
+        assert backsplash_needs_confirmation(None, [2.35], "linear") is False
+
+    def test_linear_reasonable(self):
+        assert backsplash_needs_confirmation(2.0, [2.35], "linear") is False
+
+
+# ── Merge Segment Guard ──────────────────────────────────────────────────────
+
+class TestMergeSegmentGuard:
+    def test_merge_rejects_inverted_segments(self):
+        """Second pass must not accept tramo1 < tramo2."""
+        original = [{"id": "DC-02", "segments_m": [2.35, 0.94], "shape": "L"}]
+        bad_pass = {"shape": "L", "segments_m": [0.75, 0.94],
+                    "depth_m": 0.62, "extraction_method": "direct_read"}
+        result = merge_second_pass(original, bad_pass, "DC-02")
+        assert result[0]["segments_m"] == [2.35, 0.94]  # Original kept
+        assert result[0]["extraction_method"] == "inferred"  # Downgraded
+
+    def test_merge_accepts_valid_segments(self):
+        """Valid tramo1 > tramo2 should be accepted."""
+        original = [{"id": "DC-02", "segments_m": [2.35, 0.94], "shape": "L"}]
+        good_pass = {"shape": "L", "segments_m": [2.40, 0.87],
+                     "depth_m": 0.62, "extraction_method": "direct_read"}
+        result = merge_second_pass(original, good_pass, "DC-02")
+        assert result[0]["segments_m"] == [2.40, 0.87]  # Updated
 
 
 # ── Second Pass ──────────────────────────────────────────────────────────────

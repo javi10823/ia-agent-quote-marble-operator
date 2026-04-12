@@ -354,9 +354,11 @@ def validate_visual_extraction(tipologias: list[dict]) -> ValidationResult:
         else:
             unusable.append(t)
 
-        # Soft field warnings
-        if conf.backsplash < CONF_HIGH:
-            warnings.append(f"{t.get('id', '?')}: zócalo/backsplash requiere confirmación")
+        # Soft field warnings — only warn about backsplash if incoherent
+        bl = t.get("backsplash_ml")
+        segs = t.get("segments_m", [])
+        if backsplash_needs_confirmation(bl, segs, t.get("shape", "linear")):
+            warnings.append(f"{t.get('id', '?')}: zócalo/backsplash valor incoherente — requiere confirmación")
         if conf.sink < CONF_HIGH:
             warnings.append(f"{t.get('id', '?')}: cantidad de piletas requiere confirmación")
         if conf.hob < CONF_HIGH:
@@ -546,10 +548,12 @@ def build_visual_pending_questions(
     if services.pegadopileta_qty > 0:
         questions.append("pileta_provision")
 
-    # Low confidence backsplash — list ALL tipologías that need confirmation
+    # Only ask about backsplash if value is incoherent (not just low confidence)
     for t in tipologias:
-        conf = t.get("_confidence", {})
-        if conf.get("backsplash", 0) < CONF_HIGH:
+        bl = t.get("backsplash_ml")
+        segs = t.get("segments_m", [])
+        shape = t.get("shape", "linear")
+        if backsplash_needs_confirmation(bl, segs, shape):
             questions.append(f"confirm_backsplash_{t.get('id', '?')}")
 
     # Tipologías with non-direct extraction need review
@@ -625,6 +629,17 @@ def merge_second_pass(
             for field in mergeable_fields:
                 if field in second_pass:
                     updated[field] = second_pass[field]
+
+            # Guard: reject segments where tramo1 < tramo2 (inverted L)
+            new_segs = updated.get("segments_m", [])
+            if len(new_segs) == 2 and new_segs[0] < new_segs[1]:
+                logging.warning(
+                    f"[merge] {tipologia_id}: tramo1 ({new_segs[0]}) < tramo2 ({new_segs[1]}) "
+                    f"— rejecting second pass segments, keeping original"
+                )
+                updated["segments_m"] = t.get("segments_m", new_segs)
+                updated["extraction_method"] = "inferred"
+
             updated["second_pass_notes"] = second_pass.get("second_pass_notes", "")
             result.append(updated)
         else:
@@ -832,6 +847,32 @@ def apply_corrections(tipologias: list[dict], corrections: list[dict]) -> list[d
 
 # ── 8. Render Functions ────────────────────────────────────────────────────────
 
+def backsplash_needs_confirmation(
+    backsplash_ml: Optional[float],
+    segments_m: list[float],
+    shape: str,
+) -> bool:
+    """Only ask confirmation if backsplash value is incoherent.
+
+    Reasonable range: between 50% of longest segment and 150% of sum.
+    If within range → use silently. If outside → confirm.
+    """
+    if backsplash_ml is None:
+        return False  # Will use fallback, which is conservative — OK
+    if not segments_m:
+        return True
+
+    max_possible = sum(segments_m) * 1.5
+    min_possible = max(segments_m) * 0.5
+
+    if backsplash_ml > max_possible:
+        return True
+    if backsplash_ml < min_possible:
+        return True
+
+    return False
+
+
 def render_field(value: str, conf: float, method: str) -> str:
     """Render a field value with confidence marker.
 
@@ -896,8 +937,11 @@ def render_visual_extraction_summary(
 
         lines.append(f"- **{tid}** ×{qty} — {shape_str} — {seg_str} — {depth_str}")
 
-        # Backsplash always needs review (visually weak)
-        bl_str = render_field(f"zócalo {bl}ml" if bl else "zócalo sin dato", conf.get("backsplash", 0), "inferred")
+        # Backsplash: only flag if incoherent, otherwise show as OK
+        if backsplash_needs_confirmation(bl, segs, shape):
+            bl_str = f"zócalo {bl}ml ⚠️ requiere confirmación" if bl else "zócalo sin dato ⚠️"
+        else:
+            bl_str = f"zócalo {bl}ml ✅" if bl else "zócalo (fallback conservador) ✅"
         lines.append(f"  ↳ {bl_str}")
 
     if validation.soft_field_warnings:
