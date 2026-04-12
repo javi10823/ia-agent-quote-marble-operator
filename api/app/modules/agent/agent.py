@@ -1764,8 +1764,13 @@ class AgentService:
                         resolve_visual_materials,
                         validate_visual_extraction,
                         compute_visual_geometry,
+                        compute_field_confidence,
                         infer_visual_services,
                         build_visual_pending_questions,
+                        get_tipologias_needing_second_pass,
+                        get_tipologia_page,
+                        merge_second_pass,
+                        parse_focused_response,
                         render_visual_extraction_summary,
                         render_visual_building_step1,
                     )
@@ -1778,7 +1783,88 @@ class AgentService:
                         mat_res = resolve_visual_materials(parsed.get("material_text", ""))
                         logging.info(f"[visual-builder] Material resolution: {mat_res.mode} → {mat_res.resolved}")
 
-                        # Validate extraction
+                        # ── Second pass for doubtful tipologías ──
+                        total_units = sum(t.get("qty", 1) for t in parsed["tipologias"])
+                        # Compute field confidences for second pass decision
+                        _field_confs = {}
+                        for t in parsed["tipologias"]:
+                            conf = compute_field_confidence(t)
+                            t["_confidence"] = conf.to_dict()
+                            _field_confs[t.get("id", "")] = conf.to_dict()
+
+                        ids_for_second_pass = get_tipologias_needing_second_pass(
+                            parsed["tipologias"], _field_confs
+                        )
+
+                        _second_pass_calls = 0
+                        if ids_for_second_pass and total_units >= 3 and plan_bytes:
+                            logging.info(f"[visual-builder] Second pass needed for: {ids_for_second_pass}")
+                            yield {"type": "action", "content": f"🔍 Verificando {len(ids_for_second_pass)} tipologías dudosas..."}
+
+                            for tid in ids_for_second_pass[:5]:  # Max 5 second pass calls
+                                page_num = get_tipologia_page(tid, parsed["tipologias"])
+                                try:
+                                    # Get crop of this tipología's page
+                                    from app.modules.agent.tools.plan_tool import read_plan as _read_plan_fn
+                                    crop_result = await _read_plan_fn(plan_filename, [{
+                                        "label": f"{tid} planta+corte",
+                                        "x1": 30, "y1": 10, "x2": 700, "y2": 700,
+                                    }])
+
+                                    # Get existing extraction for this tipología
+                                    existing = next(
+                                        (t for t in parsed["tipologias"] if t.get("id") == tid), {}
+                                    )
+
+                                    # Focused call to Claude for verification
+                                    focused_system = (
+                                        f"Sos un asistente de lectura de planos CAD.\n"
+                                        f"Te muestro el plano de la tipología {tid}.\n"
+                                        f"La extracción anterior fue: {json.dumps(existing, ensure_ascii=False)}\n\n"
+                                        f"Tu tarea: verificar y corregir SOLO estos campos:\n"
+                                        f"- shape: 'L' (retorno con cota visible) o 'linear' (módulos en línea recta) o 'unknown'\n"
+                                        f"- segments_m: largo real de cada tramo con cota explícita\n"
+                                        f"- depth_m: profundidad real leída de planta o corte\n\n"
+                                        f"Responder ÚNICAMENTE con JSON sin texto adicional."
+                                    )
+
+                                    # Build content with crop images
+                                    focused_content = []
+                                    if isinstance(crop_result, list):
+                                        focused_content = crop_result
+                                    focused_content.append({
+                                        "type": "text",
+                                        "text": f"Verificar tipología {tid}. Responder solo JSON.",
+                                    })
+
+                                    focused_response = await self.client.messages.create(
+                                        model="claude-opus-4-6",
+                                        max_tokens=300,
+                                        system=focused_system,
+                                        messages=[{"role": "user", "content": focused_content}],
+                                    )
+
+                                    _second_pass_calls += 1
+                                    resp_text = focused_response.content[0].text if focused_response.content else ""
+                                    second_pass_data = parse_focused_response(resp_text)
+
+                                    if second_pass_data:
+                                        parsed["tipologias"] = merge_second_pass(
+                                            parsed["tipologias"], second_pass_data, tid
+                                        )
+                                        logging.info(
+                                            f"[visual-builder] Second pass {tid}: "
+                                            f"{second_pass_data.get('second_pass_notes', 'updated')}"
+                                        )
+                                    else:
+                                        logging.warning(f"[visual-builder] Second pass {tid}: could not parse response")
+
+                                except Exception as e:
+                                    logging.error(f"[visual-builder] Second pass {tid} failed: {e}")
+
+                            logging.info(f"[visual-builder] Second pass complete: {_second_pass_calls} calls")
+
+                        # Validate extraction (with second pass corrections applied)
                         validation = validate_visual_extraction(parsed["tipologias"])
 
                         if validation.requires_operator_validation:

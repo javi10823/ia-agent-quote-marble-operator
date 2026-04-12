@@ -569,6 +569,97 @@ def build_visual_pending_questions(
     return questions
 
 
+# ── 6b. Second Pass — identify tipologías needing focused re-read ─────────────
+
+def get_tipologias_needing_second_pass(
+    tipologias: list[dict],
+    field_confidences: Optional[dict] = None,
+) -> list[str]:
+    """Return IDs that need a second focused vision pass.
+
+    Criteria:
+    - extraction_method != "direct_read"
+    - shape == "unknown"
+    - segments confidence < CONF_HIGH
+    - shape confidence < CONF_HIGH
+    """
+    if field_confidences is None:
+        field_confidences = {}
+
+    needs_review = []
+    for t in tipologias:
+        tid = t.get("id", "")
+        if not tid:
+            continue
+        method = t.get("extraction_method", "fallback")
+        shape = t.get("shape", "unknown")
+
+        # Check field-level confidence (from _confidence or external dict)
+        conf = field_confidences.get(tid, t.get("_confidence", {}))
+
+        if (method != "direct_read"
+                or shape == "unknown"
+                or conf.get("segments", 0) < CONF_HIGH
+                or conf.get("shape", 0) < CONF_HIGH):
+            needs_review.append(tid)
+
+    return needs_review
+
+
+def merge_second_pass(
+    tipologias: list[dict],
+    second_pass: dict,
+    tipologia_id: str,
+) -> list[dict]:
+    """Merge second pass result into original tipología.
+
+    Second pass has priority over fields it changed.
+    Untouched fields remain intact.
+    """
+    result = []
+    mergeable_fields = ["shape", "segments_m", "depth_m", "extraction_method"]
+
+    for t in tipologias:
+        if t.get("id") == tipologia_id:
+            updated = {**t}
+            for field in mergeable_fields:
+                if field in second_pass:
+                    updated[field] = second_pass[field]
+            updated["second_pass_notes"] = second_pass.get("second_pass_notes", "")
+            result.append(updated)
+        else:
+            result.append(t)
+    return result
+
+
+def get_tipologia_page(tipologia_id: str, tipologias: list[dict]) -> int:
+    """Return 1-indexed page number for a tipología.
+
+    Uses explicit 'page' field if present, otherwise position order.
+    """
+    for i, t in enumerate(tipologias):
+        if t.get("id") == tipologia_id:
+            return t.get("page", i + 1)
+    return 1
+
+
+def parse_focused_response(text: str) -> Optional[dict]:
+    """Parse second pass JSON response from Claude."""
+    json_match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
+    if not json_match:
+        return None
+    try:
+        data = json.loads(json_match.group(0))
+    except json.JSONDecodeError:
+        return None
+
+    # Validate required fields
+    if "shape" not in data and "segments_m" not in data:
+        return None
+
+    return data
+
+
 # ── 7. Parse Operator Corrections (deterministic regex) ────────────────────────
 
 # Flexible ID pattern: DC-02, BAÑ-01, COC-03, TIPO-A, etc.
@@ -851,7 +942,7 @@ def parse_visual_extraction(claude_response: str) -> Optional[dict]:
     # Validate and clean each tipología
     cleaned = []
     seen_ids = set()
-    for t in tipologias:
+    for idx, t in enumerate(tipologias):
         tid = t.get("id", "")
         if not tid:
             continue
@@ -905,6 +996,7 @@ def parse_visual_extraction(claude_response: str) -> Optional[dict]:
             "hob_count": t.get("hob_count", 0),
             "notes": t.get("notes", []),
             "extraction_method": t.get("extraction_method", "fallback"),
+            "page": t.get("page", idx + 1),
         })
 
     if not cleaned:
