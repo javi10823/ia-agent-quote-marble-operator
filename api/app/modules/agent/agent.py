@@ -1335,14 +1335,19 @@ class AgentService:
                     logging.info(f"PDF has images/drawings — sending as document for vision pass")
 
                     # Detect visual building: multipágina CAD with building keywords
-                    # Only applies to visual path — tabular ESH is handled separately above
+                    # Search in: extracted text + filename + user message (operator often says "edificio X")
                     _building_keywords = ["tipolog", "cantidad", "unidad", "piso", "fideicomiso",
-                                          "edificio", "obra", "cocina", "desarrollo", "lamina", "lámina"]
-                    _text_lower = extracted_text.lower()
-                    _keyword_hits = sum(1 for kw in _building_keywords if kw in _text_lower)
+                                          "edificio", "obra", "cocina", "desarrollo", "lamina", "lámina",
+                                          "departamento", "depto", "dpto", "ventus", "montevideo"]
+                    _all_searchable = (extracted_text + " " + plan_filename + " " + user_message).lower()
+                    _keyword_hits = sum(1 for kw in _building_keywords if kw in _all_searchable)
                     if num_pages >= 3 and pdf_has_images and _keyword_hits >= 2:
                         is_visual_building = True
-                        logging.info(f"Visual building detected: {num_pages} pages, {_keyword_hits} keyword hits")
+                        logging.info(f"Visual building detected: {num_pages} pages, {_keyword_hits} keyword hits in text+filename+message")
+                    elif num_pages >= 5 and pdf_has_images:
+                        # 5+ pages with vector density = almost certainly a building project
+                        is_visual_building = True
+                        logging.info(f"Visual building detected by page count: {num_pages} pages (keywords={_keyword_hits})")
                 else:
                     logging.info(f"PDF is text-only (no images) — skipping vision pass, using extracted text only")
             else:
