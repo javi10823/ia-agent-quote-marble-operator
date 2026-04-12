@@ -494,3 +494,23 @@ class TestSecondPass:
     def test_parse_focused_response_invalid(self):
         result = parse_focused_response("No pude leer el plano")
         assert result is None
+
+    def test_parse_focused_rejects_numeric_shape(self):
+        """shape=0.9 (confidence leaked as shape) must be discarded."""
+        text = '{"shape": 0.9, "segments_m": [2.35], "depth_m": 0.62}'
+        result = parse_focused_response(text)
+        assert result is not None
+        assert "shape" not in result  # Numeric shape discarded
+        assert result["segments_m"] == [2.35]  # Rest preserved
+
+    def test_parse_focused_rejects_absurd_segments(self):
+        """Segments outside 0.1-10.0 range must be discarded."""
+        text = '{"shape": "linear", "segments_m": [50.0, 0.05]}'
+        result = parse_focused_response(text)
+        assert result is not None  # shape is still valid
+        assert "segments_m" not in result  # Both segments invalid → discarded
+
+    def test_parse_focused_validates_depth_range(self):
+        text = '{"shape": "L", "segments_m": [2.0, 1.0], "depth_m": 5.0}'
+        result = parse_focused_response(text)
+        assert "depth_m" not in result  # 5.0 out of range

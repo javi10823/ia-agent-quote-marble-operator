@@ -644,7 +644,10 @@ def get_tipologia_page(tipologia_id: str, tipologias: list[dict]) -> int:
 
 
 def parse_focused_response(text: str) -> Optional[dict]:
-    """Parse second pass JSON response from Claude."""
+    """Parse second pass JSON response from Claude.
+
+    Validates field types to prevent shape=0.9 or segments=[wrong values].
+    """
     json_match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
     if not json_match:
         return None
@@ -655,6 +658,54 @@ def parse_focused_response(text: str) -> Optional[dict]:
 
     # Validate required fields
     if "shape" not in data and "segments_m" not in data:
+        return None
+
+    # Validate shape is a string, not a number (Claude sometimes returns confidence as shape)
+    if "shape" in data:
+        if not isinstance(data["shape"], str):
+            logging.warning(f"[parse_focused] shape is {type(data['shape']).__name__} ({data['shape']}), not str — discarding")
+            del data["shape"]
+        elif data["shape"] not in ("L", "linear", "unknown"):
+            logging.warning(f"[parse_focused] invalid shape value: {data['shape']} — discarding")
+            del data["shape"]
+
+    # Validate segments_m is a list of numbers in valid range
+    if "segments_m" in data:
+        segs = data["segments_m"]
+        if not isinstance(segs, list) or not segs:
+            del data["segments_m"]
+        else:
+            valid = []
+            for s in segs:
+                try:
+                    s = float(s)
+                    if 0.1 <= s <= 10.0:
+                        valid.append(round(s, 2))
+                except (TypeError, ValueError):
+                    pass
+            if valid:
+                data["segments_m"] = valid
+            else:
+                del data["segments_m"]
+
+    # Validate depth_m is a number in valid range
+    if "depth_m" in data:
+        try:
+            d = float(data["depth_m"])
+            if 0.1 <= d <= 2.0:
+                data["depth_m"] = round(d, 2)
+            else:
+                del data["depth_m"]
+        except (TypeError, ValueError):
+            del data["depth_m"]
+
+    # Validate extraction_method is a valid string
+    if "extraction_method" in data:
+        if data["extraction_method"] not in ("direct_read", "inferred", "fallback"):
+            del data["extraction_method"]
+
+    # Must still have at least one valid field after validation
+    if not any(k in data for k in ("shape", "segments_m", "depth_m")):
         return None
 
     return data
