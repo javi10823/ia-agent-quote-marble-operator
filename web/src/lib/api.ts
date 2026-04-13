@@ -268,8 +268,25 @@ export async function updateUsageBudget(data: { monthly_budget_usd?: number; ena
 // ── Chat SSE ──────────────────────────────────────────────────────────────────
 
 export interface ChatChunk {
-  type: "text" | "action" | "done";
+  type: "text" | "action" | "done" | "zone_selector";
   content: string;
+}
+
+// ── Zone Select ──
+
+export async function selectZone(
+  quoteId: string,
+  bbox: { x1: number; y1: number; x2: number; y2: number },
+  pageNum: number = 1,
+) {
+  const res = await fetch(`/api/quotes/${quoteId}/zone-select`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ bbox_normalized: bbox, page_num: pageNum }),
+  });
+  if (!res.ok) throw new Error(`zone-select failed: ${res.status}`);
+  return res.json();
 }
 
 export async function* streamChat(

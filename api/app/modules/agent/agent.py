@@ -803,8 +803,16 @@ class AgentService:
                     yield {"type": "done", "content": ""}
                     return
 
+                # ── VISUAL PAGES: Operator drew zone rectangle (Fix G) ──
+                if _building_step and _building_step.endswith("_zone_selector"):
+                    # Zone was already set by POST /zone-select endpoint
+                    # This message is the system_trigger from frontend
+                    # Just continue to extraction — zone is in quote_breakdown
+                    logging.info(f"[visual-pages] Zone selector confirmed, continuing extraction")
+                    # Don't return — fall through to while loop for extraction
+
                 # ── VISUAL PAGES: Operator confirming a page ──
-                if _building_step and _building_step.startswith("visual_page_") and _building_step.endswith("_confirm"):
+                elif _building_step and _building_step.startswith("visual_page_") and _building_step.endswith("_confirm"):
                     from app.modules.quote_engine.visual_quote_builder import (
                         parse_page_confirmation,
                         apply_corrections,
@@ -1691,8 +1699,15 @@ class AgentService:
                         break
 
         # Append user message to history (injected for Claude, clean for DB)
-        new_messages = clean_messages + [{"role": "user", "content": content}]
-        db_messages = clean_messages + [{"role": "user", "content": clean_user_content}]
+        # System triggers are internal — don't pass them to Claude or save as user message
+        _is_system_trigger = user_message.startswith("[SYSTEM_TRIGGER:")
+        if _is_system_trigger:
+            new_messages = clean_messages  # No user message for Claude
+            db_messages = clean_messages   # No user message in DB
+            logging.info(f"[system-trigger] {user_message} — not added to message history")
+        else:
+            new_messages = clean_messages + [{"role": "user", "content": content}]
+            db_messages = clean_messages + [{"role": "user", "content": clean_user_content}]
 
         # Agentic loop with tool use
         assistant_messages = []
@@ -2005,7 +2020,58 @@ class AgentService:
                     _page_key = str(_current_page)
                     _pd = _page_data.get(_page_key, {})
 
-                    # STEP A: Zone detection (pasada 0) — separate Claude call
+                    # STEP 0A: Text extraction from full page (page 1 only)
+                    # Extract material, artefactos, zócalos, quantity from the text panel
+                    # This info is the same on all láminas — only need it once
+                    if _current_page == 1 and "page_text_info" not in _bd:
+                        try:
+                            _text_crop = await _read_plan_fn(
+                                _bd.get("pdf_filename", plan_filename or ""), [], page=1
+                            )
+                            _text_content = list(_text_crop) if isinstance(_text_crop, list) else []
+                            _text_content.append({
+                                "type": "text",
+                                "text": (
+                                    "Extraer SOLO la información textual de esta lámina (NO geometría). "
+                                    "Buscar: material y espesor (sección MESADAS), artefactos y griferías "
+                                    "(códigos sa-01, sa-02, gr-01), altura de zócalos, cantidad de unidades, "
+                                    "notas relevantes para cotización. "
+                                    "Ignorar: muebles, carpintería, herrería, instalaciones. "
+                                    "Responder SOLO JSON: {\"material_text\": \"...\", \"artefactos\": [...], "
+                                    "\"zocalo_height_cm\": N, \"cantidad_unidades\": N, \"notas\": [...]}"
+                                ),
+                            })
+                            _text_resp = await self.client.messages.create(
+                                model="claude-opus-4-6",
+                                max_tokens=800,
+                                system="Extraer información textual de una lámina de plano CAD. Solo JSON.",
+                                messages=[{"role": "user", "content": _text_content}],
+                            )
+                            _text_raw = _text_resp.content[0].text if _text_resp.content else ""
+                            logging.info(f"[visual-pages] Page text extraction: {_text_raw[:300]}")
+
+                            # Parse and persist — use same pattern as parse_visual_extraction
+                            try:
+                                _text_json_match = re.search(r"```json\s*(.*?)```", _text_raw, re.DOTALL)
+                                if _text_json_match:
+                                    _page_text_info = json.loads(_text_json_match.group(1).strip())
+                                else:
+                                    # Try to find outermost JSON object
+                                    _text_brace_match = re.search(r"\{[\s\S]*\}", _text_raw)
+                                    _page_text_info = json.loads(_text_brace_match.group(0)) if _text_brace_match else None
+                                if _page_text_info:
+                                    _bd["page_text_info"] = _page_text_info
+                                    # Use material_text for resolution if not already set
+                                    if _page_text_info.get("material_text") and not _bd.get("material_resolution"):
+                                        mat_res = resolve_visual_materials(_page_text_info["material_text"])
+                                        _bd["material_resolution"] = mat_res.to_dict()
+                                        logging.info(f"[visual-pages] Material from text panel: {mat_res.mode} → {mat_res.resolved}")
+                            except (json.JSONDecodeError, Exception) as e:
+                                logging.warning(f"[visual-pages] Text extraction parse failed: {e}")
+                        except Exception as e:
+                            logging.error(f"[visual-pages] Text extraction failed: {e}")
+
+                    # STEP 0B: Zone detection (pasada 0) — separate Claude call
                     if _step == f"visual_page_{_current_page}" and "detected_zones" not in _pd:
                         # Get a crop of the full page for zone detection
                         from app.modules.agent.tools.plan_tool import read_plan as _read_plan_fn
@@ -2049,10 +2115,63 @@ class AgentService:
                         _bd["page_data"] = _page_data
                         logging.info(f"[visual-pages] Page {_current_page}: {len(zones)} zones detected")
 
-                    # STEP B: Auto-select zone
+                    # STEP B: Select zone (auto or operator rectangle)
                     if "detected_zones" in _pd and "selected_zone" not in _pd:
                         zones = _pd["detected_zones"]
-                        selected = auto_select_zone(zones, _zone_default)
+                        _zone_default_bbox = _bd.get("zone_default_bbox")
+
+                        # Fix G: Check if operator rectangle needed (page 1 only, ambiguous zones)
+                        _needs_selector = (
+                            _total_pages >= 2
+                            and _current_page == 1
+                            and len(zones) >= 2
+                            and not any(z.get("view_type") == "top_view" and z.get("confidence", 0) >= 0.85 for z in zones)
+                            and not _bd.get("zone_default")
+                            and not _zone_default_bbox
+                        )
+
+                        if _needs_selector:
+                            # Save page image for frontend
+                            import base64 as _b64_mod
+                            from app.core.static import OUTPUT_DIR
+                            _img_saved = False
+                            try:
+                                _page_crop_for_selector = await _read_plan_fn(
+                                    _bd.get("pdf_filename", plan_filename or ""), [], page=_current_page
+                                )
+                                for _block in (_page_crop_for_selector or []):
+                                    if _block.get("type") == "image":
+                                        _img_bytes = _b64_mod.b64decode(_block["source"]["data"])
+                                        _img_dir = OUTPUT_DIR / quote_id
+                                        _img_dir.mkdir(parents=True, exist_ok=True)
+                                        _img_file = _img_dir / f"page_{_current_page}.jpg"
+                                        _img_file.write_bytes(_img_bytes)
+                                        _img_saved = True
+                                        break
+                            except Exception as e:
+                                logging.error(f"[visual-pages] Failed to save page image: {e}")
+
+                            if _img_saved:
+                                _bd["building_step"] = f"visual_page_{_current_page}_zone_selector"
+                                try:
+                                    await db.execute(
+                                        update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd)
+                                    )
+                                    await db.commit()
+                                except Exception as e:
+                                    logging.error(f"[visual-pages] Failed to persist zone_selector state: {e}")
+
+                                yield {"type": "zone_selector", "content": json.dumps({
+                                    "image_url": f"/files/{quote_id}/page_{_current_page}.jpg",
+                                    "page_num": _current_page,
+                                    "instruction": "Dibujá un rectángulo sobre la zona de la mesada de mármol",
+                                })}
+                                yield {"type": "done", "content": ""}
+                                logging.info(f"[visual-pages] Page {_current_page}: showing zone selector to operator")
+                                return
+                            # If image save failed, fall through to auto-select
+
+                        selected = auto_select_zone(zones, _zone_default, _zone_default_bbox)
                         if selected:
                             _pd["selected_zone"] = selected
                             _pd["zone_was_auto"] = True
@@ -2207,8 +2326,28 @@ class AgentService:
                                     for g in geo.tipologias
                                 ]
                             else:
-                                _pd["tipologias"] = []
-                                _pd["geometries"] = []
+                                # No tipologías extracted
+                                # If using zone_default_bbox and it failed → retry or skip
+                                _retries = _pd.get("zone_selector_retries", 0)
+                                if _bd.get("zone_default_bbox") and _current_page > 1 and _retries < 2:
+                                    logging.warning(f"[visual-pages] zone_default_bbox produced no tipologías on page {_current_page} (retry {_retries + 1}/2)")
+                                    _pd["zone_default_failed"] = True
+                                    _pd["zone_selector_retries"] = _retries + 1
+                                    # Remove selected_zone to trigger re-selection with full page
+                                    _pd.pop("selected_zone", None)
+                                    _page_data[_page_key] = _pd
+                                    _bd["page_data"] = _page_data
+                                elif _bd.get("zone_default_bbox") and _current_page > 1 and _retries >= 2:
+                                    logging.warning(f"[visual-pages] zone_default_bbox failed {_retries} times on page {_current_page} — auto-skipping")
+                                    _pd["tipologias"] = []
+                                    _pd["geometries"] = []
+                                    _pd["confirmed"] = True
+                                    _pd["skipped"] = True
+                                    _page_data[_page_key] = _pd
+                                    _bd["page_data"] = _page_data
+                                else:
+                                    _pd["tipologias"] = []
+                                    _pd["geometries"] = []
 
                             _page_data[_page_key] = _pd
                             _bd["page_data"] = _page_data
