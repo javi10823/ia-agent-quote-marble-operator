@@ -2063,13 +2063,24 @@ class AgentService:
                     # STEP C: Extract tipología from zone crop
                     if "selected_zone" in _pd and "tipologias" not in _pd:
                         zone = _pd["selected_zone"]
-                        # Crop the selected zone
+                        bbox = zone.get("bbox", [0, 0, 700, 700])
+                        logging.info(f"[visual-pages] Cropping zone '{zone['name']}' bbox={bbox} page={_current_page}")
+
+                        # If bbox covers less than 30% of full page → use full page instead
+                        bbox_area = abs(bbox[2] - bbox[0]) * abs(bbox[3] - bbox[1])
+                        page_area = 700 * 700  # Approximate full page at 200 DPI
+                        if bbox_area / max(page_area, 1) < 0.30:
+                            logging.warning(f"[visual-pages] bbox covers only {bbox_area/page_area*100:.0f}% — using full page crop instead")
+                            crop_instructions = []  # Empty = full page thumbnail
+                        else:
+                            crop_instructions = [{"label": zone["name"],
+                                                  "x1": bbox[0], "y1": bbox[1],
+                                                  "x2": bbox[2], "y2": bbox[3]}]
+
                         try:
                             crop_result = await _read_plan_fn(
                                 _bd.get("pdf_filename", plan_filename or ""),
-                                [{"label": zone["name"],
-                                  "x1": zone["bbox"][0], "y1": zone["bbox"][1],
-                                  "x2": zone["bbox"][2], "y2": zone["bbox"][3]}],
+                                crop_instructions,
                                 page=_current_page,
                             )
                         except Exception as e:
@@ -2105,8 +2116,9 @@ class AgentService:
                                     messages=[{"role": "user", "content": extraction_content}],
                                 )
                                 resp_text = extraction_resp.content[0].text if extraction_resp.content else ""
-                                logging.info(f"[visual-pages] Extraction response raw: {resp_text[:400]}")
+                                logging.info(f"[visual-pages] Extraction response raw: {resp_text[:1000]}")
                                 page_parsed = parse_visual_extraction(resp_text)
+                                logging.info(f"[visual-pages] parse_visual_extraction result: {page_parsed is not None}, tipologias: {len(page_parsed.get('tipologias', [])) if page_parsed else 0}")
                             except Exception as e:
                                 logging.error(f"[visual-pages] Extraction failed page {_current_page}: {e}")
                                 page_parsed = None
