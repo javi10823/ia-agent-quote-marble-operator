@@ -64,16 +64,16 @@ class TestZocaloFormat:
 # ── Fix 2: Delivery days tiers ──────────────────────────────────────────────
 
 class TestDeliveryTiers:
-    def test_small_job_20_days(self):
-        """≤ 3 m² → 20 días."""
+    def test_small_job_40_days_when_range_disabled(self):
+        """With range_enabled=false (current config), all jobs get default 40 días."""
         result = calculate_quote(_base_input(
             pieces=[{"description": "Mesada", "largo": 1.0, "prof": 0.6}],
         ))
         assert result["ok"]
-        assert "20" in result["delivery_days"]
+        assert "40" in result["delivery_days"]
 
-    def test_medium_job_30_days(self):
-        """≤ 6 m² → 30 días."""
+    def test_medium_job_40_days_when_range_disabled(self):
+        """With range_enabled=false, medium jobs also get 40 días."""
         result = calculate_quote(_base_input(
             pieces=[
                 {"description": "Mesada", "largo": 3.5, "prof": 0.6},
@@ -81,9 +81,7 @@ class TestDeliveryTiers:
             ],
         ))
         assert result["ok"]
-        total = result["material_m2"]
-        assert 3 < total <= 6, f"Expected 3 < m² ≤ 6, got {total}"
-        assert "30" in result["delivery_days"]
+        assert "40" in result["delivery_days"]
 
     def test_large_job_40_days(self):
         """> 6 m² → 40 días."""
@@ -114,7 +112,7 @@ class TestDeliveryTiers:
             plazo="40 días desde la toma de medidas",
         ))
         assert result["ok"]
-        assert "20" in result["delivery_days"], f"Expected 20 dias, got: {result['delivery_days']}"
+        assert "40" in result["delivery_days"], f"Expected 40 dias (range_enabled=false), got: {result['delivery_days']}"
 
     def test_tier_with_short_plazo(self):
         """Claude may pass just '40 dias' — tier should still apply."""
@@ -123,7 +121,7 @@ class TestDeliveryTiers:
             plazo="40 dias",
         ))
         assert result["ok"]
-        assert "20" in result["delivery_days"], f"Expected 20 dias, got: {result['delivery_days']}"
+        assert "40" in result["delivery_days"], f"Expected 40 dias (range_enabled=false), got: {result['delivery_days']}"
 
 
 # ── Fix 3: Pulido cantos extra ──────────────────────────────────────────────
@@ -284,7 +282,7 @@ class TestAlvaroTorresCase:
         assert result["thickness_mm"] == 20
 
         # Delivery: 4.83 m² → 30 días tier (between 3 and 6)
-        assert "30" in result["delivery_days"], f"Expected 30 dias, got: {result['delivery_days']}"
+        assert "40" in result["delivery_days"], f"Expected 40 dias (range_enabled=false), got: {result['delivery_days']}"
 
         # No warnings — Puerto San Martin is a valid zone
         assert "warnings" not in result or len(result.get("warnings", [])) == 0
