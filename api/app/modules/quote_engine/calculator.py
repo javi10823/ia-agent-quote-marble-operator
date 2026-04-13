@@ -621,3 +621,117 @@ def calculate_quote(input_data: dict) -> dict:
             "frentin_ml": frentin_ml if frentin else 0,
         }} if is_edificio else {}),
     }
+
+
+def build_deterministic_paso2(calc: dict) -> str:
+    """Build Paso 2 markdown from calculate_quote output — 100% deterministic.
+
+    This is the source of truth for Paso 2 display. Claude must use this
+    text verbatim and NOT modify prices, MO items, or totals.
+    """
+    mat_name = calc.get("material_name", "")
+    mat_m2 = calc.get("material_m2", 0)
+    price_unit = calc.get("material_price_unit", 0)
+    price_base = calc.get("material_price_base", 0)
+    currency = calc.get("material_currency", "USD")
+    mat_total_bruto = round(mat_m2 * price_unit)
+    discount_pct = calc.get("discount_pct", 0)
+    discount_amount = calc.get("discount_amount", 0)
+    mat_total_net = calc.get("material_total", mat_total_bruto)
+    delivery = calc.get("delivery_days", "")
+    client = calc.get("client_name", "")
+    project = calc.get("project", "")
+    pieces = calc.get("piece_details", [])
+    mo_items = calc.get("mo_items", [])
+    sinks = calc.get("sinks", [])
+    merma = calc.get("merma", {})
+    total_ars = calc.get("total_ars", 0)
+    total_usd = calc.get("total_usd", 0)
+    warnings = calc.get("warnings", [])
+
+    def fmt_ars(v): return f"${v:,.0f}".replace(",", ".")
+    def fmt_usd(v): return f"USD {v:,.0f}".replace(",", ".")
+
+    lines = []
+    lines.append(f"## PASO 2 — Validación — {client} / {project}")
+    lines.append(f"Fecha: {calc.get('date', '')} | Demora: {delivery} | {calc.get('localidad', 'Rosario')}")
+    lines.append("")
+
+    # Material header
+    lines.append(f"**MATERIAL — {mat_name} — {mat_m2:.2f} m²**".replace(".", ","))
+    lines.append("")
+    lines.append("| Pieza | Medida | m² |")
+    lines.append("|---|---|---|")
+    for p in pieces:
+        desc = p.get("description", "")
+        largo = p.get("largo", 0)
+        dim2 = p.get("dim2", p.get("prof", 0))
+        m2 = p.get("m2", 0)
+        lines.append(f"| {desc} | {largo} x {dim2} | {m2:.2f} |".replace(".", ","))
+    lines.append(f"| **TOTAL** | | **{mat_m2:.2f} m²** |".replace(".", ","))
+    lines.append("")
+
+    # Precio
+    lines.append("**Precio unitario:**")
+    if currency == "USD":
+        lines.append(f"- Sin IVA: USD {price_base:.0f} | Con IVA: {fmt_usd(price_unit)} | Total: {fmt_usd(mat_total_bruto)}")
+    else:
+        lines.append(f"- Con IVA: {fmt_ars(price_unit)} | Total: {fmt_ars(mat_total_bruto)}")
+    lines.append("")
+
+    # Merma
+    if merma.get("aplica"):
+        lines.append("**MERMA — APLICA**")
+        lines.append(f"- {merma.get('motivo', '')}")
+        if merma.get("sobrante_m2"):
+            sob_m2 = merma["sobrante_m2"]
+            sob_total = round(sob_m2 * price_unit)
+            lines.append(f"- Sobrante disponible: {sob_m2:.2f} m² ({fmt_usd(sob_total) if currency == 'USD' else fmt_ars(sob_total)})".replace(".", ","))
+    lines.append("")
+
+    # Descuento
+    if discount_pct:
+        lines.append(f"**DESCUENTO — {discount_pct}%**")
+        lines.append(f"- {fmt_usd(discount_amount) if currency == 'USD' else fmt_ars(discount_amount)} sobre material")
+        lines.append(f"- Total material neto: {fmt_usd(mat_total_net) if currency == 'USD' else fmt_ars(mat_total_net)}")
+    else:
+        lines.append("**DESCUENTOS — NO APLICA**")
+    lines.append("")
+
+    # Piletas
+    if sinks:
+        lines.append("**PILETAS**")
+        lines.append("| Item | Cant | Precio c/IVA | Total |")
+        lines.append("|---|---|---|---|")
+        for s in sinks:
+            total_s = round(s["unit_price"] * s["quantity"])
+            lines.append(f"| {s['name']} | {s['quantity']} | {fmt_ars(s['unit_price'])} | {fmt_ars(total_s)} |")
+        lines.append("")
+
+    # Mano de obra
+    lines.append("**MANO DE OBRA**")
+    lines.append("| Item | Cant | Precio c/IVA | Total |")
+    lines.append("|---|---|---|---|")
+    for mo in mo_items:
+        qty = mo["quantity"]
+        qty_str = f"{qty:.2f} m²".replace(".", ",") if isinstance(qty, float) and qty != int(qty) else str(int(qty))
+        lines.append(f"| {mo['description']} | {qty_str} | {fmt_ars(mo['unit_price'])} | {fmt_ars(mo['total'])} |")
+    lines.append(f"| **TOTAL MO** | | | **{fmt_ars(total_ars)}** |")
+    lines.append("")
+
+    # Grand total
+    lines.append("**GRAND TOTAL**")
+    if currency == "USD" and total_usd:
+        lines.append(f"{fmt_ars(total_ars)} mano de obra + piletas + {fmt_usd(total_usd)} material")
+    else:
+        lines.append(f"{fmt_ars(total_ars)} total")
+    lines.append("")
+
+    # Warnings
+    for w in warnings:
+        lines.append(f"⚠️ {w}")
+
+    lines.append("")
+    lines.append("¿Confirmás para generar PDF y Excel?")
+
+    return "\n".join(lines)

@@ -151,6 +151,91 @@ class TestArchitectDiscount:
 # Fix 1: PDF piece layout — pieces consecutive, no gap
 # ═══════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════
+# Deterministic Paso 2 — no invented MO items
+# ═══════════════════════════════════════════════════════
+
+class TestDeterministicPaso2:
+    def test_paso2_no_pulido_rosario(self):
+        """Paso 2 for Rosario must NOT contain Pulido."""
+        from app.modules.quote_engine.calculator import calculate_quote, build_deterministic_paso2
+        result = calculate_quote({
+            "client_name": "Test", "project": "Cocina",
+            "material": "Blanco Paloma", "catalog": "materials-purastone", "sku": "PALOMA",
+            "pieces": [{"largo": 1.72, "prof": 0.75, "descripcion": "Mesada"}],
+            "localidad": "Rosario", "colocacion": True,
+            "pileta": "empotrada_cliente",
+            "plazo": "30 dias desde la toma de medidas",
+        })
+        assert result["ok"]
+        paso2 = build_deterministic_paso2(result)
+        assert "Pulido" not in paso2
+        assert "PUL" not in paso2
+
+    def test_paso2_has_discount_when_architect(self):
+        """Paso 2 must show 5% discount for architects."""
+        from app.modules.quote_engine.calculator import calculate_quote, build_deterministic_paso2
+        result = calculate_quote({
+            "client_name": "ESTUDIO MUNGE", "project": "Obra",
+            "material": "Blanco Paloma", "catalog": "materials-purastone", "sku": "PALOMA",
+            "pieces": [{"largo": 1.0, "prof": 0.5, "descripcion": "Mesada"}],
+            "localidad": "Rosario", "colocacion": True,
+            "pileta": "empotrada_cliente",
+            "plazo": "30 dias",
+            "discount_pct": 5, "is_architect": True,
+        })
+        assert result["ok"]
+        paso2 = build_deterministic_paso2(result)
+        assert "5%" in paso2
+        assert "DESCUENTO" in paso2
+
+    def test_paso2_delivery_matches_config(self):
+        """Paso 2 delivery days must match what calculator returns."""
+        from app.modules.quote_engine.calculator import calculate_quote, build_deterministic_paso2
+        result = calculate_quote({
+            "client_name": "Test", "project": "Cocina",
+            "material": "Blanco Paloma", "catalog": "materials-purastone", "sku": "PALOMA",
+            "pieces": [{"largo": 2.0, "prof": 0.6, "descripcion": "Mesada"}],
+            "localidad": "Rosario", "colocacion": True,
+            "pileta": "empotrada_cliente",
+            "plazo": "30 dias desde la toma de medidas",
+        })
+        assert result["ok"]
+        paso2 = build_deterministic_paso2(result)
+        assert result["delivery_days"] in paso2
+
+    def test_paso2_mo_items_match_calculator(self):
+        """Paso 2 MO items must be exactly what calculator returned."""
+        from app.modules.quote_engine.calculator import calculate_quote, build_deterministic_paso2
+        result = calculate_quote({
+            "client_name": "Test", "project": "Cocina",
+            "material": "Blanco Paloma", "catalog": "materials-purastone", "sku": "PALOMA",
+            "pieces": [{"largo": 1.72, "prof": 0.75, "descripcion": "Mesada"}],
+            "localidad": "Rosario", "colocacion": True,
+            "pileta": "empotrada_johnson", "pileta_sku": "LUXOR171",
+            "plazo": "30 dias",
+        })
+        assert result["ok"]
+        paso2 = build_deterministic_paso2(result)
+        for mo in result["mo_items"]:
+            assert mo["description"] in paso2, f"MO item '{mo['description']}' missing from Paso 2"
+
+    def test_paso2_correct_price(self):
+        """Paso 2 must show correct price USD 346 for Paloma."""
+        from app.modules.quote_engine.calculator import calculate_quote, build_deterministic_paso2
+        result = calculate_quote({
+            "client_name": "Test", "project": "Cocina",
+            "material": "Blanco Paloma", "catalog": "materials-purastone", "sku": "PALOMA",
+            "pieces": [{"largo": 1.72, "prof": 0.75, "descripcion": "Mesada"}],
+            "localidad": "Rosario", "colocacion": True,
+            "pileta": "empotrada_cliente",
+            "plazo": "30 dias",
+        })
+        assert result["ok"]
+        paso2 = build_deterministic_paso2(result)
+        assert "USD 346" in paso2
+
+
 class TestPDFPieceLayout:
     @pytest.fixture(autouse=True)
     def cleanup(self):
