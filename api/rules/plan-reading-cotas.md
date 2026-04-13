@@ -52,3 +52,22 @@ Cota perpendicular a la pared. Mide qué tan fondo entra la mesada desde la pare
 | Cotas encadenadas alineadas | Sumar → largo total del tramo |
 | Cota perpendicular a pared | Profundidad de mesada |
 | Cota ausente en un tramo | NO inferir → dejar como "unknown" y preguntar |
+
+## Mesadas en U
+
+Una mesada en U tiene 3 tramos: lateral izquierdo + fondo + lateral derecho. Se detecta cuando la mesada cubre 3 paredes o tiene 2 tramos laterales conectados por un fondo.
+
+### Cómo calcular los tramos
+
+1. **Total fondo**: sumar todas las cotas horizontales de la pared del fondo (incluir el espacio del anafe si lo hay — se cobra como material completo)
+2. **Tramo fondo neto**: total_fondo - profundidad_izq - profundidad_der (restar las esquinas)
+3. **Tramo izquierdo**: largo del lateral izquierdo (cotas verticales)
+4. **Tramo derecho**: largo del lateral derecho (cotas verticales)
+
+### Formato en segments_m
+Para U: `segments_m = [tramo_izq, tramo_fondo_neto, tramo_der]`
+
+El tramo fondo YA tiene las esquinas restadas, por lo que el cálculo de m² es simplemente la suma de los 3 tramos × profundidad, sin restar esquinas adicionales.
+
+### Anafe en tramo fondo
+Si el anafe está en el tramo del fondo, el material se cobra completo (incluyendo el espacio del anafe) porque el desperdicio es inevitable — la piedra se compra entera y se corta.
