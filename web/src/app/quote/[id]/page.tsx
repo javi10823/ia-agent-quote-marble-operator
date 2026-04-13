@@ -416,7 +416,7 @@ export default function QuotePage() {
                         const selectorData = JSON.parse(msg.content.replace("__ZONE_SELECTOR__", ""));
                         return (
                           <div className="msg-anim flex gap-3 items-start">
-                            <div className="max-w-[85%] md:max-w-[70%] lg:max-w-[60%]">
+                            <div className="max-w-full">
                               <ZoneSelector
                                 imageUrl={selectorData.image_url}
                                 pageNum={selectorData.page_num}
