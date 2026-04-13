@@ -2222,7 +2222,7 @@ class AgentService:
                             # Load cotas guide from disk
                             _cotas_guide = ""
                             try:
-                                _cotas_path = Path(__file__).parent.parent.parent / "rules" / "plan-reading-cotas.md"
+                                _cotas_path = Path(__file__).parent.parent.parent.parent / "rules" / "plan-reading-cotas.md"
                                 if _cotas_path.exists():
                                     _cotas_guide = _cotas_path.read_text(encoding="utf-8")
                                     logging.info(f"[visual-pages] Cotas guide loaded: True | length={len(_cotas_guide)}")
