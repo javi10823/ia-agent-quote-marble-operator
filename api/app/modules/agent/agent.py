@@ -2054,19 +2054,37 @@ class AgentService:
                             _text_raw = _text_resp.content[0].text if _text_resp.content else ""
                             logging.info(f"[visual-pages] Page text extraction: {_text_raw[:300]}")
 
-                            # Parse and persist — use same pattern as parse_visual_extraction
+                            # Parse and persist — extract material_text even if JSON truncated
                             try:
+                                _page_text_info = None
                                 _text_json_match = re.search(r"```json\s*(.*?)```", _text_raw, re.DOTALL)
-                                if _text_json_match:
-                                    _page_text_info = json.loads(_text_json_match.group(1).strip())
-                                else:
-                                    # Try to find outermost JSON object
-                                    _text_brace_match = re.search(r"\{[\s\S]*\}", _text_raw)
-                                    _page_text_info = json.loads(_text_brace_match.group(0)) if _text_brace_match else None
+                                _raw_json_str = _text_json_match.group(1).strip() if _text_json_match else _text_raw
+                                try:
+                                    _page_text_info = json.loads(_raw_json_str)
+                                except json.JSONDecodeError:
+                                    # JSON truncated — try to find outermost object
+                                    _text_brace_match = re.search(r"\{[\s\S]*\}", _raw_json_str)
+                                    if _text_brace_match:
+                                        try:
+                                            _page_text_info = json.loads(_text_brace_match.group(0))
+                                        except json.JSONDecodeError:
+                                            pass
+
+                                # Fallback: extract material_text by regex even from truncated JSON
+                                _mat_text_extracted = None
+                                if _page_text_info and _page_text_info.get("material_text"):
+                                    _mat_text_extracted = _page_text_info["material_text"]
+                                elif not _page_text_info:
+                                    _mat_match = re.search(r'"material_text"\s*:\s*"([^"]+)"', _text_raw)
+                                    if _mat_match:
+                                        _mat_text_extracted = _mat_match.group(1)
+                                        _page_text_info = {"material_text": _mat_text_extracted}
+                                        logging.info(f"[visual-pages] Extracted material_text from truncated JSON: {_mat_text_extracted}")
+
                                 if _page_text_info:
                                     _bd["page_text_info"] = _page_text_info
                                     # Use material_text for resolution if not already set
-                                    if _page_text_info.get("material_text") and not _bd.get("material_resolution"):
+                                    if _mat_text_extracted and not _bd.get("material_resolution"):
                                         mat_res = resolve_visual_materials(_page_text_info["material_text"])
                                         _bd["material_resolution"] = mat_res.to_dict()
                                         logging.info(f"[visual-pages] Material from text panel: {mat_res.mode} → {mat_res.resolved}")
@@ -2358,21 +2376,28 @@ class AgentService:
 
                     # STEP D: Show page confirmation to operator
                     if "tipologias" in _pd and not _pd.get("confirmed"):
-                        tips = _pd.get("tipologias", [])
-                        geos = _pd.get("geometries", [])
-                        zone = _pd.get("selected_zone", {"name": "?"})
-                        zone_auto = _pd.get("zone_was_auto", False)
+                        try:
+                            tips = _pd.get("tipologias", [])
+                            zone = _pd.get("selected_zone", {"name": "?"})
+                            zone_auto = _pd.get("zone_was_auto", False)
 
-                        # Build TipologiaGeometry objects for render
-                        mat_res_dict = _bd.get("material_resolution", {})
-                        mat_res = MaterialResolution(**mat_res_dict) if mat_res_dict else resolve_visual_materials("")
-                        geo_full = compute_visual_geometry(tips, mat_res) if tips else None
-                        geo_list = geo_full.tipologias if geo_full else []
+                            # Build TipologiaGeometry objects for render
+                            mat_res_dict = _bd.get("material_resolution", {})
+                            try:
+                                mat_res = MaterialResolution(**mat_res_dict) if mat_res_dict else resolve_visual_materials("")
+                            except Exception as e:
+                                logging.error(f"[visual-pages] MaterialResolution init failed: {e}, dict={mat_res_dict}")
+                                mat_res = resolve_visual_materials("")
+                            geo_full = compute_visual_geometry(tips, mat_res) if tips else None
+                            geo_list = geo_full.tipologias if geo_full else []
 
-                        confirmation_text = render_page_confirmation(
-                            _current_page, _total_pages, zone, tips, geo_list, zone_auto
-                        )
-                        yield {"type": "text", "content": confirmation_text}
+                            confirmation_text = render_page_confirmation(
+                                _current_page, _total_pages, zone, tips, geo_list, zone_auto
+                            )
+                            yield {"type": "text", "content": confirmation_text}
+                        except Exception as e:
+                            logging.error(f"[visual-pages] STEP D failed: {e}", exc_info=True)
+                            yield {"type": "text", "content": f"Error procesando página {_current_page}: {str(e)}"}
 
                         _bd["building_step"] = f"visual_page_{_current_page}_confirm"
                         _bd["page_data"] = _page_data
