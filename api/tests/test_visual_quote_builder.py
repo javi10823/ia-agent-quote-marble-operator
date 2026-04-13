@@ -702,7 +702,7 @@ class TestParsePageConfirmation:
 
 
 class TestRenderPageConfirmation:
-    def test_contains_progress(self):
+    def test_contains_progress_and_tipologia(self):
         zone = {"name": "PLANTA", "bbox": [0,0,600,400]}
         tips = [{"id": "DC-02", "qty": 2, "shape": "L", "segments_m": [2.35, 0.87],
                  "depth_m": 0.62, "extraction_method": "direct_read",
@@ -710,14 +710,31 @@ class TestRenderPageConfirmation:
         mat = MaterialResolution("x", ["Silestone"], "single", [], 20)
         geos = compute_visual_geometry(tips, mat).tipologias
         text = render_page_confirmation(1, 7, zone, tips, geos, True)
-        assert "Página 1/7" in text
+        assert "1/7" in text
         assert "DC-02" in text
-        assert "auto: PLANTA" in text
+        assert "mesada en L" in text
+        assert "Tramo principal" in text
+        assert "Retorno" in text
+        assert "Profundidad" in text
+        assert "m²" in text
+
+    def test_natural_tone_no_markers(self):
+        """Output should NOT contain ✅/⚠️/❌ markers — those are for logs only."""
+        zone = {"name": "PLANTA", "bbox": [0,0,600,400]}
+        tips = [{"id": "DC-02", "qty": 2, "shape": "L", "segments_m": [2.35, 0.87],
+                 "depth_m": 0.62, "extraction_method": "direct_read",
+                 "_confidence": {"shape": 0.9, "segments": 0.9, "depth": 0.9, "backsplash": 0.6}}]
+        mat = MaterialResolution("x", ["Silestone"], "single", [], 20)
+        geos = compute_visual_geometry(tips, mat).tipologias
+        text = render_page_confirmation(1, 7, zone, tips, geos, True)
+        assert "✅" not in text
+        assert "⚠️" not in text
+        assert "❌" not in text
 
     def test_no_tipologias_shows_options(self):
         zone = {"name": "PLANTA", "bbox": [0,0,600,400]}
         text = render_page_confirmation(3, 7, zone, [], [], True)
-        assert "No se detectaron" in text
+        assert "no encontré mesadas" in text
         assert "skip" in text
 
 
