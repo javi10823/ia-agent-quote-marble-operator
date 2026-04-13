@@ -23,8 +23,12 @@ Dif <= 0.5 m2 → mantener original
 
 ## Descuentos
 - Importado USD: **5%** | Nacional ARS: **8%** (parametrizable config.json)
-- Solo material, nunca MO | Aplica: >6m² o arquitecta (architects.json)
-- **SIEMPRE verificar si el cliente está en architects.json** usando catalog_lookup("architects", client_name) ANTES de calcular precios. Si está → aplicar descuento automáticamente sin preguntar al operador. Buscar por nombre parcial (ej: "MUNGE" matchea "ESTUDIO MUNGE").
+- Solo material, nunca MO
+- **Condiciones de aplicación (OR, NO AND):**
+  - Si cliente está en architects.json → **DESCUENTO SIEMPRE, sin importar m²**. No hay mínimo de m² para arquitectas.
+  - Si NO es arquitecta → descuento solo si >6 m²
+- **SIEMPRE verificar si el cliente está en architects.json** usando `check_architect(client_name)` ANTES de calcular precios. Si está → aplicar descuento automáticamente sin preguntar al operador. Buscar por nombre parcial (ej: "MUNGE" matchea "ESTUDIO MUNGE").
+- ⛔ **NUNCA** ignorar el descuento de arquitecta por m² bajo. Si es arquitecta, aplica aunque sea 0.5 m².
 - Presentacion: linea separada en bloque material, "DESC" en col precio, monto en col total, TOTAL muestra neto
 
 ## Flete compartido

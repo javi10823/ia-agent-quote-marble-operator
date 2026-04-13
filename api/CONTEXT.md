@@ -533,8 +533,9 @@ Ver calculation-formulas.md. Minimo 1 m² | Sobre total m² incluyendo zocalos |
 
 ### ⛔ Auto-deteccion descuento arquitecta
 - SIEMPRE llamar `check_architect(client_name)` antes de calcular
-- Match exacto → aplicar: 5% USD / 8% ARS
-- Match parcial → sugerir al operador
+- Match exacto o parcial → **APLICAR SIEMPRE**: 5% USD / 8% ARS
+- **SIN MINIMO DE M²** — arquitecta = descuento obligatorio, aunque sean 0.5 m²
+- La regla de >6m² NO aplica a arquitectas. Solo aplica a clientes que NO son arquitectas.
 - Pasar `discount_pct` a `calculate_quote`
 
 ### Mesada >3m
