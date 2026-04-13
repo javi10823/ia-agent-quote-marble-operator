@@ -18,32 +18,37 @@ AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 @router.get("/dashboard")
 async def get_dashboard(db: AsyncSession = Depends(get_db)):
     """Get current month usage summary with alerts."""
-    now = datetime.now(AR_TZ)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    days_in_month = calendar.monthrange(now.year, now.month)[1]
-    days_passed = max(now.day, 1)
-    days_left = days_in_month - days_passed
-
-    # Get monthly total
-    result = await db.execute(
-        text("SELECT COALESCE(SUM(cost_usd), 0), COUNT(*) FROM token_usage WHERE created_at >= :start"),
-        {"start": month_start},
-    )
-    row = result.first()
-    spent = row[0] if row else 0
-    requests = row[1] if row else 0
-
-    # Config — read DIRECTLY from DB (not cached — multi-worker stale cache issue)
-    limit = 300  # default
     try:
-        _cfg_result = await db.execute(text("SELECT content FROM catalogs WHERE name = 'config'"))
-        _cfg_row = _cfg_result.first()
-        if _cfg_row and _cfg_row[0]:
-            _cfg_val = _cfg_row[0]
-            _cfg = json.loads(_cfg_val) if isinstance(_cfg_val, str) else _cfg_val
-            limit = _cfg.get("ai_engine", {}).get("monthly_budget_usd", 300)
+        now = datetime.now(AR_TZ)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        days_in_month = calendar.monthrange(now.year, now.month)[1]
+        days_passed = max(now.day, 1)
+        days_left = days_in_month - days_passed
+
+        # Get monthly total — use naive datetime for DB compatibility
+        month_start_naive = month_start.replace(tzinfo=None)
+        result = await db.execute(
+            text("SELECT COALESCE(SUM(cost_usd), 0), COUNT(*) FROM token_usage WHERE created_at >= :start"),
+            {"start": month_start_naive},
+        )
+        row = result.first()
+        spent = float(row[0]) if row else 0.0
+        requests = int(row[1]) if row else 0
+
+        # Config — read DIRECTLY from DB (not cached — multi-worker stale cache issue)
+        limit = 300.0  # default
+        try:
+            _cfg_result = await db.execute(text("SELECT content FROM catalogs WHERE name = 'config'"))
+            _cfg_row = _cfg_result.first()
+            if _cfg_row and _cfg_row[0]:
+                _cfg_val = _cfg_row[0]
+                _cfg = json.loads(_cfg_val) if isinstance(_cfg_val, str) else _cfg_val
+                limit = float(_cfg.get("ai_engine", {}).get("monthly_budget_usd", 300))
+        except Exception as e:
+            logging.warning(f"[usage] Failed to read budget from DB: {e}")
     except Exception as e:
-        logging.warning(f"[usage] Failed to read budget from DB: {e}")
+        logging.error(f"[usage] Dashboard error: {e}", exc_info=True)
+        raise
 
     # Calculations
     daily_avg = spent / days_passed if days_passed > 0 else 0
