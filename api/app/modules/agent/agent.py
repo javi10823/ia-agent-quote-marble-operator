@@ -1876,6 +1876,7 @@ class AgentService:
                     is_overloaded = e.status_code == 529 or "overloaded" in str(e).lower()
                     if is_overloaded:
                         if attempt == MAX_RETRIES:
+                            logging.error(f"API overloaded after all {MAX_RETRIES} retries for quote {quote_id}. Giving up.")
                             yield {"type": "action", "content": "⚠️ Servicio sobrecargado. Intentá de nuevo en unos minutos."}
                             yield {"type": "done", "content": ""}
                             return
