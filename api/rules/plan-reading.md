@@ -15,6 +15,16 @@
 - Ejemplo cocina en L: tramo principal 1.72×0.75 + tramo corto 0.60×1.55 → zocalos: fondo 1.55ml, lateral izq tramo corto 0.60ml, fondo tramo principal 1.72ml (o inferior 1.74ml si hay cota), **lateral derecho tramo principal 0.75ml**
 - Si hay duda sobre si un lado toca pared: incluir el zocalo (mejor sobrar que faltar)
 
+### ⛔ Deteccion visual de zocalos — RECTANGULITOS DELGADOS
+- Los zocalos en planos aparecen como **rectangulos muy delgados/alargados** adyacentes al borde de la mesada
+- Son piezas separadas pegadas al lado de la mesada — NO confundir con la mesada misma
+- **Contar TODOS los rectangulitos delgados**: pueden haber 1, 2, 3 o mas
+- Ubicaciones tipicas: fondo (largo), laterales (corto), entre tramos
+- En cocinas en L, buscar rectangulitos en **3 lados minimo**: fondo tramo principal, fondo tramo corto, y lateral entre ambos tramos
+- Las marcas `//` (doble barra) en los bordes de la mesada tambien indican pared → zocalo en ese lado
+- **PASADA EXTRA OBLIGATORIA:** despues de identificar mesadas, recorrer cada borde buscando rectangulitos delgados adyacentes. Contar uno por uno. Si el conteo no coincide con lo reportado → corregir
+- **Error comun:** detectar solo los 2 zocalos largos (fondos) y omitir el lateral corto. SIEMPRE verificar laterales
+
 ### 2+ cotas en mismo eje → usar la mas larga
 La menor es detalle interno.
 
@@ -204,6 +214,8 @@ Mismas medidas → agrupar: `LARGO X PROF X CANT UNID`. Diferencia 1cm → linea
 | Simbolo | Significado |
 |---------|-----------|
 | Rayado/hatching | Pared → no frentin |
+| `//` (doble barra en borde) | Pared → zocalo en ese lado |
+| Rectangulo delgado adyacente a mesada | **ZOCALO** — contar TODOS, incluidos laterales cortos |
 | c/p / Eje bacha | Centro pileta → ignorar |
 | 3 puntitos junto a ovalo | Pileta empotrada (PEGADOPILETA) |
 | "INGLETE" | CORTE45 |
