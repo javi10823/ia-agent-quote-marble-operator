@@ -36,14 +36,17 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
         requests = int(row[1]) if row else 0
 
         # Config — read DIRECTLY from DB (not cached — multi-worker stale cache issue)
-        limit = 300.0  # default
+        limit = 300.0
+        _hard_limit_enabled = True
         try:
             _cfg_result = await db.execute(text("SELECT content FROM catalogs WHERE name = 'config'"))
             _cfg_row = _cfg_result.first()
             if _cfg_row and _cfg_row[0]:
                 _cfg_val = _cfg_row[0]
                 _cfg = json.loads(_cfg_val) if isinstance(_cfg_val, str) else _cfg_val
-                limit = float(_cfg.get("ai_engine", {}).get("monthly_budget_usd", 300))
+                _ai_engine = _cfg.get("ai_engine", {})
+                limit = float(_ai_engine.get("monthly_budget_usd", 300))
+                _hard_limit_enabled = bool(_ai_engine.get("enable_hard_limit", True))
         except Exception as e:
             logging.warning(f"[usage] Failed to read budget from DB: {e}")
     except Exception as e:
@@ -79,7 +82,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
         "days_left": days_left,
         "requests": requests,
         "alert": alert,
-        "enable_hard_limit": ai_cfg.get("enable_hard_limit", True),
+        "enable_hard_limit": _hard_limit_enabled,
     }
 
 
