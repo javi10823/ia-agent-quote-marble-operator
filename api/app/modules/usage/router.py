@@ -32,9 +32,15 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
     spent = row[0] if row else 0
     requests = row[1] if row else 0
 
-    # Config
-    ai_cfg = get_ai_config()
-    limit = ai_cfg.get("monthly_budget_usd", 50)
+    # Config — read DIRECTLY from DB (not cached — multi-worker stale cache issue)
+    _cfg_result = await db.execute(text("SELECT content FROM catalogs WHERE name = 'config'"))
+    _cfg_row = _cfg_result.first()
+    if _cfg_row:
+        import json as _json
+        _cfg = _json.loads(_cfg_row[0]) if isinstance(_cfg_row[0], str) else _cfg_row[0]
+        limit = _cfg.get("ai_engine", {}).get("monthly_budget_usd", 300)
+    else:
+        limit = 300
 
     # Calculations
     daily_avg = spent / days_passed if days_passed > 0 else 0
