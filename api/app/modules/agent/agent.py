@@ -2025,7 +2025,7 @@ class AgentService:
                         try:
                             zone_resp = await self.client.messages.create(
                                 model="claude-opus-4-6",
-                                max_tokens=500,
+                                max_tokens=1500,  # 500 was too low for 4-5 zones with bbox+view_type
                                 system=(
                                     "Sos un detector de zonas de planos CAD. "
                                     "Detectar TODAS las zonas nombradas de esta página: PLANTA, CORTE 1-1, CORTE 2-2, DETALLE, etc. "
