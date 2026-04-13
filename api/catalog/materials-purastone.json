@@ -9,7 +9,7 @@
     "price_includes_vat": false,
     "last_updated": "13/04/2026",
     "photo": "media/materials/purastone/PURACANA.png",
-    "price_usd": 286.0,
+    "price_usd": 286,
     "currency": "USD",
     "plate_size": "estandar",
     "plate_m2": 4.2
@@ -39,7 +39,7 @@
     "price_includes_vat": false,
     "last_updated": "13/04/2026",
     "photo": "media/materials/purastone/PURANUBE.png",
-    "price_usd": 363.0,
+    "price_usd": 363,
     "currency": "USD",
     "plate_size": "estandar",
     "plate_m2": 4.2
@@ -159,7 +159,7 @@
     "price_includes_vat": false,
     "last_updated": "13/04/2026",
     "photo": "media/materials/purastone/PALOMA.png",
-    "price_usd": 286.0,
+    "price_usd": 286,
     "currency": "USD",
     "plate_size": "estandar",
     "plate_m2": 4.2
@@ -174,7 +174,7 @@
     "price_includes_vat": false,
     "last_updated": "13/04/2026",
     "photo": "media/materials/purastone/PURACALACATTADOR.png",
-    "price_usd": 528.0,
+    "price_usd": 528,
     "currency": "USD",
     "plate_size": "especial",
     "plate_m2": 5.12
@@ -189,7 +189,7 @@
     "price_includes_vat": false,
     "last_updated": "13/04/2026",
     "photo": "media/materials/purastone/PURACALACATAGOLD.png",
-    "price_usd": 528.0,
+    "price_usd": 528,
     "currency": "USD",
     "plate_size": "especial",
     "plate_m2": 5.12
@@ -204,7 +204,7 @@
     "price_includes_vat": false,
     "last_updated": "13/04/2026",
     "photo": "media/materials/purastone/PURACALACATTAVER.png",
-    "price_usd": 528.0,
+    "price_usd": 528,
     "currency": "USD",
     "plate_size": "estandar",
     "plate_m2": 4.2
@@ -354,7 +354,7 @@
     "price_includes_vat": false,
     "last_updated": "13/04/2026",
     "photo": "media/materials/purastone/PURASTATUARIETTO.png",
-    "price_usd": 528.0,
+    "price_usd": 528,
     "currency": "USD",
     "plate_size": "especial",
     "plate_m2": 5.12
@@ -369,7 +369,7 @@
     "price_includes_vat": false,
     "last_updated": "13/04/2026",
     "photo": "media/materials/purastone/PURASTATUARIO.png",
-    "price_usd": 528.0,
+    "price_usd": 528,
     "currency": "USD",
     "plate_size": "especial",
     "plate_m2": 5.12
@@ -384,7 +384,7 @@
     "price_includes_vat": false,
     "last_updated": "13/04/2026",
     "photo": "media/materials/purastone/PURATAJ.png",
-    "price_usd": 575.0,
+    "price_usd": 575,
     "currency": "USD",
     "plate_size": "estandar",
     "plate_m2": 4.2
@@ -414,7 +414,22 @@
     "price_includes_vat": false,
     "last_updated": "13/04/2026",
     "photo": "media/materials/purastone/PURAVENATINO.png",
-    "price_usd": 407.0,
+    "price_usd": 407,
+    "currency": "USD",
+    "plate_size": "estandar",
+    "plate_m2": 4.2
+  },
+  {
+    "sku": "PURAPALOMA",
+    "name": "TERRAZO",
+    "material_type": "purastone",
+    "category": "cuarzo",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "13/04/2026",
+    "photo": "media/materials/purastone/PURAPALOMA.png",
+    "price_usd": 337.17,
     "currency": "USD",
     "plate_size": "estandar",
     "plate_m2": 4.2
