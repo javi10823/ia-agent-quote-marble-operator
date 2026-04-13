@@ -2761,15 +2761,11 @@ class AgentService:
                         update(Quote).where(Quote.id == target_qid).values(**doc_values)
                     )
 
-                    # Delete old Drive file if exists (prevents duplicates)
-                    from app.modules.agent.tools.drive_tool import delete_drive_file
-                    if _cur and _cur.drive_file_id:
-                        await delete_drive_file(_cur.drive_file_id)
-                        logging.info(f"Deleted old Drive file {_cur.drive_file_id} for quote {target_qid}")
-
                     # Upload PDF + Excel to Drive individually + build files_v2
-                    from app.modules.agent.tools.drive_tool import upload_single_file_to_drive
+                    # NOTE: old Drive files are deleted AFTER successful upload (not before)
+                    from app.modules.agent.tools.drive_tool import upload_single_file_to_drive, delete_drive_file
                     from app.core.static import OUTPUT_DIR as _FOUT
+                    old_drive_file_id = _cur.drive_file_id if _cur else None
                     files_v2_items = []
                     first_drive_url = None
                     first_drive_file_id = None
@@ -2815,6 +2811,14 @@ class AgentService:
                             "local_url": local_url,
                             **({f"drive_{k}": v for k, v in drive_info.items()} if drive_info else {}),
                         })
+
+                    # Delete old Drive file ONLY after new upload succeeded
+                    if first_drive_url and old_drive_file_id:
+                        try:
+                            await delete_drive_file(old_drive_file_id)
+                            logging.info(f"Deleted old Drive file {old_drive_file_id} for quote {target_qid}")
+                        except Exception as e:
+                            logging.warning(f"Could not delete old Drive file {old_drive_file_id}: {e}")
 
                     # Persist files_v2 + legacy drive_url
                     try:
