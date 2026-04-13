@@ -121,6 +121,25 @@ class TestArchitectDiscount:
         result = check_architect("munge")
         assert result["found"] is True
 
+    def test_auto_discount_without_explicit_flag(self):
+        """Calculator must auto-apply architect discount even if agent doesn't pass discount_pct."""
+        from app.modules.quote_engine.calculator import calculate_quote
+        result = calculate_quote({
+            "client_name": "ESTUDIO MUNGE",
+            "project": "Test",
+            "material": "Blanco Paloma",
+            "catalog": "materials-purastone",
+            "sku": "PALOMA",
+            "pieces": [{"largo": 1.0, "ancho": 0.50, "descripcion": "Mesada"}],
+            "localidad": "Rosario",
+            "colocacion": True,
+            "pileta": "empotrada_cliente",
+            "plazo": "30 dias",
+            # NO discount_pct passed — calculator should auto-detect
+        })
+        assert result["ok"]
+        assert result["discount_pct"] == 5, f"Expected auto 5% discount for MUNGE, got {result['discount_pct']}"
+
     def test_nonexistent_architect(self):
         result = check_architect("ZZZNONEXISTENT999")
         assert result["found"] is False
