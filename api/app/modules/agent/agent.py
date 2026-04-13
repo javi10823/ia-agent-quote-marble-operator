@@ -3117,6 +3117,11 @@ class AgentService:
                         "5. ¿El flete es para la zona correcta?"
                     )
 
+                # Build deterministic Paso 2 text — Claude must use this verbatim
+                from app.modules.quote_engine.calculator import build_deterministic_paso2
+                calc_result["_paso2_rendered"] = build_deterministic_paso2(calc_result)
+                logging.info(f"Deterministic Paso 2 built for {save_to_qid} ({len(calc_result['_paso2_rendered'])} chars)")
+
             # Persist breakdown + change history to DB
             if calc_result.get("ok"):
                 try:
