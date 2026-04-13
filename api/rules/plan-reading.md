@@ -12,12 +12,13 @@
 - Rasterizar y revisar mesada por mesada antes de asignar lados
 - **CADA lado que toca pared lleva zocalo** — verificar cada lado individualmente
 - En mesadas en L: el lado donde los dos tramos se unen **NUNCA lleva zocalo** (es la union, no toca pared)
-- ⛔ Ejemplo cocina en L: tramo principal 1.72×0.75 + tramo corto 0.60×1.55:
-  - Zocalo fondo (inferior): **1.74ml** (cota del plano)
-  - Zocalo lateral izquierdo: **1.55ml** (largo del tramo corto, toca pared)
-  - Zocalo lateral derecho: **0.75ml** (profundidad del tramo principal, toca pared)
+- ⛔ Ejemplo cocina en L: tramo 1 (1.72×0.75) + tramo 2 (0.60×1.55):
+  - Zocalo fondo tramo 1 (inferior): **1.74ml** (cota del plano)
+  - Zocalo fondo tramo 2: **1.55ml** (va por la pared del fondo del tramo 2)
+  - Zocalo lateral derecho: **0.75ml** (profundidad del tramo 1, toca pared)
   - **NO hay zocalo de 0.60ml** — ese es el lado donde los tramos se unen (no toca pared)
   - Total: 3 zocalos, NO 4
+- ⛔ **Nombrar zócalos por su ubicación real:** "fondo tramo 1", "fondo tramo 2", "lateral derecho". NUNCA "lateral izquierdo" si en realidad es el fondo de otro tramo.
 - Si hay duda sobre si un lado toca pared: mirar el plano — si hay pared/hatching → zocalo. Si conecta con otro tramo → NO zocalo.
 
 ### 2+ cotas en mismo eje → usar la mas larga
