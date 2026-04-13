@@ -974,14 +974,20 @@ async def chat(
     from app.main import touch_chat_activity
     touch_chat_activity()
 
-    # Budget check — block if monthly limit exceeded
+    # Budget check — read DIRECTLY from DB (not cached config — multi-worker cache stale)
     try:
         from sqlalchemy import text as sql_text
-        from app.modules.agent.tools.catalog_tool import get_ai_config
-        ai_cfg = get_ai_config()
-        budget_cfg = ai_cfg if "monthly_budget_usd" in ai_cfg else {}
-        monthly_limit = budget_cfg.get("monthly_budget_usd", 50)
-        hard_limit = budget_cfg.get("enable_hard_limit", True)
+        _budget_result = await db.execute(sql_text("SELECT content FROM catalogs WHERE name = 'config'"))
+        _budget_row = _budget_result.first()
+        if _budget_row:
+            import json as _budget_json
+            _budget_cfg = _budget_json.loads(_budget_row[0]) if isinstance(_budget_row[0], str) else _budget_row[0]
+            _budget_ai = _budget_cfg.get("ai_engine", {})
+            monthly_limit = _budget_ai.get("monthly_budget_usd", 300)
+            hard_limit = _budget_ai.get("enable_hard_limit", True)
+        else:
+            monthly_limit = 300
+            hard_limit = True
         if hard_limit and monthly_limit > 0:
             month_start = __import__("datetime").datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             spent_result = await db.execute(
