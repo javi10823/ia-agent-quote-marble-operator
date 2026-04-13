@@ -486,11 +486,20 @@ def calculate_quote(input_data: dict) -> dict:
     if pileta == "empotrada_johnson":
         sink_result = None
         if pileta_sku:
-            # Specific model requested
+            # Specific model requested — exact lookup first
             sink_result = catalog_lookup("sinks", pileta_sku)
+            if not sink_result or not sink_result.get("found"):
+                # Fuzzy match by brand + model number
+                from app.modules.agent.tools.catalog_tool import fuzzy_sink_lookup
+                sink_result = fuzzy_sink_lookup(pileta_sku)
+                if sink_result and sink_result.get("found"):
+                    logging.info(f"Sink fuzzy matched: '{pileta_sku}' → {sink_result.get('name')} (SKU: {sink_result.get('sku')})")
+                    warnings.append(f"Pileta '{pileta_sku}' no encontrada exacta. Se usó: {sink_result.get('name')}")
         if not sink_result or not sink_result.get("found"):
-            # Try default Johnson search
+            # Last resort: default model with warning
             sink_result = catalog_lookup("sinks", "QUADRAQ71A")
+            if pileta_sku:
+                warnings.append(f"Pileta '{pileta_sku}' no encontrada. Se usó QUADRA Q71A por defecto. Verificar con operador.")
         if sink_result and sink_result.get("found"):
             sink_price = sink_result.get("price_ars", 0)
             sinks.append({
@@ -549,12 +558,13 @@ def calculate_quote(input_data: dict) -> dict:
     if piece_labels:
         sectors.append({"label": project or "Cocina", "pieces": piece_labels})
 
-    # ── Delivery days: apply tier by m² if plazo matches the config default (numeric) ──
+    # ── Delivery days: apply tier by m² only if range_enabled in config ──
     import re as _re_plazo
     default_days = cfg("delivery_days.default", 40)
+    range_enabled = cfg("delivery_days.range_enabled", False)
     _plazo_match = _re_plazo.search(r'(\d+)', plazo or "")
     _plazo_days = int(_plazo_match.group(1)) if _plazo_match else None
-    if _plazo_days == default_days:
+    if range_enabled and _plazo_days == default_days:
         tiers = cfg("delivery_days.tiers", [])
         for tier in sorted(tiers, key=lambda t: t.get("max_m2", 999)):
             if total_m2 <= tier.get("max_m2", 999):

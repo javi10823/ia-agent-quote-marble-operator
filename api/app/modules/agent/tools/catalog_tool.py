@@ -244,7 +244,8 @@ def check_architect(client_name: str) -> dict:
         item_words = set(item_name.replace("arq.", "").replace("arq ", "").strip().split())
 
         # Substring match: "munge" in "estudio munge" or vice versa
-        if name_lower in item_name or name_lower in item_firm or item_name in name_lower or item_firm in name_lower:
+        # Guard against empty strings (empty in anything is always True)
+        if (name_lower and name_lower in item_name) or (name_lower and item_firm and name_lower in item_firm) or (item_name and item_name in name_lower) or (item_firm and item_firm in name_lower):
             partial.append({"name": item["name"], "firm": item.get("firm"), "discount": item.get("discount", True)})
             continue
 
@@ -258,6 +259,55 @@ def check_architect(client_name: str) -> dict:
         return {"found": True, "exact": len(partial) == 1, "name": partial[0]["name"], "firm": partial[0].get("firm"), "discount": partial[0].get("discount", True), "matches": partial, "message": f"Arquitecta encontrada: {', '.join(p['name'] for p in partial)}. Aplicar descuento."}
 
     return {"found": False, "message": f"'{client_name}' no está en architects.json"}
+
+
+def fuzzy_sink_lookup(query: str) -> dict:
+    """Fuzzy match a sink by brand keywords + model number patterns.
+
+    E.g. "LUXOR COMPACT SI71" → matches LUXOR171 (PILETA JOHNSON LUXOR S171)
+    by extracting brand "LUXOR" and numeric "171" from "SI71".
+    """
+    import re
+    items = _load_catalog("sinks")
+    query_upper = query.upper().strip()
+
+    # Extract brand keywords (>3 chars, not generic words)
+    skip_words = {"PILETA", "JOHNSON", "COMPACT", "MINI", "DOBLE", "SIMPLE", "BACHA"}
+    words = [w for w in query_upper.split() if len(w) > 2 and w not in skip_words]
+
+    # Extract numeric patterns (2-3 digits, possibly with prefix/suffix letters)
+    nums = re.findall(r'\d{2,3}', query_upper)
+
+    if not words and not nums:
+        return {"found": False, "message": f"No se pudo extraer datos de búsqueda de '{query}'"}
+
+    candidates = []
+    for item in items:
+        name = (item.get("name") or "").upper()
+        sku = (item.get("sku") or "").upper()
+        score = 0
+        # Brand match
+        for w in words:
+            if w in name or w in sku:
+                score += 2
+        # Numeric match (most important)
+        for n in nums:
+            if n in name or n in sku:
+                score += 3
+        if score > 0:
+            candidates.append((score, item))
+
+    if not candidates:
+        return {"found": False, "message": f"Ninguna pileta matchea con '{query}' en sinks.json"}
+
+    candidates.sort(key=lambda x: -x[0])
+    best = candidates[0][1]
+    # Do a proper catalog_lookup to get price with IVA
+    result = catalog_lookup("sinks", best.get("sku", ""))
+    if result.get("found"):
+        result["matched_by"] = "fuzzy"
+        result["original_query"] = query
+    return result
 
 
 def check_stock(material_sku: str) -> dict:

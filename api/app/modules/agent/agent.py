@@ -2509,10 +2509,10 @@ class AgentService:
                     })
                 else:
                     try:
-                        result_json = json.dumps(result)
+                        result_json = json.dumps(result, ensure_ascii=False)
                     except (TypeError, ValueError) as e:
                         logging.error(f"JSON serialization error for tool {tool_use.name}: {e}")
-                        result_json = json.dumps({"ok": False, "error": f"Error serializando resultado de {tool_use.name}"})
+                        result_json = json.dumps({"ok": False, "error": f"Error serializando resultado de {tool_use.name}"}, ensure_ascii=False)
 
                     tool_results.append({
                         "type": "tool_result",
@@ -2784,6 +2784,9 @@ class AgentService:
                         drive_info = {}
                         if local_path:
                             try:
+                                import os as _os_drive
+                                _file_size = _os_drive.path.getsize(local_path) if _os_drive.path.exists(local_path) else -1
+                                logging.info(f"Drive upload starting: {kind} | path={local_path} | size={_file_size} bytes | subfolder={subfolder}")
                                 dr = await upload_single_file_to_drive(local_path, subfolder)
                                 if dr.get("ok"):
                                     drive_info = {
@@ -2798,8 +2801,11 @@ class AgentService:
                                         _drive_pdf_url = dr["drive_url"]
                                     elif kind == "excel":
                                         _drive_excel_url = dr["drive_url"]
+                                    logging.info(f"Drive upload OK: {kind} | file_id={dr['file_id']} | url={dr['drive_url']}")
+                                else:
+                                    logging.error(f"Drive upload returned error: {kind} | {dr.get('error', 'unknown')}")
                             except Exception as e:
-                                logging.warning(f"Drive upload failed for {filename}: {e}")
+                                logging.error(f"Drive upload EXCEPTION for {filename}: {e}", exc_info=True)
 
                         files_v2_items.append({
                             "kind": kind,

@@ -1168,18 +1168,12 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
     pdf.cell(w[3], rh, total_mat_fmt, align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
     row_done()
 
-    # Sectors + pieces (group duplicates)
-    # First piece row shows: DESC (if discount) then TOTAL (net)
-    is_first_piece = True
+    # Collect all pieces across sectors for consecutive layout
+    all_piece_rows = []  # list of (is_sector_header, display_text)
     for sector in sectors:
-        f = row_fill()
-        pdf.set_font("Helvetica", "B", 8)
-        pdf.cell(total_w, rh, sector.get("label", ""), fill=f, new_x="LMARGIN", new_y="NEXT")
-        row_done()
-        # Group identical pieces: "1.20 × 3.38 Solía" × 8 → "1.20 × 3.38 Solía (×8)"
+        all_piece_rows.append((True, sector.get("label", "")))
         raw_pieces = sector.get("pieces", [])
-        grouped = []
-        seen = {}
+        grouped, seen = [], {}
         for p in raw_pieces:
             if p in seen:
                 seen[p] += 1
@@ -1189,40 +1183,59 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
         for piece in grouped:
             count = seen[piece]
             display = f"{piece} (×{count})" if count > 1 else piece
-            f = row_fill()
+            all_piece_rows.append((False, display))
+
+    # Build right-side overlay rows (Descuento + TOTAL) for USD
+    right_rows = []
+    if currency == "USD":
+        if discount_pct:
+            desc_amount = round(total_mat_bruto * discount_pct / 100)
+            right_rows.append(("I", f"Descuento {discount_pct}%", f"- {fmt_price(desc_amount)}"))
+        right_rows.append(("B", f"TOTAL {currency}", fmt_price(total_mat)))
+
+    # Calculate which piece rows get right-side content
+    # Overlay on last N piece rows (N = len(right_rows))
+    piece_indices = [i for i, (is_hdr, _) in enumerate(all_piece_rows) if not is_hdr]
+    overlay_start = max(0, len(piece_indices) - len(right_rows))
+    overlay_map = {}  # piece_index -> right_row_index
+    for ri, pi_offset in enumerate(range(overlay_start, len(piece_indices))):
+        if ri < len(right_rows):
+            overlay_map[piece_indices[pi_offset]] = ri
+
+    # Render all rows consecutively
+    for idx, (is_hdr, text) in enumerate(all_piece_rows):
+        f = row_fill()
+        if is_hdr:
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.cell(total_w, rh, text, fill=f, new_x="LMARGIN", new_y="NEXT")
+        else:
             pdf.set_font("Helvetica", "", 8)
-            pdf.cell(w[0], rh, display, fill=f)
-            if is_first_piece:
-                if currency == "USD":
-                    if discount_pct:
-                        # Discount row on the first piece line
-                        desc_amount = round(total_mat_bruto * discount_pct / 100)
-                        pdf.set_font("Helvetica", "I", 8)
-                        pdf.cell(w[1], rh, "", fill=f)
-                        pdf.cell(w[2], rh, f"Descuento {discount_pct}%", align="R", fill=f)
-                        pdf.cell(w[3], rh, f"- {fmt_price(desc_amount)}", align="R", fill=f)
-                        pdf.ln()
-                        row_done()
-                        # Net total row
-                        f = row_fill()
-                        pdf.cell(w[0], rh, "", fill=f)
-                        pdf.set_font("Helvetica", "B", 8)
-                        pdf.cell(w[1], rh, "", fill=f)
-                        pdf.cell(w[2], rh, f"TOTAL {currency}", align="R", fill=f)
-                        pdf.cell(w[3], rh, fmt_price(total_mat), align="R", fill=f)
-                    else:
-                        # No discount — show bruto total directly
-                        pdf.set_font("Helvetica", "B", 8)
-                        pdf.cell(w[1], rh, "", fill=f)
-                        pdf.cell(w[2], rh, f"TOTAL {currency}", align="R", fill=f)
-                        pdf.cell(w[3], rh, fmt_price(total_mat), align="R", fill=f)
-                else:
-                    pdf.cell(w[1] + w[2] + w[3], rh, "", fill=f)
-                is_first_piece = False
+            pdf.cell(w[0], rh, text, fill=f)
+            if idx in overlay_map:
+                style, label, value = right_rows[overlay_map[idx]]
+                pdf.set_font("Helvetica", style, 8)
+                pdf.cell(w[1], rh, "", fill=f)
+                pdf.cell(w[2], rh, label, align="R", fill=f)
+                pdf.cell(w[3], rh, value, align="R", fill=f)
             else:
                 pdf.cell(w[1] + w[2] + w[3], rh, "", fill=f)
             pdf.ln()
-            row_done()
+        row_done()
+
+    # If fewer pieces than right_rows, add remaining right-side rows
+    remaining = len(right_rows) - len([pi for pi in overlay_map])
+    if remaining < len(right_rows) and len(piece_indices) < len(right_rows):
+        for ri in range(len(right_rows)):
+            if ri not in overlay_map.values():
+                f = row_fill()
+                style, label, value = right_rows[ri]
+                pdf.set_font("Helvetica", style, 8)
+                pdf.cell(w[0], rh, "", fill=f)
+                pdf.cell(w[1], rh, "", fill=f)
+                pdf.cell(w[2], rh, label, align="R", fill=f)
+                pdf.cell(w[3], rh, value, align="R", fill=f)
+                pdf.ln()
+                row_done()
 
     # Spacer row
     pdf.ln(3)
@@ -1391,51 +1404,38 @@ def _generate_excel(output_path: Path, data: dict) -> None:
             all_pieces.append(p)
     all_pieces = [f"{p} (×{seen_xl[p]})" if seen_xl[p] > 1 else p for p in all_pieces]
 
-    # Row 23: first piece — discount + TOTAL on the right side
+    # Build right-side overlay (Descuento + TOTAL) for USD
     italic_sm = Font(name="Calibri", italic=True, size=9)
-    r = 23
-    if len(all_pieces) > 0:
-        ws.cell(r, 1).value = all_pieces[0]
-        if currency == "USD" and discount_pct:
-            # Discount on the first piece row
+    right_rows_xl = []
+    if currency == "USD":
+        if discount_pct:
             desc_amount = round(total_mat * discount_pct / 100)
-            ws.cell(r, 5).value = f"Descuento {discount_pct}%"
-            ws.cell(r, 5).font = italic_sm
-            ws.cell(r, 6).value = f"- {_fmt_usd(desc_amount)}"
-            ws.cell(r, 6).font = italic_sm
+            right_rows_xl.append(("I", f"Descuento {discount_pct}%", f"- {_fmt_usd(desc_amount)}"))
+        right_rows_xl.append(("B", f"TOTAL {currency}", _fmt_usd(total_mat_net)))
+
+    # Overlay on last N pieces
+    overlay_start_xl = max(0, len(all_pieces) - len(right_rows_xl))
+    r = 23
+    for i, piece in enumerate(all_pieces):
+        ws.cell(r, 1).value = piece
+        ri = i - overlay_start_xl
+        if 0 <= ri < len(right_rows_xl):
+            style, label, value = right_rows_xl[ri]
+            ws.cell(r, 5).value = label
+            ws.cell(r, 5).font = italic_sm if style == "I" else bold
+            ws.cell(r, 6).value = value
+            ws.cell(r, 6).font = italic_sm if style == "I" else bold
+        r += 1
+
+    # If fewer pieces than right_rows, add remaining
+    if len(all_pieces) < len(right_rows_xl):
+        for ri in range(len(all_pieces), len(right_rows_xl)):
+            style, label, value = right_rows_xl[ri]
+            ws.cell(r, 5).value = label
+            ws.cell(r, 5).font = italic_sm if style == "I" else bold
+            ws.cell(r, 6).value = value
+            ws.cell(r, 6).font = italic_sm if style == "I" else bold
             r += 1
-            # Net total row
-            ws.cell(r, 1).value = all_pieces[1] if len(all_pieces) > 1 else None
-            ws.cell(r, 5).value = f"TOTAL {currency}"
-            ws.cell(r, 5).font = bold
-            ws.cell(r, 6).value = _fmt_usd(total_mat_net)
-            ws.cell(r, 6).font = bold
-            r += 1
-            # Remaining pieces
-            for piece in all_pieces[2:]:
-                ws.cell(r, 1).value = piece
-                r += 1
-        elif currency == "USD":
-            # No discount — TOTAL on second row
-            r += 1
-            ws.cell(r, 1).value = all_pieces[1] if len(all_pieces) > 1 else None
-            ws.cell(r, 5).value = f"TOTAL {currency}"
-            ws.cell(r, 5).font = bold
-            ws.cell(r, 6).value = _fmt_usd(total_mat_net)
-            ws.cell(r, 6).font = bold
-            r += 1
-            for piece in all_pieces[2:]:
-                ws.cell(r, 1).value = piece
-                r += 1
-        else:
-            # ARS-only: no TOTAL USD row
-            r += 1
-            if len(all_pieces) > 1:
-                ws.cell(r, 1).value = all_pieces[1]
-            r += 1
-            for piece in all_pieces[2:]:
-                ws.cell(r, 1).value = piece
-                r += 1
 
     # MO items — template has 4 slots (rows 28-31). Insert extra rows if needed.
     MO_HEADER_ROW = 27

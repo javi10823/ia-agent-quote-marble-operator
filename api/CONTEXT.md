@@ -511,6 +511,7 @@ Ver calculation-formulas.md. Minimo 1 m² | Sobre total m² incluyendo zocalos |
 - Excepciones (no cobran): Rosario, Funes, Roldan
 - Sin colocacion o retiro en fabrica → no aplica
 - Configurado por zona en config.json → zone_aliases → pulido_extra: true/false
+- ⛔ **IMPORTANTE:** El pulido lo maneja `calculate_quote()` automaticamente segun la zona. Si el resultado de calculate_quote() NO incluye "Pulido de cantos" en mo_items, NUNCA mencionarlo ni agregarlo en tu respuesta. NO inventar items de MO que el calculador no incluyó.
 
 ### Flete
 - Default: siempre cobrar flete. Solo omitir si el operador dice "retiro en fabrica" / "lo busco yo" (skip_flete=true)
