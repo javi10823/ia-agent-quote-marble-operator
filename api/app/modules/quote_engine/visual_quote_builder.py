@@ -1209,63 +1209,64 @@ def render_page_confirmation(
     geometries: list,
     zone_was_auto: bool,
 ) -> str:
-    """Render page confirmation message for operator."""
+    """Render page confirmation message for operator — natural, conversational tone."""
     lines = []
 
-    lines.append(f"**Página {page}/{total_pages}**")
-    zone_label = f"(auto: {selected_zone['name']})" if zone_was_auto else f"({selected_zone['name']})"
-    lines.append(f"Zona analizada: {zone_label}")
-    lines.append("")
-
     if not tipologias:
-        lines.append("No se detectaron tipologías de marmolería en esta zona.")
+        lines.append(f"Leí la página {page}/{total_pages} (zona: {selected_zone['name']}) pero no encontré mesadas de marmolería.")
         lines.append("")
-        lines.append("Si hay marmolería en otra zona, indicá: `zona = CORTE 1-1`")
-        lines.append("Si no hay marmolería en esta página: `skip`")
+        lines.append("Si la marmolería está en otra zona de esta página, indicame cuál: `zona = CORTE 1-1`")
+        lines.append("Si en esta página no hay marmolería: `skip`")
         return "\n".join(lines)
 
     for tip, geo in zip(tipologias, geometries):
         tid = tip.get("id", "?")
         qty = tip.get("qty", 1)
         shape = tip.get("shape", "?")
-        method = tip.get("extraction_method", "fallback")
-        conf = tip.get("_confidence", {})
-
-        # Segments with markers
         segs = tip.get("segments_m", [])
-        seg_parts = [render_field(f"{s}m", conf.get("segments", 0), method) for s in segs]
-        seg_str = " + ".join(seg_parts) if seg_parts else "?"
-
         depth = tip.get("depth_m", 0)
-        depth_str = render_field(f"prof {depth}m", conf.get("depth", 0), method)
+        bl = tip.get("backsplash_ml")
+        notes = tip.get("notes", [])
 
-        # Shape
-        if shape == "unknown":
-            shape_str = f"{shape} ❌"
-        elif conf.get("shape", 0) >= CONF_HIGH:
-            shape_str = f"{shape} ✅"
-        else:
-            shape_str = f"{shape} ⚠️"
+        # Header
+        shape_desc = "mesada en L" if shape == "L" else "mesada lineal" if shape == "linear" else "mesada (forma a confirmar)"
+        lines.append(f"Leí la página {page}/{total_pages} — encontré la {shape_desc} de **{tid}** (×{qty} unidades).")
+        lines.append("")
 
-        lines.append(f"**{tid}** ×{qty} — {shape_str} — {seg_str} — {depth_str}")
+        # Segments in natural language
+        if shape == "L" and len(segs) == 2:
+            lines.append(f"Tiene dos tramos:")
+            lines.append(f"- Tramo principal: {segs[0]}m")
+            lines.append(f"- Retorno: {segs[1]}m")
+        elif segs:
+            if len(segs) == 1:
+                lines.append(f"- Largo: {segs[0]}m")
+            else:
+                lines.append(f"- Tramos: {' + '.join(f'{s}m' for s in segs)}")
 
-        # Geometry summary
+        lines.append(f"- Profundidad: {depth}m")
+
+        # Geometry
         if hasattr(geo, "m2_unit"):
-            lines.append(f"  m² unit: {geo.m2_unit} — m² total: {geo.m2_total}")
+            lines.append(f"- Superficie unitaria: {geo.m2_unit} m² → total {qty} unidades: {geo.m2_total} m²")
 
         # Backsplash
-        bl = tip.get("backsplash_ml")
-        if backsplash_needs_confirmation(bl, segs, shape):
-            lines.append(f"  ↳ zócalo {bl}ml ⚠️" if bl else "  ↳ zócalo sin dato ⚠️")
+        if bl:
+            lines.append(f"- Zócalo estimado: {bl}ml")
         else:
-            lines.append(f"  ↳ zócalo {bl}ml ✅" if bl else "  ↳ zócalo (fallback) ✅")
+            lines.append(f"- Zócalo: se calcula automáticamente")
+
+        # Notes
+        if notes:
+            lines.append("")
+            for n in notes:
+                lines.append(f"⚠️ Nota del plano: \"{n}\"")
 
         lines.append("")
 
-    lines.append("¿Confirmás? Si hay que corregir:")
-    lines.append("- Medidas: `DC-02 profundidad = 0.65`")
-    lines.append("- Zona: `zona = CORTE 1-1`")
-    lines.append("- Sin marmolería: `skip`")
+    lines.append("¿Es correcto? Avanzo con la página siguiente.")
+    lines.append("Si algo está mal: `DC-02 tramo2 = 1.20` o `DC-02 profundidad = 0.65`")
+    lines.append("Si la marmolería está en otra zona: `zona = CORTE 1-1`")
 
     return "\n".join(lines)
 

@@ -2106,15 +2106,28 @@ class AgentService:
                                 '"shape": "L", "depth_m": 0.62, "segments_m": [2.35, 1.15], '
                                 '"backsplash_ml": 4.12, "embedded_sink_count": 1, "hob_count": 1, '
                                 '"notes": [], "extraction_method": "direct_read", "page": 1}]}\n\n'
-                                "Reglas:\n"
+                                "Reglas de campos:\n"
                                 "- shape: 'L' si tiene retorno con cota visible en planta, 'linear' si es recta, 'unknown' si ambiguo\n"
                                 "- segments_m: en METROS (no cm). Para L: [tramo principal, retorno]. Para linear: [largo total]\n"
+                                "  Si hay cotas encadenadas (ej: 55+60+60+75 cm), sumarlas y convertir a metros: 2.50m\n"
                                 "- depth_m: profundidad en METROS (no cm). Típico: 0.55-0.65\n"
                                 "- embedded_sink_count: piletas empotradas por unidad (leer de simbología sa-01, etc)\n"
                                 "- hob_count: anafes por unidad. Mesada continua + anafe empotrado = 1\n"
                                 "- extraction_method: 'direct_read' si la cota es visible, 'inferred' si se dedujo\n"
                                 "- Filtrar SOLO MESADAS — ignorar muebles/carpintería/herrería/instalaciones\n"
-                                "- NO calcular m² — el código lo hace"
+                                "- NO calcular m² — el código lo hace\n\n"
+                                "REGLAS DE LECTURA DE COTAS:\n"
+                                "1. Cota explícita con línea y extremos marcados → usar directamente como medida de mesada\n"
+                                "2. Cota embebida en texto descriptivo (ej: 'proyección alacena 120') con línea de alcance "
+                                "sobre mesada → extraer el número aunque el texto describa otro elemento. Ese número mide el tramo de mesada.\n"
+                                "3. Cota de objeto propio (número dentro de rectángulo de anafe/pileta/heladera) → IGNORAR. "
+                                "No es medida de mesada.\n"
+                                "4. Cotas encadenadas alineadas → sumar todos los tramos para obtener el largo total\n"
+                                "5. Cota perpendicular a pared → es la profundidad de la mesada\n\n"
+                                "REGLA DE ORO: número con línea que conecta dos puntos = cota de distancia → usar. "
+                                "Número flotando dentro de objeto = dimensión del objeto → ignorar.\n\n"
+                                "IGNORAR SIEMPRE: cotas de espacios para heladera/lavarropas/microondas, "
+                                "nichos técnicos, ancho total del ambiente, carpintería, herrería, muebles bajo mesada."
                             )
                             logging.info(f"[visual-pages] Crop content blocks: {len(extraction_content)}")
                             logging.info(f"[visual-pages] Extraction system prompt: {_extraction_system[:200]}")
