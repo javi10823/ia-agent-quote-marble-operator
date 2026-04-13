@@ -977,17 +977,17 @@ async def chat(
     # Budget check — read DIRECTLY from DB (not cached config — multi-worker cache stale)
     try:
         from sqlalchemy import text as sql_text
+        monthly_limit = 300
+        hard_limit = True
         _budget_result = await db.execute(sql_text("SELECT content FROM catalogs WHERE name = 'config'"))
         _budget_row = _budget_result.first()
-        if _budget_row:
+        if _budget_row and _budget_row[0]:
             import json as _budget_json
-            _budget_cfg = _budget_json.loads(_budget_row[0]) if isinstance(_budget_row[0], str) else _budget_row[0]
+            _budget_val = _budget_row[0]
+            _budget_cfg = _budget_json.loads(_budget_val) if isinstance(_budget_val, str) else _budget_val
             _budget_ai = _budget_cfg.get("ai_engine", {})
             monthly_limit = _budget_ai.get("monthly_budget_usd", 300)
             hard_limit = _budget_ai.get("enable_hard_limit", True)
-        else:
-            monthly_limit = 300
-            hard_limit = True
         if hard_limit and monthly_limit > 0:
             month_start = __import__("datetime").datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             spent_result = await db.execute(
