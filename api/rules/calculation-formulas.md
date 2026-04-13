@@ -44,6 +44,9 @@ Zocalos/alzas = rectangulos sumados al m2.
 m2 zocalo = largo_tramo x alto_zocalo
 Ej: Mesada 1.65x0.70=1.155 + Zoc sup 1.65x0.05=0.0825 + Zoc izq 0.70x0.05=0.035 + Zoc der 0.70x0.05=0.035 = 1.3075 m2
 ```
+⛔ **Cada zocalo es una pieza SEPARADA en el despiece** — NUNCA sumar los ml de todos los zocalos en una sola linea.
+- Correcto: `1.74ML X 0.07 ZOC` + `1.55ML X 0.07 ZOC` + `0.75ML X 0.07 ZOC` (3 lineas)
+- Incorrecto: `4.04ML X 0.07 ZOC` (1 linea con todo sumado)
 
 ## Mesada en L
 Cada tramo por separado, sumar.
