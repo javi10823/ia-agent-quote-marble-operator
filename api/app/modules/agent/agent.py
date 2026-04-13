@@ -2624,6 +2624,7 @@ class AgentService:
         except Exception as e:
             logging.warning(f"Could not save usage record: {e}")
 
+        logging.info(f"[stream_chat] Yielding done for quote {quote_id}")
         yield {"type": "done", "content": ""}
 
     async def _execute_tool(self, name: str, inputs: dict, quote_id: str, db: AsyncSession, conversation_history: list | None = None, current_user_message: str = "") -> dict:

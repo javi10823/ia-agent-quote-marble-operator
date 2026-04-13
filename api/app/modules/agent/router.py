@@ -1123,8 +1123,13 @@ async def chat(
                 elif chunk["type"] == "action":
                     # Tool use event (generating docs, uploading, etc.)
                     yield f"data: {json.dumps(chunk)}\n\n"
-                elif chunk["type"] == "done":
+                elif chunk["type"] == "zone_selector":
                     yield f"data: {json.dumps(chunk)}\n\n"
+                elif chunk["type"] == "done":
+                    logging.info(f"[SSE] Sending done for quote {quote_id}")
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                else:
+                    logging.warning(f"[SSE] Unknown chunk type: {chunk.get('type')} for quote {quote_id}")
         except Exception as e:
             logging.error(f"SSE stream error for quote {quote_id}: {e}", exc_info=True)
             error_chunk = {"type": "error", "content": f"⚠️ Error inesperado: {str(e)[:200]}. Intentá de nuevo."}
