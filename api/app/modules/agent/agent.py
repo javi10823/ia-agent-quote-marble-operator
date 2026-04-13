@@ -2100,10 +2100,21 @@ class AgentService:
                             })
 
                             _extraction_system = (
-                                "Sos un extractor de tipologías de marmolería de planos CAD. "
-                                "Responder ÚNICAMENTE con JSON. "
-                                "Filtrar solo MESADAS — ignorar muebles/carpintería/herrería. "
-                                "No calcular m². Aplicar reglas de plan-reading-cotas.md."
+                                "Sos un extractor de tipologías de marmolería de planos CAD.\n"
+                                "Responder ÚNICAMENTE con JSON usando EXACTAMENTE este schema:\n"
+                                '{"material_text": "...", "tipologias": [{"id": "DC-02", "qty": 2, '
+                                '"shape": "L", "depth_m": 0.62, "segments_m": [2.35, 1.15], '
+                                '"backsplash_ml": 4.12, "embedded_sink_count": 1, "hob_count": 1, '
+                                '"notes": [], "extraction_method": "direct_read", "page": 1}]}\n\n'
+                                "Reglas:\n"
+                                "- shape: 'L' si tiene retorno con cota visible en planta, 'linear' si es recta, 'unknown' si ambiguo\n"
+                                "- segments_m: en METROS (no cm). Para L: [tramo principal, retorno]. Para linear: [largo total]\n"
+                                "- depth_m: profundidad en METROS (no cm). Típico: 0.55-0.65\n"
+                                "- embedded_sink_count: piletas empotradas por unidad (leer de simbología sa-01, etc)\n"
+                                "- hob_count: anafes por unidad. Mesada continua + anafe empotrado = 1\n"
+                                "- extraction_method: 'direct_read' si la cota es visible, 'inferred' si se dedujo\n"
+                                "- Filtrar SOLO MESADAS — ignorar muebles/carpintería/herrería/instalaciones\n"
+                                "- NO calcular m² — el código lo hace"
                             )
                             logging.info(f"[visual-pages] Crop content blocks: {len(extraction_content)}")
                             logging.info(f"[visual-pages] Extraction system prompt: {_extraction_system[:200]}")
