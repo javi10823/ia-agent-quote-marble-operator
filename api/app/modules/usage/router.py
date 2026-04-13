@@ -1,4 +1,5 @@
 import calendar
+import json
 import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -33,14 +34,16 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
     requests = row[1] if row else 0
 
     # Config — read DIRECTLY from DB (not cached — multi-worker stale cache issue)
-    _cfg_result = await db.execute(text("SELECT content FROM catalogs WHERE name = 'config'"))
-    _cfg_row = _cfg_result.first()
-    if _cfg_row:
-        import json as _json
-        _cfg = _json.loads(_cfg_row[0]) if isinstance(_cfg_row[0], str) else _cfg_row[0]
-        limit = _cfg.get("ai_engine", {}).get("monthly_budget_usd", 300)
-    else:
-        limit = 300
+    limit = 300  # default
+    try:
+        _cfg_result = await db.execute(text("SELECT content FROM catalogs WHERE name = 'config'"))
+        _cfg_row = _cfg_result.first()
+        if _cfg_row and _cfg_row[0]:
+            _cfg_val = _cfg_row[0]
+            _cfg = json.loads(_cfg_val) if isinstance(_cfg_val, str) else _cfg_val
+            limit = _cfg.get("ai_engine", {}).get("monthly_budget_usd", 300)
+    except Exception as e:
+        logging.warning(f"[usage] Failed to read budget from DB: {e}")
 
     # Calculations
     daily_avg = spent / days_passed if days_passed > 0 else 0
@@ -117,7 +120,6 @@ async def update_budget(body: dict, db: AsyncSession = Depends(get_db)):
     result = await db.execute(text("SELECT content FROM catalogs WHERE name = 'config'"))
     row = result.first()
     if row:
-        import json
         cfg = json.loads(row[0]) if isinstance(row[0], str) else row[0]
         ai = cfg.get("ai_engine", {})
         if limit is not None:
