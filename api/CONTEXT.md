@@ -92,6 +92,8 @@ Cuando el operador pide cambio sobre presupuesto con breakdown:
 
 **2. NUNCA por iniciativa propia:** agregar piezas/MO, cambiar medidas/precios, agregar descuentos/merma/zocalos/pulidos, crear quotes nuevos
 
+**⛔ REGLA ABSOLUTA DE MO:** En Paso 2, la tabla de Mano de Obra debe contener EXACTAMENTE los items que devolvió `calculate_quote()` en `mo_items`. NUNCA agregar PUL, CORTE45, ANAFE ni ningún otro item que el calculador no haya incluido. Si el calculador no lo puso, NO VA. El calculador maneja pulido automáticamente según la zona — si no está en mo_items, es porque esa zona no lo cobra.
+
 **3. DEPENDENCIAS:** cambio material → recalcular precio (mismos m²) | cambio medida → recalcular m² esa pieza | eliminar pieza → restar m²
 
 **4. AMBIGUEDAD → PREGUNTAR**
