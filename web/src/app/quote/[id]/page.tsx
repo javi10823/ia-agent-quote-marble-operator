@@ -5,6 +5,8 @@ import { useRouter, useParams } from "next/navigation";
 import { fetchQuote, streamChat, markQuoteAsRead, validateQuote, type QuoteDetail } from "@/lib/api";
 import { useQuotes } from "@/lib/quotes-context";
 import MessageBubble from "@/components/chat/MessageBubble";
+import ZoneSelector from "@/components/chat/ZoneSelector";
+import { selectZone } from "@/lib/api";
 import clsx from "clsx";
 import { A, I, O, N, DOT, SUP2, DASH, ITEM, WARN, CIRCLE, ARROW, XMARK, CLOUD, WAVE, PAGE, PICTURE, CLIP, RULER, TAG, FOLDER, CHART } from "@/lib/chars";
 
@@ -190,9 +192,12 @@ export default function QuotePage() {
     const isFromDetail = tab === "detail";
     sentFromDetail.current = isFromDetail;
 
-    setMessages(p => [...p,
-      { id: uid, role: "user", content: text, attachmentName: fileNames || undefined },
-      { id: aid, role: "assistant", content: "", isStreaming: true },
+    // System triggers are invisible — don't add user message bubble
+    const isSystemTrigger = text.startsWith("[SYSTEM_TRIGGER:");
+    setMessages(p => [
+      ...p,
+      ...(isSystemTrigger ? [] : [{ id: uid, role: "user" as const, content: text, attachmentName: fileNames || undefined }]),
+      { id: aid, role: "assistant" as const, content: "", isStreaming: true },
     ]);
     setInput(""); setAttachedFiles([]); setSending(true);
 
@@ -410,7 +415,6 @@ export default function QuotePage() {
                       (() => {
                         try {
                           const selectorData = JSON.parse(msg.content.replace("__ZONE_SELECTOR__", ""));
-                          const ZoneSelector = require("@/components/chat/ZoneSelector").default;
                           return (
                             <div className="msg-anim flex gap-3 items-start">
                               <div className="max-w-[85%] md:max-w-[70%] lg:max-w-[60%]">
@@ -420,10 +424,10 @@ export default function QuotePage() {
                                   instruction={selectorData.instruction}
                                   onConfirm={async (bbox: { x1: number; y1: number; x2: number; y2: number }) => {
                                     try {
-                                      const { selectZone } = await import("@/lib/api");
                                       await selectZone(quoteId, bbox, selectorData.page_num);
-                                      // Auto-trigger: send system message to continue processing
-                                      send("zona confirmada");
+                                      // Auto-trigger: invisible system call to continue processing
+                                      // Uses overrideText so the message doesn't show in chat
+                                      send("[SYSTEM_TRIGGER:zone_confirmed]");
                                     } catch (err) {
                                       console.error("zone-select failed:", err);
                                     }

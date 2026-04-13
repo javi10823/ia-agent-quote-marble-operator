@@ -2043,11 +2043,16 @@ class AgentService:
                             _text_raw = _text_resp.content[0].text if _text_resp.content else ""
                             logging.info(f"[visual-pages] Page text extraction: {_text_raw[:300]}")
 
-                            # Parse and persist
+                            # Parse and persist — use same pattern as parse_visual_extraction
                             try:
-                                _text_match = re.search(r"\{[^{}]*\}", _text_raw, re.DOTALL)
-                                if _text_match:
-                                    _page_text_info = json.loads(_text_match.group(0))
+                                _text_json_match = re.search(r"```json\s*(.*?)```", _text_raw, re.DOTALL)
+                                if _text_json_match:
+                                    _page_text_info = json.loads(_text_json_match.group(1).strip())
+                                else:
+                                    # Try to find outermost JSON object
+                                    _text_brace_match = re.search(r"\{[\s\S]*\}", _text_raw)
+                                    _page_text_info = json.loads(_text_brace_match.group(0)) if _text_brace_match else None
+                                if _page_text_info:
                                     _bd["page_text_info"] = _page_text_info
                                     # Use material_text for resolution if not already set
                                     if _page_text_info.get("material_text") and not _bd.get("material_resolution"):
@@ -2315,15 +2320,24 @@ class AgentService:
                                 ]
                             else:
                                 # No tipologías extracted
-                                # If using zone_default_bbox and it failed → show selector for this page
-                                if _bd.get("zone_default_bbox") and _current_page > 1:
-                                    logging.warning(f"[visual-pages] zone_default_bbox produced no tipologías on page {_current_page} — showing selector")
+                                # If using zone_default_bbox and it failed → retry or skip
+                                _retries = _pd.get("zone_selector_retries", 0)
+                                if _bd.get("zone_default_bbox") and _current_page > 1 and _retries < 2:
+                                    logging.warning(f"[visual-pages] zone_default_bbox produced no tipologías on page {_current_page} (retry {_retries + 1}/2)")
                                     _pd["zone_default_failed"] = True
-                                    # Remove selected_zone to trigger re-selection
+                                    _pd["zone_selector_retries"] = _retries + 1
+                                    # Remove selected_zone to trigger re-selection with full page
                                     _pd.pop("selected_zone", None)
                                     _page_data[_page_key] = _pd
                                     _bd["page_data"] = _page_data
-                                    # Show confirmation with empty tipologías — operator can change zone or skip
+                                elif _bd.get("zone_default_bbox") and _current_page > 1 and _retries >= 2:
+                                    logging.warning(f"[visual-pages] zone_default_bbox failed {_retries} times on page {_current_page} — auto-skipping")
+                                    _pd["tipologias"] = []
+                                    _pd["geometries"] = []
+                                    _pd["confirmed"] = True
+                                    _pd["skipped"] = True
+                                    _page_data[_page_key] = _pd
+                                    _bd["page_data"] = _page_data
                                 else:
                                     _pd["tipologias"] = []
                                     _pd["geometries"] = []
