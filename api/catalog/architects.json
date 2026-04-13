@@ -47,5 +47,12 @@
     "discount": true,
     "discount_percentage": null,
     "notes": "Arquitectas — usar porcentaje de config.json (5% importado)"
+  },
+  {
+    "name": "ESTUDIO MUNGE",
+    "firm": "Munge",
+    "discount": true,
+    "discount_percentage": null,
+    "notes": "Arquitectas — usar porcentaje de config.json (5% importado)"
   }
 ]
