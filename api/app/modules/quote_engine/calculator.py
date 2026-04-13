@@ -320,6 +320,18 @@ def calculate_quote(input_data: dict) -> dict:
     plazo = input_data["plazo"]
     discount_pct = input_data.get("discount_pct", 0)
 
+    # ── Auto-detect architect discount (deterministic, not LLM-dependent) ──
+    if client_name and not discount_pct:
+        from app.modules.agent.tools.catalog_tool import check_architect
+        arch_result = check_architect(client_name)
+        if arch_result.get("found") and arch_result.get("discount", True):
+            # Apply architect discount automatically
+            imported_pct = cfg("discount.imported_percentage", 5)
+            national_pct = cfg("discount.national_percentage", 8)
+            # Will be applied after we know the currency (below)
+            input_data["_auto_architect_discount"] = True
+            logging.info(f"Auto-detected architect: '{client_name}' → {arch_result.get('name')}. Discount will be applied.")
+
     # ── Edificio guardrails ──
     if is_edificio:
         # Force no colocación
@@ -371,7 +383,15 @@ def calculate_quote(input_data: dict) -> dict:
     # 3. Merma
     merma = calculate_merma(total_m2, mat_result.get("name", material_name))
 
-    # 4. Material total
+    # 4. Auto-apply architect discount if detected
+    if input_data.get("_auto_architect_discount") and not discount_pct:
+        if currency == "USD":
+            discount_pct = cfg("discount.imported_percentage", 5)
+        else:
+            discount_pct = cfg("discount.national_percentage", 8)
+        logging.info(f"Applied auto architect discount: {discount_pct}% ({currency})")
+
+    # 4b. Material total
     material_total = round(total_m2 * price_unit)
     if discount_pct > 0:
         discount_amount = round(material_total * discount_pct / 100)
