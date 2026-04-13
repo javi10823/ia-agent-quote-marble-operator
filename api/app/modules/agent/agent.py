@@ -3,6 +3,7 @@ import asyncio
 import json
 import base64
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator, Optional
@@ -2043,7 +2044,7 @@ class AgentService:
                             })
                             _text_resp = await self.client.messages.create(
                                 model="claude-opus-4-6",
-                                max_tokens=800,
+                                max_tokens=1500,  # 800 was too low — artefactos list gets truncated
                                 system="Extraer información textual de una lámina de plano CAD. Solo JSON.",
                                 messages=[{"role": "user", "content": _text_content}],
                             )
