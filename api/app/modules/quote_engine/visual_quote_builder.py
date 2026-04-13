@@ -1239,7 +1239,10 @@ def render_page_confirmation(
         # Header
         _shape_map = {"L": "mesada en L", "linear": "mesada lineal", "U": "mesada en U"}
         shape_desc = _shape_map.get(shape, "mesada (forma a confirmar)")
-        lines.append(f"Leí la página {page}/{total_pages} — encontré la {shape_desc} de **{tid}** (×{qty} unidades).")
+        zone_name = selected_zone.get("name", "PLANTA")
+        view_label = selected_zone.get("view_type", "unknown")
+        view_desc = "vista PLANTA (desde arriba)" if view_label == "top_view" else f"zona {zone_name}"
+        lines.append(f"Leí la página {page}/{total_pages} desde la **{view_desc}** — encontré la {shape_desc} de **{tid}** (×{qty} unidades).")
         lines.append("")
 
         # Segments in natural language
