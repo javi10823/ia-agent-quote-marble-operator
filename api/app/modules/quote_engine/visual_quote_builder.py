@@ -1030,20 +1030,48 @@ def parse_zone_detection(claude_response: str) -> list[dict]:
     """Parse zone detection JSON from Claude's pasada 0 response.
 
     Expected format: {"zones": [{"name": "PLANTA", "bbox": [x1,y1,x2,y2]}, ...]}
+    Handles truncated JSON (max_tokens cut-off) by extracting complete zone objects.
     """
+    logging.info(f"[zone-parse] raw response length: {len(claude_response)}")
+
+    # Try markdown json block
     json_match = re.search(r"```json\s*(.*?)```", claude_response, re.DOTALL)
     if json_match:
         raw = json_match.group(1).strip()
     else:
+        # Try raw JSON with "zones"
         json_match = re.search(r"\{[\s\S]*\"zones\"[\s\S]*\}", claude_response)
         if json_match:
             raw = json_match.group(0)
         else:
-            return []
+            # Last resort: try to find any JSON-like content
+            raw = claude_response.strip()
 
+    logging.info(f"[zone-parse] json_match found: {json_match is not None}")
+
+    data = None
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
+        # JSON truncated by max_tokens — try to recover complete zone objects
+        # Find all complete {...} objects that have "name" field
+        zone_objects = re.findall(
+            r'\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"bbox"\s*:\s*\[[^\]]+\][^}]*\}',
+            raw,
+        )
+        if zone_objects:
+            logging.info(f"[zone-parse] Recovered {len(zone_objects)} zones from truncated JSON")
+            recovered = []
+            for zo in zone_objects:
+                try:
+                    recovered.append(json.loads(zo))
+                except json.JSONDecodeError:
+                    continue
+            if recovered:
+                data = {"zones": recovered}
+
+    if data is None:
+        logging.warning(f"[zone-parse] Could not parse zones from response")
         return []
 
     zones = data.get("zones", [])

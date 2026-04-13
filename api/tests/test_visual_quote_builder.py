@@ -589,6 +589,24 @@ class TestZoneDetection:
         zones = parse_zone_detection(response)
         assert zones == []
 
+    def test_parse_zones_truncated_json(self):
+        """Truncated JSON (max_tokens cutoff) should recover complete zone objects."""
+        response = '''```json
+{
+  "zones": [
+    {"name": "PLANTA", "bbox": [0, 10, 370, 270], "view_type": "top_view", "confidence": 0.95},
+    {"name": "CORTE 2-2", "bbox": [340'''  # Truncated mid-second zone
+        zones = parse_zone_detection(response)
+        assert len(zones) >= 1  # At least PLANTA recovered
+        assert zones[0]["name"] == "PLANTA"
+        assert zones[0]["view_type"] == "top_view"
+
+    def test_parse_zones_with_view_type(self):
+        response = '```json\n{"zones": [{"name": "PLANTA", "bbox": [0,0,600,400], "view_type": "top_view", "confidence": 0.9}]}\n```'
+        zones = parse_zone_detection(response)
+        assert zones[0]["view_type"] == "top_view"
+        assert zones[0]["confidence"] == 0.9
+
 
 class TestAutoSelectZone:
     def test_selects_planta(self):
