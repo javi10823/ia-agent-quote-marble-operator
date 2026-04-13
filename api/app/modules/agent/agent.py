@@ -2033,18 +2033,21 @@ class AgentService:
                             _text_content.append({
                                 "type": "text",
                                 "text": (
-                                    "Extraer SOLO la información textual de esta lámina (NO geometría). "
-                                    "Buscar: material y espesor (sección MESADAS), artefactos y griferías "
-                                    "(códigos sa-01, sa-02, gr-01), altura de zócalos, cantidad de unidades, "
-                                    "notas relevantes para cotización. "
-                                    "Ignorar: muebles, carpintería, herrería, instalaciones. "
-                                    "Responder SOLO JSON: {\"material_text\": \"...\", \"artefactos\": [...], "
-                                    "\"zocalo_height_cm\": N, \"cantidad_unidades\": N, \"notas\": [...]}"
+                                    "Extraer SOLO datos de MARMOLERÍA de esta lámina. "
+                                    "Responder SOLO JSON compacto con este schema exacto:\n"
+                                    '{"material_text": "texto exacto de material y espesor de la sección MESADAS", '
+                                    '"pileta_codes": ["sa-01", "sa-02"], '
+                                    '"griferia_codes": ["gr-01"], '
+                                    '"zocalo_height_cm": 7.5, '
+                                    '"cantidad_unidades": 2, '
+                                    '"notas": ["movemos pileta", "lateral con mármol?"]}\n'
+                                    "Solo códigos de artefactos, NO descripciones largas. "
+                                    "Ignorar: muebles, carpintería, herrería, instalaciones."
                                 ),
                             })
                             _text_resp = await self.client.messages.create(
                                 model="claude-opus-4-6",
-                                max_tokens=1500,  # 800 was too low — artefactos list gets truncated
+                                max_tokens=500,  # Compact schema — only codes, no descriptions
                                 system="Extraer información textual de una lámina de plano CAD. Solo JSON.",
                                 messages=[{"role": "user", "content": _text_content}],
                             )
