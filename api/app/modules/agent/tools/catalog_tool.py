@@ -5,7 +5,7 @@ from pathlib import Path
 
 from app.core.catalog_dir import CATALOG_DIR
 
-_catalog_cache: dict[str, list] = {}
+_catalog_cache: dict[str, tuple[float, list]] = {}  # name -> (mtime, items)
 _config_cache: dict | None = None
 _ai_config_cache: dict | None = None
 
@@ -73,8 +73,13 @@ def _get_iva_multiplier() -> float:
 
 
 def _load_catalog(name: str) -> list:
+    # Check file mtime to auto-invalidate stale cache
+    path = CATALOG_DIR / f"{name}.json"
+    current_mtime = path.stat().st_mtime if path.exists() else 0.0
     if name in _catalog_cache:
-        return _catalog_cache[name]
+        cached_mtime, cached_items = _catalog_cache[name]
+        if cached_mtime >= current_mtime and current_mtime > 0:
+            return cached_items
     # Try DB first (persistent), fallback to file
     try:
         from sqlalchemy import create_engine, text
@@ -88,14 +93,13 @@ def _load_catalog(name: str) -> list:
                 raw = row[0]
                 data = json.loads(raw) if isinstance(raw, str) else raw
                 items = data if isinstance(data, list) else data.get("items", [data]) if isinstance(data, dict) else []
-                _catalog_cache[name] = items
+                _catalog_cache[name] = (current_mtime, items)
                 logging.debug(f"Loaded catalog '{name}' from DB: {len(items)} items")
                 return items
         eng.dispose()
     except Exception as e:
         logging.warning(f"DB catalog read failed for {name}: {e}")
     # Fallback to file
-    path = CATALOG_DIR / f"{name}.json"
     if not path.exists():
         return []
     try:
@@ -104,7 +108,7 @@ def _load_catalog(name: str) -> list:
         logging.error(f"Malformed catalog JSON: {name}.json — {e}")
         return []
     items = data if isinstance(data, list) else data.get("items", [])
-    _catalog_cache[name] = items
+    _catalog_cache[name] = (current_mtime, items)
     return items
 
 
