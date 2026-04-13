@@ -264,21 +264,35 @@ def check_architect(client_name: str) -> dict:
 def fuzzy_sink_lookup(query: str) -> dict:
     """Fuzzy match a sink by brand keywords + model number patterns.
 
+    Only searches actual sinks (sink_type set or 'PILETA' in name),
+    never accessories like escurreplatos/canastos.
+
     E.g. "LUXOR COMPACT SI71" → matches LUXOR171 (PILETA JOHNSON LUXOR S171)
-    by extracting brand "LUXOR" and numeric "171" from "SI71".
+    E.g. "SI71" → extracts "71", tries "171" variant, matches LUXOR S171
     """
     import re
-    items = _load_catalog("sinks")
+    all_items = _load_catalog("sinks")
     query_upper = query.upper().strip()
 
-    # Extract brand keywords (>3 chars, not generic words)
-    skip_words = {"PILETA", "JOHNSON", "COMPACT", "MINI", "DOBLE", "SIMPLE", "BACHA"}
+    # Filter to actual sinks only — exclude accessories (escurreplatos, canastos, tablas, etc.)
+    items = [
+        i for i in all_items
+        if i.get("sink_type") or "PILETA" in (i.get("name") or "").upper()
+    ]
+
+    # Extract brand keywords (>2 chars, not generic words)
+    skip_words = {"PILETA", "JOHNSON", "COMPACT", "MINI", "DOBLE", "SIMPLE", "BACHA", "EMPOTRADA", "APOYO"}
     words = [w for w in query_upper.split() if len(w) > 2 and w not in skip_words]
 
-    # Extract numeric patterns (2-3 digits, possibly with prefix/suffix letters)
+    # Extract numeric patterns (2-3 digits)
     nums = re.findall(r'\d{2,3}', query_upper)
+    # Also try with "1" prefix: SI71 → 71 → also try 171 (common pattern: S171)
+    extended_nums = list(nums)
+    for n in nums:
+        if len(n) == 2:
+            extended_nums.append("1" + n)  # 71 → 171
 
-    if not words and not nums:
+    if not words and not extended_nums:
         return {"found": False, "message": f"No se pudo extraer datos de búsqueda de '{query}'"}
 
     candidates = []
@@ -286,14 +300,19 @@ def fuzzy_sink_lookup(query: str) -> dict:
         name = (item.get("name") or "").upper()
         sku = (item.get("sku") or "").upper()
         score = 0
-        # Brand match
+        # Brand match (e.g. "LUXOR", "QUADRA")
         for w in words:
             if w in name or w in sku:
                 score += 2
-        # Numeric match (most important)
+        # Numeric match — original nums score higher than extended variants
+        matched_nums = set()
         for n in nums:
             if n in name or n in sku:
-                score += 3
+                score += 4  # Direct number match (high confidence)
+                matched_nums.add(n)
+        for n in extended_nums:
+            if n not in nums and n not in matched_nums and (n in name or n in sku):
+                score += 2  # Extended variant match (lower confidence)
         if score > 0:
             candidates.append((score, item))
 
@@ -302,6 +321,7 @@ def fuzzy_sink_lookup(query: str) -> dict:
 
     candidates.sort(key=lambda x: -x[0])
     best = candidates[0][1]
+    logging.info(f"Fuzzy sink match: '{query}' → {best.get('sku')} ({best.get('name')}) [score={candidates[0][0]}]")
     # Do a proper catalog_lookup to get price with IVA
     result = catalog_lookup("sinks", best.get("sku", ""))
     if result.get("found"):

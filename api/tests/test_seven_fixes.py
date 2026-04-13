@@ -83,11 +83,17 @@ class TestFuzzySinkLookup:
         assert "171" in result.get("sku", "").upper() or "171" in result["name"].upper()
 
     def test_quadra_q71_matches(self):
-        """QUADRA Q71 → should match QUADRAQ71A."""
+        """QUADRA Q71 → should match QUADRAQ71A (not LUXOR with extended 171)."""
         result = fuzzy_sink_lookup("QUADRA Q71")
         assert result["found"] is True
         assert "QUADRA" in result["name"].upper()
-        assert "71" in result.get("sku", "")
+        assert "Q71" in result.get("sku", "")
+
+    def test_si71_alone_matches_luxor(self):
+        """SI71 without brand → should still match LUXOR S171 via extended num."""
+        result = fuzzy_sink_lookup("SI71")
+        assert result["found"] is True
+        assert "LUXOR" in result["name"].upper()
 
     def test_nonsense_returns_not_found(self):
         """Random text should not match any sink."""
