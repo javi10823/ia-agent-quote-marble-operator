@@ -2099,8 +2099,30 @@ class AgentService:
                                 ),
                             })
 
+                            # Load cotas guide from disk
+                            _cotas_guide = ""
+                            try:
+                                _cotas_path = Path(__file__).parent.parent.parent / "rules" / "plan-reading-cotas.md"
+                                if _cotas_path.exists():
+                                    _cotas_guide = _cotas_path.read_text(encoding="utf-8")
+                                    logging.info(f"[visual-pages] Cotas guide loaded: True | length={len(_cotas_guide)}")
+                                else:
+                                    logging.warning(f"[visual-pages] Cotas guide NOT FOUND at {_cotas_path}")
+                            except Exception as e:
+                                logging.warning(f"[visual-pages] Cotas guide load error: {e}")
+
                             _extraction_system = (
-                                "Sos un extractor de tipologías de marmolería de planos CAD.\n"
+                                "Estás analizando la vista PLANTA (vista desde arriba) de una cocina.\n"
+                                "La geometría de marmolería debe extraerse SOLO desde la vista PLANTA.\n"
+                                "Las mesadas aparecen como rectángulos sombreados pegados a las paredes.\n\n"
+                                "IGNORAR COMPLETAMENTE en esta etapa:\n"
+                                "- CORTE 1-1, CORTE 2-2, CORTE 3-3 y cualquier vista de perfil lateral\n"
+                                "- Dimensiones de objetos: anafe, heladera, microondas, lavarropas\n"
+                                "- Proyecciones de alacenas superiores\n"
+                                "- Cotas de muebles o artefactos que no correspondan a la piedra\n\n"
+                                "Leer SOLO cotas sobre los rectángulos sombreados de mesada en PLANTA.\n"
+                                "Si una medida no se puede inferir con claridad desde PLANTA → "
+                                "devolver como ambigua, NO completar con datos de cortes.\n\n"
                                 "Responder ÚNICAMENTE con JSON usando EXACTAMENTE este schema:\n"
                                 '{"material_text": "...", "tipologias": [{"id": "DC-02", "qty": 2, '
                                 '"shape": "L", "depth_m": 0.62, "segments_m": [2.35, 1.15], '
@@ -2110,28 +2132,17 @@ class AgentService:
                                 "- shape: 'L' si tiene retorno con cota visible, 'linear' si es recta, 'U' si cubre 3 paredes, 'unknown' si ambiguo\n"
                                 "- segments_m: en METROS (no cm). Para L: [tramo principal, retorno]. Para linear: [largo total]. "
                                 "Para U: [tramo_izq, tramo_fondo_neto, tramo_der] — fondo ya con esquinas restadas\n"
-                                "  Si hay cotas encadenadas (ej: 55+60+60+75 cm), sumarlas y convertir a metros: 2.50m\n"
                                 "- depth_m: profundidad en METROS (no cm). Típico: 0.55-0.65\n"
                                 "- embedded_sink_count: piletas empotradas por unidad (leer de simbología sa-01, etc)\n"
                                 "- hob_count: anafes por unidad. Mesada continua + anafe empotrado = 1\n"
                                 "- extraction_method: 'direct_read' si la cota es visible, 'inferred' si se dedujo\n"
-                                "- Filtrar SOLO MESADAS — ignorar muebles/carpintería/herrería/instalaciones\n"
                                 "- NO calcular m² — el código lo hace\n\n"
-                                "REGLAS DE LECTURA DE COTAS:\n"
-                                "1. Cota explícita con línea y extremos marcados → usar directamente como medida de mesada\n"
-                                "2. Cota embebida en texto descriptivo (ej: 'proyección alacena 120') con línea de alcance "
-                                "sobre mesada → extraer el número aunque el texto describa otro elemento. Ese número mide el tramo de mesada.\n"
-                                "3. Cota de objeto propio (número dentro de rectángulo de anafe/pileta/heladera) → IGNORAR. "
-                                "No es medida de mesada.\n"
-                                "4. Cotas encadenadas alineadas → sumar todos los tramos para obtener el largo total\n"
-                                "5. Cota perpendicular a pared → es la profundidad de la mesada\n\n"
-                                "REGLA DE ORO: número con línea que conecta dos puntos = cota de distancia → usar. "
-                                "Número flotando dentro de objeto = dimensión del objeto → ignorar.\n\n"
-                                "IGNORAR SIEMPRE: cotas de espacios para heladera/lavarropas/microondas, "
-                                "nichos técnicos, ancho total del ambiente, carpintería, herrería, muebles bajo mesada."
                             )
+                            if _cotas_guide:
+                                _extraction_system += f"GUÍA COMPLETA DE LECTURA DE COTAS:\n{_cotas_guide}\n"
+
                             logging.info(f"[visual-pages] Crop content blocks: {len(extraction_content)}")
-                            logging.info(f"[visual-pages] Extraction system prompt: {_extraction_system[:200]}")
+                            logging.info(f"[visual-pages] Extraction system prompt length: {len(_extraction_system)}")
 
                             try:
                                 extraction_resp = await self.client.messages.create(
