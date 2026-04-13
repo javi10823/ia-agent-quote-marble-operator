@@ -10,10 +10,28 @@ _CONFIG_PATH = Path(__file__).parent.parent.parent / "catalog" / "config.json"
 
 
 def get_config() -> dict:
-    """Load and cache config.json. Returns full config dict."""
+    """Load config from DB first, file fallback. Returns full config dict."""
     global _cache
     if _cache is not None:
         return _cache
+    # Try DB first (matches catalog_tool pattern)
+    try:
+        from sqlalchemy import create_engine, text
+        from app.core.config import settings
+        sync_url = settings.DATABASE_URL.replace("+asyncpg", "").replace("postgresql+asyncpg", "postgresql")
+        eng = create_engine(sync_url)
+        with eng.connect() as conn:
+            result = conn.execute(text("SELECT content FROM catalogs WHERE name = 'config'"))
+            row = result.first()
+            if row:
+                data = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                _cache = data
+                eng.dispose()
+                return _cache
+        eng.dispose()
+    except Exception as e:
+        logging.debug(f"DB config read failed, falling back to file: {e}")
+    # Fallback to file
     try:
         _cache = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
     except Exception as e:

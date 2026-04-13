@@ -320,9 +320,9 @@ export default function QuotePage() {
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
-          {quote?.pdf_url && <FileLink href={quote.pdf_url} label="PDF" cls="border-red-400/20 text-red-400" />}
           {quote?.drive_pdf_url && <FileLink href={quote.drive_pdf_url} label="PDF Drive" cls="border-acc/20 text-acc" />}
           {quote?.drive_excel_url && <FileLink href={quote.drive_excel_url} label="Excel Drive" cls="border-emerald-400/20 text-emerald-400" />}
+          {!quote?.drive_pdf_url && quote?.pdf_url && <FileLink href={quote.pdf_url} label="PDF" cls="border-red-400/20 text-red-400" />}
         </div>
       </div>
 

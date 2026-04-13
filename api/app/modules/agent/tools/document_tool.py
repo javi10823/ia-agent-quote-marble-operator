@@ -1465,11 +1465,21 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     ws.cell(total_pesos_row, 6).number_format = ars_fmt
     ws.cell(total_pesos_row, 6).font = bold
 
-    # Grand total — 3 rows after total pesos (matching template spacing)
-    grand_row = total_pesos_row + 3
+    # Grand total — 2 rows after total pesos
+    grand_row = total_pesos_row + 2
     grand = _format_grand_total(total_ars, total_usd, currency)
+    # Clear any template remnants between total pesos and grand total
+    for clear_row in range(total_pesos_row + 1, grand_row + 2):
+        for clear_col in range(1, 7):
+            cell = ws.cell(clear_row, clear_col)
+            cell.value = None
+            cell.border = Border()  # Remove stale template borders
     ws.cell(grand_row, 1).value = grand
     ws.merge_cells(f"A{grand_row}:F{grand_row}")
+    # Apply box border to grand total row
+    for col in range(1, 7):
+        ws.cell(grand_row, col).border = box
+        ws.cell(grand_row, col).font = bold
 
     wb.save(str(output_path))
     _inject_locale(str(output_path))
