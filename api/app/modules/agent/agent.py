@@ -1699,8 +1699,15 @@ class AgentService:
                         break
 
         # Append user message to history (injected for Claude, clean for DB)
-        new_messages = clean_messages + [{"role": "user", "content": content}]
-        db_messages = clean_messages + [{"role": "user", "content": clean_user_content}]
+        # System triggers are internal — don't pass them to Claude or save as user message
+        _is_system_trigger = user_message.startswith("[SYSTEM_TRIGGER:")
+        if _is_system_trigger:
+            new_messages = clean_messages  # No user message for Claude
+            db_messages = clean_messages   # No user message in DB
+            logging.info(f"[system-trigger] {user_message} — not added to message history")
+        else:
+            new_messages = clean_messages + [{"role": "user", "content": content}]
+            db_messages = clean_messages + [{"role": "user", "content": clean_user_content}]
 
         # Agentic loop with tool use
         assistant_messages = []
