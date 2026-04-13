@@ -160,8 +160,20 @@ Simbolo hornallas/tomas en planta → ANAFE/TOMAS. Anotar cantidad.
 - Verificar parciales + totales sumen
 - Ambiguedad → preguntar
 
+### ⛔ Múltiples piezas en planilla — regla de independencia
+Cuando la planilla tiene 2+ piezas con medidas separadas y NO hay indicación explícita de esquina, inglete o forma (L, U):
+- Tratar como piezas **INDEPENDIENTES**, no como forma compuesta
+- **NO asumir L ni U**
+- **NO agregar corte 45 ni inglete**
+- Cada pieza tiene sus propios zócalos (según lo que diga el plano para esa pieza)
+
+Solo asumir forma compuesta si:
+- El operador lo dice explícitamente ("en L", "en U", "con esquina")
+- El plano muestra claramente una esquina/quiebre 90° entre las piezas
+- Hay una nota de "CORTE 45" o "INGLETE" en la planilla
+
 ### Dos cotas misma altura
-= dos tramos separados (piezas independientes contiguas). NUNCA interpretar como L salvo quiebre 90° explicito con cotas en 2 ejes.
+= dos tramos separados (piezas independientes contiguas). NUNCA interpretar como L salvo quiebre 90° explícito con cotas en 2 ejes.
 
 ### Mesadas con ampliacion
 Usar medida final total, no original ni incremento.
