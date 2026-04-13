@@ -587,8 +587,8 @@ def _compact_single_result(result: dict) -> dict:
 
 # ── RETRY CONFIG ─────────────────────────────────────────────────────────────
 
-MAX_RETRIES = 3
-RETRY_DELAYS = [5, 10, 15]
+MAX_RETRIES = 5
+RETRY_DELAYS = [5, 10, 15, 20, 30]
 MAX_ITERATIONS = 15  # Safety limit — prevent infinite tool loops
 
 
