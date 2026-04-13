@@ -2088,19 +2088,24 @@ class AgentService:
                                 ),
                             })
 
+                            _extraction_system = (
+                                "Sos un extractor de tipologías de marmolería de planos CAD. "
+                                "Responder ÚNICAMENTE con JSON. "
+                                "Filtrar solo MESADAS — ignorar muebles/carpintería/herrería. "
+                                "No calcular m². Aplicar reglas de plan-reading-cotas.md."
+                            )
+                            logging.info(f"[visual-pages] Crop content blocks: {len(extraction_content)}")
+                            logging.info(f"[visual-pages] Extraction system prompt: {_extraction_system[:200]}")
+
                             try:
                                 extraction_resp = await self.client.messages.create(
                                     model="claude-opus-4-6",
                                     max_tokens=1000,
-                                    system=(
-                                        "Sos un extractor de tipologías de marmolería de planos CAD. "
-                                        "Responder ÚNICAMENTE con JSON. "
-                                        "Filtrar solo MESADAS — ignorar muebles/carpintería/herrería. "
-                                        "No calcular m². Aplicar reglas de plan-reading-cotas.md."
-                                    ),
+                                    system=_extraction_system,
                                     messages=[{"role": "user", "content": extraction_content}],
                                 )
                                 resp_text = extraction_resp.content[0].text if extraction_resp.content else ""
+                                logging.info(f"[visual-pages] Extraction response raw: {resp_text[:400]}")
                                 page_parsed = parse_visual_extraction(resp_text)
                             except Exception as e:
                                 logging.error(f"[visual-pages] Extraction failed page {_current_page}: {e}")
