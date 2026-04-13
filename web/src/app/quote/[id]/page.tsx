@@ -410,37 +410,33 @@ export default function QuotePage() {
                         {msg.content.trim()}
                       </span>
                     </div>
-                  ) : (
-                    {msg.content.startsWith("__ZONE_SELECTOR__") ? (
-                      (() => {
-                        try {
-                          const selectorData = JSON.parse(msg.content.replace("__ZONE_SELECTOR__", ""));
-                          return (
-                            <div className="msg-anim flex gap-3 items-start">
-                              <div className="max-w-[85%] md:max-w-[70%] lg:max-w-[60%]">
-                                <ZoneSelector
-                                  imageUrl={selectorData.image_url}
-                                  pageNum={selectorData.page_num}
-                                  instruction={selectorData.instruction}
-                                  onConfirm={async (bbox: { x1: number; y1: number; x2: number; y2: number }) => {
-                                    try {
-                                      await selectZone(quoteId, bbox, selectorData.page_num);
-                                      // Auto-trigger: invisible system call to continue processing
-                                      // Uses overrideText so the message doesn't show in chat
-                                      send("[SYSTEM_TRIGGER:zone_confirmed]");
-                                    } catch (err) {
-                                      console.error("zone-select failed:", err);
-                                    }
-                                  }}
-                                />
-                              </div>
+                  ) : msg.content.startsWith("__ZONE_SELECTOR__") ? (
+                    (() => {
+                      try {
+                        const selectorData = JSON.parse(msg.content.replace("__ZONE_SELECTOR__", ""));
+                        return (
+                          <div className="msg-anim flex gap-3 items-start">
+                            <div className="max-w-[85%] md:max-w-[70%] lg:max-w-[60%]">
+                              <ZoneSelector
+                                imageUrl={selectorData.image_url}
+                                pageNum={selectorData.page_num}
+                                instruction={selectorData.instruction}
+                                onConfirm={async (bbox: { x1: number; y1: number; x2: number; y2: number }) => {
+                                  try {
+                                    await selectZone(quoteId, bbox, selectorData.page_num);
+                                    send("[SYSTEM_TRIGGER:zone_confirmed]");
+                                  } catch (err) {
+                                    console.error("zone-select failed:", err);
+                                  }
+                                }}
+                              />
                             </div>
-                          );
-                        } catch { return null; }
-                      })()
-                    ) : (
-                      <MessageBubble message={msg} actionText={msg.isStreaming ? actionText : undefined} />
-                    )}
+                          </div>
+                        );
+                      } catch { return null; }
+                    })()
+                  ) : (
+                    <MessageBubble message={msg} actionText={msg.isStreaming ? actionText : undefined} />
                   )}
                   {needsConfirm && (
                     <div className="flex gap-2 mt-2 ml-[42px]">

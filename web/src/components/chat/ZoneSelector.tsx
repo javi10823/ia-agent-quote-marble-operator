@@ -100,6 +100,7 @@ export default function ZoneSelector({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={imageUrl}
           alt={`Página ${pageNum}`}
