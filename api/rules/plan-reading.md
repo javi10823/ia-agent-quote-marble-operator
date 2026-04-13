@@ -113,6 +113,16 @@ Hatching/rayado = pared → NO canto expuesto → NO frentin. Lados sin tachar =
 - "DESAGUE" sin modelo → apoyo (AGUJEROAPOYO) | Con modelo → empotrada (PEGADOPILETA)
 - 3 puntitos junto a ovalo → empotrada (PEGADOPILETA)
 
+### ⛔ Modelo de pileta — NUNCA inventar
+- **SIEMPRE** buscar el modelo exacto en `sinks.json` con `catalog_lookup("sinks", sku)`
+- Si el plano/enunciado dice un nombre que no matchea exacto → hacer **fuzzy match**:
+  - Extraer palabras clave del nombre (marca, serie, numero)
+  - Ej: "LUXOR COMPACT SI71" → buscar "LUXOR" + "171" → PILETA JOHNSON LUXOR S171
+  - Ej: "Johnson Simple SI37" → buscar "Q37" → PILETA JOHNSON QUADRA Q37
+  - Los numeros de modelo suelen coincidir con permutaciones: SI71→S171, Q71→Q71A
+- Si no hay match claro → **PREGUNTAR al operador** con las opciones mas parecidas de sinks.json
+- **NUNCA** usar un nombre de pileta que no exista en sinks.json en el presupuesto final
+
 ---
 
 ## Deteccion de anafe/tomas

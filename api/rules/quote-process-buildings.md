@@ -93,7 +93,8 @@ Operador tiene ultima palabra.
 
 ### Descuentos — reglas
 - `precio x (1 - desc%)` | NO acumulativos — 1 por presupuesto, el mayor %
-- Tipos: arquitecta 5% USD, cantidad 5% USD/>6m² o 8% ARS/>6m², edificio 18%/>15m², manual
+- Tipos: arquitecta 5% USD (**SIN minimo m²**), cantidad 5% USD/>6m² o 8% ARS/>6m², edificio 18%/>15m², manual
+- ⛔ El mínimo de 6m² solo aplica a descuento por cantidad, NUNCA a descuento de arquitecta
 - Mostrar fila DESC | Solo material, nunca MO
 
 ### Descuento arquitecta
