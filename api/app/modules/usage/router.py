@@ -1,4 +1,5 @@
 import calendar
+import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends
@@ -119,10 +120,13 @@ async def update_budget(body: dict, db: AsyncSession = Depends(get_db)):
             ai["enable_hard_limit"] = bool(hard_limit)
         cfg["ai_engine"] = ai
         await db.execute(
-            text("UPDATE catalogs SET content = :content WHERE name = 'config'"),
+            text("UPDATE catalogs SET content = CAST(:content AS jsonb) WHERE name = 'config'"),
             {"content": json.dumps(cfg, ensure_ascii=False)},
         )
         await db.commit()
         invalidate_ai_config_cache()
+        logging.info(f"[budget] Updated: monthly_budget_usd={ai.get('monthly_budget_usd')}, enable_hard_limit={ai.get('enable_hard_limit')}")
+    else:
+        logging.warning("[budget] No config row found in catalogs table")
 
     return {"ok": True}
