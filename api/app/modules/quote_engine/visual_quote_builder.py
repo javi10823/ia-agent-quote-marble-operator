@@ -269,7 +269,7 @@ def compute_field_confidence(tipologia: dict) -> FieldConfidence:
     conf = FieldConfidence()
 
     # Shape: must be explicit
-    if shape in ("L", "linear"):
+    if shape in ("L", "linear", "U"):
         conf.shape = 0.9
     elif shape == "unknown":
         conf.shape = 0.3  # Needs review
@@ -280,6 +280,8 @@ def compute_field_confidence(tipologia: dict) -> FieldConfidence:
     if shape == "L" and len(segs) != 2:
         conf.segments = 0.3
     elif shape == "linear" and len(segs) != 1:
+        conf.segments = 0.3
+    elif shape == "U" and len(segs) != 3:
         conf.segments = 0.3
     elif all(0.3 <= s <= 5.0 for s in segs) and len(segs) > 0:
         conf.segments = 0.9
@@ -429,10 +431,15 @@ def compute_visual_geometry(
         depth = t.get("depth_m", 0.60)
         notes = t.get("notes", [])
 
-        # m² per unit — L-shape subtracts corner overlap
+        # m² per unit — shape-dependent calculation
         if shape == "L" and len(segs) == 2:
+            # L-shape: subtract corner overlap (depth × depth)
             m2_unit = (segs[0] * depth) + (segs[1] * depth) - (depth * depth)
+        elif shape == "U" and len(segs) == 3:
+            # U-shape: 3 tramos, corners already subtracted in seg_fondo
+            m2_unit = sum(s * depth for s in segs)
         else:
+            # Linear or unknown: simple sum
             m2_unit = sum(s * depth for s in segs)
         m2_unit = round(m2_unit, 2)
         m2_total = round(m2_unit * qty, 2)
@@ -440,11 +447,12 @@ def compute_visual_geometry(
         # Backsplash ml per unit
         backsplash_ml = t.get("backsplash_ml")
         if backsplash_ml is None:
-            # Fallback: conservative (all segments + depth for L)
-            # TODO: this overestimates if not all sides have backsplash
+            # Fallback: conservative — all back walls get backsplash
             backsplash_ml = sum(segs)
             if shape == "L":
                 backsplash_ml += depth  # return side
+            elif shape == "U":
+                pass  # U already has all 3 walls in segments — sum is correct
         backsplash_m2_unit = round(backsplash_ml * backsplash_height_m, 2)
         backsplash_m2_total = round(backsplash_m2_unit * qty, 2)
 
@@ -684,7 +692,7 @@ def parse_focused_response(text: str) -> Optional[dict]:
         if not isinstance(data["shape"], str):
             logging.warning(f"[parse_focused] shape is {type(data['shape']).__name__} ({data['shape']}), not str — discarding")
             del data["shape"]
-        elif data["shape"] not in ("L", "linear", "unknown"):
+        elif data["shape"] not in ("L", "linear", "U", "unknown"):
             logging.warning(f"[parse_focused] invalid shape value: {data['shape']} — discarding")
             del data["shape"]
 
@@ -1229,7 +1237,8 @@ def render_page_confirmation(
         notes = tip.get("notes", [])
 
         # Header
-        shape_desc = "mesada en L" if shape == "L" else "mesada lineal" if shape == "linear" else "mesada (forma a confirmar)"
+        _shape_map = {"L": "mesada en L", "linear": "mesada lineal", "U": "mesada en U"}
+        shape_desc = _shape_map.get(shape, "mesada (forma a confirmar)")
         lines.append(f"Leí la página {page}/{total_pages} — encontré la {shape_desc} de **{tid}** (×{qty} unidades).")
         lines.append("")
 
@@ -1238,6 +1247,11 @@ def render_page_confirmation(
             lines.append(f"Tiene dos tramos:")
             lines.append(f"- Tramo principal: {segs[0]}m")
             lines.append(f"- Retorno: {segs[1]}m")
+        elif shape == "U" and len(segs) == 3:
+            lines.append(f"Tiene tres tramos:")
+            lines.append(f"- Lateral izquierdo: {segs[0]}m")
+            lines.append(f"- Fondo: {segs[1]}m")
+            lines.append(f"- Lateral derecho: {segs[2]}m")
         elif segs:
             if len(segs) == 1:
                 lines.append(f"- Largo: {segs[0]}m")
@@ -1395,7 +1409,7 @@ def parse_visual_extraction(claude_response: str) -> Optional[dict]:
             qty = 1
 
         shape = t.get("shape", "linear")
-        if shape not in ("L", "linear", "unknown"):
+        if shape not in ("L", "linear", "U", "unknown"):
             shape = "unknown"
 
         segs = t.get("segments_m", [])

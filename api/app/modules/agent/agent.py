@@ -2107,8 +2107,9 @@ class AgentService:
                                 '"backsplash_ml": 4.12, "embedded_sink_count": 1, "hob_count": 1, '
                                 '"notes": [], "extraction_method": "direct_read", "page": 1}]}\n\n'
                                 "Reglas de campos:\n"
-                                "- shape: 'L' si tiene retorno con cota visible en planta, 'linear' si es recta, 'unknown' si ambiguo\n"
-                                "- segments_m: en METROS (no cm). Para L: [tramo principal, retorno]. Para linear: [largo total]\n"
+                                "- shape: 'L' si tiene retorno con cota visible, 'linear' si es recta, 'U' si cubre 3 paredes, 'unknown' si ambiguo\n"
+                                "- segments_m: en METROS (no cm). Para L: [tramo principal, retorno]. Para linear: [largo total]. "
+                                "Para U: [tramo_izq, tramo_fondo_neto, tramo_der] — fondo ya con esquinas restadas\n"
                                 "  Si hay cotas encadenadas (ej: 55+60+60+75 cm), sumarlas y convertir a metros: 2.50m\n"
                                 "- depth_m: profundidad en METROS (no cm). Típico: 0.55-0.65\n"
                                 "- embedded_sink_count: piletas empotradas por unidad (leer de simbología sa-01, etc)\n"

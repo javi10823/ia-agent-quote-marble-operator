@@ -359,9 +359,14 @@ Reglas de extracción:
 - `shape`:
   - "linear" si el corte 1-1 muestra módulos en una sola línea sin cambio de dirección
   - "L" SOLO si hay cota explícita del retorno en planta O un corte lateral confirma el segundo tramo con medida visible
+  - "U" si la mesada cubre 3 paredes (lateral izq + fondo + lateral der). Detectar cuando hay mesada en forma de U o C.
   - "unknown" si hay ambigüedad — NUNCA inventar shape ni retorno sin cota visible
   - Ejemplo: 5 módulos en línea recta (59+60+60+60+60) → "linear" siempre, aunque haya espacio vacío al lado
-- `segments_m`: para L, [tramo largo, tramo corto] — el tramo corto DEBE tener cota explícita en planta. Si no hay cota del retorno → no inventarlo, poner shape "unknown" y agregar nota. Para linear, [largo total]. Leer de cotas de planta y cortes. Si hay módulos (55+60+60), sumar: 1.75m. Si son (55+60+60+60), sumar: 2.35m
+- `segments_m`:
+  - Para linear: [largo total]
+  - Para L: [tramo principal, retorno] — el retorno DEBE tener cota explícita en planta
+  - Para U: [tramo_izq, tramo_fondo_neto, tramo_der] — el fondo YA tiene las esquinas restadas (total_fondo - prof_izq - prof_der)
+  - Leer de cotas de planta y cortes. Si hay módulos (55+60+60), sumar: 1.75m. Si son (55+60+60+60), sumar: 2.35m
 - `depth_m`: profundidad de la mesada (ancho). Leer de planta o corte transversal.
 - `backsplash_ml`: metros lineales de zócalo estimados. Si no podés determinar, omitir (el código usa fallback conservador).
 - `embedded_sink_count`: piletas empotradas por unidad. Leer de simbología (sa-01, etc).

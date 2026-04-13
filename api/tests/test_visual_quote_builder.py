@@ -134,6 +134,31 @@ class TestGeometry:
         expected = round((2.35 * 0.62) + (1.15 * 0.62) - (0.62 * 0.62), 2)
         assert geo.tipologias[0].m2_unit == expected
 
+    def test_u_shape_three_segments(self):
+        """U-shape: 3 tramos × depth, no corner deduction (already in seg_fondo)."""
+        mat = MaterialResolution("x", ["Silestone Blanco Norte"], "single", [], 20)
+        geo = compute_visual_geometry([{
+            "id": "DC-04", "qty": 1, "shape": "U",
+            "segments_m": [0.80, 1.50, 0.80], "depth_m": 0.62,
+        }], mat)
+        expected = round((0.80 + 1.50 + 0.80) * 0.62, 2)
+        assert geo.tipologias[0].m2_unit == expected
+
+    def test_u_shape_confidence(self):
+        """U with 3 segments should have high shape+segments confidence."""
+        conf = compute_field_confidence({
+            "shape": "U", "segments_m": [0.80, 1.50, 0.80], "depth_m": 0.62,
+        })
+        assert conf.shape >= CONF_HIGH
+        assert conf.segments >= CONF_HIGH
+
+    def test_u_shape_wrong_segments(self):
+        """U with != 3 segments should drop confidence."""
+        conf = compute_field_confidence({
+            "shape": "U", "segments_m": [1.50, 0.80], "depth_m": 0.62,
+        })
+        assert conf.segments < CONF_REVIEW
+
     def test_total_closes_with_rows(self):
         """Total m² must equal sum of all row totals."""
         mat = MaterialResolution("x", ["Silestone Blanco Norte"], "single", [], 20)
