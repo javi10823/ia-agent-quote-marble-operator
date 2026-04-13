@@ -1169,6 +1169,7 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
     row_done()
 
     # Sectors + pieces (group duplicates)
+    # First piece row shows: DESC (if discount) then TOTAL (net)
     is_first_piece = True
     for sector in sectors:
         f = row_fill()
@@ -1192,12 +1193,29 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
             pdf.set_font("Helvetica", "", 8)
             pdf.cell(w[0], rh, display, fill=f)
             if is_first_piece:
-                pdf.set_font("Helvetica", "B", 8)
                 if currency == "USD":
-                    # Only show material subtotal for imported (USD) materials
-                    pdf.cell(w[1], rh, "", fill=f)
-                    pdf.cell(w[2], rh, f"TOTAL {currency}", align="R", fill=f)
-                    pdf.cell(w[3], rh, total_mat_fmt, align="R", fill=f)
+                    if discount_pct:
+                        # Discount row on the first piece line
+                        desc_amount = round(total_mat_bruto * discount_pct / 100)
+                        pdf.set_font("Helvetica", "I", 8)
+                        pdf.cell(w[1], rh, "", fill=f)
+                        pdf.cell(w[2], rh, f"Descuento {discount_pct}%", align="R", fill=f)
+                        pdf.cell(w[3], rh, f"- {fmt_price(desc_amount)}", align="R", fill=f)
+                        pdf.ln()
+                        row_done()
+                        # Net total row
+                        f = row_fill()
+                        pdf.cell(w[0], rh, "", fill=f)
+                        pdf.set_font("Helvetica", "B", 8)
+                        pdf.cell(w[1], rh, "", fill=f)
+                        pdf.cell(w[2], rh, f"TOTAL {currency}", align="R", fill=f)
+                        pdf.cell(w[3], rh, fmt_price(total_mat), align="R", fill=f)
+                    else:
+                        # No discount — show bruto total directly
+                        pdf.set_font("Helvetica", "B", 8)
+                        pdf.cell(w[1], rh, "", fill=f)
+                        pdf.cell(w[2], rh, f"TOTAL {currency}", align="R", fill=f)
+                        pdf.cell(w[3], rh, fmt_price(total_mat), align="R", fill=f)
                 else:
                     pdf.cell(w[1] + w[2] + w[3], rh, "", fill=f)
                 is_first_piece = False
@@ -1205,17 +1223,6 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
                 pdf.cell(w[1] + w[2] + w[3], rh, "", fill=f)
             pdf.ln()
             row_done()
-
-    # Discount
-    if discount_pct:
-        f = row_fill()
-        desc_amount = round(round(mat_m2 * mat_price) * discount_pct / 100)
-        desc_fmt = fmt_price(desc_amount)
-        pdf.set_font("Helvetica", "I", 8)
-        pdf.cell(w[0] + w[1], rh, "", fill=f)
-        pdf.cell(w[2], rh, f"Descuento {discount_pct}%", align="R", fill=f)
-        pdf.cell(w[3], rh, f"- {desc_fmt}", align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
-        row_done()
 
     # Spacer row
     pdf.ln(3)
@@ -1384,22 +1391,51 @@ def _generate_excel(output_path: Path, data: dict) -> None:
             all_pieces.append(p)
     all_pieces = [f"{p} (×{seen_xl[p]})" if seen_xl[p] > 1 else p for p in all_pieces]
 
-    # Row 23: first piece + TOTAL
+    # Row 23: first piece — discount + TOTAL on the right side
+    italic_sm = Font(name="Calibri", italic=True, size=9)
+    r = 23
     if len(all_pieces) > 0:
-        ws.cell(23, 1).value = all_pieces[0]
-    # Row 24: second piece + TOTAL USD (template has TOTAL in E24)
-    if len(all_pieces) > 1:
-        ws.cell(24, 1).value = all_pieces[1]
-    if currency == "USD":
-        ws.cell(24, 5).value = f"TOTAL {currency}"
-        ws.cell(24, 6).value = _fmt_usd(total_mat_net)
-    else:
-        # ARS-only: clear template's hardcoded "TOTAL USD" from E24/F24
-        ws.cell(24, 5).value = None
-        ws.cell(24, 6).value = None
-    # Row 25+: remaining pieces
-    for i, piece in enumerate(all_pieces[2:], start=25):
-        ws.cell(i, 1).value = piece
+        ws.cell(r, 1).value = all_pieces[0]
+        if currency == "USD" and discount_pct:
+            # Discount on the first piece row
+            desc_amount = round(total_mat * discount_pct / 100)
+            ws.cell(r, 5).value = f"Descuento {discount_pct}%"
+            ws.cell(r, 5).font = italic_sm
+            ws.cell(r, 6).value = f"- {_fmt_usd(desc_amount)}"
+            ws.cell(r, 6).font = italic_sm
+            r += 1
+            # Net total row
+            ws.cell(r, 1).value = all_pieces[1] if len(all_pieces) > 1 else None
+            ws.cell(r, 5).value = f"TOTAL {currency}"
+            ws.cell(r, 5).font = bold
+            ws.cell(r, 6).value = _fmt_usd(total_mat_net)
+            ws.cell(r, 6).font = bold
+            r += 1
+            # Remaining pieces
+            for piece in all_pieces[2:]:
+                ws.cell(r, 1).value = piece
+                r += 1
+        elif currency == "USD":
+            # No discount — TOTAL on second row
+            r += 1
+            ws.cell(r, 1).value = all_pieces[1] if len(all_pieces) > 1 else None
+            ws.cell(r, 5).value = f"TOTAL {currency}"
+            ws.cell(r, 5).font = bold
+            ws.cell(r, 6).value = _fmt_usd(total_mat_net)
+            ws.cell(r, 6).font = bold
+            r += 1
+            for piece in all_pieces[2:]:
+                ws.cell(r, 1).value = piece
+                r += 1
+        else:
+            # ARS-only: no TOTAL USD row
+            r += 1
+            if len(all_pieces) > 1:
+                ws.cell(r, 1).value = all_pieces[1]
+            r += 1
+            for piece in all_pieces[2:]:
+                ws.cell(r, 1).value = piece
+                r += 1
 
     # MO items — template has 4 slots (rows 28-31). Insert extra rows if needed.
     MO_HEADER_ROW = 27

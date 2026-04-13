@@ -5,7 +5,7 @@ from pathlib import Path
 
 from app.core.catalog_dir import CATALOG_DIR
 
-_catalog_cache: dict[str, list] = {}
+_catalog_cache: dict[str, tuple[float, list]] = {}  # name -> (mtime, items)
 _config_cache: dict | None = None
 _ai_config_cache: dict | None = None
 
@@ -73,8 +73,13 @@ def _get_iva_multiplier() -> float:
 
 
 def _load_catalog(name: str) -> list:
+    # Check file mtime to auto-invalidate stale cache
+    path = CATALOG_DIR / f"{name}.json"
+    current_mtime = path.stat().st_mtime if path.exists() else 0.0
     if name in _catalog_cache:
-        return _catalog_cache[name]
+        cached_mtime, cached_items = _catalog_cache[name]
+        if cached_mtime >= current_mtime and current_mtime > 0:
+            return cached_items
     # Try DB first (persistent), fallback to file
     try:
         from sqlalchemy import create_engine, text
@@ -88,14 +93,13 @@ def _load_catalog(name: str) -> list:
                 raw = row[0]
                 data = json.loads(raw) if isinstance(raw, str) else raw
                 items = data if isinstance(data, list) else data.get("items", [data]) if isinstance(data, dict) else []
-                _catalog_cache[name] = items
+                _catalog_cache[name] = (current_mtime, items)
                 logging.debug(f"Loaded catalog '{name}' from DB: {len(items)} items")
                 return items
         eng.dispose()
     except Exception as e:
         logging.warning(f"DB catalog read failed for {name}: {e}")
     # Fallback to file
-    path = CATALOG_DIR / f"{name}.json"
     if not path.exists():
         return []
     try:
@@ -104,7 +108,7 @@ def _load_catalog(name: str) -> list:
         logging.error(f"Malformed catalog JSON: {name}.json — {e}")
         return []
     items = data if isinstance(data, list) else data.get("items", [])
-    _catalog_cache[name] = items
+    _catalog_cache[name] = (current_mtime, items)
     return items
 
 
@@ -231,23 +235,27 @@ def check_architect(client_name: str) -> dict:
         if name_lower == item_name or name_lower == item_firm:
             return {"found": True, "exact": True, "name": item["name"], "firm": item.get("firm"), "discount": item.get("discount", True)}
 
-    # Fuzzy match — require at least 2 words to match (name + surname, not just first name)
+    # Fuzzy match — substring and word overlap
     partial = []
     name_words = set(name_lower.split())
     for item in items:
         item_name = (item.get("name") or "").lower()
         item_firm = (item.get("firm") or "").lower()
         item_words = set(item_name.replace("arq.", "").replace("arq ", "").strip().split())
-        # Match if at least 2 words overlap (e.g. "luciana pacor" matches "ARQ. LUCIANA PACOR")
-        # Single word like "luciana" alone does NOT match
+
+        # Substring match: "munge" in "estudio munge" or vice versa
+        if name_lower in item_name or name_lower in item_firm or item_name in name_lower or item_firm in name_lower:
+            partial.append({"name": item["name"], "firm": item.get("firm"), "discount": item.get("discount", True)})
+            continue
+
+        # Word overlap: at least 1 significant word (>3 chars) matches
         common_words = name_words & item_words
-        if len(common_words) >= 2:
-            partial.append({"name": item["name"], "firm": item.get("firm")})
-        elif item_firm and (name_lower == item_firm or item_firm == name_lower):
-            partial.append({"name": item["name"], "firm": item.get("firm")})
+        significant = [w for w in common_words if len(w) > 3]
+        if significant:
+            partial.append({"name": item["name"], "firm": item.get("firm"), "discount": item.get("discount", True)})
 
     if partial:
-        return {"found": True, "exact": False, "matches": partial, "message": f"Posible arquitecta: {', '.join(p['name'] for p in partial)}. Confirmar con operador."}
+        return {"found": True, "exact": len(partial) == 1, "name": partial[0]["name"], "firm": partial[0].get("firm"), "discount": partial[0].get("discount", True), "matches": partial, "message": f"Arquitecta encontrada: {', '.join(p['name'] for p in partial)}. Aplicar descuento."}
 
     return {"found": False, "message": f"'{client_name}' no está en architects.json"}
 

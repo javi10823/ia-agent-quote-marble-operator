@@ -10,6 +10,10 @@
 ### Zocalos — leer cada mesada individualmente
 - NO asumir simetria ni generalizar
 - Rasterizar y revisar mesada por mesada antes de asignar lados
+- **CADA lado que toca pared lleva zocalo** — verificar los 4 lados: fondo, izquierda, derecha, frente
+- En mesadas en L: el tramo corto tiene zocalo lateral en su lado libre si toca pared
+- Ejemplo cocina en L: tramo principal 1.72×0.75 + tramo corto 0.60×1.55 → zocalos: fondo 1.55ml, lateral izq tramo corto 0.60ml, fondo tramo principal 1.72ml (o inferior 1.74ml si hay cota), **lateral derecho tramo principal 0.75ml**
+- Si hay duda sobre si un lado toca pared: incluir el zocalo (mejor sobrar que faltar)
 
 ### 2+ cotas en mismo eje → usar la mas larga
 La menor es detalle interno.

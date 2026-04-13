@@ -31,7 +31,8 @@ def load_catalog_from_file(name: str) -> list:
 
 
 async def seed_catalogs_to_db(engine):
-    """Seed catalogs from source JSONs into DB on first boot."""
+    """Seed catalogs from source JSONs into DB on first boot,
+    and sync updated catalogs on every boot."""
     from sqlalchemy import text
     from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.orm import sessionmaker
@@ -42,7 +43,8 @@ async def seed_catalogs_to_db(engine):
         result = await session.execute(text("SELECT COUNT(*) FROM catalogs"))
         count = result.scalar()
         if count > 0:
-            logger.info(f"Catalogs table already has {count} entries, skipping seed")
+            logger.info(f"Catalogs table already has {count} entries, syncing from files...")
+            await _sync_catalogs_from_files(async_session)
             await _sync_config_keys(async_session)
             return
 
@@ -65,6 +67,68 @@ async def seed_catalogs_to_db(engine):
 
     # Always sync new top-level keys from config.json → DB
     await _sync_config_keys(async_session)
+
+
+async def _sync_catalogs_from_files(async_session):
+    """On every boot, compare source JSON files vs DB.
+
+    If the file's mtime is newer than DB updated_at, overwrite DB content
+    with the file version. This ensures that deploy-time catalog updates
+    (e.g. price changes committed to git) always reach the DB without
+    needing a manual UI edit or DB wipe.
+    """
+    import os
+    from datetime import datetime, timezone
+    from sqlalchemy import text
+
+    async with async_session() as session:
+        # Get all DB catalogs with their updated_at
+        result = await session.execute(
+            text("SELECT name, updated_at FROM catalogs")
+        )
+        db_times = {row[0]: row[1] for row in result.fetchall()}
+
+        updated = []
+        for src in SOURCE_CATALOG_DIR.glob("*.json"):
+            name = src.stem
+            file_mtime = datetime.fromtimestamp(
+                os.path.getmtime(src), tz=timezone.utc
+            )
+
+            db_updated = db_times.get(name)
+            if db_updated is not None:
+                # Make db_updated offset-aware if naive
+                if db_updated.tzinfo is None:
+                    db_updated = db_updated.replace(tzinfo=timezone.utc)
+                if file_mtime <= db_updated:
+                    continue  # DB is same or newer, skip
+
+            # File is newer → update DB
+            try:
+                with open(src, encoding="utf-8") as f:
+                    content = json.load(f)
+                await session.execute(
+                    text(
+                        "INSERT INTO catalogs (name, content, updated_at) "
+                        "VALUES (:name, :content, :ts) "
+                        "ON CONFLICT (name) DO UPDATE "
+                        "SET content = :content, updated_at = :ts"
+                    ),
+                    {
+                        "name": name,
+                        "content": json.dumps(content, ensure_ascii=False),
+                        "ts": file_mtime,
+                    },
+                )
+                updated.append(name)
+            except Exception as e:
+                logger.warning(f"Could not sync catalog {name} from file: {e}")
+
+        if updated:
+            await session.commit()
+            logger.info(f"Synced {len(updated)} catalogs from files → DB: {updated}")
+        else:
+            logger.info("All catalogs in DB are up-to-date with source files")
 
 
 async def _sync_config_keys(async_session):
