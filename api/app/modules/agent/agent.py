@@ -2112,17 +2112,19 @@ class AgentService:
                                 logging.warning(f"[visual-pages] Cotas guide load error: {e}")
 
                             _extraction_system = (
-                                "Estás analizando la vista PLANTA (vista desde arriba) de una cocina.\n"
-                                "La geometría de marmolería debe extraerse SOLO desde la vista PLANTA.\n"
-                                "Las mesadas aparecen como rectángulos sombreados pegados a las paredes.\n\n"
-                                "IGNORAR COMPLETAMENTE en esta etapa:\n"
-                                "- CORTE 1-1, CORTE 2-2, CORTE 3-3 y cualquier vista de perfil lateral\n"
-                                "- Dimensiones de objetos: anafe, heladera, microondas, lavarropas\n"
-                                "- Proyecciones de alacenas superiores\n"
-                                "- Cotas de muebles o artefactos que no correspondan a la piedra\n\n"
-                                "Leer SOLO cotas sobre los rectángulos sombreados de mesada en PLANTA.\n"
-                                "Si una medida no se puede inferir con claridad desde PLANTA → "
-                                "devolver como ambigua, NO completar con datos de cortes.\n\n"
+                                "Estás analizando una vista cenital (desde arriba) de una cocina.\n"
+                                "En esta vista las mesadas aparecen como rectángulos sombreados pegados a las paredes.\n"
+                                "Vas a ver piletas (rectángulos con óvalo), anafes (círculos sobre mesada), y cotas numéricas.\n\n"
+                                "FOCALIZATE ÚNICAMENTE en la geometría de la piedra (mesada):\n"
+                                "- Medir los rectángulos sombreados que representan la mesada\n"
+                                "- Leer cotas que estén sobre o junto a esos rectángulos\n"
+                                "- Contar piletas y anafes que estén SOBRE la mesada\n\n"
+                                "NO usar medidas de:\n"
+                                "- Vistas de perfil lateral (cortes) — esas muestran el mueble, no la piedra desde arriba\n"
+                                "- Objetos que no son piedra: heladera, microondas, lavarropas, horno\n"
+                                "- Muebles bajo mesada (melamina/carpintería)\n"
+                                "- Ancho total del ambiente\n\n"
+                                "Si una medida no se puede leer con claridad → marcar como ambigua.\n\n"
                                 "Responder ÚNICAMENTE con JSON usando EXACTAMENTE este schema:\n"
                                 '{"material_text": "...", "tipologias": [{"id": "DC-02", "qty": 2, '
                                 '"shape": "L", "depth_m": 0.62, "segments_m": [2.35, 1.15], '
