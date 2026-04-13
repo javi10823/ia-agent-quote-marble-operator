@@ -2828,7 +2828,10 @@ class AgentService:
 
                     # Persist files_v2 + legacy drive_url
                     try:
-                        _cur_bd = _cur.quote_breakdown if _cur and _cur.quote_breakdown else {}
+                        # Re-read quote for fresh breakdown (previous commit expired _cur)
+                        _fresh_r = await db.execute(select(Quote).where(Quote.id == target_qid))
+                        _fresh_q = _fresh_r.scalar_one_or_none()
+                        _cur_bd = dict(_fresh_q.quote_breakdown) if _fresh_q and _fresh_q.quote_breakdown else {}
                         _cur_bd["files_v2"] = {"items": files_v2_items}
                         drive_update = {"quote_breakdown": _cur_bd}
                         if first_drive_url:
@@ -2864,6 +2867,8 @@ class AgentService:
                     "pdf_url": result.get("pdf_url"),
                     "excel_url": result.get("excel_url"),
                     "drive_url": final_drive_url if result.get("ok") else None,
+                    "drive_pdf_url": _drive_pdf_url,
+                    "drive_excel_url": _drive_excel_url,
                     "error": result.get("error"),
                 })
 
