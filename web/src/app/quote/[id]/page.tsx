@@ -224,6 +224,13 @@ export default function QuotePage() {
           if (fromDetail) setInlineActionText(""); else setActionText("");
           // Throttle state updates to 1 per animation frame
           if (!rafPending) { rafPending = true; requestAnimationFrame(flushAcc); }
+        } else if (chunk.type === "zone_selector") {
+          // Fix G: show zone selector to operator
+          try {
+            const selectorData = JSON.parse(chunk.content);
+            acc = `__ZONE_SELECTOR__${chunk.content}`;
+            setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc, isStreaming: false } : m));
+          } catch { /* ignore parse errors */ }
         } else if (chunk.type === "action") {
           if (fromDetail) setInlineActionText(chunk.content); else setActionText(chunk.content);
         } else if (chunk.type === "done") {
@@ -399,7 +406,37 @@ export default function QuotePage() {
                       </span>
                     </div>
                   ) : (
-                    <MessageBubble message={msg} actionText={msg.isStreaming ? actionText : undefined} />
+                    {msg.content.startsWith("__ZONE_SELECTOR__") ? (
+                      (() => {
+                        try {
+                          const selectorData = JSON.parse(msg.content.replace("__ZONE_SELECTOR__", ""));
+                          const ZoneSelector = require("@/components/chat/ZoneSelector").default;
+                          return (
+                            <div className="msg-anim flex gap-3 items-start">
+                              <div className="max-w-[85%] md:max-w-[70%] lg:max-w-[60%]">
+                                <ZoneSelector
+                                  imageUrl={selectorData.image_url}
+                                  pageNum={selectorData.page_num}
+                                  instruction={selectorData.instruction}
+                                  onConfirm={async (bbox: { x1: number; y1: number; x2: number; y2: number }) => {
+                                    try {
+                                      const { selectZone } = await import("@/lib/api");
+                                      await selectZone(quoteId, bbox, selectorData.page_num);
+                                      // Auto-trigger: send system message to continue processing
+                                      send("zona confirmada");
+                                    } catch (err) {
+                                      console.error("zone-select failed:", err);
+                                    }
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        } catch { return null; }
+                      })()
+                    ) : (
+                      <MessageBubble message={msg} actionText={msg.isStreaming ? actionText : undefined} />
+                    )}
                   )}
                   {needsConfirm && (
                     <div className="flex gap-2 mt-2 ml-[42px]">

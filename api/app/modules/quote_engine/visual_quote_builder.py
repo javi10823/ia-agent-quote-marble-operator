@@ -859,6 +859,32 @@ def apply_corrections(tipologias: list[dict], corrections: list[dict]) -> list[d
 
 # ── 8. Render Functions ────────────────────────────────────────────────────────
 
+def normalize_bbox_to_pixels(
+    bbox_normalized: dict,
+    image_width: int,
+    image_height: int,
+) -> list[int]:
+    """Convert normalized bbox (0-1) to pixel coordinates.
+
+    Args:
+        bbox_normalized: {x1, y1, x2, y2} in 0-1 range
+        image_width: real image width in pixels
+        image_height: real image height in pixels
+
+    Returns: [x1, y1, x2, y2] in pixels, clamped to image bounds
+    """
+    x1 = max(0, min(int(bbox_normalized["x1"] * image_width), image_width))
+    y1 = max(0, min(int(bbox_normalized["y1"] * image_height), image_height))
+    x2 = max(0, min(int(bbox_normalized["x2"] * image_width), image_width))
+    y2 = max(0, min(int(bbox_normalized["y2"] * image_height), image_height))
+    # Ensure x1 < x2 and y1 < y2
+    if x1 > x2:
+        x1, x2 = x2, x1
+    if y1 > y2:
+        y1, y2 = y2, y1
+    return [x1, y1, x2, y2]
+
+
 def backsplash_needs_confirmation(
     backsplash_ml: Optional[float],
     segments_m: list[float],
@@ -1112,11 +1138,13 @@ def parse_zone_detection(claude_response: str) -> list[dict]:
 def auto_select_zone(
     zones: list[dict],
     zone_default: Optional[str] = None,
+    zone_default_bbox: Optional[list] = None,
 ) -> Optional[dict]:
     """Auto-select the most likely marmolería zone.
 
     Priority:
-    1. zone_default (learned from previous page) — exact match case-insensitive
+    0. zone_default_bbox (operator-drawn rectangle) — use directly
+    1. zone_default (learned name) — exact match case-insensitive
     2. view_type == "top_view" — vista cenital = marmolería
     3. Zone containing "PLANTA" in name — fallback if no view_type
     4. Largest zone by bbox area (excluding CORTE/DETALLE names)
@@ -1129,6 +1157,16 @@ def auto_select_zone(
     def bbox_area(z):
         b = z.get("bbox", [0, 0, 0, 0])
         return abs(b[2] - b[0]) * abs(b[3] - b[1])
+
+    # 0. Operator-drawn rectangle (highest priority)
+    if zone_default_bbox and isinstance(zone_default_bbox, list) and len(zone_default_bbox) == 4:
+        return {
+            "name": "OPERADOR_SELECTION",
+            "bbox": zone_default_bbox,
+            "view_type": "top_view",
+            "confidence": 1.0,
+            "source": "operator_rectangle",
+        }
 
     # 1. zone_default (learned from previous page)
     if zone_default:

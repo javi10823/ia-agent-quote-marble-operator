@@ -22,6 +22,7 @@ from app.modules.quote_engine.visual_quote_builder import (
     build_visual_pending_questions,
     parse_visual_extraction,
     parse_zone_detection,
+    normalize_bbox_to_pixels,
     auto_select_zone,
     parse_page_confirmation,
     render_page_confirmation,
@@ -843,3 +844,34 @@ class TestStateMachineIntegration:
             _visual_builder_done = False
 
         assert _visual_builder_done is False
+
+
+# ── Zone Selection / Fix G ───────────────────────────────────────────────────
+
+class TestNormalizeBbox:
+    def test_basic_normalization(self):
+        bbox = normalize_bbox_to_pixels({"x1": 0.5, "y1": 0.5, "x2": 1.0, "y2": 1.0}, 1000, 800)
+        assert bbox == [500, 400, 1000, 800]
+
+    def test_clamps_to_bounds(self):
+        bbox = normalize_bbox_to_pixels({"x1": -0.1, "y1": -0.1, "x2": 1.5, "y2": 1.5}, 1000, 800)
+        assert bbox == [0, 0, 1000, 800]
+
+    def test_swaps_if_inverted(self):
+        bbox = normalize_bbox_to_pixels({"x1": 0.8, "y1": 0.8, "x2": 0.2, "y2": 0.2}, 1000, 1000)
+        assert bbox[0] < bbox[2]
+        assert bbox[1] < bbox[3]
+
+
+class TestAutoSelectWithOperatorBbox:
+    def test_operator_bbox_highest_priority(self):
+        zones = [{"name": "PLANTA", "bbox": [0, 0, 600, 400], "view_type": "top_view", "confidence": 0.95}]
+        selected = auto_select_zone(zones, zone_default_bbox=[100, 200, 500, 600])
+        assert selected["name"] == "OPERADOR_SELECTION"
+        assert selected["bbox"] == [100, 200, 500, 600]
+        assert selected["confidence"] == 1.0
+
+    def test_no_bbox_falls_to_normal(self):
+        zones = [{"name": "PLANTA", "bbox": [0, 0, 600, 400], "view_type": "top_view", "confidence": 0.95}]
+        selected = auto_select_zone(zones, zone_default_bbox=None)
+        assert selected["name"] == "PLANTA"

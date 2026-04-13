@@ -892,6 +892,76 @@ async def backfill_drive(db: AsyncSession = Depends(get_db)):
     return {"total": len(quotes), "results": results}
 
 
+# ── ZONE SELECT — operator draws rectangle on plan page ───────────────────────
+
+from pydantic import BaseModel as _BaseModel
+
+
+class ZoneSelectRequest(_BaseModel):
+    bbox_normalized: dict  # {x1, y1, x2, y2} in 0-1 range
+    page_num: int = 1
+
+
+@router.post("/quotes/{quote_id}/zone-select")
+async def zone_select(
+    quote_id: str,
+    body: ZoneSelectRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Receive operator's rectangle selection on a plan page.
+
+    Converts normalized bbox to pixels, persists as selected_zone
+    and zone_default for subsequent pages.
+    """
+    import logging
+    from PIL import Image as _PILImage
+    from app.modules.quote_engine.visual_quote_builder import normalize_bbox_to_pixels
+
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    bd = quote.quote_breakdown or {}
+
+    # Read real image dimensions from disk
+    from app.core.static import OUTPUT_DIR
+    img_path = OUTPUT_DIR / quote_id / f"page_{body.page_num}.jpg"
+    if img_path.exists():
+        with _PILImage.open(img_path) as img:
+            real_w, real_h = img.size
+    else:
+        logging.warning(f"[zone-select] Image not found at {img_path}, using fallback 1200x1200")
+        real_w, real_h = 1200, 1200
+
+    bbox_px = normalize_bbox_to_pixels(body.bbox_normalized, real_w, real_h)
+    logging.info(f"[zone-select] Quote {quote_id}: bbox_normalized={body.bbox_normalized} → bbox_px={bbox_px} (image {real_w}×{real_h})")
+
+    # Persist as selected zone + zone_default
+    page_key = str(body.page_num)
+    page_data = bd.get("page_data", {})
+    pd = page_data.get(page_key, {})
+    pd["selected_zone"] = {
+        "name": "OPERADOR_SELECTION",
+        "bbox": bbox_px,
+        "view_type": "top_view",
+        "confidence": 1.0,
+        "source": "operator_rectangle",
+    }
+    page_data[page_key] = pd
+    bd["page_data"] = page_data
+    bd["zone_default"] = "OPERADOR_SELECTION"
+    bd["zone_default_bbox"] = bbox_px
+    bd["building_step"] = f"visual_page_{body.page_num}"
+
+    await db.execute(
+        update(Quote).where(Quote.id == quote_id).values(quote_breakdown=bd)
+    )
+    await db.commit()
+
+    return {"ok": True, "bbox_px": bbox_px, "image_size": [real_w, real_h]}
+
+
 # ── CHAT — SSE STREAMING ──────────────────────────────────────────────────────
 
 @router.post("/quotes/{quote_id}/chat")
