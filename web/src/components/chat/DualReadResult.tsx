@@ -127,8 +127,7 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
     setRetrying(true);
     setRetryError(null);
     try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-      const res = await fetch(`${API_URL}/api/quotes/${quoteId}/dual-read-retry`, {
+      const res = await fetch(`/api/quotes/${quoteId}/dual-read-retry`, {
         method: "POST",
         credentials: "include",
       });
@@ -199,7 +198,7 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                     />
                   ) : (
                     <span className={STATUS_COLORS[z.status] || "text-t2"}>
-                      {z.ml}ml \u00D7 {z.alto_m}m
+                      {z.ml}ml × {z.alto_m}m
                     </span>
                   )}
                 </div>
