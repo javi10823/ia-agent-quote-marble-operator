@@ -99,9 +99,16 @@ export default function QuotePage() {
       setMessages(parseMessages(q.messages));
       if (q.status === "validated" || q.status === "sent" || q.status === "pending" || q.source === "web") setTab("detail");
     }).catch((err: any) => {
+      // Quote was deleted elsewhere (another tab, cleanup job, etc.) — don't
+      // strand the operator on an orphan page where every chat returns 404.
+      if (err?.code === "QUOTE_NOT_FOUND") {
+        abortRef.current?.abort();
+        router.replace("/");
+        return;
+      }
       setLoadError(err.message || "Error al cargar presupuesto");
     }).finally(() => setLoading(false));
-  }, [quoteId]);
+  }, [quoteId, router]);
 
   // Abort SSE stream on unmount or quoteId change
   useEffect(() => {
@@ -180,7 +187,14 @@ export default function QuotePage() {
           else if (chunk.type === "done") { gotDone = true; setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc, isStreaming: false } : m)); }
         }
         if (!gotDone) setMessages(p => p.map(m => m.id === aid ? { ...m, content: "Veo que el plano tiene m\u00faltiples piezas. Para leer las medidas correctamente, necesito que me mandes una captura/foto de CADA pieza por separado (una imagen por cuadro/box). As\u00ed evitamos errores en las cotas.", isStreaming: false } : m));
-      } catch { setMessages(p => p.map(m => m.id === aid ? { ...m, content: "Veo que el plano tiene m\u00faltiples piezas. Para leer las medidas correctamente, necesito que me mandes una captura/foto de CADA pieza por separado (una imagen por cuadro/box). As\u00ed evitamos errores en las cotas.", isStreaming: false } : m)); }
+      } catch (e: any) {
+        if (e?.code === "QUOTE_NOT_FOUND") {
+          abortRef.current?.abort();
+          router.replace("/");
+          return;
+        }
+        setMessages(p => p.map(m => m.id === aid ? { ...m, content: "Veo que el plano tiene m\u00faltiples piezas. Para leer las medidas correctamente, necesito que me mandes una captura/foto de CADA pieza por separado (una imagen por cuadro/box). As\u00ed evitamos errores en las cotas.", isStreaming: false } : m));
+      }
       finally { setSending(false); }
       return;
     }
@@ -266,7 +280,13 @@ export default function QuotePage() {
         if (fromDetail) setLastInlineResponse({ id: aid, role: "assistant", content: errorMsg, isStreaming: false });
         setLastFailedMsg(text);
       }
-    } catch {
+    } catch (e: any) {
+      if (e?.code === "QUOTE_NOT_FOUND") {
+        // Quote was deleted — bail out, stop the 404 POST spam, go home.
+        abortRef.current?.abort();
+        router.replace("/");
+        return;
+      }
       if (sentFromDetail.current) setInlineActionText(""); else setActionText("");
       const errContent = `${WARN} El servicio est${A} moment${A}neamente saturado. Presion${A} "Reintentar" para volver a intentar.`;
       setMessages(p => p.map(m => m.id === aid ? { ...m, content: errContent, isStreaming: false } : m));
