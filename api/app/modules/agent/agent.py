@@ -1623,11 +1623,15 @@ class AgentService:
                                         except Exception as e:
                                             logging.warning(f"[dual-read] Failed to save result: {e}")
                                         logging.info(f"[dual-read] Result sent: source={_dual_result.get('source')}, review={_dual_result.get('requires_human_review')}")
+                                        # ── STOP: agent terminates turn, waits for operator confirmation ──
+                                        yield {"type": "done", "content": ""}
+                                        return
                                     else:
                                         logging.warning(f"[dual-read] Error: {_dual_result.get('error')}")
+                                        # Error → fall through to normal Claude flow
                                 except Exception as e:
                                     logging.error(f"[dual-read] Exception: {e}", exc_info=True)
-                                    # Non-fatal — continue with normal Claude flow
+                                    # Non-fatal — fall through to normal Claude flow
 
                         except Exception as e:
                             logging.warning(f"[planilla] Drawing crop failed, falling back to full PDF: {e}")

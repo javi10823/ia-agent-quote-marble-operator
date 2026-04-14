@@ -133,8 +133,6 @@ export default function DualReadResult({ data, onConfirm }: Props) {
     });
   };
 
-  const hasConflicts = editedData.requires_human_review;
-
   return (
     <div className="rounded-[10px] border border-b1 bg-s2 p-3 my-2 max-w-lg">
       <div className="text-[13px] font-semibold text-t1 mb-2">

@@ -414,12 +414,19 @@ async def dual_read_crop(
 ) -> dict:
     """Read a crop with Sonnet first, Opus on demand. Reconcile results.
 
-    dual_read_enabled semantics:
+    Flag semantics (dual_read_enabled in config.json):
       True  → Sonnet first, if confident < 0.9 → also Opus, then reconcile
-      False → Sonnet ONLY, direct result, no Opus, no reconciliation
+      False → Sonnet ONLY, direct result, NO Opus call, NO reconciliation
+
+    NOTE: This flag is INDEPENDENT of use_opus_for_plans (which controls the
+    main agent loop model). dual_read_enabled controls only this dual vision
+    reader module. Both can be true/false independently.
     """
     sonnet_model = settings.ANTHROPIC_MODEL  # claude-sonnet-4-5-20250514
-    opus_model = "claude-opus-4-6"
+    # Opus model from config (not hardcoded) — allows changing without code deploy
+    from app.modules.agent.tools.catalog_tool import get_ai_config
+    _ai = get_ai_config()
+    opus_model = _ai.get("opus_model", "claude-opus-4-6")
 
     # Step 1: Always call Sonnet (fast, ~3-5s)
     logger.info(f"[dual-read] Calling Sonnet for '{crop_label}'...")
