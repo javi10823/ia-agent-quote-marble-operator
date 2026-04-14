@@ -122,13 +122,18 @@ def parse_planilla_table(tables: list, page_width: float = 0, page_height: float
                         setattr(data, field_name, raw_val)
                     break
 
-        # Store bbox if available
+        # Store bbox — use keyword positions if available, fallback to table bbox
+        # The table bbox often covers the whole page (including drawing),
+        # so we use word positions to find where the characteristics table starts
+        data.table_x0 = 0
+        data.table_y0 = 0
+        data.table_x1 = page_width
+        data.table_y1 = page_height
+
         if table_bboxes and t_idx < len(table_bboxes):
             bbox = table_bboxes[t_idx]
             if hasattr(bbox, 'bbox'):
                 bbox = bbox.bbox
-            data.table_x0 = bbox[0]
-            data.table_y0 = bbox[1]
             data.table_x1 = bbox[2]
             data.table_y1 = bbox[3]
 
@@ -189,6 +194,30 @@ def build_planilla_context(data: PlanillaData) -> str:
     lines.append("Usá las cotas del dibujo para largo × ancho de cada pieza.")
 
     return "\n".join(lines)
+
+
+def detect_table_x_from_words(page) -> float:
+    """Detect where the characteristics table starts using word positions.
+
+    Looks for planilla keywords (UBICACIÓN, MATERIAL, etc.) and returns
+    the minimum x0 of those words. This is more reliable than table bbox
+    which often spans the entire page including the drawing.
+    """
+    keywords = ["ubicación", "ubicacion", "material", "espesor", "cantos",
+                "pileta", "griferia", "grifería", "zocalos", "zócalos", "características"]
+    try:
+        words = page.extract_words()
+        keyword_x = []
+        for w in words:
+            if w.get("text", "").lower().strip() in keywords:
+                keyword_x.append(w["x0"])
+        if keyword_x:
+            x = min(keyword_x)
+            logger.info(f"[planilla] Table starts at x={x:.0f} (from {len(keyword_x)} keyword positions)")
+            return x
+    except Exception as e:
+        logger.warning(f"[planilla] Word position detection failed: {e}")
+    return 0
 
 
 def crop_drawing_from_page(page_img, planilla_data: PlanillaData, dpi: int = 200) -> "Image":

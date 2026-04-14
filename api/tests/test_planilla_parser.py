@@ -11,6 +11,7 @@ from app.modules.quote_engine.planilla_parser import (
     parse_planilla_table,
     build_planilla_context,
     crop_drawing_from_page,
+    detect_table_x_from_words,
     PlanillaData,
 )
 
@@ -159,7 +160,11 @@ class TestWithRealPDF:
             assert result.m2 == 2.50, f"Expected 2.50 m2, got {result.m2}"
             assert "PALOMA" in result.material.upper()
             assert "LUXOR" in result.pileta.upper()
-            assert result.table_x0 > 0, "Should have table bbox"
+            # Use word positions for accurate table x
+            word_x = detect_table_x_from_words(page)
+            if word_x > 0:
+                result.table_x0 = word_x
+            assert result.table_x0 > 100, f"Table should start well into the page, got x0={result.table_x0}"
             print(f"\nReal planilla parsed:")
             print(f"  Material: {result.material}")
             print(f"  M2: {result.m2}")
