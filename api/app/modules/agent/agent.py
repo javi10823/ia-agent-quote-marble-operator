@@ -80,6 +80,45 @@ def _validate_quote_data(qdata: dict) -> tuple[list[str], list[str]]:
 
     return errors, warnings
 
+
+def _backfill_material_price_base(quotes_data: list[dict]) -> None:
+    """Populate `material_price_base` on each quote dict from the catalog.
+
+    The `generate_documents` tool schema doesn't expose this field to the
+    LLM, so it arrives as None. The validator's IVA check skips silently
+    if unit is also None, but warns ("Falta material_price_base") when
+    unit is set but base isn't. We look up the material by name and copy
+    the catalog's base price (USD or ARS) into the dict in-place.
+
+    Mutates `quotes_data` in place. Safe to call idempotently — quotes
+    that already carry `material_price_base` are skipped.
+    """
+    from app.modules.quote_engine.calculator import _find_material
+
+    for qdata in quotes_data:
+        if qdata.get("material_price_base"):
+            continue
+        mname = qdata.get("material_name", "")
+        if not mname:
+            continue
+        try:
+            mr = _find_material(mname)
+        except Exception as exc:
+            logging.warning(
+                f"[material_price_base] catalog lookup crashed for {mname!r}: {exc}"
+            )
+            continue
+        if not mr.get("found"):
+            continue
+        cur = (qdata.get("material_currency") or mr.get("currency", "")).upper()
+        if cur == "USD":
+            base = mr.get("price_usd_base")
+        else:
+            base = mr.get("price_ars_base")
+        if base:
+            qdata["material_price_base"] = base
+
+
 # ── BUILDING DETECTION (unified — delegates to edificio_parser) ──────────────
 
 def _detect_building(user_message: str) -> bool:
@@ -3004,6 +3043,13 @@ class AgentService:
                 quotes_data = [inputs["quote_data"]]
 
             logging.info(f"generate_documents: {len(quotes_data)} material(s) to generate")
+
+            # Populate material_price_base from catalog if missing. The
+            # `generate_documents` tool schema doesn't expose this field to the
+            # LLM, so we look it up here to enable validate_despiece's IVA
+            # check. Without this the validator emitted "Falta
+            # material_price_base" for every quote (DINALE 14/04/2026).
+            _backfill_material_price_base(quotes_data)
 
             # Pre-flight checklist before generating
             all_warnings: list[str] = []
