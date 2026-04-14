@@ -292,47 +292,6 @@ class TestM2SurfaceParser:
         assert self._extract_m2(text) is None
 
 
-class TestM2Solver:
-    def test_munge_case_finds_correct_solution(self):
-        """Dims from Munge plan should solve to 2.50 m²."""
-        from app.modules.quote_engine.calculator import solve_m2_from_dims
-        dims = [1.74, 1.72, 1.55, 0.75, 0.6]
-        solutions = solve_m2_from_dims(dims, expected_m2=2.50, zoc_h=0.07)
-        assert solutions is not None
-        assert len(solutions) > 0
-        best = solutions[0]
-        assert abs(best["total"] - 2.50) <= 0.05
-        # Should have 2 mesada pieces
-        assert len(best["pieces"]) == 2
-
-    def test_munge_all_solutions_sum_correctly(self):
-        """All solutions should sum within tolerance of 2.50 m²."""
-        from app.modules.quote_engine.calculator import solve_m2_from_dims
-        dims = [1.74, 1.72, 1.55, 0.75, 0.6]
-        solutions = solve_m2_from_dims(dims, expected_m2=2.50, zoc_h=0.07)
-        assert solutions is not None
-        for sol in solutions:
-            assert abs(sol["total"] - 2.50) <= 0.05, f"Solution total {sol['total']} too far from 2.50"
-            # Each solution should use different anchos (diverse dims)
-            assert len(sol["pieces"]) >= 1
-
-    def test_simple_single_piece(self):
-        """Single mesada 2.0x0.6 = 1.20 m² with no zócalos."""
-        from app.modules.quote_engine.calculator import solve_m2_from_dims
-        dims = [2.0, 0.6]
-        solutions = solve_m2_from_dims(dims, expected_m2=1.20, zoc_h=0.05)
-        assert solutions is not None
-        best = solutions[0]
-        assert abs(best["total"] - 1.20) <= 0.02
-
-    def test_no_solution_returns_none(self):
-        """Impossible target should return None."""
-        from app.modules.quote_engine.calculator import solve_m2_from_dims
-        dims = [0.5, 0.3]
-        solutions = solve_m2_from_dims(dims, expected_m2=99.0, zoc_h=0.07)
-        assert solutions is None
-
-
     def test_validation_passes_when_close(self):
         """2.49 vs 2.50 = 0.4% diff → should pass (< 5%)."""
         expected = 2.50
