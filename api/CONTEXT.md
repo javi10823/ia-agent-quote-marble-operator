@@ -111,6 +111,24 @@ Asumir forma compuesta (L, U) SOLO si:
 
 Ejemplo: planilla con "Mesada A 1.55×0.60" + "Mesada B 1.72×0.75" y sin más indicación → son **dos mesadas rectas independientes**, no una L. Si dudás, PREGUNTÁ: "¿Son dos mesadas independientes o forman una L?"
 
+**⛔ PILETA SIN PRODUCTO — REGLA LITERAL:**
+Cuando el operador dice EXPLÍCITO en el enunciado:
+- "sin producto de pileta"
+- "sin pileta producto"
+- "sin pileta Johnson"
+- "PEGADOPILETA MO" (sin mención de producto Johnson)
+- "D'Angelo no provee la pileta"
+- "el cliente trae la pileta"
+
+→ **Pasar `pileta: "empotrada_cliente"` a `calculate_quote`**, NO `"empotrada_johnson"`.
+→ NO buscar ningún SKU en sinks.json.
+→ NO pasar `pileta_sku`.
+→ El calculator va a cargar la MO de PEGADOPILETA por cantidad pero NO va a agregar producto pileta al bloque PILETAS.
+
+⛔ **NUNCA inventar un modelo de pileta** (QUADRA Q71A u otro) cuando el operador dijo "sin producto". Es una orden LITERAL. Si el agente agrega pileta producto después de esa instrucción, ESTÁ MAL y hay que corregir.
+
+Solo usar `pileta: "empotrada_johnson"` cuando el operador especifica un MODELO Johnson ("Johnson LUXOR S171", "Johnson QUADRA Q84A", etc.) — ahí sí, con `pileta_sku`.
+
 **3. DEPENDENCIAS:** cambio material → recalcular precio (mismos m²) | cambio medida → recalcular m² esa pieza | eliminar pieza → restar m²
 
 **4. AMBIGUEDAD → PREGUNTAR**

@@ -598,8 +598,24 @@ def calculate_quote(input_data: dict) -> dict:
                 if sink_result and sink_result.get("found"):
                     logging.info(f"Sink fuzzy matched: '{pileta_sku}' → {sink_result.get('name')} (SKU: {sink_result.get('sku')})")
                     warnings.append(f"Pileta '{pileta_sku}' no encontrada exacta. Se usó: {sink_result.get('name')}")
+        # ⛔ NO default to QUADRAQ71A when no sku provided. This was causing phantom
+        # sinks on edificio quotes where operator says "sin producto de pileta".
+        # If empotrada_johnson but no sku → skip product (treat as empotrada_cliente),
+        # only labor is charged. Add a warning so operator sees what happened.
         if not sink_result or not sink_result.get("found"):
-            # Last resort: default model with warning
+            if pileta_sku:
+                warnings.append(
+                    f"⚠️ Pileta '{pileta_sku}' no encontrada en catálogo. "
+                    "No se incluyó producto. Si debería ir, especificá el SKU correcto."
+                )
+            else:
+                warnings.append(
+                    "ℹ️ Pileta empotrada sin SKU específico → solo MO PEGADOPILETA, "
+                    "sin producto. Si Johnson debe proveerla, pasar pileta_sku."
+                )
+            sink_result = None  # explicit: no sink product added
+        # DEPRECATED: QUADRAQ71A default removed. Kept as no-op branch for safety.
+        if False and (not sink_result or not sink_result.get("found")):
             sink_result = catalog_lookup("sinks", "QUADRAQ71A")
             if pileta_sku:
                 warnings.append(f"Pileta '{pileta_sku}' no encontrada. Se usó QUADRA Q71A por defecto. Verificar con operador.")

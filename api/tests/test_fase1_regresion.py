@@ -375,6 +375,36 @@ class TestVentusEdificioEndToEnd:
         import math
         assert flete_item["quantity"] == math.ceil(61 / 6)
 
+    def test_empotrada_johnson_without_sku_does_not_add_sink(self):
+        """Si pileta=empotrada_johnson pero no hay pileta_sku, NO debe agregar
+        QUADRA Q71A default (el bug Ventus)."""
+        result = calculate_quote({
+            "client_name": "Test sin producto",
+            "material": "Silestone Blanco Norte",
+            "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
+            "localidad": "Rosario",
+            "colocacion": True,
+            "pileta": "empotrada_johnson",  # Johnson but NO sku → no product
+            "plazo": "30 dias",
+        })
+        assert result["ok"] is True
+        sinks = result.get("sinks", [])
+        assert sinks == [], f"No sink product expected, got: {sinks}"
+
+    def test_empotrada_cliente_never_adds_sink(self):
+        """pileta=empotrada_cliente jamás agrega producto pileta."""
+        result = calculate_quote({
+            "client_name": "Test",
+            "material": "Silestone Blanco Norte",
+            "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
+            "localidad": "Rosario",
+            "colocacion": True,
+            "pileta": "empotrada_cliente",
+            "plazo": "30 dias",
+        })
+        assert result["ok"] is True
+        assert result.get("sinks", []) == []
+
     def test_flete_qty_override_residential(self):
         """Override también funciona en residencial (no solo edificio)."""
         result = calculate_quote({
