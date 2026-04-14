@@ -1275,6 +1275,7 @@ class AgentService:
         # Build user message content
         content = []
         pdf_has_images = False  # Track if PDF has drawings (needs vision pass)
+        _expected_m2 = None  # Surface area from planilla (if found) for validation
         is_visual_building = False  # Track if this is a multipágina CAD building (Ventus-type)
         if plan_bytes and plan_filename:
             # Persist plan file to temp so read_plan tool can access it later
@@ -1335,6 +1336,22 @@ class AgentService:
                             pdf_has_images = True
                             logging.info(f"Vision trigger: low text ({avg_chars:.0f} chars/page avg) + plan keywords detected")
                     if extracted_text.strip():
+                        # ── Extract M2 from planilla text (deterministic surface validator) ──
+                        _expected_m2 = None
+                        import re as _re_m2
+                        # Match patterns like "M2  2,50 m2", "M2: 2.50m2", "2,50 m2 - Con zócalos"
+                        _m2_patterns = [
+                            r'(?:M2|m2|SUPERFICIE|superficie)\s*[:\|]?\s*(\d+[.,]\d+)\s*m2',
+                            r'(\d+[.,]\d+)\s*m2\s*[-–—]\s*[Cc]on\s+z[oó]calos',
+                            r'(\d+[.,]\d+)\s*m2',
+                        ]
+                        for _pat in _m2_patterns:
+                            _m2_match = _re_m2.search(_pat, extracted_text)
+                            if _m2_match:
+                                _expected_m2 = float(_m2_match.group(1).replace(",", "."))
+                                logging.info(f"[m2-validator] Extracted expected M2 from planilla: {_expected_m2}")
+                                break
+
                         # Check if this is an edificio — use deterministic parser
                         from app.modules.quote_engine.edificio_parser import (
                             detect_edificio, parse_edificio_tables,
@@ -2497,6 +2514,25 @@ class AgentService:
                         logging.info(f"🔧 TOOL RESULT [{quote_id}] {tool_use.name}: {len(result)} content blocks")
                 except Exception:
                     pass
+
+                # ── M2 surface validator: compare list_pieces total vs planilla ──
+                if tool_use.name == "list_pieces" and isinstance(result, dict) and result.get("ok"):
+                    _lp_m2 = result.get("total_m2", 0)
+                    if _expected_m2 is not None and _expected_m2 > 0:
+                        _m2_diff = abs(_lp_m2 - _expected_m2)
+                        _m2_pct = _m2_diff / _expected_m2 * 100
+                        if _m2_pct > 5:
+                            _m2_warning = (
+                                f"⛔ SUPERFICIE NO COINCIDE: tus piezas suman {_lp_m2:.2f} m² "
+                                f"pero la planilla dice {_expected_m2:.2f} m². "
+                                f"Diferencia: {_m2_diff:.2f} m² ({_m2_pct:.0f}%). "
+                                f"Revisá las medidas — probablemente leíste mal alguna cota del plano. "
+                                f"Las cotas extraídas del texto del PDF son la fuente de verdad."
+                            )
+                            result["_m2_validation_error"] = _m2_warning
+                            logging.warning(f"[m2-validator] {_m2_warning}")
+                        else:
+                            logging.info(f"[m2-validator] OK: pieces={_lp_m2:.2f} vs planilla={_expected_m2:.2f} (diff={_m2_pct:.1f}%)")
 
                 # read_plan returns native content blocks (list of image/text dicts)
                 # to avoid inflating context with base64 inside JSON strings.
