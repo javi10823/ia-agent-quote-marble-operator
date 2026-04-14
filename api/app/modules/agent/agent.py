@@ -1300,13 +1300,17 @@ class AgentService:
                             # Try to detect planilla layout (table on right side)
                             if not _planilla_data and tables:
                                 try:
-                                    from app.modules.quote_engine.planilla_parser import parse_planilla_table
+                                    from app.modules.quote_engine.planilla_parser import parse_planilla_table, detect_table_x_from_words
                                     table_objects = page.find_tables()
                                     _planilla_data = parse_planilla_table(
                                         tables, page_width=page.width, page_height=page.height,
                                         table_bboxes=table_objects
                                     )
                                     if _planilla_data:
+                                        # Use word positions for accurate table x (bbox is unreliable)
+                                        _word_x = detect_table_x_from_words(page)
+                                        if _word_x > 0:
+                                            _planilla_data.table_x0 = _word_x
                                         logging.info(f"[planilla] Detected: material={_planilla_data.material}, "
                                                      f"m2={_planilla_data.m2}, table_x0={_planilla_data.table_x0:.0f}")
                                         if _planilla_data.m2:
