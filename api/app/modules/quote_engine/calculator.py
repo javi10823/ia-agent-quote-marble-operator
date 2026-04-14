@@ -528,7 +528,15 @@ def calculate_quote(input_data: dict) -> dict:
         if flete_result.get("found"):
             flete_price = flete_result.get("price_ars", 0)
             flete_base = flete_result.get("price_ars_base", 0)
-            if is_edificio:
+
+            # Operator override: if the input explicitly declares flete_qty,
+            # respect it. This matters for edificios where the operator knows
+            # something the calculator doesn't (e.g. mesadas stacked per truck).
+            _operator_flete_qty = input_data.get("flete_qty")
+            if _operator_flete_qty and int(_operator_flete_qty) > 0:
+                flete_qty = int(_operator_flete_qty)
+                logging.info(f"Flete override by operator: {flete_qty} fletes (no auto-calc)")
+            elif is_edificio:
                 # Sum quantity per piece, not just len() — a DC-04 × 8 is 8 physical pieces, not 1.
                 # Also exclude zócalos (they travel with mesadas, not as separate pieces).
                 physical_pieces = [
