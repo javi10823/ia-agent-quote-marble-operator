@@ -117,6 +117,26 @@ En edificios NO agregar leyenda "(SE REALIZA EN 2 TRAMOS)" — las tipologías
 ya vienen listadas como DC-02 X 6, DC-03 X 8, etc. y la leyenda genera ruido.
 Alzada en enunciado → 1 TOMAS.
 
+### ⛔ Sin merma en edificios
+Edificios NUNCA llevan merma. El operador maneja el corte por tipología
+manualmente. `calculate_quote()` con `is_edificio=True` fuerza
+`merma.aplica = false` automáticamente.
+
+### ⛔ Despiece completo — largo y prof obligatorios
+NUNCA aceptar solo m² por pieza. Cada tipología debe tener dimensiones
+completas (ej: `largo: 2.34, prof: 0.62`). Si el operador/planilla solo
+da m² sin dimensiones:
+1. Pedir al operador: "¿Cuáles son las medidas completas (largo × prof)
+   de cada tipología?"
+2. NO inventar dimensiones que multipliquen al m² (ej: 6.00 × 1.00).
+3. `calculate_quote()` emite warning si detecta piezas sin `largo` o `prof`.
+
+### Flete edificio
+`ceil(piezas_fisicas_totales / flete_mesadas_per_trip)`.
+- Contar unidades físicas reales: DC-04 × 8 son 8 piezas, no 1.
+- Zócalos viajan con mesadas, NO cuentan como piezas para flete.
+- Default `flete_mesadas_per_trip = 6` (config.json, building.flete_mesadas_per_trip).
+
 ### Material no encontrado
 Informar operador. Preguntar cual usar — no sugerir alternativas.
 

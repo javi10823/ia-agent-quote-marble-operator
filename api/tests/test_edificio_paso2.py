@@ -59,7 +59,8 @@ class TestESHPaso2:
     def test_flete_qty(self, result):
         mo = next((m for m in result["mo_items"] if "flete" in m["desc"].lower()), None)
         assert mo is not None
-        assert mo["qty"] == 7
+        # flete_mesadas_per_trip: 8→6. Was ceil(49/8)=7, now ceil(49/6)=9.
+        assert mo["qty"] == 9
 
     # ── No forbidden content ─────────────────────────────────────────────
 

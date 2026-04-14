@@ -244,8 +244,16 @@ def list_pieces(pieces: list, is_edificio: bool = False) -> dict:
     }
 
 
-def calculate_merma(m2_needed: float, material_type: str) -> dict:
-    """Calculate merma for synthetic materials."""
+def calculate_merma(m2_needed: float, material_type: str, is_edificio: bool = False) -> dict:
+    """Calculate merma for synthetic materials.
+
+    Edificios NEVER apply merma — the operator handles piece cutting
+    per tipología manually. Only residential quotes have merma logic.
+    """
+    # Edificio: no merma regardless of material
+    if is_edificio:
+        return {"aplica": False, "desperdicio": 0, "sobrante_m2": 0, "motivo": "Edificio — sin merma"}
+
     mat_lower = material_type.lower()
 
     # Negro Brasil: never merma
@@ -361,6 +369,22 @@ def calculate_quote(input_data: dict) -> dict:
             if auto_ml > 0:
                 input_data["frentin_ml"] = round(auto_ml, 2)
                 logging.info(f"Edificio guardrail: auto-detected {auto_ml:.2f} ml of frentín from piece descriptions")
+
+        # Validate pieces have largo and prof/dim2 — never accept pre-multiplied m² only.
+        # If operator passes only m² without dimensions, the breakdown is opaque and the
+        # agent will invent fake dimensions (e.g. "6.0 × 1.0" for a 6 m² piece).
+        _pieces_missing_dims = []
+        for _idx, _p in enumerate((pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)):
+            _largo = _p.get("largo", 0) or 0
+            _prof = _p.get("prof", 0) or _p.get("dim2", 0) or _p.get("ancho", 0) or 0
+            if _largo <= 0 or _prof <= 0:
+                _pieces_missing_dims.append(_p.get("description", f"pieza #{_idx}"))
+        if _pieces_missing_dims:
+            warnings.append(
+                "⛔ Edificio: todas las piezas deben tener largo y prof (no solo m²). "
+                f"Faltan dimensiones en: {', '.join(_pieces_missing_dims[:5])}. "
+                "Pedí al operador las medidas completas del despiece (ej: 2.34 × 0.62)."
+            )
     date_str = input_data.get("date") or datetime.now().strftime("%d.%m.%Y")
 
     # 1. Find material
@@ -383,7 +407,7 @@ def calculate_quote(input_data: dict) -> dict:
     total_m2, piece_details = calculate_m2([p if isinstance(p, dict) else p.model_dump() for p in pieces])
 
     # 3. Merma
-    merma = calculate_merma(total_m2, mat_result.get("name", material_name))
+    merma = calculate_merma(total_m2, mat_result.get("name", material_name), is_edificio=is_edificio)
 
     # 4. Auto-apply architect discount if detected
     if input_data.get("_auto_architect_discount") and not discount_pct:
@@ -468,10 +492,15 @@ def calculate_quote(input_data: dict) -> dict:
             flete_price = flete_result.get("price_ars", 0)
             flete_base = flete_result.get("price_ars_base", 0)
             if is_edificio:
-                physical_pieces = [p for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
-                                   if not any(kw in (p.get("description") or "").lower() for kw in ["faldón", "faldon", "frentín", "frentin"])]
-                num_pieces = len(physical_pieces)
-                _per_trip = cfg("building.flete_mesadas_per_trip", 8)
+                # Sum quantity per piece, not just len() — a DC-04 × 8 is 8 physical pieces, not 1.
+                # Also exclude zócalos (they travel with mesadas, not as separate pieces).
+                physical_pieces = [
+                    p for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
+                    if not any(kw in (p.get("description") or "").lower()
+                               for kw in ["faldón", "faldon", "frentín", "frentin", "zócalo", "zocalo"])
+                ]
+                num_pieces = sum(int(p.get("quantity", 1) or 1) for p in physical_pieces)
+                _per_trip = cfg("building.flete_mesadas_per_trip", 6)
                 flete_qty = math.ceil(num_pieces / _per_trip)
                 flete_qty = max(1, flete_qty)
                 logging.info(f"Edificio flete: {num_pieces} piezas físicas ÷ {_per_trip} = {flete_qty} fletes")

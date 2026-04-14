@@ -292,7 +292,8 @@ class TestComputeEdificioAggregates:
     def test_flete(self):
         _, _, summary = _get_full_pipeline()
         physical = summary["totals"]["pieces_physical_total"]
-        assert summary["totals"]["flete_qty"] == math.ceil(physical / 8)
+        # flete_mesadas_per_trip changed from 8 to 6 (operator's rule)
+        assert summary["totals"]["flete_qty"] == math.ceil(physical / 6)
 
     def test_escalones_quantity(self):
         _, norm, summary = _get_full_pipeline()

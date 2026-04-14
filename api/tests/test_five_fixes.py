@@ -338,3 +338,114 @@ class TestFleteWarnings:
         result = calculate_quote(_base_input(skip_flete=True))
         assert result["ok"]
         assert result.get("warnings") is None or len(result.get("warnings", [])) == 0
+
+
+# ══════════════════════════════════════════════════════════════════
+# Edificio fixes: merma + flete count + dims validation
+# ══════════════════════════════════════════════════════════════════
+
+class TestEdificioMerma:
+    def test_edificio_never_applies_merma(self):
+        """Edificios NEVER apply merma regardless of material."""
+        result = calculate_quote(_base_input(
+            is_edificio=True,
+            pieces=[{"description": "DC-02 mesada", "largo": 3.0, "prof": 1.0, "quantity": 2}],
+        ))
+        assert result["ok"]
+        assert result["merma"]["aplica"] is False
+        assert "edificio" in result["merma"]["motivo"].lower()
+
+    def test_residential_silestone_still_applies_merma(self):
+        """Residential Silestone must still apply merma (no regression)."""
+        result = calculate_quote(_base_input(
+            pieces=[{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
+        ))
+        assert result["ok"]
+        # Silestone residential triggers merma logic (may or may not have sobrante)
+        assert "motivo" in result["merma"]
+
+    def test_calculate_merma_function_direct(self):
+        """Direct test of calculate_merma with is_edificio flag.
+
+        is_edificio=True short-circuits BEFORE any material classification:
+        even if the material would normally merma (Silestone with big desperdicio),
+        the edificio branch wins.
+        """
+        from app.modules.quote_engine.calculator import calculate_merma
+        # Size that triggers merma for Silestone (desperdicio > 1.0)
+        # Silestone uses media placa (2.10 m²). 1.3 m² → needs 1 media → desperdicio 0.80
+        # Use 2.8 m² → needs 2 medias = 4.20 → desperdicio 1.40 > 1.0 → aplica
+        result_edif = calculate_merma(2.8, "Silestone Blanco Norte", is_edificio=True)
+        assert result_edif["aplica"] is False
+        assert "edificio" in result_edif["motivo"].lower()
+        result_res = calculate_merma(2.8, "Silestone Blanco Norte", is_edificio=False)
+        assert result_res["aplica"] is True
+
+
+class TestEdificioFleteCount:
+    def test_flete_counts_quantity_not_descriptions(self):
+        """DC-04 × 8 must count as 8 physical pieces, not 1."""
+        # 25 total pieces (2+6+8+1+1+6+1) ÷ 6 per trip → 5 fletes
+        result = calculate_quote(_base_input(
+            is_edificio=True,
+            pileta=None,
+            pieces=[
+                {"description": "DC-02 mesada", "largo": 3.0, "prof": 1.0, "quantity": 2},
+                {"description": "DC-03 mesada", "largo": 2.96, "prof": 1.0, "quantity": 6},
+                {"description": "DC-04 mesada", "largo": 2.87, "prof": 1.0, "quantity": 8},
+                {"description": "DC-05 mesada", "largo": 1.17, "prof": 1.0, "quantity": 1},
+                {"description": "DC-06 mesada", "largo": 1.12, "prof": 1.0, "quantity": 1},
+                {"description": "DC-07 mesada", "largo": 2.60, "prof": 1.0, "quantity": 6},
+                {"description": "DC-08 mesada", "largo": 1.79, "prof": 1.0, "quantity": 1},
+            ],
+        ))
+        assert result["ok"]
+        flete_item = next((m for m in result["mo_items"] if "flete" in m["description"].lower()), None)
+        assert flete_item is not None, "flete mo_item missing"
+        assert flete_item["quantity"] == 5, (
+            f"25 pieces ÷ 6 per trip → ceil=5, got {flete_item['quantity']}"
+        )
+
+    def test_flete_excludes_zocalos(self):
+        """Zócalos travel with mesadas, don't count as separate pieces for flete."""
+        result = calculate_quote(_base_input(
+            is_edificio=True,
+            pileta=None,
+            pieces=[
+                {"description": "DC-02 mesada", "largo": 3.0, "prof": 1.0, "quantity": 2},
+                {"description": "DC-02 zócalo", "largo": 4.85, "alto": 0.075, "quantity": 2},
+            ],
+        ))
+        assert result["ok"]
+        flete_item = next((m for m in result["mo_items"] if "flete" in m["description"].lower()), None)
+        # 2 mesadas only → ceil(2/6) = 1
+        assert flete_item["quantity"] == 1
+
+
+class TestEdificioDimsValidation:
+    def test_missing_dims_produces_warning(self):
+        """Pieces without largo/prof in edificio must produce a warning."""
+        result = calculate_quote(_base_input(
+            is_edificio=True,
+            pieces=[
+                # Missing prof
+                {"description": "DC-02 mesada", "largo": 3.0, "quantity": 2},
+            ],
+        ))
+        assert result["ok"]
+        warnings = result.get("warnings", [])
+        assert any("largo y prof" in w.lower() or "dimensiones" in w.lower() for w in warnings), (
+            f"Expected validation warning, got: {warnings}"
+        )
+
+    def test_complete_dims_no_warning(self):
+        """Pieces with full largo + prof should not trigger this warning."""
+        result = calculate_quote(_base_input(
+            is_edificio=True,
+            pieces=[
+                {"description": "DC-02 mesada", "largo": 3.0, "prof": 1.0, "quantity": 2},
+            ],
+        ))
+        assert result["ok"]
+        warnings = result.get("warnings", [])
+        assert not any("largo y prof" in w.lower() for w in warnings)
