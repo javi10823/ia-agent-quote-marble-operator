@@ -751,6 +751,43 @@ async def delete_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
 
 # ── CREATE QUOTE (new chat) ───────────────────────────────────────────────────
 
+class ResumenObraRequest(BaseModel):
+    quote_ids: List[str]
+    notes: Optional[str] = None
+
+
+@router.post("/quotes/resumen-obra")
+async def generate_resumen_obra_endpoint(
+    body: ResumenObraRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a consolidated 'resumen de obra' PDF from N selected quotes.
+
+    - Validates: same client, all validated, 1<=N<=20, notes<=1000 chars
+    - Generates PDF (no Excel), uploads to Drive (non-fatal)
+    - Persists record in each selected quote's `resumen_obra` field
+    - Invalidates each quote's `email_draft` cache (regen on next GET)
+    """
+    from app.modules.agent.tools.resumen_obra_tool import (
+        generate_resumen_obra,
+        ResumenObraError,
+    )
+
+    try:
+        record = await generate_resumen_obra(
+            db=db,
+            quote_ids=body.quote_ids,
+            notes_raw=body.notes,
+        )
+    except ResumenObraError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    except Exception as e:
+        logging.error(f"[resumen-obra] unexpected error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno generando el resumen")
+
+    return record
+
+
 @router.post("/quotes")
 async def create_quote(
     db: AsyncSession = Depends(get_db),

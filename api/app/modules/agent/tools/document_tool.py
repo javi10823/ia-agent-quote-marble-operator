@@ -455,6 +455,15 @@ def _generate_resumen_obra_pdf(pdf_path: Path, data: dict) -> None:
         pdf.cell(0, 4, f"  - {name}", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(3)
 
+    # ── 4b. Operator notes (optional) ──
+    _notes = (data.get("notes") or "").strip()
+    if _notes:
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(0, 5, "NOTAS ADICIONALES", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 8)
+        pdf.multi_cell(180, 4, _notes, new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(3)
+
     # ── 5. Conditions ──
     pdf.set_font("Helvetica", "", 7)
     pdf.multi_cell(180, 3.5, "Forma de pago: Contado", new_x="LMARGIN", new_y="NEXT")
