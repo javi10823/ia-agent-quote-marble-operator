@@ -121,6 +121,24 @@ class TestFindMaterial:
         assert result["found"] is True
         assert "FIAMATADO" in result["name"].upper()
 
+    def test_variant_negation_flags_warning(self):
+        """PR #8 — DINALE: brief 'NO Extra 2' pero catálogo solo tiene
+        EXTRA 2 ESP → devolver esa variante + flag variant_negated."""
+        result = _find_material("Granito Gris Mara — 25mm (SKU estándar, NO Extra 2)")
+        assert result["found"] is True
+        assert "EXTRA 2" in result["name"].upper()
+        # Debe flaguear que el operador negó el variant
+        vn = result.get("variant_negated")
+        assert vn is not None, "Esperaba variant_negated cuando brief dice 'NO Extra 2'"
+        assert "extra" in vn["requested"].lower()
+        assert vn["returned"] == result["name"]
+
+    def test_no_negation_no_flag(self):
+        """Caso sin negación: no debe haber variant_negated."""
+        result = _find_material("Granito Gris Mara")
+        assert result["found"] is True
+        assert result.get("variant_negated") is None
+
     def test_default_variant_negro_boreal(self):
         """Segundo material con variante EXTRA 2 ESP: Granito Negro Boreal."""
         result = _find_material("Granito Negro Boreal")

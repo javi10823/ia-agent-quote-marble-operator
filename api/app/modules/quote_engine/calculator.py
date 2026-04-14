@@ -182,6 +182,45 @@ def _find_material(material_name: str) -> dict:
             if result.get("found"):
                 logging.info(f"[fuzzy] '{material_name}' → '{matched_name}' (score={score})")
                 result["fuzzy_corrected_from"] = material_name
+
+                # Detectar negación explícita del variant matcheado.
+                # Caso DINALE 14/04/2026: brief dice "NO Extra 2" pero el
+                # catálogo solo tiene la variante EXTRA 2 ESP → el operador
+                # debe saber que el sistema igual devolvió esa variante.
+                _neg_patterns = [
+                    r'\bno\s+extra\s*2',
+                    r'\bsin\s+extra\s*2',
+                    r'\b(?:no|sin)\s+fiamatado',
+                    r'\b(?:no|sin)\s+flameado',
+                    r'\b(?:no|sin)\s+leather',
+                    r'\b(?:no|sin)\s+pulido',
+                ]
+                _input_norm = material_name.lower()
+                _matched_norm = matched_name.lower()
+                for _pat in _neg_patterns:
+                    _m_neg = _re_thk.search(_pat, _input_norm)
+                    if not _m_neg:
+                        continue
+                    # ¿La variante negada está en el match?
+                    _neg_kw = _m_neg.group(0).split()[-1]  # 'extra', 'fiamatado', etc.
+                    if _neg_kw in _matched_norm or (
+                        _neg_kw == "extra" and "extra" in _matched_norm
+                    ):
+                        result["variant_negated"] = {
+                            "requested": _m_neg.group(0),
+                            "returned": matched_name,
+                            "reason": (
+                                f"Operador pidió '{_m_neg.group(0)}' pero el catálogo "
+                                f"solo tiene '{matched_name}' para este material. "
+                                "Se devuelve esa variante por default — confirmar con operador."
+                            ),
+                        }
+                        logging.warning(
+                            f"[variant-negated] input='{material_name}' "
+                            f"negó '{_neg_kw}' pero match es '{matched_name}' "
+                            "(única variante disponible)"
+                        )
+                        break
                 return result
     except ImportError:
         logging.warning("thefuzz not installed — fuzzy matching disabled")
@@ -499,6 +538,17 @@ def calculate_quote(input_data: dict) -> dict:
     mat_result = _find_material(material_name)
     if not mat_result.get("found"):
         return {"ok": False, "error": mat_result.get("error", f"Material '{material_name}' no encontrado")}
+
+    # Surface variant negation: operador pidió "NO Extra 2" / "sin Fiamatado"
+    # pero el catálogo solo tiene esa variante → el sistema la devuelve igual
+    # y debe flaguear al operador que confirme.
+    if mat_result.get("variant_negated"):
+        _vn = mat_result["variant_negated"]
+        warnings.append(
+            f"⚠️ VARIANT NEGADA: operador pidió '{_vn['requested']}' pero el "
+            f"catálogo solo tiene '{_vn['returned']}' como opción. Se cotiza "
+            "con esa variante — confirmar con operador antes de generar PDF."
+        )
 
     mat_type = _detect_material_type(mat_result)
     is_sint = any(s in mat_type for s in SINTERIZADOS)
