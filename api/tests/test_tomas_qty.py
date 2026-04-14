@@ -96,8 +96,8 @@ class TestTomasQtyOverride:
         })
         toma = next(m for m in result["mo_items"] if m["description"] == "Agujero toma corriente")
         assert toma["quantity"] == 3
-        # total = unit_price × 3
-        assert toma["total"] == round(toma["unit_price"] * 3)
+        # total ≈ unit_price × 3 (±1 rounding por ÷1.05 edificio)
+        assert abs(toma["total"] - toma["unit_price"] * 3) <= 2
 
     def test_no_tomas_qty_preserves_auto_detect(self):
         """Sin tomas_qty ni zócalo alto/revestimiento → no hay toma."""
