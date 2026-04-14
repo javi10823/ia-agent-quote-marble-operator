@@ -1350,6 +1350,21 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     for mc in list(ws.merged_cells.ranges):
         ws.unmerge_cells(str(mc))
 
+    # Reset any hidden rows + row heights in the dynamic band so the output
+    # never inherits stale 0-height / hidden rows from the source template.
+    # openpyxl stores row settings in ws.row_dimensions[idx].
+    for _rd_idx in range(20, 200):
+        _rd = ws.row_dimensions.get(_rd_idx)
+        if _rd is not None:
+            _rd.hidden = False
+            _rd.height = None  # Let Excel auto-size
+    # Also clear any workbook-level conditional formatting that applies to the
+    # dynamic band (template zebra rules fire on rows we write to).
+    try:
+        ws.conditional_formatting._cf_rules.clear()
+    except Exception:
+        pass
+
     client_name = data.get("client_name", "")
     project = data.get("project", "")
     date_str = datetime.now().strftime("%d/%m/%Y")
