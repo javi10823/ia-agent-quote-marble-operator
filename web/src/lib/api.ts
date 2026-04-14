@@ -204,6 +204,7 @@ export async function deriveMaterial(quoteId: string, payload: DeriveMaterialPay
 export interface ResumenObraRequest {
   quote_ids: string[];
   notes?: string;
+  force_same_client?: boolean;
 }
 
 export async function generateResumenObra(
@@ -219,6 +220,59 @@ export async function generateResumenObra(
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "Error al generar resumen de obra");
+  }
+  return res.json();
+}
+
+// ── Client fuzzy match + merge ───────────────────────────────────────────────
+
+export interface ClientMatchCheckResult {
+  same: boolean;
+  reason: "exact" | "fuzzy" | "ambiguous";
+  distinct_names: string[];
+}
+
+export async function clientMatchCheck(
+  quoteIds: string[]
+): Promise<ClientMatchCheckResult> {
+  const res = await fetch(`${API_BASE}/api/quotes/client-match-check`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ quote_ids: quoteIds }),
+    credentials: "include",
+  });
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al verificar el cliente");
+  }
+  return res.json();
+}
+
+export interface MergeClientResult {
+  ok: boolean;
+  updated_ids: string[];
+  client_name: string;
+  quote_ids: string[];
+}
+
+export async function mergeClient(
+  quoteIds: string[],
+  canonicalClientName: string
+): Promise<MergeClientResult> {
+  const res = await fetch(`${API_BASE}/api/quotes/merge-client`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      quote_ids: quoteIds,
+      canonical_client_name: canonicalClientName,
+    }),
+    credentials: "include",
+  });
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al unificar clientes");
   }
   return res.json();
 }

@@ -2,17 +2,20 @@
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { type Quote, type ResumenObraRecord, deriveMaterial } from "@/lib/api";
+import {
+  type Quote,
+  type ResumenObraRecord,
+  deriveMaterial,
+  clientMatchCheck,
+  mergeClient,
+} from "@/lib/api";
 import { useQuotes } from "@/lib/quotes-context";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import clsx from "clsx";
 import { ResumenObraModal } from "@/components/quote/ResumenObraModal";
 import { ResumenObraSuccessModal } from "@/components/quote/ResumenObraSuccessModal";
-
-function normalizeClient(name: string | null | undefined): string {
-  return (name || "").trim().toLowerCase().replace(/\s+/g, " ");
-}
+import { areFuzzySameClient } from "@/lib/clientMatch";
 
 const STATUS_LABEL: Record<Quote["status"], string> = {
   draft: "Borrador", pending: "Pendiente", validated: "Validado", sent: "Enviado",
@@ -54,11 +57,10 @@ export default function DashboardPage() {
   const [resumenSuccess, setResumenSuccess] =
     useState<{ record: ResumenObraRecord; affected: number } | null>(null);
 
-  // The "active client" for the current selection (normalized for comparison)
-  const selectedClient = useMemo(() => {
+  // Anchor quote for the current selection — used to fuzzy-match candidates.
+  const selectionAnchor = useMemo(() => {
     if (selectedIds.size === 0) return null;
-    const first = quotes.find((q) => selectedIds.has(q.id));
-    return first ? normalizeClient(first.client_name) : null;
+    return quotes.find((q) => selectedIds.has(q.id)) || null;
   }, [selectedIds, quotes]);
 
   const selectedQuotes = useMemo(
@@ -69,11 +71,14 @@ export default function DashboardPage() {
   const isSelectable = useCallback(
     (q: Quote) => {
       if (q.status !== "validated") return false;
-      if (selectedClient && normalizeClient(q.client_name) !== selectedClient)
+      if (
+        selectionAnchor &&
+        !areFuzzySameClient(q.client_name, selectionAnchor.client_name)
+      )
         return false;
       return true;
     },
-    [selectedClient]
+    [selectionAnchor]
   );
 
   const toggleSelect = useCallback((id: string) => {
@@ -102,13 +107,16 @@ export default function DashboardPage() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
         // Only act when there's a visible selection context
-        if (selectedClient || !resumenModalOpen) {
+        if (selectionAnchor || !resumenModalOpen) {
           e.preventDefault();
           setSelectedIds((prev) => {
             const next = new Set(prev);
             for (const q of quotes) {
               if (q.status !== "validated") continue;
-              if (selectedClient && normalizeClient(q.client_name) !== selectedClient)
+              if (
+                selectionAnchor &&
+                !areFuzzySameClient(q.client_name, selectionAnchor.client_name)
+              )
                 continue;
               next.add(q.id);
             }
@@ -119,7 +127,7 @@ export default function DashboardPage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [clearSelection, quotes, resumenModalOpen, selectedClient, selectedIds.size]);
+  }, [clearSelection, quotes, resumenModalOpen, selectionAnchor, selectedIds.size]);
 
   // Auto-exit mobile selection mode when selection is empty
   useEffect(() => {
@@ -472,9 +480,12 @@ export default function DashboardPage() {
                   const checkboxReason =
                     q.status !== "validated"
                       ? "Solo presupuestos validados"
-                      : selectedClient &&
-                          normalizeClient(q.client_name) !== selectedClient
-                        ? "Cliente distinto — limpiá la selección para elegir éste"
+                      : selectionAnchor &&
+                          !areFuzzySameClient(
+                            q.client_name,
+                            selectionAnchor.client_name
+                          )
+                        ? "Cliente distinto — limpiá la selección para elegir éste, o confirmá manualmente en el siguiente paso"
                         : undefined;
                   return (
                     <tr
@@ -627,10 +638,29 @@ export default function DashboardPage() {
             </span>
             <span className="text-t3">·</span>
             <span className="text-t3">
-              Cliente:{" "}
-              <span className="text-t1">
-                {selectedQuotes[0]?.client_name || "—"}
-              </span>
+              {(() => {
+                const names = Array.from(
+                  new Set(
+                    selectedQuotes
+                      .map((q) => q.client_name)
+                      .filter(Boolean) as string[]
+                  )
+                );
+                if (names.length === 0) return "—";
+                if (names.length === 1)
+                  return (
+                    <>
+                      Cliente:{" "}
+                      <span className="text-t1">{names[0]}</span>
+                    </>
+                  );
+                return (
+                  <>
+                    Clientes (fuzzy):{" "}
+                    <span className="text-t1">{names.join(" · ")}</span>
+                  </>
+                );
+              })()}
             </span>
           </div>
           <div className="flex gap-2">
@@ -682,6 +712,11 @@ export default function DashboardPage() {
           setResumenSuccess({ record, affected: affectedIds.length });
           clearSelection();
           setSelectionMode(false);
+          refresh();
+        }}
+        onClientsMerged={() => {
+          // Rename happened server-side; refresh so the new canonical name
+          // shows up in the list and the action bar updates.
           refresh();
         }}
       />
