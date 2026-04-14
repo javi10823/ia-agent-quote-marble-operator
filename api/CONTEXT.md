@@ -184,6 +184,28 @@ Si el operador NO declara m² per-pieza (flujo normal), NO pasar `m2_override`.
 
 ---
 
+## ⛔ REGLA — MANO DE OBRA LISTADA ES EXHAUSTIVA
+
+Cuando el operador escribe un brief con la sección **MANO DE OBRA** listando
+cada ítem explícitamente (típico marker: `"listá cada línea como concepto
+separado"`), esa lista es **la verdad total**. Valentina NUNCA puede agregar
+ítems que el operador no listó.
+
+Concretamente:
+- Si la lista NO menciona pileta/bacha/agujero → **no agregar** "Agujero y
+  pegado pileta" ni ningún producto pileta. Usar `pileta="empotrada_cliente"`.
+- Si la lista NO menciona anafe → **no agregar** "Agujero anafe". Pasar
+  `anafe=False`.
+- Si la lista NO menciona colocación → **no agregar** colocación. Pasar
+  `colocacion=False`.
+- Solo agregar "Flete" si el operador lo listó, y respetar la cantidad
+  exacta que él declaró (incluyendo "× 1 UNO SOLO" → `flete_qty=1`).
+
+El sistema aplica este guardrail automáticamente, pero Valentina debe
+hacer lo mismo en su razonamiento para no proponer MO inventada en Paso 2.
+
+---
+
 ## ⛔ REGLA — 1 MATERIAL POR PRESUPUESTO (OPERADOR WEB)
 
 Siempre crear UN SOLO presupuesto por conversación.
