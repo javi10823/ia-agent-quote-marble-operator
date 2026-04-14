@@ -2521,58 +2521,12 @@ class AgentService:
                     if _expected_m2 is not None and _expected_m2 > 0:
                         _m2_diff = abs(_lp_m2 - _expected_m2)
                         if _m2_diff > 0.1:
-                            # M2 doesn't match — try to solve combinatorially
-                            from app.modules.quote_engine.calculator import solve_m2_from_dims
-                            _all_dims = []
-                            if extracted_text:
-                                import re as _re_dims
-                                _raw_nums = _re_dims.findall(r'\d+[.,]\d+', extracted_text)
-                                _all_dims = list(set(
-                                    float(n.replace(",", "."))
-                                    for n in _raw_nums
-                                    if 0.04 <= float(n.replace(",", ".")) <= 5.0 and float(n.replace(",", ".")) != _expected_m2
-                                ))
-                            # Extract zócalo height from text
-                            _zoc_h = 0.05
-                            _zoc_match = _re_dims.search(r'(?:ZOCALOS?|zócalos?)\s*(\d+)\s*cm', extracted_text) if extracted_text else None
-                            if _zoc_match:
-                                _zoc_h = int(_zoc_match.group(1)) / 100
-
-                            solutions = solve_m2_from_dims(_all_dims, _expected_m2, _zoc_h) if _all_dims else None
-                            if solutions:
-                                best = solutions[0]
-                                # REPLACE list_pieces result with corrected pieces
-                                corrected_pieces = []
-                                for i, p in enumerate(best["pieces"]):
-                                    corrected_pieces.append({
-                                        "description": f"Mesada cocina {i+1}",
-                                        "largo": p["largo"],
-                                        "prof": p["ancho"],
-                                    })
-                                for z in best["zocalos"]:
-                                    corrected_pieces.append({
-                                        "description": f"{z}ML X {_zoc_h} ZOC",
-                                        "largo": z,
-                                        "prof": _zoc_h,
-                                    })
-                                # Re-run list_pieces with corrected dims
-                                result = list_pieces(corrected_pieces)
-                                result["_m2_corrected"] = True
-                                result["_m2_original"] = _lp_m2
-                                result["_m2_note"] = (
-                                    f"⚠️ Las medidas fueron corregidas automáticamente. "
-                                    f"Original: {_lp_m2:.2f} m² → Corregido: {result.get('total_m2', 0):.2f} m² "
-                                    f"(planilla: {_expected_m2:.2f} m²). "
-                                    f"Usá ESTAS piezas en tu respuesta, no las originales."
-                                )
-                                logging.warning(f"[m2-solver] REPLACED list_pieces: {_lp_m2:.2f} → {result.get('total_m2', 0):.2f} (target: {_expected_m2})")
-                            else:
-                                result["_m2_validation_error"] = (
-                                    f"⛔ SUPERFICIE NO COINCIDE: tus piezas suman {_lp_m2:.2f} m² "
-                                    f"pero la planilla dice {_expected_m2:.2f} m². "
-                                    f"No se encontró combinación automática. Revisá las cotas del plano."
-                                )
-                                logging.warning(f"[m2-solver] No solution found for {_expected_m2} from dims {_all_dims}")
+                            result["_m2_validation_error"] = (
+                                f"⛔ SUPERFICIE NO COINCIDE: tus piezas suman {_lp_m2:.2f} m² "
+                                f"pero la planilla dice {_expected_m2:.2f} m². "
+                                f"Revisá las cotas del plano y corregí las medidas."
+                            )
+                            logging.warning(f"[m2-validator] MISMATCH: pieces={_lp_m2:.2f} vs planilla={_expected_m2:.2f} (diff={_m2_diff:.2f})")
                         else:
                             logging.info(f"[m2-validator] OK: pieces={_lp_m2:.2f} vs planilla={_expected_m2:.2f} (diff={_m2_diff:.2f})")
 
