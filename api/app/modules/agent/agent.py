@@ -3310,20 +3310,45 @@ class AgentService:
                 except Exception as e:
                     logging.warning(f"Could not read pileta field from quote {save_to_qid}: {e}")
 
+            # Gather all operator text for keyword detection (used in multiple checks)
+            _pileta_all_text = current_user_message.lower()
+            if conversation_history:
+                for msg in conversation_history:
+                    if msg.get("role") == "user":
+                        c = msg.get("content", "")
+                        if isinstance(c, str):
+                            _pileta_all_text += " " + c.lower()
+                        elif isinstance(c, list):
+                            for blk in c:
+                                if isinstance(blk, dict) and blk.get("type") == "text":
+                                    _pileta_all_text += " " + blk.get("text", "").lower()
+
+            # ⛔ LITERAL RULE: if operator says "sin producto de pileta" / "sin pileta
+            # producto" / "cliente trae la pileta" / "D'Angelo no provee la pileta"
+            # → force pileta=empotrada_cliente, regardless of what the agent passed.
+            # This prevents the calculator from adding a default QUADRA Q71A sink
+            # when the operator explicitly said the product is NOT included.
+            _no_product_phrases = [
+                "sin producto de pileta", "sin producto pileta",
+                "sin pileta producto", "sin pileta-producto",
+                "cliente trae la pileta", "cliente trae pileta",
+                "no provee la pileta", "no provee pileta",
+                "d'angelo no provee", "dangelo no provee",
+                "(sin producto", "pegadopileta mo",
+            ]
+            if any(phrase in _pileta_all_text for phrase in _no_product_phrases):
+                if inputs.get("pileta") != "empotrada_cliente":
+                    logging.warning(
+                        f"Forcing pileta=empotrada_cliente (operator said 'sin producto'). "
+                        f"Was: {inputs.get('pileta')} for {save_to_qid}"
+                    )
+                    inputs["pileta"] = "empotrada_cliente"
+                # Ensure no pileta_sku leaks through and triggers sink lookup
+                inputs.pop("pileta_sku", None)
+
             if not inputs.get("pileta"):
                 # 2. Keyword fallback: scan conversation for pileta/bacha mentions
-                all_text = current_user_message.lower()
-                if conversation_history:
-                    for msg in conversation_history:
-                        if msg.get("role") == "user":
-                            c = msg.get("content", "")
-                            if isinstance(c, str):
-                                all_text += " " + c.lower()
-                            elif isinstance(c, list):
-                                for blk in c:
-                                    if isinstance(blk, dict) and blk.get("type") == "text":
-                                        all_text += " " + blk.get("text", "").lower()
-                if any(kw in all_text for kw in ["bacha", "pileta", "cotizar bacha", "con bacha",
+                if any(kw in _pileta_all_text for kw in ["bacha", "pileta", "cotizar bacha", "con bacha",
                                                   "compra la bacha", "compra bacha", "compra pileta",
                                                   "la compra en", "la pide"]):
                     inputs["pileta"] = "empotrada_johnson"
