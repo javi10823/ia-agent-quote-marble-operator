@@ -540,6 +540,13 @@ def calculate_quote(input_data: dict) -> dict:
                 _per_trip = cfg("building.flete_mesadas_per_trip", 6)
                 flete_qty = math.ceil(num_pieces / _per_trip)
                 flete_qty = max(1, flete_qty)
+                # Sanity cap: very high values are usually a bug (double counting).
+                # Log a warning but don't silently correct — operator must see it.
+                if flete_qty > 20:
+                    logging.warning(
+                        f"[flete-sanity] Unusually high flete_qty={flete_qty} for {num_pieces} pieces. "
+                        f"Verify the input doesn't double-count quantities."
+                    )
                 logging.info(f"Edificio flete: {num_pieces} piezas físicas ÷ {_per_trip} = {flete_qty} fletes")
             else:
                 flete_qty = 1
