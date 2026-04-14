@@ -155,11 +155,11 @@ export default function DualReadResult({ data, onConfirm }: Props) {
               <div className="text-[12px] text-t2 font-medium mb-1">{tramo.descripcion || tramo.id}</div>
               <FieldRow label="Largo" field={tramo.largo_m} onEdit={(v) => updateField(si, ti, "largo_m", v)} />
               <FieldRow label="Ancho" field={tramo.ancho_m} onEdit={(v) => updateField(si, ti, "ancho_m", v)} />
-              <FieldRow label="m\u00B2" field={tramo.m2} onEdit={(v) => updateField(si, ti, "m2", v)} />
+              <FieldRow label="m²" field={tramo.m2} onEdit={(v) => updateField(si, ti, "m2", v)} />
               {tramo.zocalos.map((z, zi) => (
                 <div key={zi} className="flex items-center gap-2 py-1 px-2 text-[13px]">
                   <span className="w-5 text-center">{STATUS_ICONS[z.status] || ""}</span>
-                  <span className="text-t3 w-24 shrink-0">Z\u00F3c. {z.lado}</span>
+                  <span className="text-t3 w-24 shrink-0">Zóc. {z.lado}</span>
                   {z.status === "CONFLICTO" || z.status === "DUDOSO" ? (
                     <input
                       type="number"

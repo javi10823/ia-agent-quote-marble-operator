@@ -457,12 +457,18 @@ async def dual_read_crop(
     )
     logger.info(f"[dual-read] Sonnet confidence: {min_confidence:.2f}")
 
-    if min_confidence >= SONNET_CONFIDENCE_SKIP_OPUS:
-        # Sonnet is confident → skip Opus, save cost
-        logger.info(f"[dual-read] Sonnet confident ≥{SONNET_CONFIDENCE_SKIP_OPUS} → skipping Opus")
-        result = _build_single_result(sonnet_result, "SOLO_SONNET")
-        result["m2_warning"] = _check_m2(result, planilla_m2)
-        return result
+    # Check M2 mismatch with planilla BEFORE deciding to skip Opus
+    _sonnet_preview = _build_single_result(sonnet_result, "SOLO_SONNET")
+    _m2_mismatch = _check_m2(_sonnet_preview, planilla_m2)
+
+    if min_confidence >= SONNET_CONFIDENCE_SKIP_OPUS and not _m2_mismatch:
+        # Sonnet is confident AND m2 matches planilla → skip Opus, save cost
+        logger.info(f"[dual-read] Sonnet confident ≥{SONNET_CONFIDENCE_SKIP_OPUS} + m2 OK → skipping Opus")
+        _sonnet_preview["m2_warning"] = None
+        return _sonnet_preview
+
+    if _m2_mismatch:
+        logger.warning(f"[dual-read] M2 mismatch with planilla → forcing Opus call: {_m2_mismatch}")
 
     # Step 3: Sonnet unsure → call Opus with timeout
     logger.info(f"[dual-read] Sonnet unsure ({min_confidence:.2f}) → calling Opus (timeout={OPUS_TIMEOUT_SECONDS}s)...")
