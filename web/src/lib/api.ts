@@ -268,7 +268,7 @@ export async function updateUsageBudget(data: { monthly_budget_usd?: number; ena
 // ── Chat SSE ──────────────────────────────────────────────────────────────────
 
 export interface ChatChunk {
-  type: "text" | "action" | "done" | "zone_selector";
+  type: "text" | "action" | "done" | "zone_selector" | "dual_read_result";
   content: string;
 }
 
