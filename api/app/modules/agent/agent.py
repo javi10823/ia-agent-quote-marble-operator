@@ -203,6 +203,13 @@ def select_examples(user_message: str, is_building: bool, max_examples: int = No
         if entry["id"] in _CACHED_EXAMPLE_IDS:
             continue  # Already in stable cache, don't pay twice
         entry_tags = set(entry.get("tags", []))
+        # ⛔ Context filter: edificio quotes must NOT pull residential examples,
+        # and vice-versa. Cross-contamination causes the agent to invent data
+        # (e.g. Ventus edificio rendered as "Alejandro particular").
+        if is_building and ("particular" in entry_tags or "residential" in entry_tags):
+            continue
+        if not is_building and ("building" in entry_tags or "edificio" in entry_tags):
+            continue
         overlap = len(features & entry_tags)
         # Bonus: exact material match
         material = entry.get("material", "").lower()
@@ -2832,7 +2839,31 @@ class AgentService:
     async def _execute_tool(self, name: str, inputs: dict, quote_id: str, db: AsyncSession, conversation_history: list | None = None, current_user_message: str = "") -> dict:
         logging.info(f"Tool call: {name} | quote: {quote_id}")
         if name == "list_pieces":
-            return list_pieces(inputs["pieces"])
+            # Detect is_edificio from the breakdown if persisted
+            _is_edif = False
+            try:
+                _qr = await db.execute(select(Quote).where(Quote.id == quote_id))
+                _q = _qr.scalar_one_or_none()
+                if _q:
+                    _bd = _q.quote_breakdown or {}
+                    _is_edif = bool(_bd.get("is_edificio") or _bd.get("building_step"))
+            except Exception:
+                pass
+            result = list_pieces(inputs["pieces"], is_edificio=_is_edif)
+            # ── Persist Paso 1 pieces for Paso 2 consistency guardrail ──
+            try:
+                _qr = await db.execute(select(Quote).where(Quote.id == quote_id))
+                _q = _qr.scalar_one_or_none()
+                if _q:
+                    _bd = dict(_q.quote_breakdown or {})
+                    _bd["paso1_pieces"] = inputs["pieces"]
+                    _bd["paso1_total_m2"] = result.get("total_m2")
+                    await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd))
+                    await db.commit()
+                    logging.info(f"[paso1] Persisted {len(inputs['pieces'])} pieces, total_m2={result.get('total_m2')}")
+            except Exception as e:
+                logging.warning(f"[paso1] Failed to persist pieces: {e}")
+            return result
         elif name == "catalog_lookup":
             return catalog_lookup(inputs["catalog"], inputs["sku"])
         elif name == "catalog_batch_lookup":
@@ -3291,6 +3322,38 @@ class AgentService:
                 if any(phrase in _all_user_text for phrase in _skip_phrases):
                     inputs["skip_flete"] = True
                     logging.info(f"Auto-set skip_flete=True from conversation keywords for {save_to_qid}")
+
+            # ── Paso 1 ↔ Paso 2 consistency guardrail ──
+            # If Paso 1 persisted pieces (via list_pieces), use them as source of truth.
+            # This prevents Claude from inventing a different despiece in Paso 2 when
+            # it got distracted by examples or lost context.
+            try:
+                _gq = await db.execute(select(Quote).where(Quote.id == save_to_qid))
+                _gquote = _gq.scalar_one_or_none()
+                if _gquote:
+                    _gbd = _gquote.quote_breakdown or {}
+                    _paso1_pieces = _gbd.get("paso1_pieces")
+                    _paso1_m2 = _gbd.get("paso1_total_m2") or 0
+                    if _paso1_pieces:
+                        # Calculate m2 of what Claude is trying to pass now
+                        _current_m2 = 0
+                        for _p in inputs.get("pieces", []):
+                            _pl = _p.get("largo", 0) or 0
+                            _pp = _p.get("prof", 0) or _p.get("dim2", 0) or _p.get("alto", 0) or 0
+                            _pq = _p.get("quantity", 1) or 1
+                            _current_m2 += _pl * _pp * _pq
+                        _diff_m2 = abs(_current_m2 - _paso1_m2)
+                        _diff_count = abs(len(inputs.get("pieces", [])) - len(_paso1_pieces))
+                        if _diff_m2 > 0.5 or _diff_count > 0:
+                            logging.error(
+                                f"[guardrail] PASO1↔PASO2 mismatch for {save_to_qid}: "
+                                f"paso1={len(_paso1_pieces)}p/{_paso1_m2:.2f}m² "
+                                f"vs paso2={len(inputs.get('pieces', []))}p/{_current_m2:.2f}m². "
+                                "OVERRIDING with paso1 pieces."
+                            )
+                            inputs["pieces"] = _paso1_pieces
+            except Exception as e:
+                logging.warning(f"[guardrail] paso1↔paso2 check failed: {e}")
 
             calc_result = calculate_quote(inputs)
 
