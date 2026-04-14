@@ -30,6 +30,24 @@
 - **Sinterizada** (Dekton, Neolith, Laminatto, Puraprima): **12mm** → siempre recomendar frentin
 - **Otros:** **20mm** estandar | 30mm en algunos (confirmar)
 
+### ⛔ Espesor del brief no coincide con catálogo
+Cuando el operador especifica un espesor que el catálogo no tiene
+(ej: brief "25mm" cuando solo existe 20mm), **NO preguntar, NO flaguear**:
+cotizar con el espesor disponible del catálogo y, si el material tiene
+una variante **"EXTRA 2 ESP"**, usar esa por default.
+
+`_find_material` (calculator.py) aplica esta regla automáticamente:
+- Filtra variantes LEATHER / FIAMATADO salvo pedido explícito del operador.
+- Si el match devuelto no es EXTRA 2 ESP pero existe una variante EXTRA 2 ESP
+  del mismo material, prefiere la EXTRA 2 ESP.
+
+Ejemplo (DINALE 14/04/2026):
+- Brief: `Granito Gris Mara — 25mm`
+- Catálogo: `GRANITO GRIS MARA EXTRA 2 ESP` (20mm), `FIAMATADO - 20MM`, `LEATHER`
+- Resultado: usar `GRANITO GRIS MARA EXTRA 2 ESP` sin preguntar.
+
+Solo variantes explícitas (LEATHER, FIAMATADO) cambian este default.
+
 ## Orientacion por color
 
 **Blancos/Claros:**
