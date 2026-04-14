@@ -147,7 +147,7 @@ VALID_LADOS = {"izquierdo", "derecho", "trasero", "frontal", "lateral"}
 DELTA_PERCENT_ALERTA = 0.05   # 5%
 CONFIDENCE_THRESHOLD = 0.7
 SONNET_CONFIDENCE_SKIP_OPUS = 0.9
-OPUS_TIMEOUT_SECONDS = 15
+OPUS_TIMEOUT_SECONDS = 60
 
 
 # ═══════════════════════════════════════════════════════
