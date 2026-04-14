@@ -178,8 +178,16 @@ Usar valores exactos de `calculate_quote`:
 
 ### MERMA — {APLICA / NO APLICA}
 ### MANO DE OBRA
-| Item | Cant | Base s/IVA | x1.21 | Total |
-|------|------|-----------|-------|-------|
+Formato residencial (sin ÷1.05):
+| Item | Cant | Precio c/IVA | Total |
+|------|------|-------------|-------|
+
+Formato edificio (con ÷1.05, excepto flete):
+| Item | Cant | Base s/IVA | ÷1.05 | Total c/IVA |
+|------|------|-----------|-------|-------------|
+
+⛔ NO agregar columna "x1.21" — el IVA ya está incluido en "Total" / "Total c/IVA".
+⛔ Flete en edificio: mostrar "—" en columna ÷1.05 (flete NUNCA lleva descuento).
 
 ### DESCUENTOS — {APLICA / NO APLICA}
 ### GRAND TOTAL
