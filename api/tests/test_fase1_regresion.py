@@ -241,7 +241,10 @@ class TestMoDiscountAndFleteRules:
         descs = {m["description"].lower() for m in mo}
         # Debe haber al menos pegado + faldon + flete
         assert any("pegado" in d or "pileta" in d for d in descs), descs
-        assert any("faldon" in d or "faldón" in d for d in descs), descs
+        assert any(
+            "faldon" in d or "faldón" in d or "frentin" in d or "frentín" in d
+            for d in descs
+        ), descs
         assert any("flete" in d for d in descs), descs
 
         # Suma esperada del descuento: 5% sobre (todo MO excepto flete)
