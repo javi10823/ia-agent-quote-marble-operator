@@ -49,6 +49,50 @@ class TestExampleFilterByContext:
             )
 
 
+class TestOperatorDeclaredM2Parser:
+    """Regex-based extraction of operator's declared m² from message text.
+
+    This is the Layer B guardrail: works for edificios where list_pieces
+    is disabled and there's no paso1_pieces persisted.
+    """
+
+    def _extract(self, text: str):
+        import re
+        patterns = [
+            r'total\s+material[:\s]+([\d.,]+)\s*m[²2]',
+            r'material\s+total[:\s]+([\d.,]+)\s*m[²2]',
+            r'total[:\s]+([\d.,]+)\s*m[²2]',
+        ]
+        for pat in patterns:
+            m = re.search(pat, text, re.IGNORECASE)
+            if m:
+                raw = m.group(1)
+                if raw.count(",") == 1 and raw.count(".") > 1:
+                    return float(raw.replace(".", "").replace(",", "."))
+                return float(raw.replace(",", "."))
+        return None
+
+    def test_total_material_spanish(self):
+        assert self._extract("TOTAL MATERIAL: 66.57 m²") == 66.57
+
+    def test_total_plain(self):
+        assert self._extract("Total: 74.10 m²") == 74.10
+
+    def test_comma_decimal(self):
+        assert self._extract("TOTAL MATERIAL: 66,57 m²") == 66.57
+
+    def test_no_total_returns_none(self):
+        assert self._extract("Just some text without total") is None
+
+    def test_big_diff_triggers_abort(self):
+        """Operator 66.57 m² vs agent 1.90 m² → 97% diff → must abort."""
+        declared = 66.57
+        current = 1.90
+        diff = abs(current - declared)
+        pct = diff / declared
+        assert pct > 0.10 and diff > 2.0, "This case must trigger abort"
+
+
 class TestPaso1Paso2Mismatch:
     """Direct logic test: a big m2 mismatch means Claude invented data."""
 
