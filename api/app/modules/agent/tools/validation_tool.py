@@ -85,12 +85,19 @@ def _check_iva_material(qdata: dict) -> tuple[list[str], list[str]]:
 
 
 def _check_iva_mo(qdata: dict) -> tuple[list[str], list[str]]:
-    """Verify each MO item: unit_price = round(base_price * IVA). MO is always ARS."""
+    """Verify each MO item: unit_price = round(base_price * IVA). MO is always ARS.
+
+    Edificio items have an additional ÷1.05 discount applied after IVA, so:
+      unit_price = round(base × IVA / 1.05)
+    The item flag `edificio_discount: True` signals this and the expected
+    value is adjusted accordingly.
+    """
     errors, warnings = [], []
     for mo in qdata.get("mo_items", []):
         bp = mo.get("base_price")
         up = mo.get("unit_price")
         desc = mo.get("description", "?")
+        has_edif_disc = bool(mo.get("edificio_discount"))
 
         if bp is None:
             continue  # Old data without base_price — skip silently
@@ -98,10 +105,14 @@ def _check_iva_mo(qdata: dict) -> tuple[list[str], list[str]]:
             warnings.append(f"MO '{desc}' sin unit_price")
             continue
 
-        expected = round(bp * _IVA)
+        if has_edif_disc:
+            expected = round(bp * _IVA / 1.05)
+        else:
+            expected = round(bp * _IVA)
         if abs(up - expected) > 1:
             errors.append(
-                f"IVA MO inconsistente en '{desc}': base={bp} × {_IVA} → "
+                f"IVA MO inconsistente en '{desc}': base={bp} × {_IVA}"
+                f"{' ÷ 1.05' if has_edif_disc else ''} → "
                 f"esperado={expected}, actual={up}"
             )
     return errors, warnings
