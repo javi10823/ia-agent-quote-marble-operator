@@ -3455,6 +3455,70 @@ class AgentService:
                 # Ensure no pileta_sku leaks through and triggers sink lookup
                 inputs.pop("pileta_sku", None)
 
+            # ── MO list authority ──────────────────────────────────────────
+            # If the operator explicitly listed the MO items (markers like
+            # "listá cada línea como concepto separado") and did NOT mention
+            # pileta/bacha/agujero anywhere in the brief, treat the list as
+            # exhaustive: no pileta product, no anafe, no colocación.
+            # This prevents Valentina from hallucinating "Agujero pileta apoyo"
+            # or similar MO lines that the operator did not request.
+            _mo_authority_markers = [
+                "listá cada línea como concepto separado",
+                "lista cada linea como concepto separado",
+                "listá cada línea",
+                "lista cada linea",
+                "listá como concepto separado",
+                "lista como concepto separado",
+                "listá como concepto",
+                "lista como concepto",
+            ]
+            _has_mo_authority = any(
+                m in _pileta_all_text for m in _mo_authority_markers
+            )
+            if _has_mo_authority:
+                # Words that signal an actual pileta is requested somewhere.
+                _pileta_mentions = (
+                    "pileta", "bacha", "agujero pileta",
+                    "pegadopileta", "pegado pileta",
+                )
+                _anafe_mentions = ("anafe", "agujero anafe")
+                _coloc_mentions = ("colocacion", "colocación", "colocar")
+                _mentions_pileta = any(
+                    w in _pileta_all_text for w in _pileta_mentions
+                )
+                _mentions_anafe = any(
+                    w in _pileta_all_text for w in _anafe_mentions
+                )
+                _mentions_coloc = any(
+                    w in _pileta_all_text for w in _coloc_mentions
+                )
+                if not _mentions_pileta and inputs.get("pileta") != "empotrada_cliente":
+                    logging.warning(
+                        f"[mo-list-authority] Operator listed MO explicitly and "
+                        f"did NOT mention pileta — forcing empotrada_cliente "
+                        f"for {save_to_qid} (was: {inputs.get('pileta')})"
+                    )
+                    inputs["pileta"] = "empotrada_cliente"
+                    inputs.pop("pileta_sku", None)
+                if not _mentions_anafe and inputs.get("anafe"):
+                    logging.warning(
+                        f"[mo-list-authority] Operator listed MO explicitly and "
+                        f"did NOT mention anafe — forcing anafe=False "
+                        f"for {save_to_qid}"
+                    )
+                    inputs["anafe"] = False
+                # Colocación: only suppress when the list looks exhaustive AND
+                # operator didn't mention "sin colocación" explicitly (handled
+                # elsewhere). If "colocación" word never appeared, assume the
+                # list is complete and no colocación line was intended.
+                if not _mentions_coloc and inputs.get("colocacion"):
+                    logging.warning(
+                        f"[mo-list-authority] Operator listed MO explicitly and "
+                        f"did NOT mention colocación — forcing colocacion=False "
+                        f"for {save_to_qid}"
+                    )
+                    inputs["colocacion"] = False
+
             if not inputs.get("pileta"):
                 # 2. Keyword fallback: scan conversation for pileta/bacha mentions
                 if any(kw in _pileta_all_text for kw in ["bacha", "pileta", "cotizar bacha", "con bacha",
@@ -3484,7 +3548,7 @@ class AgentService:
 
             # ── Flete qty override: detect explicit count in operator message ──
             # Patterns: "× 5 fletes", "x 5 fletes", "5 fletes", "flete × 5",
-            #           "5 viajes", "flete × 3", etc.
+            #           "5 viajes", "flete × 3", "× 1 UNO SOLO", "un flete", etc.
             # Only override if the agent didn't already pass flete_qty.
             if not inputs.get("flete_qty"):
                 _all_op_text = ""
@@ -3505,6 +3569,11 @@ class AgentService:
                     r'[×x]\s*(\d+)\s*flete',              # "× 5 fletes", "x5 fletes"
                     r'(\d+)\s*flete[s]?\b',               # "5 fletes"
                     r'(\d+)\s*viaje[s]?\b',               # "5 viajes"
+                    # Digit near "flete" within a short window (handles
+                    # "Flete + toma de medidas × 1 UNO SOLO" — operator writes
+                    # the count far from the literal word "flete").
+                    r'\bflete[s]?\b[^\n.]{0,80}?[×x]\s*(\d+)\b',
+                    r'[×x]\s*(\d+)[^\n.]{0,40}?\bflete[s]?\b',
                 ]
                 for _pat in _flete_patterns:
                     _m_flete = _re_flete.search(_pat, _all_op_text, _re_flete.IGNORECASE)
@@ -3520,6 +3589,48 @@ class AgentService:
                                 break
                         except ValueError:
                             continue
+
+                # ── Word-number fallback for flete ──────────────────────────
+                # "un flete", "dos fletes", "tres viajes", etc. — plus the
+                # emphatic "uno solo" / "un solo" qualifier that operators
+                # use to underline there's a SINGLE trip.
+                if not inputs.get("flete_qty"):
+                    _word_nums = {
+                        "un": 1, "uno": 1, "una": 1,
+                        "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5,
+                        "seis": 6, "siete": 7, "ocho": 8,
+                        "nueve": 9, "diez": 10,
+                    }
+                    for _word, _num in _word_nums.items():
+                        if _re_flete.search(
+                            rf'\b{_word}\s+flete[s]?\b',
+                            _all_op_text, _re_flete.IGNORECASE,
+                        ) or _re_flete.search(
+                            rf'\b{_word}\s+viaje[s]?\b',
+                            _all_op_text, _re_flete.IGNORECASE,
+                        ):
+                            inputs["flete_qty"] = _num
+                            logging.info(
+                                f"Auto-set flete_qty={_num} from word-number "
+                                f"'{_word}' near flete/viaje for {save_to_qid}"
+                            )
+                            break
+
+                # "× N UNO SOLO" / "× N UN SOLO" — the emphatic qualifier pins
+                # to qty=1 regardless of what N is (operator wants to force
+                # a single trip; the '1' is just restating it).
+                if not inputs.get("flete_qty"):
+                    if _re_flete.search(
+                        r'\b(?:uno?|un)\s+sol[oa]\b',
+                        _all_op_text, _re_flete.IGNORECASE,
+                    ) and _re_flete.search(
+                        r'\bflete[s]?\b', _all_op_text, _re_flete.IGNORECASE,
+                    ):
+                        inputs["flete_qty"] = 1
+                        logging.info(
+                            f"Auto-set flete_qty=1 from 'uno solo' emphasis "
+                            f"near flete for {save_to_qid}"
+                        )
 
             # ── Paso 1 ↔ Paso 2 consistency guardrail ──
             # Two layers:
