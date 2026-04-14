@@ -158,11 +158,24 @@ El calculator excluye automáticamente el flete de ambos descuentos. Si ves un
 total de flete reducido en el preview, es un bug — reportar.
 
 ### Descuento comercial sobre MO (`mo_discount_pct`)
-Cuando el operador declara "descuento X% sobre MO" en un edificio:
+Cuando el operador declara un descuento X% sobre MO en un edificio:
 - Pasar `mo_discount_pct: X` en el input a `calculate_quote`.
-- Se calcula sobre la suma de MO c/IVA (con ÷1.05 ya aplicado), excluyendo flete.
+- Se calcula sobre la suma de MO c/IVA (con ÷1.05 ya aplicado), **excluyendo flete**.
 - Se muestra como línea separada visible en el Paso 2.
 - Default: 0 (no aplicar salvo pedido explícito).
+
+⛔ **SCOPE INVARIANTE — siempre TODO MO menos flete:**
+Sin importar cómo lo enuncie el operador en el brief
+(`"5% sobre MO"`, `"5% sobre PEGADOPILETA"`, `"5% sobre mano de obra"`,
+`"descuento especial 5%"`, `"5% sobre subtotal PEGADOPILETA"`, etc.),
+el descuento se aplica SIEMPRE a la suma de TODA la MO excluyendo flete.
+
+NO interpretar "sobre PEGADOPILETA" como un scope más angosto. NO crear
+campos `pileta_discount_pct` u otros scopes parciales. El descuento MO
+es una sola variable con una sola semántica: **todo-menos-flete**.
+
+Label en PDF/Excel: siempre `"Descuento N% sobre MO (excluye flete)"`,
+nunca `"sobre PEGADOPILETA"` aunque el brief lo diga así.
 
 ### Material no encontrado
 Informar operador. Preguntar cual usar — no sugerir alternativas.

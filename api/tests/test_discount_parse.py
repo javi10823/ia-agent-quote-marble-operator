@@ -26,6 +26,12 @@ _MAT_PATTERNS = [
 _MO_PATTERNS = [
     r'(\d{1,2})\s*%\s+sobre\s+(?:la\s+)?(?:mo\b|mano\s+de\s+obra)',
     r'descuento[^\n.]{0,30}?(\d{1,2})\s*%[^\n.]{0,30}?(?:mo\b|mano\s+de\s+obra)',
+    # "sobre PEGADOPILETA" variants — route to mo_discount_pct.
+    # Scope invariante: todo-MO-menos-flete sin importar cómo se enuncie.
+    r'(\d{1,2})\s*%\s+sobre\s+(?:subtotal\s+)?(?:el\s+)?pegadopileta',
+    r'(\d{1,2})\s*%\s+sobre\s+(?:subtotal\s+)?(?:el\s+)?pegado\s+pileta',
+    r'descuento[^\n.]{0,40}?(\d{1,2})\s*%[^\n.]{0,40}?pegadopileta',
+    r'descuento[^\n.]{0,40}?(\d{1,2})\s*%[^\n.]{0,40}?pegado\s+pileta',
 ]
 
 
@@ -151,3 +157,28 @@ def test_no_false_positive_percentage_in_different_context():
     """Percentages unrelated to discount must not match."""
     assert detect_material_discount("IVA 21% sobre el total") is None
     assert detect_material_discount("el material tiene 3% de desperdicio") is None
+
+
+# ── PEGADOPILETA phrasing → still routes to mo_discount_pct ─────────────
+# Scope invariante: el descuento MO aplica SIEMPRE a todo MO excepto flete,
+# independiente del texto del brief. Incluso cuando el operador dice
+# "5% sobre PEGADOPILETA", el descuento se aplica a todo MO (no a un
+# subconjunto angosto). Por eso estos patrones enrutan a `mo_discount_pct`
+# y NO a un hipotético `pileta_discount_pct` (que no existe por diseño).
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("5% sobre PEGADOPILETA", 5),
+        ("5% sobre pegadopileta", 5),
+        ("5% sobre pegado pileta", 5),
+        ("5% sobre subtotal PEGADOPILETA", 5),
+        ("Descuento especial 5% sobre subtotal PEGADOPILETA", 5),
+        ("Descuento 5% solo sobre PEGADOPILETA", 5),
+        ("descuento del 8% sobre pegadopileta", 8),
+    ],
+)
+def test_pegadopileta_phrasing_routes_to_mo_discount(text, expected):
+    """DINALE 14/04/2026 y similares: brief dice 'sobre PEGADOPILETA' pero
+    el scope efectivo es todo-MO-menos-flete."""
+    assert detect_mo_discount(text) == expected

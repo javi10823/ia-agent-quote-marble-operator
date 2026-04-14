@@ -210,6 +210,54 @@ class TestMoDiscountAndFleteRules:
         # Flete unit_price sigue siendo el del catálogo (no reducido)
         assert flete_item["unit_price"] == flete_item["total"] / flete_item["quantity"]
 
+    def test_mo_discount_scope_invariant_dinale(self):
+        """SCOPE INVARIANTE: el descuento MO SIEMPRE aplica a todo MO menos
+        flete, sin importar cómo lo enuncie el brief.
+
+        Caso DINALE 14/04/2026: brief dice 'Descuento 5% solo sobre PEGADOPILETA'
+        + MO incluye PEGADOPILETA + FALDON + Flete. El descuento debe calcularse
+        sobre PEGADOPILETA + FALDON (todo lo que no es flete), NO solo sobre
+        PEGADOPILETA. Ver rules/quote-process-buildings.md → "Descuento
+        comercial sobre MO" → SCOPE INVARIANTE.
+        """
+        result = calculate_quote({
+            "client_name": "DINALE",
+            "material": "Silestone Blanco Norte",
+            "pieces": [
+                {"description": "Mesada", "largo": 2.00, "prof": 0.60, "quantity": 10},
+            ],
+            "localidad": "Rosario",
+            "colocacion": False,
+            "pileta": "empotrada_cliente",
+            "pileta_qty": 19,
+            "frentin": True,
+            "frentin_ml": 2.90,
+            "is_edificio": True,
+            "plazo": "4 meses",
+            "mo_discount_pct": 5,
+        })
+        assert result["ok"] is True
+        mo = result["mo_items"]
+        descs = {m["description"].lower() for m in mo}
+        # Debe haber al menos pegado + faldon + flete
+        assert any("pegado" in d or "pileta" in d for d in descs), descs
+        assert any("faldon" in d or "faldón" in d for d in descs), descs
+        assert any("flete" in d for d in descs), descs
+
+        # Suma esperada del descuento: 5% sobre (todo MO excepto flete)
+        subtotal_excl_flete = sum(
+            m["total"] for m in mo if "flete" not in m["description"].lower()
+        )
+        expected_disc = round(subtotal_excl_flete * 0.05)
+        assert result["mo_discount_amount"] == expected_disc, (
+            f"Scope invariant violated: discount should be 5% of ALL MO "
+            f"except flete (={subtotal_excl_flete}) = {expected_disc}, "
+            f"got {result['mo_discount_amount']}"
+        )
+        # Sanity: flete NO recibe descuento
+        flete = next(m for m in mo if "flete" in m["description"].lower())
+        assert not flete.get("edificio_discount")
+
     def test_no_mo_discount_when_zero(self):
         """Sin mo_discount_pct, mo_discount_amount = 0."""
         result = calculate_quote({

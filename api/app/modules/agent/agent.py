@@ -3679,11 +3679,19 @@ class AgentService:
                             except ValueError:
                                 continue
 
-                # MO discount — "5% sobre MO", "descuento 5% sobre mano de obra"
+                # MO discount — "5% sobre MO", "descuento 5% sobre mano de obra",
+                # y también "sobre PEGADOPILETA" / "sobre pileta" / "sobre pegado
+                # pileta" / "sobre subtotal PEGADOPILETA" (scope invariante: el
+                # descuento SIEMPRE aplica a todo MO excepto flete, sin importar
+                # cómo lo enuncie el operador — ver rules/quote-process-buildings.md).
                 if not inputs.get("mo_discount_pct"):
                     _mo_patterns = [
                         r'(\d{1,2})\s*%\s+sobre\s+(?:la\s+)?(?:mo\b|mano\s+de\s+obra)',
                         r'descuento[^\n.]{0,30}?(\d{1,2})\s*%[^\n.]{0,30}?(?:mo\b|mano\s+de\s+obra)',
+                        r'(\d{1,2})\s*%\s+sobre\s+(?:subtotal\s+)?(?:el\s+)?pegadopileta',
+                        r'(\d{1,2})\s*%\s+sobre\s+(?:subtotal\s+)?(?:el\s+)?pegado\s+pileta',
+                        r'descuento[^\n.]{0,40}?(\d{1,2})\s*%[^\n.]{0,40}?pegadopileta',
+                        r'descuento[^\n.]{0,40}?(\d{1,2})\s*%[^\n.]{0,40}?pegado\s+pileta',
                     ]
                     for _pat in _mo_patterns:
                         _m_mo = _re_disc.search(_pat, _disc_text, _re_disc.IGNORECASE)
