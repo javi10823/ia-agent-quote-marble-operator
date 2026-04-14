@@ -756,6 +756,48 @@ class ResumenObraRequest(BaseModel):
     notes: Optional[str] = None
 
 
+@router.get("/quotes/{quote_id}/email-draft")
+async def get_email_draft(
+    quote_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return AI-generated commercial email draft for the client.
+
+    Lazy cache on Quote.email_draft — regenerates when stale (anchor quote,
+    any sibling of the same client, or resumen_obra timestamp changed).
+    """
+    from app.modules.agent.tools.email_draft_tool import (
+        generate_email_draft,
+        EmailDraftError,
+    )
+    try:
+        return await generate_email_draft(db, quote_id, force=False)
+    except EmailDraftError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    except Exception as e:
+        logging.error(f"[email-draft] unexpected error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno generando el email")
+
+
+@router.post("/quotes/{quote_id}/email-draft/regenerate")
+async def regenerate_email_draft(
+    quote_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Force regeneration of the email draft, bypassing the cache."""
+    from app.modules.agent.tools.email_draft_tool import (
+        generate_email_draft,
+        EmailDraftError,
+    )
+    try:
+        return await generate_email_draft(db, quote_id, force=True)
+    except EmailDraftError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    except Exception as e:
+        logging.error(f"[email-draft] unexpected error on regenerate: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno generando el email")
+
+
 @router.post("/quotes/resumen-obra")
 async def generate_resumen_obra_endpoint(
     body: ResumenObraRequest,
