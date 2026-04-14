@@ -1394,13 +1394,9 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     # ── ONLY replace .value — NEVER touch .font, .fill, .alignment, .border ──
     # The template has all formatting correct. We just swap the data.
 
-    # Clear values in dynamic rows (23 through max possible output row)
-    max_clear = 35 + max(0, len(mo_items) - 4) + 3
-    for row in range(23, max_clear + 1):
-        for col in range(1, 7):
-            ws.cell(row, col).value = None
-
-    # Pieces (group duplicates)
+    # Pieces (group duplicates) — compute up front to decide how many rows
+    # to insert BEFORE the MO block. The template only has 4 piece slots
+    # (rows 23-26); with more pieces MO would overlap despiece.
     raw_all = []
     for sector in sectors:
         for piece in sector.get("pieces", []):
@@ -1414,6 +1410,21 @@ def _generate_excel(output_path: Path, data: dict) -> None:
             seen_xl[p] = 1
             all_pieces.append(p)
     all_pieces = [f"{p} (×{seen_xl[p]})" if seen_xl[p] > 1 else p for p in all_pieces]
+
+    TEMPLATE_PIECE_SLOTS = 4
+    MO_HEADER_ROW_BASE = 27
+    extra_pieces = max(0, len(all_pieces) - TEMPLATE_PIECE_SLOTS)
+    if extra_pieces > 0:
+        # Insert rows at the MO header position, pushing MO block down so
+        # pieces have room to expand without overwriting it.
+        ws.insert_rows(MO_HEADER_ROW_BASE, extra_pieces)
+
+    # Clear values in dynamic rows (23 through max possible output row),
+    # accounting for inserted extra piece rows AND inserted extra MO rows.
+    max_clear = 35 + extra_pieces + max(0, len(mo_items) - 4) + 5
+    for row in range(23, max_clear + 1):
+        for col in range(1, 7):
+            ws.cell(row, col).value = None
 
     # Build right-side overlay (Descuento + TOTAL) for USD
     italic_sm = Font(name="Calibri", italic=True, size=9)
@@ -1448,9 +1459,10 @@ def _generate_excel(output_path: Path, data: dict) -> None:
             ws.cell(r, 6).font = italic_sm if style == "I" else bold
             r += 1
 
-    # MO items — template has 4 slots (rows 28-31). Insert extra rows if needed.
-    MO_HEADER_ROW = 27
-    MO_START_ROW = 28
+    # MO items — template has 4 slots (base rows 28-31, shifted by any extra
+    # piece rows we inserted above). Insert more rows if len(mo_items) > 4.
+    MO_HEADER_ROW = MO_HEADER_ROW_BASE + extra_pieces
+    MO_START_ROW = MO_HEADER_ROW + 1
     TEMPLATE_MO_SLOTS = 4
     extra_mo = max(0, len(mo_items) - TEMPLATE_MO_SLOTS)
     if extra_mo > 0:
@@ -1492,8 +1504,10 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     # Grand total — 2 rows after total pesos
     grand_row = total_pesos_row + 2
     grand = _format_grand_total(total_ars, total_usd, currency)
-    # Clear any template remnants between total pesos and grand total
-    for clear_row in range(total_pesos_row + 1, grand_row + 2):
+    # Clear template remnants around grand total, and wipe a bigger band
+    # below to avoid stale example-piece rows surviving from the source
+    # template (ZOC rows etc.) when we inserted many pieces.
+    for clear_row in range(total_pesos_row + 1, grand_row + 20):
         for clear_col in range(1, 7):
             cell = ws.cell(clear_row, clear_col)
             cell.value = None
