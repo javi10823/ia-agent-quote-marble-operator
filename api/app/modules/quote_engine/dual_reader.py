@@ -154,9 +154,37 @@ OPUS_TIMEOUT_SECONDS = 60
 # Vision API call
 # ═══════════════════════════════════════════════════════
 
-async def _call_vision(crop_bytes: bytes, model: str, timeout: float = OPUS_TIMEOUT_SECONDS) -> dict:
-    """Call Claude Vision API with plan reader prompt. Returns parsed JSON."""
+async def _call_vision(
+    crop_bytes: bytes,
+    model: str,
+    timeout: float = OPUS_TIMEOUT_SECONDS,
+    cotas_text: str | None = None,
+) -> dict:
+    """Call Claude Vision API with plan reader prompt. Returns parsed JSON.
+
+    If cotas_text is provided, it's injected BEFORE the extraction instruction
+    so the model uses those pre-extracted cotas instead of reading numbers
+    from the image. The model still sees the image for geometric interpretation.
+    """
     client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+
+    user_text_blocks = []
+    if cotas_text:
+        user_text_blocks.append({
+            "type": "text",
+            "text": (
+                cotas_text
+                + "\n\n"
+                + "⚠️ REGLA CRÍTICA: usá SOLO los valores numéricos listados arriba. "
+                + "NO inventes otros números. Tu tarea es asignar cada cota a su rol "
+                + "geométrico (largo, ancho, zócalo, etc.) según su posición (x, y)."
+            ),
+        })
+    user_text_blocks.append({
+        "type": "text",
+        "text": "Extraé las medidas de este plano de marmolería. Devolvé SOLO JSON según el schema indicado.",
+    })
+
     try:
         response = await asyncio.wait_for(
             client.messages.create(
@@ -174,10 +202,7 @@ async def _call_vision(crop_bytes: bytes, model: str, timeout: float = OPUS_TIME
                                 "data": base64.b64encode(crop_bytes).decode(),
                             },
                         },
-                        {
-                            "type": "text",
-                            "text": "Extraé las medidas de este plano de marmolería. Devolvé SOLO JSON según el schema indicado.",
-                        },
+                        *user_text_blocks,
                     ],
                 }],
             ),
@@ -411,6 +436,7 @@ async def dual_read_crop(
     crop_label: str = "cocina",
     planilla_m2: Optional[float] = None,
     dual_enabled: bool = True,
+    cotas_text: Optional[str] = None,
 ) -> dict:
     """Read a crop with Sonnet first, Opus on demand. Reconcile results.
 
@@ -421,6 +447,10 @@ async def dual_read_crop(
     NOTE: This flag is INDEPENDENT of use_opus_for_plans (which controls the
     main agent loop model). dual_read_enabled controls only this dual vision
     reader module. Both can be true/false independently.
+
+    cotas_text: optional pre-extracted cotas (from cotas_extractor) to inject
+    into the vision prompt. When provided, the model uses those exact numbers
+    and only does geometric interpretation.
     """
     sonnet_model = settings.ANTHROPIC_MODEL  # claude-sonnet-4-5-20250514
     # Opus model from config (not hardcoded) — allows changing without code deploy
@@ -429,15 +459,18 @@ async def dual_read_crop(
     opus_model = _ai.get("opus_model", "claude-opus-4-6")
 
     # Step 1: Always call Sonnet (fast, ~3-5s)
-    logger.info(f"[dual-read] Calling Sonnet for '{crop_label}'...")
-    sonnet_result = await _call_vision(crop_bytes, sonnet_model, timeout=30)
+    if cotas_text:
+        logger.info(f"[dual-read] Calling Sonnet for '{crop_label}' with {len(cotas_text)} chars of pre-extracted cotas...")
+    else:
+        logger.info(f"[dual-read] Calling Sonnet for '{crop_label}' (no cotas_text)...")
+    sonnet_result = await _call_vision(crop_bytes, sonnet_model, timeout=30, cotas_text=cotas_text)
 
     if sonnet_result.get("error"):
         logger.error(f"[dual-read] Sonnet failed: {sonnet_result['error']}")
         if dual_enabled:
             # Fallback to Opus
             logger.info(f"[dual-read] Falling back to Opus...")
-            opus_result = await _call_vision(crop_bytes, opus_model, timeout=OPUS_TIMEOUT_SECONDS)
+            opus_result = await _call_vision(crop_bytes, opus_model, timeout=OPUS_TIMEOUT_SECONDS, cotas_text=cotas_text)
             if opus_result.get("error"):
                 return {"error": "Both models failed", "sonnet_error": sonnet_result["error"], "opus_error": opus_result["error"]}
             return _build_single_result(opus_result, "SOLO_OPUS")
@@ -473,7 +506,7 @@ async def dual_read_crop(
 
     # Step 3: Sonnet unsure → call Opus with timeout
     logger.info(f"[dual-read] Sonnet unsure ({min_confidence:.2f}) → calling Opus (timeout={OPUS_TIMEOUT_SECONDS}s)...")
-    opus_result = await _call_vision(crop_bytes, opus_model, timeout=OPUS_TIMEOUT_SECONDS)
+    opus_result = await _call_vision(crop_bytes, opus_model, timeout=OPUS_TIMEOUT_SECONDS, cotas_text=cotas_text)
 
     if opus_result.get("error"):
         # Opus failed/timed out → use Sonnet alone

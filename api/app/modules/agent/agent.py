@@ -1598,6 +1598,25 @@ class AgentService:
                                 })
                                 logging.info(f"[planilla] Sending cropped drawing only ({_drawing_img.width}x{_drawing_img.height}, {len(_draw_bytes)} bytes)")
 
+                                # ── COTAS: extract dimensional text positionally from PDF ──
+                                _cotas_text = None
+                                try:
+                                    from app.modules.quote_engine.cotas_extractor import (
+                                        extract_cotas_from_drawing, format_cotas_for_prompt
+                                    )
+                                    _cotas = extract_cotas_from_drawing(
+                                        page,
+                                        table_x0=_planilla_data.table_x0,
+                                        dpi=_plan_dpi,
+                                    )
+                                    if _cotas:
+                                        _cotas_text = format_cotas_for_prompt(_cotas)
+                                        logging.info(f"[cotas] Injecting {len(_cotas)} pre-extracted cotas into dual read")
+                                    else:
+                                        logging.info("[cotas] No cotas extractable from PDF text → fallback to vision-only")
+                                except Exception as e:
+                                    logging.warning(f"[cotas] Extraction failed, falling back to vision-only: {e}")
+
                                 # ── DUAL READ: send crop to Sonnet (+ Opus if unsure) ──
                                 try:
                                     from app.modules.quote_engine.dual_reader import dual_read_crop
@@ -1608,6 +1627,7 @@ class AgentService:
                                         crop_label=_planilla_data.ubicacion or "cocina",
                                         planilla_m2=_planilla_data.m2,
                                         dual_enabled=_dual_enabled,
+                                        cotas_text=_cotas_text,
                                     )
                                     if not _dual_result.get("error"):
                                         # Save crop to disk for potential Opus retry

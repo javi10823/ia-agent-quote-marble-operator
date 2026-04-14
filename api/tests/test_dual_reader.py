@@ -139,7 +139,7 @@ class TestFlowControl:
         unsure_result = _sample_result(confident=0.7)
 
         call_count = {"sonnet": 0, "opus": 0}
-        async def mock_vision(crop_bytes, model, timeout=15):
+        async def mock_vision(crop_bytes, model, timeout=15, cotas_text=None):
             if "sonnet" in model.lower():
                 call_count["sonnet"] += 1
                 return unsure_result
@@ -157,7 +157,7 @@ class TestFlowControl:
     @pytest.mark.asyncio
     async def test_opus_timeout(self):
         """Opus timeout → returns SOLO_SONNET."""
-        async def mock_vision(crop_bytes, model, timeout=15):
+        async def mock_vision(crop_bytes, model, timeout=15, cotas_text=None):
             if "sonnet" in model.lower():
                 return _sample_result(confident=0.7)
             else:
@@ -173,7 +173,7 @@ class TestFlowControl:
         """dual_read_enabled=false → ONLY Sonnet, no Opus, no reconciliation."""
         call_models = []
 
-        async def mock_vision(crop_bytes, model, timeout=15):
+        async def mock_vision(crop_bytes, model, timeout=15, cotas_text=None):
             call_models.append(model)
             return _sample_result(confident=0.95)
 
