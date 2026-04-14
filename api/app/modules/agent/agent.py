@@ -1609,6 +1609,16 @@ class AgentService:
                                         dual_enabled=_dual_enabled,
                                     )
                                     if not _dual_result.get("error"):
+                                        # Save crop to disk for potential Opus retry
+                                        try:
+                                            from app.core.static import OUTPUT_DIR as _OUT
+                                            _crop_dir = _OUT / quote_id
+                                            _crop_dir.mkdir(parents=True, exist_ok=True)
+                                            _crop_path = _crop_dir / "dual_read_crop.jpg"
+                                            _crop_path.write_bytes(_draw_bytes)
+                                            _dual_result["_crop_path"] = str(_crop_path)
+                                        except Exception as e:
+                                            logging.warning(f"[dual-read] Failed to save crop: {e}")
                                         # Send to frontend
                                         yield {"type": "dual_read_result", "content": json.dumps(_dual_result, ensure_ascii=False)}
                                         # Store in quote breakdown
@@ -1618,6 +1628,8 @@ class AgentService:
                                             if _q:
                                                 _bd = dict(_q.quote_breakdown or {})
                                                 _bd["dual_read_result"] = _dual_result
+                                                _bd["dual_read_planilla_m2"] = _planilla_data.m2
+                                                _bd["dual_read_crop_label"] = _planilla_data.ubicacion or "cocina"
                                                 await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd))
                                                 await db.commit()
                                         except Exception as e:

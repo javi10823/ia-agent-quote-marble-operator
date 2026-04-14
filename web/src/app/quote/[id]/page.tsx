@@ -459,8 +459,13 @@ export default function QuotePage() {
                             <div className="max-w-full">
                               <DualReadResult
                                 data={dualData}
+                                quoteId={String(id)}
                                 onConfirm={(verified: unknown) => {
                                   send(`[DUAL_READ_CONFIRMED]${JSON.stringify(verified)}`);
+                                }}
+                                onRetry={(newData: unknown) => {
+                                  const updated = `__DUAL_READ__${JSON.stringify(newData)}`;
+                                  setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, content: updated } : m));
                                 }}
                               />
                             </div>
