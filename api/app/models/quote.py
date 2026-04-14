@@ -19,7 +19,7 @@ class Quote(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     client_name: Mapped[str] = mapped_column(String(500))
     project: Mapped[str] = mapped_column(String(500))
-    material: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    material: Mapped[str | None] = mapped_column(Text, nullable=True)
     total_ars: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[QuoteStatus] = mapped_column(

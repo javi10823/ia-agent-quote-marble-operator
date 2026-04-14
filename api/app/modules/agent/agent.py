@@ -479,13 +479,21 @@ def _extract_quote_info(user_message: str) -> dict:
         if kw in msg_lower:
             # Find the full material name around the keyword
             idx = msg_lower.index(kw)
-            # Grab surrounding words for context
+            # Grab surrounding words for context. Hard-cap both sides to
+            # prevent runaway extraction when message has no comma/space.
             start = max(0, user_message.rfind(" ", 0, max(0, idx - 1)) + 1)
-            end = user_message.find(",", idx)
-            if end == -1:
-                end = user_message.find(" con ", idx)
-            if end == -1:
-                end = min(len(user_message), idx + 30)
+            # Limit start to at most 10 chars before idx (avoid capturing
+            # markdown headers like "**MATERIAL:**" or prior lines).
+            start = max(start, idx - 10)
+            # End: prefer newline/comma/" con ", fallback to +40 chars
+            candidates = []
+            for delim in ["\n", "\r", ",", " con ", " — ", " - "]:
+                p = user_message.find(delim, idx)
+                if p != -1:
+                    candidates.append(p)
+            end = min(candidates) if candidates else min(len(user_message), idx + 40)
+            # Hard cap: material name never > 100 chars
+            end = min(end, idx + 100)
             info["material"] = user_message[start:end].strip()
             break
 
@@ -2769,12 +2777,25 @@ class AgentService:
             current_quote = result.scalar_one_or_none()
             if current_quote:
                 extracted = _extract_quote_info(user_message)
-                if not current_quote.client_name and extracted.get("client_name"):
-                    save_values["client_name"] = extracted["client_name"]
-                if not current_quote.material and extracted.get("material"):
-                    save_values["material"] = extracted["material"]
-                if not current_quote.project and extracted.get("project"):
-                    save_values["project"] = extracted["project"]
+                # DB columns are VARCHAR(500). Truncate defensively to prevent
+                # StringDataRightTruncationError when regex over-extracts a long span
+                # (e.g. operator paste with no comma delimiter hitting end-of-message).
+                _MAX_FIELD = 450
+                _cn = (extracted.get("client_name") or "")[:_MAX_FIELD]
+                _mat = (extracted.get("material") or "")[:_MAX_FIELD]
+                _prj = (extracted.get("project") or "")[:_MAX_FIELD]
+                # Sanitize: remove newlines and markdown noise from extracted values
+                import re as _re_clean
+                def _clean(s: str) -> str:
+                    s = _re_clean.sub(r"[\r\n]+", " ", s)
+                    s = _re_clean.sub(r"\*+", "", s)
+                    return s.strip()
+                if not current_quote.client_name and _cn:
+                    save_values["client_name"] = _clean(_cn)[:_MAX_FIELD]
+                if not current_quote.material and _mat:
+                    save_values["material"] = _clean(_mat)[:_MAX_FIELD]
+                if not current_quote.project and _prj:
+                    save_values["project"] = _clean(_prj)[:_MAX_FIELD]
 
             await db.execute(
                 update(Quote)
