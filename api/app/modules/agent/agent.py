@@ -80,6 +80,65 @@ def _validate_quote_data(qdata: dict) -> tuple[list[str], list[str]]:
 
     return errors, warnings
 
+
+def _backfill_material_price_base(quotes_data: list[dict]) -> None:
+    """Populate `material_price_base` on each quote dict from the catalog.
+
+    The `generate_documents` tool schema doesn't expose this field to the
+    LLM, so it arrives as None. The validator's IVA check skips silently
+    if unit is also None, but warns ("Falta material_price_base") when
+    unit is set but base isn't. We look up the material by name and copy
+    the catalog's base price (USD or ARS) into the dict in-place.
+
+    Mutates `quotes_data` in place. Safe to call idempotently — quotes
+    that already carry `material_price_base` are skipped.
+    """
+    from app.modules.quote_engine.calculator import _find_material
+
+    for qdata in quotes_data:
+        if qdata.get("material_price_base"):
+            continue
+        mname = qdata.get("material_name", "")
+        if not mname:
+            continue
+        try:
+            mr = _find_material(mname)
+        except Exception as exc:
+            logging.warning(
+                f"[material_price_base] catalog lookup crashed for {mname!r}: {exc}"
+            )
+            continue
+        if not mr.get("found"):
+            continue
+        cur = (qdata.get("material_currency") or mr.get("currency", "")).upper()
+        if cur == "USD":
+            base = mr.get("price_usd_base")
+        else:
+            base = mr.get("price_ars_base")
+        if not base:
+            continue
+        # Only backfill when the catalog base is *consistent* with the
+        # price_unit the agent passed in. If they diverge (stale fixture,
+        # manual override, ARS price drift), leave base unset so the
+        # validator silently skips the IVA check rather than flipping it
+        # from a warning into a hard error that blocks document generation.
+        unit = qdata.get("material_price_unit")
+        if unit is not None:
+            import math as _math_ivc
+            from app.core.company_config import get as _ivc
+            _iva = _ivc("iva.multiplier", 1.21)
+            expected = (
+                _math_ivc.floor(base * _iva) if cur == "USD" else round(base * _iva)
+            )
+            if unit != expected:
+                logging.warning(
+                    f"[material_price_base] catalog base {base} × {_iva} = {expected} "
+                    f"≠ passed unit {unit} for {mname!r} — skipping backfill"
+                )
+                continue
+        qdata["material_price_base"] = base
+
+
 # ── BUILDING DETECTION (unified — delegates to edificio_parser) ──────────────
 
 def _detect_building(user_message: str) -> bool:
@@ -3004,6 +3063,13 @@ class AgentService:
                 quotes_data = [inputs["quote_data"]]
 
             logging.info(f"generate_documents: {len(quotes_data)} material(s) to generate")
+
+            # Populate material_price_base from catalog if missing. The
+            # `generate_documents` tool schema doesn't expose this field to the
+            # LLM, so we look it up here to enable validate_despiece's IVA
+            # check. Without this the validator emitted "Falta
+            # material_price_base" for every quote (DINALE 14/04/2026).
+            _backfill_material_price_base(quotes_data)
 
             # Pre-flight checklist before generating
             all_warnings: list[str] = []
