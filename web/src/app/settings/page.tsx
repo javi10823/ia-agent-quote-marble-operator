@@ -688,6 +688,24 @@ function MotorIASection({ toast }: { toast: (msg: string) => void }) {
         <div className="bg-s2 border border-b1 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div>
+              <div className="text-[13px] font-medium text-t1">DPI rasterización planos</div>
+              <div className="text-[11px] text-t3 mt-0.5">Calidad de la imagen del plano que se envía a Claude. 300 = mejor lectura de cotas chicas pero más tokens.</div>
+            </div>
+            <select
+              value={aiEngine.plan_rasterization_dpi ?? 300}
+              onChange={e => updateToggle("plan_rasterization_dpi", parseInt(e.target.value))}
+              className="bg-s3 border border-b1 rounded-md text-t1 text-[13px] px-2 py-1 outline-none"
+            >
+              <option value={150}>150 (rápido)</option>
+              <option value={200}>200</option>
+              <option value={300}>300 (recomendado)</option>
+              <option value={400}>400 (máxima)</option>
+            </select>
+          </div>
+        </div>
+        <div className="bg-s2 border border-b1 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div>
               <div className="text-[13px] font-medium text-t1">Ejemplos por request</div>
               <div className="text-[11px] text-t3 mt-0.5">Cantidad de ejemplos de presupuestos incluidos en cada mensaje. Más = más preciso pero más caro.</div>
             </div>

@@ -1580,9 +1580,10 @@ class AgentService:
                         try:
                             from pdf2image import convert_from_bytes as _cfb
                             from app.modules.quote_engine.planilla_parser import crop_drawing_from_page
-                            _raster_pages = _cfb(plan_bytes, dpi=200, first_page=1, last_page=1)
+                            _plan_dpi = (ai_cfg if 'ai_cfg' in dir() else get_ai_config()).get("plan_rasterization_dpi", 300)
+                            _raster_pages = _cfb(plan_bytes, dpi=_plan_dpi, first_page=1, last_page=1)
                             if _raster_pages:
-                                _drawing_img = crop_drawing_from_page(_raster_pages[0], _planilla_data, dpi=200)
+                                _drawing_img = crop_drawing_from_page(_raster_pages[0], _planilla_data, dpi=_plan_dpi)
                                 # Convert to JPEG bytes
                                 _draw_buf = _io.BytesIO()
                                 _drawing_img.save(_draw_buf, format="JPEG", quality=85)
