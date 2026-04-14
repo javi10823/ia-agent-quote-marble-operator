@@ -459,7 +459,7 @@ export default function QuotePage() {
                             <div className="max-w-full">
                               <DualReadResult
                                 data={dualData}
-                                quoteId={String(id)}
+                                quoteId={quoteId}
                                 onConfirm={(verified: unknown) => {
                                   send(`[DUAL_READ_CONFIRMED]${JSON.stringify(verified)}`);
                                 }}
