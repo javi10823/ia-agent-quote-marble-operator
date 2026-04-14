@@ -428,7 +428,7 @@ TOOLS = [
     {"name": "read_plan", "description": "AUXILIAR — zoom táctico en zonas de un plano. NO usar para análisis inicial (usá visión nativa sobre el PDF/imagen adjunto). Solo para: cotas chicas, detalles ilegibles, subregiones específicas. LÍMITE: máximo 2 crops por llamada. Si necesitás más, analizá los primeros 2 y después llamá de nuevo.", "input_schema": {"type": "object", "properties": {"filename": {"type": "string"}, "crop_instructions": {"type": "array", "maxItems": 2, "items": {"type": "object", "properties": {"label": {"type": "string"}, "x1": {"type": "integer"}, "y1": {"type": "integer"}, "x2": {"type": "integer"}, "y2": {"type": "integer"}}}}}, "required": ["filename"]}},
     {"name": "generate_documents", "description": "Genera PDF+Excel. 1 quote por material.", "input_schema": {"type": "object", "properties": {"quotes": {"type": "array", "items": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "date": {"type": "string"}, "delivery_days": {"type": "string"}, "material_name": {"type": "string"}, "material_m2": {"type": "number"}, "material_price_unit": {"type": "number"}, "material_currency": {"type": "string", "enum": ["USD", "ARS"]}, "discount_pct": {"type": "number"}, "sectors": {"type": "array", "items": {"type": "object", "properties": {"label": {"type": "string"}, "pieces": {"type": "array", "items": {"type": "string"}}}}}, "sinks": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "quantity": {"type": "integer"}, "unit_price": {"type": "number"}}}}, "mo_items": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}, "quantity": {"type": "number"}, "unit_price": {"type": "number"}, "total": {"type": "number"}}}}, "total_ars": {"type": "number"}, "total_usd": {"type": "number"}}, "required": ["client_name", "material_name"]}}}, "required": ["quotes"]}},
     {"name": "update_quote", "description": "Actualiza client_name/project/status en DB.", "input_schema": {"type": "object", "properties": {"quote_id": {"type": "string"}, "updates": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "material": {"type": "string"}, "total_ars": {"type": "number"}, "total_usd": {"type": "number"}, "status": {"type": "string", "enum": ["draft", "validated", "sent"]}}}}, "required": ["quote_id", "updates"]}},
-    {"name": "calculate_quote", "description": "Calcula m², MO, totales. SIEMPRE usar para cálculos.", "input_schema": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "material": {"type": "string"}, "pieces": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}, "largo": {"type": "number"}, "prof": {"type": "number"}, "alto": {"type": "number"}, "quantity": {"type": "integer", "description": "Cantidad de unidades físicas de esta pieza (para edificios con tipologías repetidas). Default 1 si no se pasa."}}, "required": ["description", "largo"]}}, "localidad": {"type": "string"}, "colocacion": {"type": "boolean"}, "is_edificio": {"type": "boolean"}, "pileta": {"type": "string", "enum": ["empotrada_cliente", "empotrada_johnson", "apoyo"]}, "pileta_qty": {"type": "integer"}, "pileta_sku": {"type": "string"}, "anafe": {"type": "boolean"}, "anafe_qty": {"type": "integer", "description": "Cantidad de anafes (para edificios con N tipologías). Default 1."}, "frentin": {"type": "boolean"}, "frentin_ml": {"type": "number"}, "inglete": {"type": "boolean"}, "pulido": {"type": "boolean"}, "skip_flete": {"type": "boolean", "description": "true SOLO si el cliente retira en fábrica. Default false — siempre cobrar flete."}, "plazo": {"type": "string"}, "discount_pct": {"type": "number"}, "mo_discount_pct": {"type": "number", "description": "Descuento comercial % sobre MO (excluye flete). Usar SOLO si operador lo pide explícito (ej: '5% sobre MO')."}}, "required": ["client_name", "material", "pieces", "localidad", "plazo"]}},
+    {"name": "calculate_quote", "description": "Calcula m², MO, totales. SIEMPRE usar para cálculos.", "input_schema": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "material": {"type": "string"}, "pieces": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}, "largo": {"type": "number"}, "prof": {"type": "number"}, "alto": {"type": "number"}, "quantity": {"type": "integer", "description": "Cantidad de unidades físicas de esta pieza (para edificios con tipologías repetidas). Default 1 si no se pasa."}}, "required": ["description", "largo"]}}, "localidad": {"type": "string"}, "colocacion": {"type": "boolean"}, "is_edificio": {"type": "boolean"}, "pileta": {"type": "string", "enum": ["empotrada_cliente", "empotrada_johnson", "apoyo"]}, "pileta_qty": {"type": "integer"}, "pileta_sku": {"type": "string"}, "anafe": {"type": "boolean"}, "anafe_qty": {"type": "integer", "description": "Cantidad de anafes (para edificios con N tipologías). Default 1."}, "frentin": {"type": "boolean"}, "frentin_ml": {"type": "number"}, "inglete": {"type": "boolean"}, "pulido": {"type": "boolean"}, "skip_flete": {"type": "boolean", "description": "true SOLO si el cliente retira en fábrica. Default false — siempre cobrar flete."}, "flete_qty": {"type": "integer", "description": "Cantidad de fletes declarada por el operador (ej: '× 5 fletes'). Override del cálculo automático. Usar SOLO cuando el operador lo dice explícito en el enunciado."}, "plazo": {"type": "string"}, "discount_pct": {"type": "number"}, "mo_discount_pct": {"type": "number", "description": "Descuento comercial % sobre MO (excluye flete). Usar SOLO si operador lo pide explícito (ej: '5% sobre MO')."}}, "required": ["client_name", "material", "pieces", "localidad", "plazo"]}},
     {"name": "patch_quote_mo", "description": "Modifica MO sin recalcular. Para agregar/quitar flete, colocación.", "input_schema": {"type": "object", "properties": {"remove_items": {"type": "array", "items": {"type": "string"}}, "add_colocacion": {"type": "boolean"}, "add_flete": {"type": "string"}}, "required": []}},
 ]
 
@@ -3347,6 +3347,45 @@ class AgentService:
                 if any(phrase in _all_user_text for phrase in _skip_phrases):
                     inputs["skip_flete"] = True
                     logging.info(f"Auto-set skip_flete=True from conversation keywords for {save_to_qid}")
+
+            # ── Flete qty override: detect explicit count in operator message ──
+            # Patterns: "× 5 fletes", "x 5 fletes", "5 fletes", "flete × 5",
+            #           "5 viajes", "flete × 3", etc.
+            # Only override if the agent didn't already pass flete_qty.
+            if not inputs.get("flete_qty"):
+                _all_op_text = ""
+                if conversation_history:
+                    for _m in conversation_history:
+                        if _m.get("role") == "user":
+                            _c = _m.get("content", "")
+                            if isinstance(_c, str):
+                                _all_op_text += " " + _c
+                            elif isinstance(_c, list):
+                                for _b in _c:
+                                    if isinstance(_b, dict) and _b.get("type") == "text":
+                                        _all_op_text += " " + _b.get("text", "")
+                _all_op_text += " " + (current_user_message or "")
+                import re as _re_flete
+                _flete_patterns = [
+                    r'flete[s]?\s*[×x]\s*(\d+)',         # "flete × 5", "fletes x 5"
+                    r'[×x]\s*(\d+)\s*flete',              # "× 5 fletes", "x5 fletes"
+                    r'(\d+)\s*flete[s]?\b',               # "5 fletes"
+                    r'(\d+)\s*viaje[s]?\b',               # "5 viajes"
+                ]
+                for _pat in _flete_patterns:
+                    _m_flete = _re_flete.search(_pat, _all_op_text, _re_flete.IGNORECASE)
+                    if _m_flete:
+                        try:
+                            _fqty = int(_m_flete.group(1))
+                            if 1 <= _fqty <= 50:
+                                inputs["flete_qty"] = _fqty
+                                logging.info(
+                                    f"Auto-set flete_qty={_fqty} from operator message for {save_to_qid} "
+                                    f"(pattern='{_pat}', match='{_m_flete.group(0)}')"
+                                )
+                                break
+                        except ValueError:
+                            continue
 
             # ── Paso 1 ↔ Paso 2 consistency guardrail ──
             # Two layers:

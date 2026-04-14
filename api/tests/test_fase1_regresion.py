@@ -356,3 +356,37 @@ class TestVentusEdificioEndToEnd:
         )
         # unit_price × qty debe dar total exacto
         assert flete_item["total"] == flete_item["unit_price"] * flete_item["quantity"]
+
+    def test_flete_qty_operator_override(self):
+        """Si el operador declara flete_qty, el calculator usa ese valor."""
+        result = calculate_quote(self._ventus_input(flete_qty=5))
+        flete_item = next((m for m in result["mo_items"]
+                           if "flete" in m["description"].lower()), None)
+        assert flete_item["quantity"] == 5, (
+            f"Override flete_qty=5 ignorado, got {flete_item['quantity']}"
+        )
+
+    def test_flete_qty_override_zero_ignored(self):
+        """flete_qty=0 o None NO debe usarse como override — usa cálculo automático."""
+        result = calculate_quote(self._ventus_input(flete_qty=0))
+        flete_item = next((m for m in result["mo_items"]
+                           if "flete" in m["description"].lower()), None)
+        # Cálculo automático: 61 piezas / 6 = ceil 11
+        import math
+        assert flete_item["quantity"] == math.ceil(61 / 6)
+
+    def test_flete_qty_override_residential(self):
+        """Override también funciona en residencial (no solo edificio)."""
+        result = calculate_quote({
+            "client_name": "Test",
+            "material": "Silestone Blanco Norte",
+            "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
+            "localidad": "Rosario",
+            "colocacion": True,
+            "pileta": "empotrada_cliente",
+            "plazo": "30 dias",
+            "flete_qty": 3,
+        })
+        flete_item = next((m for m in result["mo_items"]
+                           if "flete" in m["description"].lower()), None)
+        assert flete_item["quantity"] == 3

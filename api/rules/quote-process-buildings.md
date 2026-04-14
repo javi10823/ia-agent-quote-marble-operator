@@ -137,6 +137,18 @@ da m² sin dimensiones:
 - Zócalos viajan con mesadas, NO cuentan como piezas para flete.
 - Default `flete_mesadas_per_trip = 6` (config.json, building.flete_mesadas_per_trip).
 
+### ⛔ Override explícito del operador
+Si el operador escribe **cantidad de fletes explícita** en el enunciado
+(ejemplos: "× 5 fletes", "flete × 3", "5 viajes", "Flete + toma × 5 fletes"):
+- USAR esa cantidad EXACTA.
+- NO calcular `ceil(piezas/6)` por tu cuenta.
+- Pasar `flete_qty: N` en el input a `calculate_quote`.
+
+El cálculo automático SOLO aplica cuando el operador NO especifica cantidad.
+El sistema detecta el override con regex en el mensaje del operador y pasa
+`flete_qty` automáticamente, pero si lo ves explícito pasalo también por
+las dudas — es idempotente.
+
 ### ⛔ Flete NUNCA lleva descuento
 El flete es un costo fijo de transporte. NO aplicar:
 - NO el `÷1.05` de edificio.
