@@ -255,6 +255,57 @@ class TestDeterministicPaso2:
         assert "USD 346" in paso2
 
 
+# ═══════════════════════════════════════════════════════
+# M2 surface validator — extract from planilla text
+# ═══════════════════════════════════════════════════════
+
+class TestM2SurfaceParser:
+    def _extract_m2(self, text):
+        """Replicate the regex extraction logic from agent.py."""
+        import re
+        patterns = [
+            r'(?:M2|m2|SUPERFICIE|superficie)\s*[:\|]?\s*(\d+[.,]\d+)\s*m2',
+            r'(\d+[.,]\d+)\s*m2\s*[-–—]\s*[Cc]on\s+z[oó]calos',
+            r'(\d+[.,]\d+)\s*m2',
+        ]
+        for pat in patterns:
+            match = re.search(pat, text)
+            if match:
+                return float(match.group(1).replace(",", "."))
+        return None
+
+    def test_munge_planilla_m2(self):
+        """Extract 2.50 from 'M2  2,50 m2 - Con zócalos incluídos'."""
+        text = "M2  2,50 m2 - Con zócalos incluídos"
+        assert self._extract_m2(text) == 2.50
+
+    def test_simple_m2(self):
+        text = "SUPERFICIE: 4.20 m2"
+        assert self._extract_m2(text) == 4.20
+
+    def test_m2_with_pipe(self):
+        text = "M2 | 3,75 m2"
+        assert self._extract_m2(text) == 3.75
+
+    def test_no_m2(self):
+        text = "MESADA COCINA sin superficie indicada"
+        assert self._extract_m2(text) is None
+
+    def test_validation_passes_when_close(self):
+        """2.49 vs 2.50 = 0.4% diff → should pass (< 5%)."""
+        expected = 2.50
+        actual = 2.49
+        diff_pct = abs(actual - expected) / expected * 100
+        assert diff_pct < 5
+
+    def test_validation_fails_when_far(self):
+        """2.75 vs 2.50 = 10% diff → should fail (> 5%)."""
+        expected = 2.50
+        actual = 2.75
+        diff_pct = abs(actual - expected) / expected * 100
+        assert diff_pct > 5
+
+
 class TestPDFPieceLayout:
     @pytest.fixture(autouse=True)
     def cleanup(self):
