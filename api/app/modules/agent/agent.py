@@ -2978,6 +2978,10 @@ class AgentService:
                 _cur = _qr.scalar_one_or_none()
                 existing_drive_url = _cur.drive_url if _cur else None
 
+                first_drive_url = None
+                first_drive_file_id = None
+                _drive_pdf_url = None
+                _drive_excel_url = None
                 if result.get("ok"):
                     # Only promote status to VALIDATED on first generation
                     # (draft/pending). On regeneration (already validated/sent),
