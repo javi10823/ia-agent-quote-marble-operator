@@ -673,6 +673,63 @@ class AgentService:
 
         system_prompt = build_system_prompt(has_plan=has_plan, is_building=is_building, user_message=user_message, conversation_history=messages)
 
+        # ── Operator web: 1 material / 1 presupuesto guardrail ──
+        # If the fresh brief mentions 2+ distinct canonical materials (and the
+        # quote has not locked a material yet), interrupt and ask which one to
+        # use. The chatbot flow (/api/v1/quote) does NOT pass through here and
+        # keeps its multi-material array support intact.
+        #
+        # Fail-open: detector only flags when it is sure (full canonical names
+        # or valid SKUs). Partial words like "blanco"/"norte" do not trigger.
+        try:
+            from app.modules.agent.material_detector import detect_materials_in_brief
+
+            _mm_quote_row = await db.execute(select(Quote).where(Quote.id == quote_id))
+            _mm_q = _mm_quote_row.scalar_one_or_none()
+            _mm_has_material = bool(_mm_q and (_mm_q.material or "").strip())
+            _mm_has_calc = bool(
+                _mm_q
+                and isinstance(_mm_q.quote_breakdown, dict)
+                and _mm_q.quote_breakdown.get("calc_results")
+            )
+            # Skip guardrail once a material or calc exists, or if in edificio
+            # flow (edificio may legitimately have multiple materials per the
+            # existing building parser and runs through its own state machine).
+            if not is_building and not _mm_has_material and not _mm_has_calc:
+                _detected = detect_materials_in_brief(user_message)
+                if len(_detected) >= 2:
+                    _materials_list = ", ".join(_detected[:5])
+                    _first = _detected[0]
+                    _reply = (
+                        f"Detecté {len(_detected)} materiales en el brief: "
+                        f"{_materials_list}.\n\n"
+                        f"Regla: 1 material = 1 presupuesto.\n"
+                        f"¿Procedo con **{_first}**? "
+                        f"Para los demás materiales generá un presupuesto nuevo."
+                    )
+                    try:
+                        await db.execute(
+                            update(Quote).where(Quote.id == quote_id).values(
+                                messages=list(_mm_q.messages or []) + [
+                                    {"role": "user", "content": [{"type": "text", "text": user_message}]},
+                                    {"role": "assistant", "content": [{"type": "text", "text": _reply}]},
+                                ],
+                            )
+                        )
+                        await db.commit()
+                    except Exception as _e_persist:
+                        logging.warning(f"[multi-material] failed to persist reply: {_e_persist}")
+                    logging.info(
+                        f"[multi-material] operator brief mentioned {len(_detected)} materials "
+                        f"for quote {quote_id}: {_detected}"
+                    )
+                    yield {"type": "text", "content": _reply}
+                    yield {"type": "done", "content": ""}
+                    return
+        except Exception as _e_mm:
+            # Fail-open: never let the detector block a valid flow
+            logging.warning(f"[multi-material] detector error (fail-open): {_e_mm}")
+
         # ── Inject verified measurements if available ──
         try:
             _qr_vm = await db.execute(select(Quote).where(Quote.id == quote_id))
