@@ -465,6 +465,7 @@ async def dual_read_crop(
         # Sonnet is confident AND m2 matches planilla → skip Opus, save cost
         logger.info(f"[dual-read] Sonnet confident ≥{SONNET_CONFIDENCE_SKIP_OPUS} + m2 OK → skipping Opus")
         _sonnet_preview["m2_warning"] = None
+        _sonnet_preview["_sonnet_raw"] = sonnet_result  # preserve for operator retry
         return _sonnet_preview
 
     if _m2_mismatch:
@@ -479,12 +480,14 @@ async def dual_read_crop(
         logger.warning(f"[dual-read] Opus failed: {opus_result['error']} → using Sonnet only")
         result = _build_single_result(sonnet_result, "SOLO_SONNET")
         result["m2_warning"] = _check_m2(result, planilla_m2)
+        result["_sonnet_raw"] = sonnet_result
         return result
 
     # Step 4: Both succeeded → reconcile
     logger.info(f"[dual-read] Both models responded → reconciling...")
     reconciled = reconcile(opus_result, sonnet_result)
     reconciled["m2_warning"] = _check_m2(reconciled, planilla_m2)
+    reconciled["_sonnet_raw"] = sonnet_result
     return reconciled
 
 

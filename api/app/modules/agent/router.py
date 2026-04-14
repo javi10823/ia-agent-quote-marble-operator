@@ -962,6 +962,77 @@ async def zone_select(
     return {"ok": True, "bbox_px": bbox_px, "image_size": [real_w, real_h]}
 
 
+@router.post("/quotes/{quote_id}/dual-read-retry")
+async def dual_read_retry(
+    quote_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Operator-triggered second pass with Opus when measurements don't match.
+
+    Called from DualReadResult component when operator clicks
+    'Las medidas no coinciden' button. Uses the saved crop to call Opus
+    and reconcile with the previously saved Sonnet result.
+    """
+    import logging
+    from app.modules.quote_engine.dual_reader import _call_vision, reconcile, _check_m2
+    from app.core.config import settings
+    from app.modules.agent.tools.catalog_tool import get_ai_config
+
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    bd = quote.quote_breakdown or {}
+    prev_result = bd.get("dual_read_result")
+    if not prev_result:
+        raise HTTPException(status_code=400, detail="No prior dual read result found")
+
+    crop_path = prev_result.get("_crop_path")
+    if not crop_path:
+        raise HTTPException(status_code=400, detail="Crop not saved — cannot retry")
+
+    import os
+    if not os.path.exists(crop_path):
+        raise HTTPException(status_code=400, detail="Crop file missing on disk")
+
+    with open(crop_path, "rb") as f:
+        crop_bytes = f.read()
+
+    # Call Opus directly
+    opus_model = get_ai_config().get("opus_model", "claude-opus-4-6")
+    logging.info(f"[dual-read-retry] Quote {quote_id}: calling Opus for second opinion")
+    opus_result = await _call_vision(crop_bytes, opus_model, timeout=30)
+
+    if opus_result.get("error"):
+        raise HTTPException(status_code=500, detail=f"Opus failed: {opus_result['error']}")
+
+    # Retrieve original Sonnet result (saved as _sonnet_raw in prev result)
+    sonnet_raw = prev_result.get("_sonnet_raw")
+    planilla_m2 = bd.get("dual_read_planilla_m2")
+
+    if sonnet_raw:
+        # Reconcile Opus with original Sonnet
+        new_result = reconcile(opus_result, sonnet_raw)
+        new_result["source"] = "DUAL"
+    else:
+        # No original Sonnet raw — just return Opus alone
+        from app.modules.quote_engine.dual_reader import _build_single_result
+        new_result = _build_single_result(opus_result, "SOLO_OPUS")
+
+    new_result["m2_warning"] = _check_m2(new_result, planilla_m2)
+    new_result["_crop_path"] = crop_path
+    new_result["_retry"] = True
+
+    # Save updated result
+    bd["dual_read_result"] = new_result
+    await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=bd))
+    await db.commit()
+
+    logging.info(f"[dual-read-retry] Quote {quote_id}: Opus retry complete, source={new_result['source']}")
+    return new_result
+
+
 # ── CHAT — SSE STREAMING ──────────────────────────────────────────────────────
 
 @router.post("/quotes/{quote_id}/chat")

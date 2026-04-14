@@ -42,11 +42,14 @@ interface DualReadData {
   conflict_fields: string[];
   source: string;
   m2_warning?: string | null;
+  _retry?: boolean;
 }
 
 interface Props {
   data: DualReadData;
+  quoteId: string;
   onConfirm: (verified: DualReadData) => void;
+  onRetry?: (newData: DualReadData) => void;
 }
 
 const STATUS_ICONS: Record<string, string> = {
@@ -116,7 +119,33 @@ function FieldRow({ label, field, onEdit }: {
   );
 }
 
-export default function DualReadResult({ data, onConfirm }: Props) {
+export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Props) {
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+      const res = await fetch(`${API_URL}/api/quotes/${quoteId}/dual-read-retry`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      const newData = await res.json();
+      if (onRetry) onRetry(newData);
+    } catch (e: unknown) {
+      setRetryError(e instanceof Error ? e.message : "Error");
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+
   const [editedData, setEditedData] = useState<DualReadData>(data);
 
   const updateField = (sectorIdx: number, tramoIdx: number, field: string, val: number) => {
@@ -179,11 +208,22 @@ export default function DualReadResult({ data, onConfirm }: Props) {
           ))}
           {sector.ambiguedades.length > 0 && (
             <div className="text-[11px] text-orange-400 mt-1 ml-2">
-              {sector.ambiguedades.map((a, i) => <div key={i}>\u26A0\uFE0F {a}</div>)}
+              {sector.ambiguedades.map((a, i) => <div key={i}>⚠️ {a}</div>)}
             </div>
           )}
         </div>
       ))}
+
+      {data.source !== "DUAL" && !data._retry && (
+        <button
+          className="w-full mt-2 py-2 rounded-lg text-[12px] font-medium bg-orange-600/20 hover:bg-orange-600/30 border border-orange-600/40 text-orange-200 transition disabled:opacity-50"
+          onClick={handleRetry}
+          disabled={retrying}
+        >
+          {retrying ? "Consultando a Opus..." : "⚠️ Las medidas no coinciden — verificar con Opus"}
+        </button>
+      )}
+      {retryError && <div className="text-[11px] text-red-400 mt-1">{retryError}</div>}
 
       <button
         className="w-full mt-2 py-2 rounded-lg text-[13px] font-medium bg-green-600 hover:bg-green-500 text-white transition"
