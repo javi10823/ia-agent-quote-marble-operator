@@ -883,9 +883,17 @@ def build_deterministic_paso2(calc: dict) -> str:
     lines.append("")
 
     # Grand total
+    # Only mention "+ piletas" when there is an actual sink product line (ARS)
+    # bundled into total_ars; otherwise it misleads the reader.
     lines.append("**GRAND TOTAL**")
     if currency == "USD" and total_usd:
-        lines.append(f"{fmt_ars(total_ars)} mano de obra + piletas + {fmt_usd(total_usd)} material")
+        has_sink_product = bool(sinks) and any(
+            (s.get("unit_price", 0) * s.get("quantity", 0)) > 0 for s in sinks
+        )
+        if has_sink_product:
+            lines.append(f"{fmt_ars(total_ars)} mano de obra + piletas + {fmt_usd(total_usd)} material")
+        else:
+            lines.append(f"{fmt_ars(total_ars)} mano de obra + {fmt_usd(total_usd)} material")
     else:
         lines.append(f"{fmt_ars(total_ars)} total")
     lines.append("")
