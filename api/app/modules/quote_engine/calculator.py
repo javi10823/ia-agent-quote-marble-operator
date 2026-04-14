@@ -173,6 +173,10 @@ def _get_mo_price(sku: str) -> tuple:
 def calculate_m2(pieces: list) -> tuple[float, list[dict]]:
     """Calculate total m2 from pieces. Returns (total_m2, piece_details).
 
+    Respects the optional `quantity` field on each piece. A piece like
+    {largo: 1.43, prof: 0.62, quantity: 2} contributes 1.43 × 0.62 × 2
+    to the total and keeps quantity=2 in its detail entry.
+
     Rounding policy (BUG-045):
     - Per piece: NO rounding (sum raw values)
     - Total: round to 2 decimals
@@ -183,25 +187,32 @@ def calculate_m2(pieces: list) -> tuple[float, list[dict]]:
     for p in pieces:
         largo = p.get("largo", 0)
         dim2 = p.get("prof") or p.get("alto") or 0
+        qty_in = int(p.get("quantity", 1) or 1)
         raw_m2 = largo * dim2
-        total += raw_m2
+        total += raw_m2 * qty_in  # respect input quantity
         raw_details.append({
             "description": p.get("description", ""),
             "largo": largo,
             "dim2": dim2,
-            "m2": round(raw_m2, 4),
+            "m2": round(raw_m2, 4),   # m² per unit (not × qty)
+            "quantity": qty_in,        # preserve explicit qty
         })
-    # Group identical pieces by description+dimensions
+    # Group identical pieces by description+dimensions.
+    # If the operator already provided an explicit quantity on each piece,
+    # do NOT re-increment it (that was the old behavior for repeated rows
+    # without qty). We only increment when we see a duplicate row that did
+    # not declare its own quantity.
     details = []
     seen = {}
     for d in raw_details:
         key = f'{d["largo"]:.4f}_{d["dim2"]:.4f}_{d["description"]}'
         if key in seen:
-            seen[key]["quantity"] += 1
+            # Duplicate description+dims: sum quantities (handles either
+            # "repeated rows" style or mixed-style input defensively).
+            seen[key]["quantity"] += d["quantity"]
         else:
-            entry = {**d, "quantity": 1}
-            seen[key] = entry
-            details.append(entry)
+            seen[key] = dict(d)
+            details.append(seen[key])
     return round(total, 2), details
 
 
@@ -324,6 +335,9 @@ def calculate_quote(input_data: dict) -> dict:
     pileta_qty = input_data.get("pileta_qty", 1)
     pileta_sku = input_data.get("pileta_sku")
     anafe = input_data.get("anafe", False)
+    # anafe_qty: explicit count of anafes (edificio multi-tipología).
+    # Default 1 for residential; edificio operator passes the total.
+    anafe_qty = int(input_data.get("anafe_qty", 1) or 1)
     frentin = input_data.get("frentin", False)
     inglete = input_data.get("inglete", False)
     pulido = input_data.get("pulido", False)
@@ -421,6 +435,19 @@ def calculate_quote(input_data: dict) -> dict:
             discount_pct = cfg("discount.national_percentage", 8)
         logging.info(f"Applied auto architect discount: {discount_pct}% ({currency})")
 
+    # 4b. Auto-apply building discount (edificio) if threshold met
+    # Rule: edificio + m² ≥ building_min_m2_threshold → discount_pct = building_percentage.
+    # Only auto-applies if agent didn't already set a discount_pct.
+    if is_edificio and not discount_pct:
+        _bmin = cfg("discount.building_min_m2_threshold", 15)
+        _bpct = cfg("discount.building_percentage", 18)
+        if total_m2 >= _bmin:
+            discount_pct = _bpct
+            logging.info(
+                f"Applied auto edificio discount: {discount_pct}% "
+                f"(total_m2 {total_m2} ≥ {_bmin})"
+            )
+
     # 4b. Material total
     material_total = round(total_m2 * price_unit)
     if discount_pct > 0:
@@ -445,11 +472,17 @@ def calculate_quote(input_data: dict) -> dict:
             price, base = _get_mo_price(sku)
             mo_items.append({"description": "Agujero pileta apoyo", "quantity": qty, "unit_price": price, "base_price": base, "total": round(price * qty)})
 
-    # Anafe
+    # Anafe (respects anafe_qty for edificio multi-tipología)
     if anafe:
         sku = "ANAFEDEKTON/NEOLITH" if is_sint else "ANAFE"
         price, base = _get_mo_price(sku)
-        mo_items.append({"description": "Agujero anafe", "quantity": 1, "unit_price": price, "base_price": base, "total": price})
+        mo_items.append({
+            "description": "Agujero anafe",
+            "quantity": anafe_qty,
+            "unit_price": price,
+            "base_price": base,
+            "total": round(price * anafe_qty),
+        })
 
     # Colocación
     if colocacion:
