@@ -2664,6 +2664,7 @@ class AgentService:
 
             # Process tool calls
             tool_results = []
+            _gen_docs_result: dict | None = None
             for tool_use in tool_use_blocks:
                 if tool_use.name == "list_pieces":
                     _list_pieces_called = True
@@ -2737,8 +2738,51 @@ class AgentService:
                         "content": result_json,
                     })
 
+                # Capture generate_documents result for canonical short-circuit below
+                if tool_use.name == "generate_documents" and isinstance(result, dict) and result.get("ok"):
+                    _gen_docs_result = result
+
             assistant_messages.append({"role": "assistant", "content": _serialize_content(final_message.content)})
             assistant_messages.append({"role": "user", "content": tool_results})
+
+            # ── PASO 3 short-circuit (single-material flow) ─────────────────
+            # Avoid letting Valentina paraphrase generate_documents output
+            # (she omits links / breaks long URLs across lines). Emit a
+            # canonical, code-built response with all PDF/Excel/Drive links,
+            # matching what the edificio flow already does.
+            if _gen_docs_result is not None:
+                try:
+                    _lines = ["Documentos generados:", ""]
+                    for _r in (_gen_docs_result.get("results") or []):
+                        if not _r.get("ok"):
+                            continue
+                        _mat = _r.get("material") or "Material"
+                        _lines.append(f"📄 **{_mat}**")
+                        _pdf_drive = _r.get("drive_pdf_url")
+                        _pdf_local = _r.get("pdf_url")
+                        if _pdf_drive:
+                            _lines.append(f"- [PDF en Drive]({_pdf_drive})")
+                        elif _pdf_local:
+                            _lines.append(f"- [Descargar PDF]({_pdf_local})")
+                        _xls_drive = _r.get("drive_excel_url")
+                        _xls_local = _r.get("excel_url")
+                        if _xls_drive:
+                            _lines.append(f"- [Excel en Drive]({_xls_drive})")
+                        elif _xls_local:
+                            _lines.append(f"- [Descargar Excel]({_xls_local})")
+                        _lines.append("")
+                    _wt = _gen_docs_result.get("warnings_text")
+                    if _wt:
+                        _lines.append(_wt)
+                    _canonical = "\n".join(_lines).rstrip() + "\n"
+                    yield {"type": "text", "content": _canonical}
+                    assistant_messages.append({
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": _canonical}],
+                    })
+                    break
+                except Exception as _e:
+                    logging.warning(f"paso3 short-circuit failed, falling back to LLM: {_e}")
 
             # Track if this iteration used visual tools (preserve context for next iteration)
             _last_had_visual_tool = any(t.name in VISUAL_TOOLS for t in tool_use_blocks)
