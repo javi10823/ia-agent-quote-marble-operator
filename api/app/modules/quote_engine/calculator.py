@@ -669,7 +669,21 @@ def calculate_quote(input_data: dict) -> dict:
         "revestimiento" in (p.get("description") or "").lower()
         for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
     )
-    if has_tall_zocalo or has_revestimiento:
+    # `tomas_qty` override: operador pide "Agujero de toma × N" en el brief.
+    # Mantiene compatibilidad con el auto-detect de zócalo alto/revestimiento:
+    # si no se pasa el override, se sigue aplicando la regla heurística.
+    tomas_qty = input_data.get("tomas_qty")
+    if tomas_qty and tomas_qty > 0:
+        sku = "TOMASDEKTON/NEO" if is_sint else "TOMAS"
+        price, base = _get_mo_price(sku)
+        mo_items.append({
+            "description": "Agujero toma corriente",
+            "quantity": int(tomas_qty),
+            "unit_price": price,
+            "base_price": base,
+            "total": round(price * int(tomas_qty)),
+        })
+    elif has_tall_zocalo or has_revestimiento:
         sku = "TOMASDEKTON/NEO" if is_sint else "TOMAS"
         price, base = _get_mo_price(sku)
         mo_items.append({"description": "Agujero toma corriente", "quantity": 1, "unit_price": price, "base_price": base, "total": price})
