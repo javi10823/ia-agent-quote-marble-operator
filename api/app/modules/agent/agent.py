@@ -3632,6 +3632,75 @@ class AgentService:
                             f"near flete for {save_to_qid}"
                         )
 
+            # ── Discount override: "Descuento N% sobre material" ─────────
+            # Parse explicit material discounts from the operator brief.
+            # Auto-18%-edificio only triggers when m²>=15 in the calculator;
+            # smaller edificio jobs (e.g. patas x8 with 5.6m²) would lose the
+            # discount even when the operator declared it literally. This
+            # block honors "Descuento 18%" regardless of m².
+            # Similarly captures "5% sobre MO" for mo_discount_pct.
+            if not inputs.get("discount_pct") or not inputs.get("mo_discount_pct"):
+                _disc_text = ""
+                if conversation_history:
+                    for _m in conversation_history:
+                        if _m.get("role") == "user":
+                            _c = _m.get("content", "")
+                            if isinstance(_c, str):
+                                _disc_text += " " + _c
+                            elif isinstance(_c, list):
+                                for _b in _c:
+                                    if isinstance(_b, dict) and _b.get("type") == "text":
+                                        _disc_text += " " + _b.get("text", "")
+                _disc_text += " " + (current_user_message or "")
+                import re as _re_disc
+
+                # Material discount — "Descuento 18% sobre material",
+                # "18% de descuento sobre material", "descuento edificio 18%"
+                if not inputs.get("discount_pct"):
+                    _mat_patterns = [
+                        r'descuento[^\n.]{0,30}?(\d{1,2})\s*%[^\n.]{0,30}?(?:sobre\s+)?material',
+                        r'(\d{1,2})\s*%[^\n.]{0,30}?(?:de\s+)?descuento[^\n.]{0,30}?(?:sobre\s+)?material',
+                        r'(\d{1,2})\s*%\s+sobre\s+(?:total\s+)?material',
+                        r'descuento\s+edificio\s+(\d{1,2})\s*%',
+                    ]
+                    for _pat in _mat_patterns:
+                        _m_disc = _re_disc.search(_pat, _disc_text, _re_disc.IGNORECASE)
+                        if _m_disc:
+                            try:
+                                _pct = int(_m_disc.group(1))
+                                if 1 <= _pct <= 50:
+                                    inputs["discount_pct"] = _pct
+                                    logging.info(
+                                        f"Auto-set discount_pct={_pct} from operator text "
+                                        f"for {save_to_qid} (pattern='{_pat}', "
+                                        f"match='{_m_disc.group(0)[:60]}...')"
+                                    )
+                                    break
+                            except ValueError:
+                                continue
+
+                # MO discount — "5% sobre MO", "descuento 5% sobre mano de obra"
+                if not inputs.get("mo_discount_pct"):
+                    _mo_patterns = [
+                        r'(\d{1,2})\s*%\s+sobre\s+(?:la\s+)?(?:mo\b|mano\s+de\s+obra)',
+                        r'descuento[^\n.]{0,30}?(\d{1,2})\s*%[^\n.]{0,30}?(?:mo\b|mano\s+de\s+obra)',
+                    ]
+                    for _pat in _mo_patterns:
+                        _m_mo = _re_disc.search(_pat, _disc_text, _re_disc.IGNORECASE)
+                        if _m_mo:
+                            try:
+                                _pct_mo = int(_m_mo.group(1))
+                                if 1 <= _pct_mo <= 50:
+                                    inputs["mo_discount_pct"] = _pct_mo
+                                    logging.info(
+                                        f"Auto-set mo_discount_pct={_pct_mo} from "
+                                        f"operator text for {save_to_qid} "
+                                        f"(pattern='{_pat}', match='{_m_mo.group(0)[:60]}...')"
+                                    )
+                                    break
+                            except ValueError:
+                                continue
+
             # ── Paso 1 ↔ Paso 2 consistency guardrail ──
             # Two layers:
             #   A) paso1_pieces persisted by list_pieces (residencial — list_pieces siempre se llama)
