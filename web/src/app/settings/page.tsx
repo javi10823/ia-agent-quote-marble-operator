@@ -674,6 +674,12 @@ function MotorIASection({ toast }: { toast: (msg: string) => void }) {
           onChange={v => updateToggle("use_opus_for_plans", v)}
         />
         <Toggle
+          label="Doble lectura de planos"
+          description="Lee cada plano con Sonnet + Opus y compara resultados. Si Sonnet tiene alta confianza, no llama a Opus (ahorra costo). Desactivado = solo Sonnet."
+          checked={aiEngine.dual_read_enabled ?? true}
+          onChange={v => updateToggle("dual_read_enabled", v)}
+        />
+        <Toggle
           label="Rotar imágenes de planos"
           description="Envía una versión rotada 90° de cada plano para leer texto en los márgenes. Duplica tokens de imagen."
           checked={aiEngine.rotate_plan_images ?? true}
