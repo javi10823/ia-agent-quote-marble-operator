@@ -3328,34 +3328,94 @@ class AgentService:
                     logging.info(f"Auto-set skip_flete=True from conversation keywords for {save_to_qid}")
 
             # ── Paso 1 ↔ Paso 2 consistency guardrail ──
-            # If Paso 1 persisted pieces (via list_pieces), use them as source of truth.
-            # This prevents Claude from inventing a different despiece in Paso 2 when
-            # it got distracted by examples or lost context.
+            # Two layers:
+            #   A) paso1_pieces persisted by list_pieces (residencial — list_pieces siempre se llama)
+            #   B) operator_declared_m2 parseado del texto del operador (edificios — list_pieces deshabilitado)
             try:
                 _gq = await db.execute(select(Quote).where(Quote.id == save_to_qid))
                 _gquote = _gq.scalar_one_or_none()
                 if _gquote:
                     _gbd = _gquote.quote_breakdown or {}
+
+                    # Calculate m2 of what Claude is trying to pass now
+                    _current_m2 = 0
+                    for _p in inputs.get("pieces", []):
+                        _pl = _p.get("largo", 0) or 0
+                        _pp = _p.get("prof", 0) or _p.get("dim2", 0) or _p.get("alto", 0) or 0
+                        _pq = _p.get("quantity", 1) or 1
+                        _current_m2 += _pl * _pp * _pq
+
+                    # Layer A: residencial (list_pieces persisted)
                     _paso1_pieces = _gbd.get("paso1_pieces")
                     _paso1_m2 = _gbd.get("paso1_total_m2") or 0
                     if _paso1_pieces:
-                        # Calculate m2 of what Claude is trying to pass now
-                        _current_m2 = 0
-                        for _p in inputs.get("pieces", []):
-                            _pl = _p.get("largo", 0) or 0
-                            _pp = _p.get("prof", 0) or _p.get("dim2", 0) or _p.get("alto", 0) or 0
-                            _pq = _p.get("quantity", 1) or 1
-                            _current_m2 += _pl * _pp * _pq
                         _diff_m2 = abs(_current_m2 - _paso1_m2)
                         _diff_count = abs(len(inputs.get("pieces", [])) - len(_paso1_pieces))
                         if _diff_m2 > 0.5 or _diff_count > 0:
                             logging.error(
-                                f"[guardrail] PASO1↔PASO2 mismatch for {save_to_qid}: "
+                                f"[guardrail-A] PASO1↔PASO2 mismatch for {save_to_qid}: "
                                 f"paso1={len(_paso1_pieces)}p/{_paso1_m2:.2f}m² "
                                 f"vs paso2={len(inputs.get('pieces', []))}p/{_current_m2:.2f}m². "
                                 "OVERRIDING with paso1 pieces."
                             )
                             inputs["pieces"] = _paso1_pieces
+
+                    # Layer B: edificios — parse operator text for declared m²
+                    # Examples: "TOTAL MATERIAL: 66.57 m²", "Total: 74.10 m²", "Subtotal: 58.66 m²"
+                    import re as _re_m2op
+                    _op_text = ""
+                    if conversation_history:
+                        for _m in conversation_history:
+                            if _m.get("role") == "user":
+                                _c = _m.get("content", "")
+                                if isinstance(_c, str):
+                                    _op_text += " " + _c
+                                elif isinstance(_c, list):
+                                    for _b in _c:
+                                        if isinstance(_b, dict) and _b.get("type") == "text":
+                                            _op_text += " " + _b.get("text", "")
+                    _op_text += " " + (current_user_message or "")
+
+                    _total_patterns = [
+                        r'total\s+material[:\s]+([\d.,]+)\s*m[²2]',
+                        r'material\s+total[:\s]+([\d.,]+)\s*m[²2]',
+                        r'total[:\s]+([\d.,]+)\s*m[²2]',
+                    ]
+                    _declared_m2 = None
+                    for _pat in _total_patterns:
+                        _m = _re_m2op.search(_pat, _op_text, _re_m2op.IGNORECASE)
+                        if _m:
+                            try:
+                                _declared_m2 = float(_m.group(1).replace(".", "").replace(",", ".")
+                                                     if _m.group(1).count(",") == 1 and _m.group(1).count(".") > 1
+                                                     else _m.group(1).replace(",", "."))
+                                break
+                            except ValueError:
+                                continue
+
+                    if _declared_m2 and _declared_m2 > 1:
+                        _diff_op = abs(_current_m2 - _declared_m2)
+                        _diff_pct = _diff_op / _declared_m2
+                        # Abort only on significant mismatch (>10% or >2m²)
+                        if _diff_pct > 0.10 and _diff_op > 2.0:
+                            logging.error(
+                                f"[guardrail-B] Operator declared {_declared_m2:.2f} m² but agent is "
+                                f"passing {_current_m2:.2f} m² ({_diff_pct*100:.0f}% diff). ABORTING calculate_quote."
+                            )
+                            # Return error to agent so it re-reads the message
+                            return {
+                                "ok": False,
+                                "error": (
+                                    f"⛔ El despiece que pasaste a calculate_quote ({_current_m2:.2f} m²) "
+                                    f"NO coincide con el total declarado por el operador ({_declared_m2:.2f} m²). "
+                                    "Re-leer el mensaje ORIGINAL del operador (NO los ejemplos) y pasar "
+                                    "EXACTAMENTE las piezas listadas ahí. En edificio son múltiples tipologías "
+                                    "(DC-02 × 2, DC-03 × 6, etc.), NO inventes datos residenciales."
+                                ),
+                                "_guardrail_aborted": True,
+                                "_current_m2": _current_m2,
+                                "_declared_m2": _declared_m2,
+                            }
             except Exception as e:
                 logging.warning(f"[guardrail] paso1↔paso2 check failed: {e}")
 
