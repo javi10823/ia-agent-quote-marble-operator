@@ -2541,20 +2541,31 @@ class AgentService:
                             solutions = solve_m2_from_dims(_all_dims, _expected_m2, _zoc_h) if _all_dims else None
                             if solutions:
                                 best = solutions[0]
-                                _correction = (
-                                    f"⛔ SUPERFICIE NO COINCIDE: tus piezas suman {_lp_m2:.2f} m² "
-                                    f"pero la planilla dice {_expected_m2:.2f} m². "
-                                    f"SOLUCIÓN ENCONTRADA — usá estas medidas:\n"
-                                )
+                                # REPLACE list_pieces result with corrected pieces
+                                corrected_pieces = []
                                 for i, p in enumerate(best["pieces"]):
-                                    _correction += f"  Mesada {i+1}: {p['largo']} x {p['ancho']} = {p['largo']*p['ancho']:.2f} m²\n"
+                                    corrected_pieces.append({
+                                        "description": f"Mesada cocina {i+1}",
+                                        "largo": p["largo"],
+                                        "prof": p["ancho"],
+                                    })
                                 for z in best["zocalos"]:
-                                    _correction += f"  Zócalo: {z}ml x {_zoc_h}\n"
-                                _correction += f"  Total: {best['total']} m² (diff: {best['diff']:.4f})\n"
-                                _correction += "Volvé a llamar list_pieces con estas medidas corregidas."
-                                result["_m2_validation_error"] = _correction
-                                result["_m2_correction"] = best
-                                logging.warning(f"[m2-solver] Solved: {best['pieces']} + zocs {best['zocalos']} = {best['total']}")
+                                    corrected_pieces.append({
+                                        "description": f"{z}ML X {_zoc_h} ZOC",
+                                        "largo": z,
+                                        "prof": _zoc_h,
+                                    })
+                                # Re-run list_pieces with corrected dims
+                                result = list_pieces(corrected_pieces)
+                                result["_m2_corrected"] = True
+                                result["_m2_original"] = _lp_m2
+                                result["_m2_note"] = (
+                                    f"⚠️ Las medidas fueron corregidas automáticamente. "
+                                    f"Original: {_lp_m2:.2f} m² → Corregido: {result.get('total_m2', 0):.2f} m² "
+                                    f"(planilla: {_expected_m2:.2f} m²). "
+                                    f"Usá ESTAS piezas en tu respuesta, no las originales."
+                                )
+                                logging.warning(f"[m2-solver] REPLACED list_pieces: {_lp_m2:.2f} → {result.get('total_m2', 0):.2f} (target: {_expected_m2})")
                             else:
                                 result["_m2_validation_error"] = (
                                     f"⛔ SUPERFICIE NO COINCIDE: tus piezas suman {_lp_m2:.2f} m² "
