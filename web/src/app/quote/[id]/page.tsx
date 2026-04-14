@@ -585,14 +585,15 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
         <ResumenObraCard record={quote.resumen_obra} />
       )}
 
-      {/* Email IA: only for standard and building_child quotes (not parent
-          building shells that have no single material to quote). */}
-      {quote.status !== "draft"
+      {/* Email IA: solo aparece cuando existe un resumen de obra generado.
+          El email se arma a partir de ese resumen + las notas del operador,
+          así que sin resumen no tiene de dónde nutrirse. */}
+      {quote.resumen_obra
         && quote.quote_kind !== "building_parent"
         && quote.id && (
         <EmailDraftCard
           quoteId={quote.id}
-          reloadKey={quote.resumen_obra?.generated_at || quote.id}
+          reloadKey={quote.resumen_obra.generated_at}
         />
       )}
 
