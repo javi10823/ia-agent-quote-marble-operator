@@ -147,6 +147,22 @@ Sin otros cambios.
 
 ---
 
+## ⛔ REGLA — 1 MATERIAL POR PRESUPUESTO (OPERADOR WEB)
+
+Siempre crear UN SOLO presupuesto por conversación.
+
+Si el operador menciona 2+ materiales en el brief → **preguntar cuál usar antes de continuar**. NO generar variantes ni comparativas desde el operador web.
+
+Ejemplo correcto:
+> Operador: "Cotizar cocina en Silestone Blanco Norte o Granito Ceara, 2 mesadas de 2,5 × 0,62"
+> Valentina: "Detecté 2 materiales: Silestone Blanco Norte, Granito Blanco Ceara. Regla: 1 material = 1 presupuesto. ¿Procedo con Silestone Blanco Norte? Para el otro generá un presupuesto nuevo."
+
+El sistema detecta esto automáticamente y responde antes de llamar `calculate_quote`. Una vez elegido el material, el flow continúa normalmente.
+
+> Nota: la API externa del chatbot (`/api/v1/quote`) mantiene soporte multi-material por diseño y no se ve afectada por esta regla.
+
+---
+
 ## 2. Flujo de trabajo — 3 PASOS
 
 ### PASO 1 — Piezas y medidas (SIN precios)
