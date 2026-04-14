@@ -658,6 +658,18 @@ class AgentService:
 
         system_prompt = build_system_prompt(has_plan=has_plan, is_building=is_building, user_message=user_message, conversation_history=messages)
 
+        # ── Inject verified measurements if available ──
+        try:
+            _qr_vm = await db.execute(select(Quote).where(Quote.id == quote_id))
+            _q_vm = _qr_vm.scalar_one_or_none()
+            if _q_vm and _q_vm.quote_breakdown and _q_vm.quote_breakdown.get("verified_context"):
+                _vc = _q_vm.quote_breakdown["verified_context"]
+                # Append to system prompt as additional context block
+                system_prompt.append({"type": "text", "text": _vc, "cache_control": {"type": "ephemeral"}})
+                logging.info(f"[dual-read] Injected verified measurements into system prompt ({len(_vc)} chars)")
+        except Exception:
+            pass
+
         # ── EDIFICIO STATE MACHINE: Paso 2, 3 — all server-side ──
         # "step1_review" → confirm → render Paso 2 → "step2_quote"
         # "step2_quote"  → confirm → generate documents → "step3_done"
@@ -1584,6 +1596,39 @@ class AgentService:
                                     },
                                 })
                                 logging.info(f"[planilla] Sending cropped drawing only ({_drawing_img.width}x{_drawing_img.height}, {len(_draw_bytes)} bytes)")
+
+                                # ── DUAL READ: send crop to Sonnet (+ Opus if unsure) ──
+                                try:
+                                    from app.modules.quote_engine.dual_reader import dual_read_crop
+                                    _dual_enabled = ai_cfg.get("dual_read_enabled", True) if 'ai_cfg' in dir() else get_ai_config().get("dual_read_enabled", True)
+                                    yield {"type": "action", "content": "📐 Leyendo medidas del plano..."}
+                                    _dual_result = await dual_read_crop(
+                                        _draw_bytes,
+                                        crop_label=_planilla_data.ubicacion or "cocina",
+                                        planilla_m2=_planilla_data.m2,
+                                        dual_enabled=_dual_enabled,
+                                    )
+                                    if not _dual_result.get("error"):
+                                        # Send to frontend
+                                        yield {"type": "dual_read_result", "content": json.dumps(_dual_result, ensure_ascii=False)}
+                                        # Store in quote breakdown
+                                        try:
+                                            _qr = await db.execute(select(Quote).where(Quote.id == quote_id))
+                                            _q = _qr.scalar_one_or_none()
+                                            if _q:
+                                                _bd = dict(_q.quote_breakdown or {})
+                                                _bd["dual_read_result"] = _dual_result
+                                                await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd))
+                                                await db.commit()
+                                        except Exception as e:
+                                            logging.warning(f"[dual-read] Failed to save result: {e}")
+                                        logging.info(f"[dual-read] Result sent: source={_dual_result.get('source')}, review={_dual_result.get('requires_human_review')}")
+                                    else:
+                                        logging.warning(f"[dual-read] Error: {_dual_result.get('error')}")
+                                except Exception as e:
+                                    logging.error(f"[dual-read] Exception: {e}", exc_info=True)
+                                    # Non-fatal — continue with normal Claude flow
+
                         except Exception as e:
                             logging.warning(f"[planilla] Drawing crop failed, falling back to full PDF: {e}")
                             content.append({
@@ -1782,6 +1827,30 @@ class AgentService:
         # Append user message to history (injected for Claude, clean for DB)
         # System triggers are internal — don't pass them to Claude or save as user message
         _is_system_trigger = user_message.startswith("[SYSTEM_TRIGGER:")
+
+        # ── Handle DUAL_READ_CONFIRMED: inject verified measurements ──
+        if user_message.startswith("[DUAL_READ_CONFIRMED]"):
+            try:
+                _confirmed_json = json.loads(user_message[len("[DUAL_READ_CONFIRMED]"):])
+                from app.modules.quote_engine.dual_reader import build_verified_context
+                _verified_ctx = build_verified_context(_confirmed_json)
+                # Save to breakdown
+                _qr = await db.execute(select(Quote).where(Quote.id == quote_id))
+                _q = _qr.scalar_one_or_none()
+                if _q:
+                    _bd = dict(_q.quote_breakdown or {})
+                    _bd["verified_measurements"] = _confirmed_json
+                    _bd["verified_context"] = _verified_ctx
+                    await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd))
+                    await db.commit()
+                logging.info(f"[dual-read] Verified measurements saved for {quote_id}")
+                yield {"type": "text", "content": "✅ Medidas verificadas guardadas en contexto."}
+                yield {"type": "done", "content": ""}
+                return
+            except Exception as e:
+                logging.error(f"[dual-read] Confirmation failed: {e}")
+                # Fall through to normal processing
+
         if _is_system_trigger:
             new_messages = clean_messages  # No user message for Claude
             db_messages = clean_messages   # No user message in DB

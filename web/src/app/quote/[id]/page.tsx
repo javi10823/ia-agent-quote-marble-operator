@@ -236,6 +236,11 @@ export default function QuotePage() {
             acc = `__ZONE_SELECTOR__${chunk.content}`;
             setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc, isStreaming: false } : m));
           } catch { /* ignore parse errors */ }
+        } else if (chunk.type === "dual_read_result") {
+          try {
+            acc = `__DUAL_READ__${chunk.content}`;
+            setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc, isStreaming: false } : m));
+          } catch { /* ignore parse errors */ }
         } else if (chunk.type === "action") {
           if (fromDetail) setInlineActionText(chunk.content); else setActionText(chunk.content);
         } else if (chunk.type === "done") {
@@ -398,6 +403,8 @@ export default function QuotePage() {
               })();
               // Short confirmation messages render as compact badges
               const isShortConfirm = msg.role === "user" && /^(confirmo|sí|si|dale|ok|listo)$/i.test(msg.content.trim());
+              // Hide DUAL_READ_CONFIRMED raw JSON — show green pill instead
+              const isDualConfirm = msg.role === "user" && msg.content.startsWith("[DUAL_READ_CONFIRMED]");
 
               // Hide ghost messages (dots from sanitization)
               const isDot = msg.content.trim() === "." || msg.content.trim() === "..";
@@ -405,7 +412,13 @@ export default function QuotePage() {
 
               return (
                 <div key={msg.id}>
-                  {isShortConfirm ? (
+                  {isDualConfirm ? (
+                    <div className="flex justify-end">
+                      <span className="px-3 py-1 rounded-full text-[11px] font-medium bg-grn/20 text-grn border border-grn/30">
+                        Medidas verificadas {"\u2705"}
+                      </span>
+                    </div>
+                  ) : isShortConfirm ? (
                     <div className="flex justify-end">
                       <span className="px-3 py-1 rounded-full text-[11px] font-medium bg-grn/20 text-grn border border-grn/30">
                         {msg.content.trim()}
@@ -429,6 +442,25 @@ export default function QuotePage() {
                                   } catch (err) {
                                     console.error("zone-select failed:", err);
                                   }
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      } catch { return null; }
+                    })()
+                  ) : msg.content.startsWith("__DUAL_READ__") ? (
+                    (() => {
+                      try {
+                        const DualReadResult = require("@/components/chat/DualReadResult").default;
+                        const dualData = JSON.parse(msg.content.replace("__DUAL_READ__", ""));
+                        return (
+                          <div className="msg-anim flex gap-3 items-start">
+                            <div className="max-w-full">
+                              <DualReadResult
+                                data={dualData}
+                                onConfirm={(verified: unknown) => {
+                                  send(`[DUAL_READ_CONFIRMED]${JSON.stringify(verified)}`);
                                 }}
                               />
                             </div>
