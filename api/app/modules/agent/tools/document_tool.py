@@ -1270,6 +1270,17 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
         pdf.cell(w[3], rh, _fmt_ars(round(mo['unit_price'] * mo['quantity'])), align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
         row_done()
 
+    # MO commercial discount line (edificio "% sobre MO") — before Total PESOS
+    _mo_disc_pct = data.get("mo_discount_pct", 0)
+    _mo_disc_amt = data.get("mo_discount_amount", 0)
+    if _mo_disc_pct and _mo_disc_amt:
+        f = row_fill()
+        pdf.set_font("Helvetica", "I", 9)
+        pdf.cell(w[0] + w[1], rh, f"Descuento {_mo_disc_pct}% sobre MO (excluye flete)", fill=f)
+        pdf.cell(w[2], rh, "", fill=f)
+        pdf.cell(w[3], rh, f"- {_fmt_ars(_mo_disc_amt)}", align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
+        row_done()
+
     # Total PESOS
     pdf.set_font("Helvetica", "B", 9)
     pdf.cell(w[0] + w[1], 5, "")
@@ -1456,8 +1467,21 @@ def _generate_excel(output_path: Path, data: dict) -> None:
         ws.cell(row, 6).value = f"=D{row}*E{row}"
         ws.cell(row, 6).number_format = ars_fmt
 
-    # Total PESOS — after all MO items
+    # MO commercial discount line (edificio "% sobre MO") — before Total PESOS
     mo_end_row = MO_START_ROW + len(mo_items) - 1
+    _mo_disc_pct = data.get("mo_discount_pct", 0)
+    _mo_disc_amt = data.get("mo_discount_amount", 0)
+    if _mo_disc_pct and _mo_disc_amt:
+        disc_row = mo_end_row + 1
+        ws.insert_rows(disc_row)
+        ws.cell(disc_row, 1).value = f"Descuento {_mo_disc_pct}% sobre MO (excluye flete)"
+        ws.cell(disc_row, 1).font = italic_sm
+        ws.cell(disc_row, 6).value = -_mo_disc_amt
+        ws.cell(disc_row, 6).number_format = ars_fmt
+        ws.cell(disc_row, 6).font = italic_sm
+        mo_end_row = disc_row
+
+    # Total PESOS — after all MO items (and discount line if present)
     total_pesos_row = mo_end_row + 1
     ws.cell(total_pesos_row, 5).value = "Total PESOS"
     ws.cell(total_pesos_row, 5).font = bold
