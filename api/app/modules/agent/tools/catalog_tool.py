@@ -235,28 +235,26 @@ def check_architect(client_name: str) -> dict:
         if name_lower == item_name or name_lower == item_firm:
             return {"found": True, "exact": True, "name": item["name"], "firm": item.get("firm"), "discount": item.get("discount", True)}
 
-    # Fuzzy match — substring and word overlap
+    # Substring match only — word-overlap fuzzy removed because generic tokens
+    # ("estudio", "arquitectura") produced false positives (e.g. "Estudio 72"
+    # matching "ALMA ESTUDIO"). Substring is strict enough to catch legitimate
+    # partial inputs ("MUNGE" ⊂ "ESTUDIO MUNGE", "FURIGO" ⊂ "ARQ. PAMELA FURIGO").
     partial = []
-    name_words = set(name_lower.split())
     for item in items:
         item_name = (item.get("name") or "").lower()
         item_firm = (item.get("firm") or "").lower()
-        item_words = set(item_name.replace("arq.", "").replace("arq ", "").strip().split())
 
-        # Substring match: "munge" in "estudio munge" or vice versa
         # Guard against empty strings (empty in anything is always True)
         if (name_lower and name_lower in item_name) or (name_lower and item_firm and name_lower in item_firm) or (item_name and item_name in name_lower) or (item_firm and item_firm in name_lower):
             partial.append({"name": item["name"], "firm": item.get("firm"), "discount": item.get("discount", True)})
-            continue
-
-        # Word overlap: at least 1 significant word (>3 chars) matches
-        common_words = name_words & item_words
-        significant = [w for w in common_words if len(w) > 3]
-        if significant:
-            partial.append({"name": item["name"], "firm": item.get("firm"), "discount": item.get("discount", True)})
 
     if partial:
-        return {"found": True, "exact": len(partial) == 1, "name": partial[0]["name"], "firm": partial[0].get("firm"), "discount": partial[0].get("discount", True), "matches": partial, "message": f"Arquitecta encontrada: {', '.join(p['name'] for p in partial)}. Aplicar descuento."}
+        # Ambiguous: multiple architects matched — do NOT auto-apply discount.
+        # Require operator confirmation to avoid applying the wrong discount.
+        if len(partial) > 1:
+            names = ", ".join(p["name"] for p in partial)
+            return {"found": False, "ambiguous": True, "candidates": partial, "message": f"Ambiguo: '{client_name}' matchea {len(partial)} arquitectas ({names}). Confirmar con operador antes de aplicar descuento."}
+        return {"found": True, "exact": True, "name": partial[0]["name"], "firm": partial[0].get("firm"), "discount": partial[0].get("discount", True), "matches": partial, "message": f"Arquitecta encontrada: {partial[0]['name']}. Aplicar descuento."}
 
     return {"found": False, "message": f"'{client_name}' no está en architects.json"}
 
