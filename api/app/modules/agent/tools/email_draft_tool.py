@@ -39,7 +39,7 @@ from app.modules.agent.tools.resumen_obra_tool import _normalize_client
 AMOUNT_TOLERANCE = 5
 
 # Haiku is cheap + fast; prompt caching isn't needed for a one-shot draft.
-EMAIL_MODEL = "claude-haiku-4-20250514"
+EMAIL_MODEL = "claude-3-5-haiku-20241022"
 
 
 class EmailDraftError(Exception):
