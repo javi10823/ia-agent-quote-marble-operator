@@ -756,6 +756,8 @@ def _generate_edificio_pdf(pdf_path: Path, data: dict) -> None:
     # Footer
     pdf.set_font("Helvetica", "I", 7)
     pdf.multi_cell(180, 4, "No se suben mesadas que no entren en ascensor", new_x="LMARGIN", new_y="NEXT")
+    # Edificio-only: las piezas se dejan en pie de obra (no se colocan)
+    pdf.multi_cell(180, 4, "Las mesadas se dejan en pie de obra", new_x="LMARGIN", new_y="NEXT")
 
     pdf.output(str(pdf_path))
 
@@ -1038,6 +1040,10 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     r += 1
     _write_cond_line(r, "No se suben mesadas que no entren en ascensor",
                      Font(name="Calibri", italic=True, size=7))
+    # Edificio-only: las piezas se dejan en pie de obra (no se colocan)
+    r += 1
+    _write_cond_line(r, "Las mesadas se dejan en pie de obra",
+                     Font(name="Calibri", italic=True, size=7))
 
     wb.save(str(excel_path))
     _inject_locale(str(excel_path))
@@ -1303,6 +1309,9 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
     # Footer note
     pdf.set_font("Helvetica", "BI", 8)
     pdf.cell(0, 4, "No se suben mesadas que no entren en ascensor", new_x="LMARGIN", new_y="NEXT")
+    # Edificio-only extra legend
+    if data.get("is_edificio"):
+        pdf.cell(0, 4, "Las mesadas se dejan en pie de obra", new_x="LMARGIN", new_y="NEXT")
 
     pdf.ln(3)
 
@@ -1518,6 +1527,13 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     for col in range(1, 7):
         ws.cell(grand_row, col).border = box
         ws.cell(grand_row, col).font = bold
+
+    # Edificio-only extra legend (below grand total)
+    if data.get("is_edificio"):
+        legend_row = grand_row + 2
+        ws.cell(legend_row, 1).value = "Las mesadas se dejan en pie de obra"
+        ws.cell(legend_row, 1).font = Font(name="Calibri", italic=True, bold=True, size=8)
+        ws.merge_cells(f"A{legend_row}:F{legend_row}")
 
     wb.save(str(output_path))
     _inject_locale(str(output_path))
