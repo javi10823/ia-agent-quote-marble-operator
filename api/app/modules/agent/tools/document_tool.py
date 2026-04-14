@@ -1548,8 +1548,10 @@ def _generate_excel(output_path: Path, data: dict) -> None:
             style, label, value = right_rows_xl[ri]
             ws.cell(r, 5).value = label
             ws.cell(r, 5).font = italic_sm if style == "I" else bold
+            ws.cell(r, 5).alignment = right_align
             ws.cell(r, 6).value = value
             ws.cell(r, 6).font = italic_sm if style == "I" else bold
+            ws.cell(r, 6).alignment = right_align
         r += 1
 
     # If fewer pieces than right_rows, add remaining
@@ -1558,8 +1560,10 @@ def _generate_excel(output_path: Path, data: dict) -> None:
             style, label, value = right_rows_xl[ri]
             ws.cell(r, 5).value = label
             ws.cell(r, 5).font = italic_sm if style == "I" else bold
+            ws.cell(r, 5).alignment = right_align
             ws.cell(r, 6).value = value
             ws.cell(r, 6).font = italic_sm if style == "I" else bold
+            ws.cell(r, 6).alignment = right_align
             r += 1
 
     # MO items — template has 4 slots (base rows 28-31, shifted by any extra
@@ -1616,18 +1620,64 @@ def _generate_excel(output_path: Path, data: dict) -> None:
             cell.value = None
             cell.border = Border()  # Remove stale template borders
     ws.cell(grand_row, 1).value = grand
+    ws.cell(grand_row, 1).alignment = center_align
     ws.merge_cells(f"A{grand_row}:F{grand_row}")
-    # Apply box border to grand total row
+    # Apply box border + center align to grand total row
     for col in range(1, 7):
         ws.cell(grand_row, col).border = box
         ws.cell(grand_row, col).font = bold
+        ws.cell(grand_row, col).alignment = center_align
 
-    # Edificio-only extra legend (below grand total)
+    # Conditions block (CONDICIONES / FORMAS DE PAGO) + footer legend(s).
+    # Mirrors the PDF layout so Excel is not a stripped-down version.
+    co = _load_company_config()
+    cond_font_b = Font(name="Calibri", bold=True, size=7)
+    cond_font = Font(name="Calibri", size=7)
+    wrap_align = Alignment(wrap_text=True, vertical="top")
+    cr = grand_row + 2
+
+    if co.get("conditions_general"):
+        ws.cell(cr, 1).value = "CONDICIONES"
+        ws.cell(cr, 1).font = cond_font_b
+        ws.merge_cells(f"A{cr}:F{cr}")
+        cr += 1
+        for line in co["conditions_general"].split("\n"):
+            if line.strip():
+                ws.cell(cr, 1).value = line.strip()
+                ws.cell(cr, 1).font = cond_font
+                ws.cell(cr, 1).alignment = wrap_align
+                ws.merge_cells(f"A{cr}:F{cr}")
+                cr += 1
+        cr += 1
+
+    if co.get("conditions_payment"):
+        ws.cell(cr, 1).value = "FORMAS DE PAGO"
+        ws.cell(cr, 1).font = cond_font_b
+        ws.merge_cells(f"A{cr}:F{cr}")
+        cr += 1
+        for line in co["conditions_payment"].split("\n"):
+            if line.strip():
+                ws.cell(cr, 1).value = line.strip()
+                ws.cell(cr, 1).font = cond_font
+                ws.cell(cr, 1).alignment = wrap_align
+                ws.merge_cells(f"A{cr}:F{cr}")
+                cr += 1
+        cr += 1
+
+    # Footer legend — always show "No se suben mesadas…"; edificio adds the
+    # "Las mesadas se dejan en pie de obra" line.
+    legend_font = Font(name="Calibri", italic=True, bold=True, size=8)
+    center_legend = Alignment(horizontal="center", vertical="center")
+    ws.cell(cr, 1).value = "No se suben mesadas que no entren en ascensor"
+    ws.cell(cr, 1).font = legend_font
+    ws.cell(cr, 1).alignment = center_legend
+    ws.merge_cells(f"A{cr}:F{cr}")
+    cr += 1
     if data.get("is_edificio"):
-        legend_row = grand_row + 2
-        ws.cell(legend_row, 1).value = "Las mesadas se dejan en pie de obra"
-        ws.cell(legend_row, 1).font = Font(name="Calibri", italic=True, bold=True, size=8)
-        ws.merge_cells(f"A{legend_row}:F{legend_row}")
+        ws.cell(cr, 1).value = "Las mesadas se dejan en pie de obra"
+        ws.cell(cr, 1).font = legend_font
+        ws.cell(cr, 1).alignment = center_legend
+        ws.merge_cells(f"A{cr}:F{cr}")
 
     wb.save(str(output_path))
     _inject_locale(str(output_path))
