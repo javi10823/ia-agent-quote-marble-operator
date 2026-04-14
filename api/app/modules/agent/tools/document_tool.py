@@ -1326,12 +1326,17 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
             display = f"{piece} (×{count})" if count > 1 else piece
             all_piece_rows.append((False, display))
 
-    # Build right-side overlay rows (Descuento + TOTAL) for USD
+    # Build right-side overlay rows (Descuento + TOTAL)
+    # Applies to both USD and ARS — originally gated to USD only which
+    # hid the discount line for ARS edificios (bug DINALE 14/04/2026).
     right_rows = []
-    if currency == "USD":
-        if discount_pct:
-            desc_amount = round(total_mat_bruto * discount_pct / 100)
-            right_rows.append(("I", f"Descuento {discount_pct}%", f"- {fmt_price(desc_amount)}"))
+    if discount_pct:
+        desc_amount = round(total_mat_bruto * discount_pct / 100)
+        right_rows.append(("I", f"Descuento {discount_pct}%", f"- {fmt_price(desc_amount)}"))
+        right_rows.append(("B", f"TOTAL {currency}", fmt_price(total_mat)))
+    elif currency == "USD":
+        # Keep legacy behavior for USD without discount — always show TOTAL USD
+        # row so the user sees the net material total in the material block.
         right_rows.append(("B", f"TOTAL {currency}", fmt_price(total_mat)))
 
     # Calculate which piece rows get right-side content
@@ -1613,14 +1618,18 @@ def _generate_excel(output_path: Path, data: dict) -> None:
             cell.value = None
             cell.fill = no_fill
 
-    # Build right-side overlay (Descuento + TOTAL) for USD
+    # Build right-side overlay (Descuento + TOTAL)
+    # Applies to both USD and ARS — originally gated to USD only which hid
+    # the discount line for ARS edificios (bug DINALE 14/04/2026).
     italic_sm = Font(name="Calibri", italic=True, size=9)
+    _xl_fmt = _fmt_usd if currency == "USD" else _fmt_ars
     right_rows_xl = []
-    if currency == "USD":
-        if discount_pct:
-            desc_amount = round(total_mat * discount_pct / 100)
-            right_rows_xl.append(("I", f"Descuento {discount_pct}%", f"- {_fmt_usd(desc_amount)}"))
-        right_rows_xl.append(("B", f"TOTAL {currency}", _fmt_usd(total_mat_net)))
+    if discount_pct:
+        desc_amount = round(total_mat * discount_pct / 100)
+        right_rows_xl.append(("I", f"Descuento {discount_pct}%", f"- {_xl_fmt(desc_amount)}"))
+        right_rows_xl.append(("B", f"TOTAL {currency}", _xl_fmt(total_mat_net)))
+    elif currency == "USD":
+        right_rows_xl.append(("B", f"TOTAL {currency}", _xl_fmt(total_mat_net)))
 
     # Overlay on last N pieces
     overlay_start_xl = max(0, len(all_pieces) - len(right_rows_xl))

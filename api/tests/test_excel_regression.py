@@ -462,3 +462,99 @@ class TestExcelPdfParity:
                 pass
             all_text = (xml + shared).lower()
             assert "no se suben mesadas" in all_text, f"Footer missing from {xlsx.name}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DISCOUNT LINE IN ARS QUOTES (Bug DINALE 14/04/2026)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestDiscountVisibleForARS:
+    """Regression: material discount line must render for ARS (not only USD).
+
+    Before fix: `if currency == "USD":` gated the entire Descuento + TOTAL
+    overlay rows in both _generate_pdf and _generate_excel, so ARS edificios
+    (e.g. DINALE with Granito Gris Mara + 15% edificio) showed no discount
+    line in the PDF/Excel — only the final Total PESOS reflected the
+    discount numerically, leaving the client confused.
+    """
+
+    def _ars_data_with_discount(self) -> dict:
+        return {
+            "client_name": "DINALE S.A.",
+            "project": "Unidad Penitenciaria N°12",
+            "delivery_days": "4 meses",
+            "material_name": "GRANITO GRIS MARA EXTRA 2 ESP",
+            "material_m2": 31.37,
+            "material_price_unit": 224825,
+            "material_currency": "ARS",
+            "discount_pct": 15,
+            "thickness_mm": 20,
+            "sectors": [{"label": "Obra", "pieces": [
+                "2.15 x 0.60 ME01-B Mesada recta c/zocalo h:10cm",
+                "1.12 x 0.60 ME02-B Mesada recta c/zocalo h:10cm",
+                "4.50 x 0.60 ME03-B Mesada recta c/zocalo h:10cm",
+                "2.30 x 0.60 ME04-B Mesada recta c/zocalo h:50cm",
+            ]}],
+            "sinks": [],
+            "mo_items": [
+                {"description": "Agujero y pegado pileta", "quantity": 19, "unit_price": 62045, "base_price": 51276, "total": 1178855},
+                {"description": "Flete + toma medidas rosario", "quantity": 4, "unit_price": 52000, "base_price": 42975, "total": 208000},
+            ],
+            "total_ars": 7381701,
+            "total_usd": 0,
+            "is_edificio": True,
+        }
+
+    def test_pdf_ars_shows_discount_line(self, tmp_path):
+        """PDF for ARS quote with discount_pct must render 'Descuento N%' + 'TOTAL ARS'."""
+        from app.modules.agent.tools.document_tool import _generate_pdf
+        out = tmp_path / "ars_disc.pdf"
+        _generate_pdf(out, self._ars_data_with_discount())
+        assert out.exists()
+        # Extract text via pdftotext (available in CI + local via poppler)
+        import subprocess
+        try:
+            txt = subprocess.run(
+                ["pdftotext", "-layout", str(out), "-"],
+                capture_output=True, text=True, timeout=15,
+            ).stdout
+        except FileNotFoundError:
+            pytest.skip("pdftotext not installed")
+        assert "Descuento 15%" in txt, f"Expected 'Descuento 15%' in PDF text:\n{txt[:1500]}"
+        assert "TOTAL ARS" in txt, f"Expected 'TOTAL ARS' in PDF text:\n{txt[:1500]}"
+        assert "5.994.846" in txt, f"Expected material net (5.994.846) in PDF:\n{txt[:1500]}"
+
+    def test_excel_ars_shows_discount_line(self, tmp_path):
+        """Excel for ARS quote with discount_pct must include 'Descuento N%' cell."""
+        from app.modules.agent.tools.document_tool import _generate_excel
+        out = tmp_path / "ars_disc.xlsx"
+        _generate_excel(out, self._ars_data_with_discount())
+        assert out.exists()
+        import zipfile
+        with zipfile.ZipFile(str(out)) as z:
+            shared = z.read("xl/sharedStrings.xml").decode("utf-8") if "xl/sharedStrings.xml" in z.namelist() else ""
+            sheet = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        all_text = shared + sheet
+        assert "Descuento 15%" in all_text, "'Descuento 15%' label missing from ARS Excel"
+        assert "TOTAL ARS" in all_text, "'TOTAL ARS' row missing from ARS Excel"
+
+    def test_pdf_usd_still_shows_discount(self, tmp_path):
+        """Regression guard: USD discount path must still work unchanged."""
+        from app.modules.agent.tools.document_tool import _generate_pdf
+        data = self._ars_data_with_discount()
+        data["material_currency"] = "USD"
+        data["material_price_unit"] = 519
+        data["total_usd"] = 2507
+        data["total_ars"] = 0
+        out = tmp_path / "usd_disc.pdf"
+        _generate_pdf(out, data)
+        import subprocess
+        try:
+            txt = subprocess.run(
+                ["pdftotext", "-layout", str(out), "-"],
+                capture_output=True, text=True, timeout=15,
+            ).stdout
+        except FileNotFoundError:
+            pytest.skip("pdftotext not installed")
+        assert "Descuento 15%" in txt
+        assert "TOTAL USD" in txt
