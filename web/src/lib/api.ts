@@ -122,7 +122,11 @@ export async function checkQuotes(): Promise<QuotesCheck> {
 export async function fetchQuote(id: string): Promise<QuoteDetail> {
   const res = await fetch(`${API_BASE}/api/quotes/${id}`, { credentials: "include" });
   handleAuthError(res);
-  if (!res.ok) throw new Error("Presupuesto no encontrado");
+  if (!res.ok) {
+    const err = new Error("Presupuesto no encontrado");
+    if (res.status === 404) (err as any).code = "QUOTE_NOT_FOUND";
+    throw err;
+  }
   return res.json();
 }
 
@@ -465,6 +469,15 @@ export async function* streamChat(
         if (e instanceof Error && e.message !== "Error en los archivos adjuntos.") throw e;
         throw new Error("Error en los archivos adjuntos.");
       }
+    }
+    if (res.status === 404) {
+      // Presupuesto borrado: tagear el error para que el caller redirija
+      // al dashboard y corte el spam de POSTs inútiles.
+      const err = new Error(
+        "Este presupuesto ya no existe. Volviendo al listado…"
+      );
+      (err as any).code = "QUOTE_NOT_FOUND";
+      throw err;
     }
     if (res.status === 502 || res.status === 503 || res.status === 504) {
       throw new Error("El servidor está reiniciando. Esperá unos segundos e intentá de nuevo.");
