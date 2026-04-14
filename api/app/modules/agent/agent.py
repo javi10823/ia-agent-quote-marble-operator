@@ -1289,12 +1289,31 @@ class AgentService:
                 try:
                     import pdfplumber
                     import io as _io
+                    _planilla_data = None  # Will hold parsed planilla if detected
                     with pdfplumber.open(_io.BytesIO(plan_bytes)) as pdf:
                         num_pages = len(pdf.pages)
                         for i, page in enumerate(pdf.pages):
                             # Extract tables first (structured data)
                             tables = page.extract_tables()
                             tables_all.extend(tables)
+
+                            # Try to detect planilla layout (table on right side)
+                            if not _planilla_data and tables:
+                                try:
+                                    from app.modules.quote_engine.planilla_parser import parse_planilla_table
+                                    table_objects = page.find_tables()
+                                    _planilla_data = parse_planilla_table(
+                                        tables, page_width=page.width, page_height=page.height,
+                                        table_bboxes=table_objects
+                                    )
+                                    if _planilla_data:
+                                        logging.info(f"[planilla] Detected: material={_planilla_data.material}, "
+                                                     f"m2={_planilla_data.m2}, table_x0={_planilla_data.table_x0:.0f}")
+                                        if _planilla_data.m2:
+                                            _expected_m2 = _planilla_data.m2
+                                except Exception as e:
+                                    logging.warning(f"[planilla] Detection failed: {e}")
+
                             if tables:
                                 for t_idx, table in enumerate(tables):
                                     extracted_text += f"\n--- Tabla {t_idx+1} (página {i+1}) ---\n"
@@ -1523,8 +1542,16 @@ class AgentService:
                             yield {"type": "done", "content": ""}
                             return  # ← EXIT: no Claude loop for edificio Paso 1
                         else:
-                            # Non-edificio PDF — send extracted text with safety instructions
-                            content.append({"type": "text", "text": f"[TEXTO EXTRAÍDO DEL PDF — DATOS EXACTOS]\n⛔ Extraído con precisión 100%. USAR TAL CUAL. Celda \"-\" o vacía = NO APLICA. NUNCA inferir ni inventar.\n\n{extracted_text.strip()}"})
+                            # Non-edificio PDF
+                            if _planilla_data:
+                                # Planilla detected — send structured context instead of raw table
+                                from app.modules.quote_engine.planilla_parser import build_planilla_context
+                                planilla_ctx = build_planilla_context(_planilla_data)
+                                content.append({"type": "text", "text": planilla_ctx})
+                                logging.info(f"[planilla] Sending structured context ({len(planilla_ctx)} chars) instead of raw table")
+                            else:
+                                # Regular PDF — send extracted text with safety instructions
+                                content.append({"type": "text", "text": f"[TEXTO EXTRAÍDO DEL PDF — DATOS EXACTOS]\n⛔ Extraído con precisión 100%. USAR TAL CUAL. Celda \"-\" o vacía = NO APLICA. NUNCA inferir ni inventar.\n\n{extracted_text.strip()}"})
 
                         logging.info(f"Extracted {len(extracted_text)} chars of text from PDF ({len(plan_bytes)} bytes)")
                 except Exception as e:
@@ -1532,15 +1559,47 @@ class AgentService:
 
                 # Pasada 2: If PDF has drawings/images, also send as document for vision
                 if pdf_has_images or not extracted_text.strip():
-                    content.append({
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "application/pdf",
-                            "data": base64.b64encode(plan_bytes).decode(),
-                        },
-                    })
-                    logging.info(f"PDF has images/drawings — sending as document for vision pass")
+                    if _planilla_data and _planilla_data.table_x0 > 0:
+                        # Planilla: send ONLY the drawing (left side), not the full PDF
+                        try:
+                            from pdf2image import convert_from_bytes as _cfb
+                            from app.modules.quote_engine.planilla_parser import crop_drawing_from_page
+                            _raster_pages = _cfb(plan_bytes, dpi=200, first_page=1, last_page=1)
+                            if _raster_pages:
+                                _drawing_img = crop_drawing_from_page(_raster_pages[0], _planilla_data, dpi=200)
+                                # Convert to JPEG bytes
+                                _draw_buf = _io.BytesIO()
+                                _drawing_img.save(_draw_buf, format="JPEG", quality=85)
+                                _draw_bytes = _draw_buf.getvalue()
+                                content.append({
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": "image/jpeg",
+                                        "data": base64.b64encode(_draw_bytes).decode(),
+                                    },
+                                })
+                                logging.info(f"[planilla] Sending cropped drawing only ({_drawing_img.width}x{_drawing_img.height}, {len(_draw_bytes)} bytes)")
+                        except Exception as e:
+                            logging.warning(f"[planilla] Drawing crop failed, falling back to full PDF: {e}")
+                            content.append({
+                                "type": "document",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "application/pdf",
+                                    "data": base64.b64encode(plan_bytes).decode(),
+                                },
+                            })
+                    else:
+                        content.append({
+                            "type": "document",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "application/pdf",
+                                "data": base64.b64encode(plan_bytes).decode(),
+                            },
+                        })
+                        logging.info(f"PDF has images/drawings — sending as document for vision pass")
 
                     # Detect visual building: multipágina CAD with building keywords
                     # Search in: extracted text + filename + user message (operator often says "edificio X")
