@@ -113,7 +113,8 @@
     "use_opus_for_plans": true,
     "rotate_plan_images": false,
     "max_examples": 1,
-    "dual_read_enabled": true
+    "dual_read_enabled": true,
+    "plan_rasterization_dpi": 300
   },
   "zone_aliases": {
     "_comment": "sku: SKU en delivery-zones.json. pulido_extra: true si hay colocación cobra pulido de cantos (= flete/2). Zonas cercanas a Rosario: false.",
