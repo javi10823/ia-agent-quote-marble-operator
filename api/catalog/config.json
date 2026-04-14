@@ -94,7 +94,7 @@
   "building": {
     "_comment": "Reglas para obras de edificio",
     "colocacion": false,
-    "flete_mesadas_per_trip": 8,
+    "flete_mesadas_per_trip": 6,
     "discount_percentage": 18,
     "discount_min_m2": 15
   },
