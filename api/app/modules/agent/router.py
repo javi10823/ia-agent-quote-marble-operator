@@ -754,6 +754,104 @@ async def delete_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
 class ResumenObraRequest(BaseModel):
     quote_ids: List[str]
     notes: Optional[str] = None
+    force_same_client: Optional[bool] = False
+
+
+class MergeClientRequest(BaseModel):
+    quote_ids: List[str]
+    canonical_client_name: str
+
+
+class ClientMatchCheckRequest(BaseModel):
+    quote_ids: List[str]
+
+
+@router.post("/quotes/client-match-check")
+async def client_match_check(
+    body: ClientMatchCheckRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Preview: do these quotes look like the same client?
+
+    Returns { same: bool, reason: "exact"|"fuzzy"|"ambiguous",
+              distinct_names: [...] }
+
+    The frontend uses this to decide whether to show a confirmation dialog
+    before POSTing to /resumen-obra.
+    """
+    from app.modules.agent.tools.client_match import are_fuzzy_same_client
+    from app.modules.agent.tools.resumen_obra_tool import _normalize_client
+
+    if not body.quote_ids:
+        raise HTTPException(status_code=400, detail="quote_ids vacío")
+    res = await db.execute(select(Quote).where(Quote.id.in_(body.quote_ids)))
+    quotes = list(res.scalars().all())
+    if len(quotes) < len(set(body.quote_ids)):
+        found = {q.id for q in quotes}
+        missing = [qid for qid in body.quote_ids if qid not in found]
+        raise HTTPException(status_code=404, detail=f"Presupuestos no encontrados: {missing}")
+
+    distinct = sorted({q.client_name or "" for q in quotes})
+    if len(quotes) <= 1:
+        return {"same": True, "reason": "exact", "distinct_names": distinct}
+
+    anchor = quotes[0].client_name
+    normalized_anchor = _normalize_client(anchor)
+    all_exact = all(
+        _normalize_client(q.client_name) == normalized_anchor for q in quotes
+    )
+    if all_exact:
+        return {"same": True, "reason": "exact", "distinct_names": distinct}
+
+    all_fuzzy = all(
+        are_fuzzy_same_client(q.client_name, anchor) for q in quotes[1:]
+    )
+    if all_fuzzy:
+        return {"same": True, "reason": "fuzzy", "distinct_names": distinct}
+
+    return {"same": False, "reason": "ambiguous", "distinct_names": distinct}
+
+
+@router.post("/quotes/merge-client")
+async def merge_client_endpoint(
+    body: MergeClientRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Rename the client_name of N quotes to a single canonical value.
+
+    Used when the operator confirms that several quotes with different raw
+    names all belong to the same client. This unifies future grouping
+    without touching any numeric data.
+    """
+    name = (body.canonical_client_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="canonical_client_name requerido")
+    if len(name) > 500:
+        raise HTTPException(status_code=400, detail="canonical_client_name demasiado largo")
+    if not body.quote_ids:
+        raise HTTPException(status_code=400, detail="quote_ids vacío")
+
+    res = await db.execute(select(Quote).where(Quote.id.in_(body.quote_ids)))
+    quotes = list(res.scalars().all())
+    found = {q.id for q in quotes}
+    missing = [qid for qid in body.quote_ids if qid not in found]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Presupuestos no encontrados: {missing}")
+
+    # Apply rename + invalidate email_draft (names affect the prompt).
+    updated = []
+    for q in quotes:
+        if q.client_name != name:
+            updated.append(q.id)
+        q.client_name = name
+        q.email_draft = None
+    await db.commit()
+    return {
+        "ok": True,
+        "updated_ids": updated,
+        "client_name": name,
+        "quote_ids": body.quote_ids,
+    }
 
 
 @router.get("/quotes/{quote_id}/email-draft")
@@ -820,6 +918,7 @@ async def generate_resumen_obra_endpoint(
             db=db,
             quote_ids=body.quote_ids,
             notes_raw=body.notes,
+            force_same_client=bool(body.force_same_client),
         )
     except ResumenObraError as e:
         raise HTTPException(status_code=e.status, detail=e.message)

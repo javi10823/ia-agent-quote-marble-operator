@@ -58,8 +58,22 @@ def _normalize_client(name: str | None) -> str:
     return re.sub(r"\s+", " ", (name or "").strip()).lower()
 
 
-def _validate_quotes(quotes: list[Quote], requested_ids: list[str]) -> None:
-    """Raise ResumenObraError on any contract violation."""
+def _validate_quotes(
+    quotes: list[Quote],
+    requested_ids: list[str],
+    force_same_client: bool = False,
+) -> None:
+    """Raise ResumenObraError on any contract violation.
+
+    Client-name matching is layered:
+      1. Exact normalized match (old strict behavior).
+      2. Else fuzzy match via client_match.are_fuzzy_same_client — covers
+         variants like "Estudio MUNGE" vs "Munge".
+      3. Else, if force_same_client=True, the operator explicitly confirmed
+         they are the same client → allow anyway.
+    """
+    from app.modules.agent.tools.client_match import are_fuzzy_same_client
+
     found_ids = {q.id for q in quotes}
     missing = [qid for qid in requested_ids if qid not in found_ids]
     if missing:
@@ -75,14 +89,31 @@ def _validate_quotes(quotes: list[Quote], requested_ids: list[str]) -> None:
             f"No validados: {non_validated}",
         )
 
-    # Same client (normalized)
-    normalized = {_normalize_client(q.client_name) for q in quotes}
-    if len(normalized) > 1:
-        raise ResumenObraError(
-            400,
-            "Todos los presupuestos deben ser del mismo cliente. "
-            f"Detectados: {sorted(normalized)}",
-        )
+    if len(quotes) <= 1:
+        return
+
+    anchor_name = quotes[0].client_name
+    normalized_anchor = _normalize_client(anchor_name)
+    distinct_raw: set[str] = {anchor_name or ""}
+    fuzzy_ok = True
+    for q in quotes[1:]:
+        distinct_raw.add(q.client_name or "")
+        if _normalize_client(q.client_name) == normalized_anchor:
+            continue
+        if are_fuzzy_same_client(q.client_name, anchor_name):
+            continue
+        fuzzy_ok = False
+
+    if fuzzy_ok:
+        return
+    if force_same_client:
+        return
+    raise ResumenObraError(
+        400,
+        "Todos los presupuestos deben ser del mismo cliente. "
+        f"Detectados: {sorted(distinct_raw)}. "
+        "Si confirmás que son el mismo, reintentá con force_same_client=true.",
+    )
 
 
 def _collect_material_row(q: Quote) -> dict[str, Any] | None:
@@ -224,6 +255,7 @@ async def generate_resumen_obra(
     db: AsyncSession,
     quote_ids: list[str],
     notes_raw: str | None,
+    force_same_client: bool = False,
 ) -> dict:
     """Validate, generate PDF, upload, persist — atomic-ish.
 
@@ -249,7 +281,7 @@ async def generate_resumen_obra(
     # Load quotes
     result = await db.execute(select(Quote).where(Quote.id.in_(deduped)))
     quotes = list(result.scalars().all())
-    _validate_quotes(quotes, deduped)
+    _validate_quotes(quotes, deduped, force_same_client=force_same_client)
 
     # Order quotes to match requested order for deterministic output
     by_id = {q.id: q for q in quotes}
