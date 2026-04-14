@@ -117,11 +117,46 @@ def _detect_section_type(header_row: list[str]) -> Optional[str]:
 
 
 def _find_column_index(header: list[str], keywords: list[str]) -> Optional[int]:
-    """Find column index by matching keywords in header cells."""
+    """Find column index by matching keywords in header cells.
+
+    Uses token-level matching (split on whitespace/punctuation), not substring,
+    to avoid false positives like "id" matching "cant**id**ad".
+    """
     for i, cell in enumerate(header):
-        if cell and any(kw in str(cell).lower() for kw in keywords):
-            return i
+        if not cell:
+            continue
+        cell_norm = str(cell).lower()
+        # Token split on whitespace and common separators
+        tokens = re.split(r"[\s/\-_,.:;()]+", cell_norm)
+        tokens = [t for t in tokens if t]
+        for kw in keywords:
+            kw_norm = kw.lower()
+            # Exact token match, OR multi-word keyword as substring (e.g. "tipo de material")
+            if kw_norm in tokens:
+                return i
+            if " " in kw_norm and kw_norm in cell_norm:
+                return i
     return None
+
+
+def _is_labor_table(header: list[str]) -> bool:
+    """Detect MO / service / notes tables that must NOT be parsed as pieces.
+
+    Signals:
+    - Header contains 'concepto' + ('cantidad' or 'regla')
+    - Header has no dimension columns (largo/ancho/m2/superficie)
+    """
+    header_text = " ".join(str(c).lower() for c in header if c)
+    has_concepto = "concepto" in header_text
+    has_regla = "regla" in header_text
+    has_cantidad = "cantidad" in header_text
+    if has_concepto and (has_regla or has_cantidad):
+        return True
+    # No dimension columns at all → not a pieces table
+    has_dim = any(kw in header_text for kw in ["largo", "ancho", "superficie", "m2", "m²"])
+    if not has_dim:
+        return True
+    return False
 
 
 # ── 1. detect_edificio ───────────────────────────────────────────────────────
@@ -241,8 +276,16 @@ def parse_edificio_tables(tables: list[list[list]]) -> RawEdificioData:
 
         header = [str(c).strip() if c else "" for c in table[header_idx]]
 
+        # Skip labor/service/notes tables — they are not pieces even if they
+        # have a header row. Without this, "Cantidad" column would be mis-read
+        # as ID (see _find_column_index fix) and MO rows would be treated as
+        # 0×0 pieces under material "Desconocido".
+        if _is_labor_table(header):
+            parse_warnings.append(f"skipped non-piece table (header={header})")
+            continue
+
         # Map columns by keywords
-        col_id = _find_column_index(header, ["id", "pieza"])
+        col_id = _find_column_index(header, ["id", "pieza", "código", "codigo", "cod"])
         col_ubicacion = _find_column_index(header, ["ubicación", "ubicacion"])
         col_largo = _find_column_index(header, ["largo"])
         col_ancho = _find_column_index(header, ["ancho"])
