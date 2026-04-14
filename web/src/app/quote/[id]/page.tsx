@@ -7,6 +7,8 @@ import { useQuotes } from "@/lib/quotes-context";
 import MessageBubble from "@/components/chat/MessageBubble";
 import ZoneSelector from "@/components/chat/ZoneSelector";
 import { selectZone } from "@/lib/api";
+import { ResumenObraCard } from "@/components/quote/ResumenObraCard";
+import { EmailDraftCard } from "@/components/quote/EmailDraftCard";
 import clsx from "clsx";
 import { A, I, O, N, DOT, SUP2, DASH, ITEM, WARN, CIRCLE, ARROW, XMARK, CLOUD, WAVE, PAGE, PICTURE, CLIP, RULER, TAG, FOLDER, CHART } from "@/lib/chars";
 
@@ -557,6 +559,21 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
         <Section title="Notas del cliente">
           <p className="text-[13px] text-t2 leading-[1.65] whitespace-pre-wrap">{quote.notes}</p>
         </Section>
+      )}
+
+      {quote.resumen_obra && (
+        <ResumenObraCard record={quote.resumen_obra} />
+      )}
+
+      {/* Email IA: only for standard and building_child quotes (not parent
+          building shells that have no single material to quote). */}
+      {quote.status !== "draft"
+        && quote.quote_kind !== "building_parent"
+        && quote.id && (
+        <EmailDraftCard
+          quoteId={quote.id}
+          reloadKey={quote.resumen_obra?.generated_at || quote.id}
+        />
       )}
 
       {quote.source_files && quote.source_files.length > 0 && (

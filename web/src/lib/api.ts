@@ -223,6 +223,45 @@ export async function generateResumenObra(
   return res.json();
 }
 
+// ── Email draft (AI-generated client email) ──────────────────────────────────
+
+export interface EmailDraft {
+  subject: string;
+  body: string;
+  generated_at: string;
+  validated: boolean;
+  quote_updated_at_snapshot: string;
+  resumen_updated_at_snapshot: string | null;
+  sibling_updated_at_snapshots: Record<string, string>;
+}
+
+export async function fetchEmailDraft(quoteId: string): Promise<EmailDraft> {
+  const res = await fetch(`${API_BASE}/api/quotes/${quoteId}/email-draft`, {
+    credentials: "include",
+  });
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al cargar el email");
+  }
+  return res.json();
+}
+
+export async function regenerateEmailDraft(
+  quoteId: string
+): Promise<EmailDraft> {
+  const res = await fetch(
+    `${API_BASE}/api/quotes/${quoteId}/email-draft/regenerate`,
+    { method: "POST", credentials: "include" }
+  );
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al regenerar el email");
+  }
+  return res.json();
+}
+
 // ── Quote Comparison ─────────────────────────────────────────────────────────
 
 export interface QuoteCompareItem {
