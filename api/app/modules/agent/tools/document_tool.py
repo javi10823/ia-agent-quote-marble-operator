@@ -130,6 +130,35 @@ def _make_safe_fpdf():
     return _SafeFPDF
 
 
+# ── Planilla de Cómputo (m² override) footnote ──────────────────────────────
+# Rendered in both PDF and Excel whenever any piece in the quote declared an
+# m2_override (operator pulled the value from the comitente's Planilla de
+# Cómputo and D'Angelo cotizes without recomputing from largo×prof).
+_M2_OVERRIDE_FOOTNOTE = (
+    "Los m² de las piezas marcadas con (*) corresponden a valores declarados "
+    "en la Planilla de Cómputo del comitente, los cuales incluyen superficies "
+    "de zócalo y/o frente según especificación técnica del proyecto. "
+    "D'Angelo Marmolería cotiza en base a dichos valores sin modificación."
+)
+
+
+def _pdf_has_m2_override(data: dict) -> bool:
+    """Return True if the renderer should show the Planilla-de-Cómputo footnote.
+
+    Two signal paths — we accept either:
+      1. Explicit flag `has_m2_override` on the top-level data dict (set by
+         the calculator).
+      2. Fallback: any piece label in `sectors[].pieces` ends with " *".
+    """
+    if data.get("has_m2_override"):
+        return True
+    for sector in data.get("sectors") or []:
+        for piece in sector.get("pieces") or []:
+            if isinstance(piece, str) and piece.rstrip().endswith("*"):
+                return True
+    return False
+
+
 def _fmt_ars(value: float) -> str:
     """Format ARS price: $65.147,34 (dot thousands, comma decimal, 2 decimals)."""
     n = round(value, 2)
@@ -843,6 +872,14 @@ def _generate_edificio_pdf(pdf_path: Path, data: dict) -> None:
 
     # Footer
     pdf.set_font("Helvetica", "I", 7)
+    # Planilla de Cómputo footnote — render when any piece used m2_override.
+    if _pdf_has_m2_override(data):
+        pdf.multi_cell(
+            180, 3.5,
+            _M2_OVERRIDE_FOOTNOTE,
+            new_x="LMARGIN", new_y="NEXT",
+        )
+        pdf.ln(0.5)
     pdf.multi_cell(180, 4, "No se suben mesadas que no entren en ascensor", new_x="LMARGIN", new_y="NEXT")
     # Edificio-only: las piezas se dejan en pie de obra (no se colocan)
     pdf.multi_cell(180, 4, "Las mesadas se dejan en pie de obra", new_x="LMARGIN", new_y="NEXT")
@@ -1101,7 +1138,17 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     r += 2
     co = _load_company_config()
     cond_font = Font(name="Calibri", size=7)
+    cond_font_i = Font(name="Calibri", italic=True, size=7)
     wrap_align = Alignment(wrap_text=True)
+
+    # Planilla de Cómputo footnote — goes above the standard conditions.
+    if _pdf_has_m2_override(data):
+        ws.merge_cells(f"A{r}:F{r}")
+        ws.cell(r, 1).value = _M2_OVERRIDE_FOOTNOTE
+        ws.cell(r, 1).font = cond_font_i
+        ws.cell(r, 1).alignment = wrap_align
+        ws.row_dimensions[r].height = 28
+        r += 2
 
     def _write_cond_line(row, text, font=None):
         ws.merge_cells(f"A{row}:F{row}")
@@ -1394,6 +1441,15 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
 
     pdf.ln(3)
 
+    # Planilla de Cómputo footnote (above legends, italic small)
+    if _pdf_has_m2_override(data):
+        pdf.set_font("Helvetica", "I", 7)
+        pdf.multi_cell(
+            0, 3.5, _M2_OVERRIDE_FOOTNOTE,
+            new_x="LMARGIN", new_y="NEXT",
+        )
+        pdf.ln(0.5)
+
     # Footer note
     pdf.set_font("Helvetica", "BI", 8)
     pdf.cell(0, 4, "No se suben mesadas que no entren en ascensor", new_x="LMARGIN", new_y="NEXT")
@@ -1674,8 +1730,19 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     co = _load_company_config()
     cond_font_b = Font(name="Calibri", bold=True, size=7)
     cond_font = Font(name="Calibri", size=7)
+    cond_font_i = Font(name="Calibri", italic=True, size=7)
     wrap_align = Alignment(wrap_text=True, vertical="top")
     cr = grand_row + 2
+
+    # Planilla de Cómputo footnote (above conditions) — only if any piece
+    # used m2_override.
+    if _pdf_has_m2_override(data):
+        ws.cell(cr, 1).value = _M2_OVERRIDE_FOOTNOTE
+        ws.cell(cr, 1).font = cond_font_i
+        ws.cell(cr, 1).alignment = wrap_align
+        ws.merge_cells(f"A{cr}:F{cr}")
+        ws.row_dimensions[cr].height = 28
+        cr += 2
 
     if co.get("conditions_general"):
         ws.cell(cr, 1).value = "CONDICIONES"

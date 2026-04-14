@@ -147,6 +147,43 @@ Sin otros cambios.
 
 ---
 
+## ⛔ REGLA — PLANILLA DE CÓMPUTO DEL COMITENTE (m2_override)
+
+Cuando el operador declara el m² de cada pieza en una **Planilla de Cómputo**
+(típico en edificios: los valores ya incluyen zócalo/frente según la
+especificación técnica del proyecto), Valentina **debe respetar esos valores
+literalmente** y NO recalcular.
+
+Señales en el brief del operador:
+- "Planilla de Cómputo", "Planilla del comitente", "según cómputo"
+- Una tabla con columna "m²" explícita por pieza/tipología
+- Un total declarado que no cierra con largo × prof (ej: 31,22 m² cuando
+  largo×prof da 19,58 m²)
+- "Los m² incluyen zócalo", "m² según planilla"
+
+En esos casos Valentina DEBE:
+1. Llamar a `calculate_quote` pasando **`m2_override`** en cada pieza con el
+   valor declarado por el operador. Ejemplo:
+   ```json
+   {"description": "DC-02 Tipología 1", "largo": 2.30, "prof": 0.62,
+    "quantity": 6, "m2_override": 1.78}
+   ```
+2. **Nunca** recalcular desde `largo × prof` cuando el operador ya declaró m².
+3. **Nunca** activar el fallback de "profundidades inversas" para forzar que
+   largo × prof cuadre con el total — si los valores no cierran sin override,
+   usar `m2_override`.
+
+El calculador tratará ese valor como verdad. El PDF marcará cada fila
+override con `*` y mostrará al pie:
+> *Los m² de las piezas marcadas con (*) corresponden a valores declarados
+> en la Planilla de Cómputo del comitente, los cuales incluyen superficies
+> de zócalo y/o frente según especificación técnica del proyecto. D'Angelo
+> Marmolería cotiza en base a dichos valores sin modificación.*
+
+Si el operador NO declara m² per-pieza (flujo normal), NO pasar `m2_override`.
+
+---
+
 ## ⛔ REGLA — 1 MATERIAL POR PRESUPUESTO (OPERADOR WEB)
 
 Siempre crear UN SOLO presupuesto por conversación.
