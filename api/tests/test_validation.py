@@ -155,6 +155,39 @@ class TestIVAMO:
         assert errors == []
         assert warnings == []
 
+    def test_edificio_discount_adjusts_expected(self):
+        """MO items with edificio_discount=True must be validated against
+        round(base × 1.21 / 1.05), not round(base × 1.21)."""
+        qdata = _valid_qdata()
+        # Simular edificio: base 53840, unit = 53840 × 1.21 / 1.05 = 62044.76 → 62045
+        qdata["mo_items"] = [{
+            "description": "Agujero y pegado pileta",
+            "quantity": 25,
+            "base_price": 53840,
+            "unit_price": 62045,
+            "total": 62045 * 25,
+            "edificio_discount": True,
+        }]
+        errors, warnings = _check_iva_mo(qdata)
+        assert errors == [], f"Expected no errors, got: {errors}"
+
+    def test_edificio_discount_still_detects_real_errors(self):
+        """Edificio items con unit_price claramente mal (sin aplicar ÷1.05)
+        deben seguir disparando error."""
+        qdata = _valid_qdata()
+        qdata["mo_items"] = [{
+            "description": "Agujero anafe",
+            "quantity": 25,
+            "base_price": 35617,
+            # unit_price WRONG: usa la fórmula residencial (×1.21 sin ÷1.05)
+            "unit_price": round(35617 * 1.21),  # = 43097
+            "total": 43097 * 25,
+            "edificio_discount": True,
+        }]
+        errors, warnings = _check_iva_mo(qdata)
+        assert len(errors) == 1
+        assert "IVA MO inconsistente" in errors[0]
+
 
 # ── TestMaterialTotal ───────────────────────────────────────────────────────
 
