@@ -64,6 +64,17 @@ class TestBackfillMaterialPriceBase:
         # Base queda ausente
         assert not q.get("material_price_base")
 
+    def test_backfill_skips_when_unit_inconsistent_with_catalog(self):
+        """Si el price_unit del agente no coincide con catalog.base × IVA,
+        NO backfillear — evita convertir el warning en error bloqueante
+        (fixtures legacy, drift de precios, overrides manuales)."""
+        q = _llm_style_quote_without_base()
+        q["material_price_unit"] = 999999  # inconsistente a propósito
+        _backfill_material_price_base([q])
+        assert not q.get("material_price_base"), (
+            "backfill debe saltar cuando unit ≠ round(base × IVA)"
+        )
+
     def test_validator_no_longer_warns_after_backfill(self):
         """Integration: post-backfill, validate_despiece no debe emitir el
         warning 'Falta material_price_base' para el caso DINALE."""

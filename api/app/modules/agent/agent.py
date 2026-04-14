@@ -115,8 +115,28 @@ def _backfill_material_price_base(quotes_data: list[dict]) -> None:
             base = mr.get("price_usd_base")
         else:
             base = mr.get("price_ars_base")
-        if base:
-            qdata["material_price_base"] = base
+        if not base:
+            continue
+        # Only backfill when the catalog base is *consistent* with the
+        # price_unit the agent passed in. If they diverge (stale fixture,
+        # manual override, ARS price drift), leave base unset so the
+        # validator silently skips the IVA check rather than flipping it
+        # from a warning into a hard error that blocks document generation.
+        unit = qdata.get("material_price_unit")
+        if unit is not None:
+            import math as _math_ivc
+            from app.core.company_config import get as _ivc
+            _iva = _ivc("iva.multiplier", 1.21)
+            expected = (
+                _math_ivc.floor(base * _iva) if cur == "USD" else round(base * _iva)
+            )
+            if unit != expected:
+                logging.warning(
+                    f"[material_price_base] catalog base {base} × {_iva} = {expected} "
+                    f"≠ passed unit {unit} for {mname!r} — skipping backfill"
+                )
+                continue
+        qdata["material_price_base"] = base
 
 
 # ── BUILDING DETECTION (unified — delegates to edificio_parser) ──────────────
