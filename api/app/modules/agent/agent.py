@@ -2520,19 +2520,50 @@ class AgentService:
                     _lp_m2 = result.get("total_m2", 0)
                     if _expected_m2 is not None and _expected_m2 > 0:
                         _m2_diff = abs(_lp_m2 - _expected_m2)
-                        _m2_pct = _m2_diff / _expected_m2 * 100
-                        if _m2_pct > 5:
-                            _m2_warning = (
-                                f"⛔ SUPERFICIE NO COINCIDE: tus piezas suman {_lp_m2:.2f} m² "
-                                f"pero la planilla dice {_expected_m2:.2f} m². "
-                                f"Diferencia: {_m2_diff:.2f} m² ({_m2_pct:.0f}%). "
-                                f"Revisá las medidas — probablemente leíste mal alguna cota del plano. "
-                                f"Las cotas extraídas del texto del PDF son la fuente de verdad."
-                            )
-                            result["_m2_validation_error"] = _m2_warning
-                            logging.warning(f"[m2-validator] {_m2_warning}")
+                        if _m2_diff > 0.1:
+                            # M2 doesn't match — try to solve combinatorially
+                            from app.modules.quote_engine.calculator import solve_m2_from_dims
+                            _all_dims = []
+                            if extracted_text:
+                                import re as _re_dims
+                                _raw_nums = _re_dims.findall(r'\d+[.,]\d+', extracted_text)
+                                _all_dims = list(set(
+                                    float(n.replace(",", "."))
+                                    for n in _raw_nums
+                                    if 0.04 <= float(n.replace(",", ".")) <= 5.0 and float(n.replace(",", ".")) != _expected_m2
+                                ))
+                            # Extract zócalo height from text
+                            _zoc_h = 0.05
+                            _zoc_match = _re_dims.search(r'(?:ZOCALOS?|zócalos?)\s*(\d+)\s*cm', extracted_text) if extracted_text else None
+                            if _zoc_match:
+                                _zoc_h = int(_zoc_match.group(1)) / 100
+
+                            solutions = solve_m2_from_dims(_all_dims, _expected_m2, _zoc_h) if _all_dims else None
+                            if solutions:
+                                best = solutions[0]
+                                _correction = (
+                                    f"⛔ SUPERFICIE NO COINCIDE: tus piezas suman {_lp_m2:.2f} m² "
+                                    f"pero la planilla dice {_expected_m2:.2f} m². "
+                                    f"SOLUCIÓN ENCONTRADA — usá estas medidas:\n"
+                                )
+                                for i, p in enumerate(best["pieces"]):
+                                    _correction += f"  Mesada {i+1}: {p['largo']} x {p['ancho']} = {p['largo']*p['ancho']:.2f} m²\n"
+                                for z in best["zocalos"]:
+                                    _correction += f"  Zócalo: {z}ml x {_zoc_h}\n"
+                                _correction += f"  Total: {best['total']} m² (diff: {best['diff']:.4f})\n"
+                                _correction += "Volvé a llamar list_pieces con estas medidas corregidas."
+                                result["_m2_validation_error"] = _correction
+                                result["_m2_correction"] = best
+                                logging.warning(f"[m2-solver] Solved: {best['pieces']} + zocs {best['zocalos']} = {best['total']}")
+                            else:
+                                result["_m2_validation_error"] = (
+                                    f"⛔ SUPERFICIE NO COINCIDE: tus piezas suman {_lp_m2:.2f} m² "
+                                    f"pero la planilla dice {_expected_m2:.2f} m². "
+                                    f"No se encontró combinación automática. Revisá las cotas del plano."
+                                )
+                                logging.warning(f"[m2-solver] No solution found for {_expected_m2} from dims {_all_dims}")
                         else:
-                            logging.info(f"[m2-validator] OK: pieces={_lp_m2:.2f} vs planilla={_expected_m2:.2f} (diff={_m2_pct:.1f}%)")
+                            logging.info(f"[m2-validator] OK: pieces={_lp_m2:.2f} vs planilla={_expected_m2:.2f} (diff={_m2_diff:.2f})")
 
                 # read_plan returns native content blocks (list of image/text dicts)
                 # to avoid inflating context with base64 inside JSON strings.
