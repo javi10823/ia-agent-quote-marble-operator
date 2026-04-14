@@ -134,6 +134,13 @@ def _find_material(material_name: str) -> dict:
         # de espesor no coincidente (ej: brief "25mm" vs catálogo 20mm):
         # el filtrado se queda con el EXTRA 2 ESP y `_find_material` lo
         # retorna sin preguntar. Ver rules/materials-guide.md § Espesor.
+        # Strip thickness tokens from input ("25mm", "— 25mm", "- 25 mm") so
+        # fuzzy doesn't down-score valid matches just because the brief
+        # specifies a thickness the catalog name doesn't carry.
+        import re as _re_thk
+        _clean_input = _re_thk.sub(
+            r'[—\-–]?\s*\d{1,2}\s*mm\b', '', material_name, flags=_re_thk.IGNORECASE,
+        ).strip()
         input_lower = material_name.lower()
         has_leather = "leather" in input_lower
         has_fiamatado = "fiamatado" in input_lower or "flameado" in input_lower
@@ -143,7 +150,7 @@ def _find_material(material_name: str) -> dict:
             and (has_fiamatado or "fiamatado" not in n.lower())
         ]
         names = [m[0] for m in (filtered if filtered else all_materials)]
-        match = fuzz_process.extractOne(material_name, names, score_cutoff=70)
+        match = fuzz_process.extractOne(_clean_input, names, score_cutoff=70)
 
         # If matched a non-EXTRA variant but an EXTRA 2 ESP exists for the
         # same base name, prefer the EXTRA 2 ESP. Detect base name as the
