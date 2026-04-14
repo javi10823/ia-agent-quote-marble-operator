@@ -137,6 +137,21 @@ da m² sin dimensiones:
 - Zócalos viajan con mesadas, NO cuentan como piezas para flete.
 - Default `flete_mesadas_per_trip = 6` (config.json, building.flete_mesadas_per_trip).
 
+### ⛔ Flete NUNCA lleva descuento
+El flete es un costo fijo de transporte. NO aplicar:
+- NO el `÷1.05` de edificio.
+- NO el `mo_discount_pct` (descuento comercial sobre MO).
+- NO cualquier otro descuento.
+El calculator excluye automáticamente el flete de ambos descuentos. Si ves un
+total de flete reducido en el preview, es un bug — reportar.
+
+### Descuento comercial sobre MO (`mo_discount_pct`)
+Cuando el operador declara "descuento X% sobre MO" en un edificio:
+- Pasar `mo_discount_pct: X` en el input a `calculate_quote`.
+- Se calcula sobre la suma de MO c/IVA (con ÷1.05 ya aplicado), excluyendo flete.
+- Se muestra como línea separada visible en el Paso 2.
+- Default: 0 (no aplicar salvo pedido explícito).
+
 ### Material no encontrado
 Informar operador. Preguntar cual usar — no sugerir alternativas.
 

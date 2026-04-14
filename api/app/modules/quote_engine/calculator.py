@@ -329,6 +329,10 @@ def calculate_quote(input_data: dict) -> dict:
     pulido = input_data.get("pulido", False)
     plazo = input_data["plazo"]
     discount_pct = input_data.get("discount_pct", 0)
+    # MO discount is a separate comercial discount ONLY over MO items, EXCLUDING
+    # flete. Used in edificio quotes when operator declares "5% sobre MO".
+    # Flete NEVER gets any discount (neither mo_discount_pct nor ÷1.05 edificio).
+    mo_discount_pct = input_data.get("mo_discount_pct", 0)
 
     # ── Auto-detect architect discount (deterministic, not LLM-dependent) ──
     if client_name and not discount_pct:
@@ -560,7 +564,7 @@ def calculate_quote(input_data: dict) -> dict:
             })
             logging.info(f"Added sink product: {sink_result.get('name')} @ ${sink_price}")
 
-    # Edificio: MO ÷1.05 (except flete)
+    # Edificio: MO ÷1.05 (except flete — flete NEVER discounted)
     if is_edificio:
         for item in mo_items:
             if "flete" not in item["description"].lower():
@@ -570,9 +574,25 @@ def calculate_quote(input_data: dict) -> dict:
                 item["edificio_discount"] = True
         logging.info(f"Edificio MO ÷1.05 applied (except flete)")
 
+    # Optional commercial MO discount (e.g. "5% sobre MO" for building quotes).
+    # Applies ONLY to MO items that are NOT flete. Sum then round.
+    mo_discount_amount = 0
+    if mo_discount_pct and mo_discount_pct > 0:
+        _mo_subtotal_excl_flete = sum(
+            item["total"] for item in mo_items
+            if "flete" not in item["description"].lower()
+        )
+        mo_discount_amount = round(_mo_subtotal_excl_flete * mo_discount_pct / 100)
+        logging.info(
+            f"MO discount applied: {mo_discount_pct}% of ${_mo_subtotal_excl_flete} "
+            f"(excluding flete) = -${mo_discount_amount}"
+        )
+
     # Totals
     total_sinks_ars = sum(s["unit_price"] * s["quantity"] for s in sinks)
     total_mo_ars = sum(item["total"] for item in mo_items)
+    # Subtract MO commercial discount from the MO total (never affects flete).
+    total_mo_ars = total_mo_ars - mo_discount_amount
 
     if currency == "USD":
         total_ars = total_mo_ars + total_sinks_ars
@@ -641,6 +661,8 @@ def calculate_quote(input_data: dict) -> dict:
         "material_total": material_total_net,
         "discount_pct": discount_pct,
         "discount_amount": discount_amount,
+        "mo_discount_pct": mo_discount_pct,
+        "mo_discount_amount": mo_discount_amount,
         "merma": merma,
         "piece_details": piece_details,
         "mo_items": mo_items,
@@ -761,15 +783,39 @@ def build_deterministic_paso2(calc: dict) -> str:
             lines.append(f"| {s['name']} | {s['quantity']} | {fmt_ars(s['unit_price'])} | {fmt_ars(total_s)} |")
         lines.append("")
 
-    # Mano de obra
+    # Mano de obra — edificio shows ÷1.05 column and MO discount line
+    is_edificio = calc.get("is_edificio", False)
+    mo_discount_pct = calc.get("mo_discount_pct", 0)
+    mo_discount_amount = calc.get("mo_discount_amount", 0)
+
     lines.append("**MANO DE OBRA**")
-    lines.append("| Item | Cant | Precio c/IVA | Total |")
-    lines.append("|---|---|---|---|")
-    for mo in mo_items:
-        qty = mo["quantity"]
-        qty_str = f"{qty:.2f} m²".replace(".", ",") if isinstance(qty, float) and qty != int(qty) else str(int(qty))
-        lines.append(f"| {mo['description']} | {qty_str} | {fmt_ars(mo['unit_price'])} | {fmt_ars(mo['total'])} |")
-    lines.append(f"| **TOTAL MO** | | | **{fmt_ars(total_ars)}** |")
+    if is_edificio:
+        # Expanded format showing base price (sin IVA), ÷1.05 applied, and final total.
+        # Flete row shows ✗ in the ÷1.05 column to make the rule explicit.
+        lines.append("| Item | Cant | Base s/IVA | ÷1.05 | Total c/IVA |")
+        lines.append("|---|---|---|---|---|")
+        for mo in mo_items:
+            qty = mo["quantity"]
+            qty_str = f"{qty:.2f} m²".replace(".", ",") if isinstance(qty, float) and qty != int(qty) else str(int(qty))
+            base = mo.get("base_price", 0)
+            is_flete = "flete" in mo["description"].lower()
+            div_mark = "—" if is_flete else "✓"
+            lines.append(
+                f"| {mo['description']} | {qty_str} | {fmt_ars(round(base))} | {div_mark} | {fmt_ars(mo['total'])} |"
+            )
+        if mo_discount_pct:
+            lines.append(
+                f"| **Descuento {mo_discount_pct}% sobre MO (excluye flete)** | | | | **-{fmt_ars(mo_discount_amount)}** |"
+            )
+        lines.append(f"| **TOTAL MO** | | | | **{fmt_ars(total_ars)}** |")
+    else:
+        lines.append("| Item | Cant | Precio c/IVA | Total |")
+        lines.append("|---|---|---|---|")
+        for mo in mo_items:
+            qty = mo["quantity"]
+            qty_str = f"{qty:.2f} m²".replace(".", ",") if isinstance(qty, float) and qty != int(qty) else str(int(qty))
+            lines.append(f"| {mo['description']} | {qty_str} | {fmt_ars(mo['unit_price'])} | {fmt_ars(mo['total'])} |")
+        lines.append(f"| **TOTAL MO** | | | **{fmt_ars(total_ars)}** |")
     lines.append("")
 
     # Grand total

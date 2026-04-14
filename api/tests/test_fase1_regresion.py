@@ -170,3 +170,84 @@ class TestFase1EdificioESH:
         assert not any("2 TRAMOS" in l for l in labels), (
             f"Edificio no debe tener '2 TRAMOS': {labels}"
         )
+
+
+# ══════════════════════════════════════════════════════════════════
+# MO commercial discount + flete excluded from all discounts
+# ══════════════════════════════════════════════════════════════════
+
+class TestMoDiscountAndFleteRules:
+    """Regla comercial: descuento % sobre MO (excluye flete) + flete nunca
+    recibe ningún descuento (ni ÷1.05 ni mo_discount)."""
+
+    def test_mo_discount_excludes_flete(self):
+        """Descuento 5% sobre MO aplica a pegado/anafe pero NO al flete."""
+        result = calculate_quote({
+            "client_name": "Edificio Test",
+            "material": "Silestone Blanco Norte",
+            "pieces": [
+                {"description": "DC-A mesada", "largo": 2.00, "prof": 0.60, "quantity": 4},
+            ],
+            "localidad": "Rosario",
+            "colocacion": False,
+            "pileta": "empotrada_cliente",
+            "pileta_qty": 4,
+            "anafe": True,
+            "is_edificio": True,
+            "plazo": "120 dias",
+            "discount_pct": 18,
+            "mo_discount_pct": 5,
+        })
+        assert result["ok"] is True
+        # mo_discount_amount reported
+        assert result["mo_discount_pct"] == 5
+        assert result["mo_discount_amount"] > 0
+        # Flete NOT discounted — its total is still the raw catalog price.
+        flete_item = next((m for m in result["mo_items"] if "flete" in m["description"].lower()), None)
+        assert flete_item is not None
+        # Flete no debe tener edificio_discount flag
+        assert not flete_item.get("edificio_discount"), "Flete no debe tener ÷1.05"
+        # Flete unit_price sigue siendo el del catálogo (no reducido)
+        assert flete_item["unit_price"] == flete_item["total"] / flete_item["quantity"]
+
+    def test_no_mo_discount_when_zero(self):
+        """Sin mo_discount_pct, mo_discount_amount = 0."""
+        result = calculate_quote({
+            "client_name": "Test",
+            "material": "Silestone Blanco Norte",
+            "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
+            "localidad": "Rosario",
+            "colocacion": True,
+            "pileta": "empotrada_cliente",
+            "plazo": "30 dias",
+        })
+        assert result["ok"] is True
+        assert result.get("mo_discount_pct", 0) == 0
+        assert result.get("mo_discount_amount", 0) == 0
+
+    def test_edificio_paso2_shows_divide_105_column(self):
+        """build_deterministic_paso2 para edificio muestra columna ÷1.05 y desc MO."""
+        from app.modules.quote_engine.calculator import build_deterministic_paso2
+        result = calculate_quote({
+            "client_name": "Edificio Test",
+            "material": "Silestone Blanco Norte",
+            "pieces": [
+                {"description": "DC-A mesada", "largo": 2.00, "prof": 0.60, "quantity": 4},
+            ],
+            "localidad": "Rosario",
+            "colocacion": False,
+            "pileta": "empotrada_cliente",
+            "pileta_qty": 4,
+            "anafe": True,
+            "is_edificio": True,
+            "plazo": "120 dias",
+            "discount_pct": 18,
+            "mo_discount_pct": 5,
+        })
+        rendered = build_deterministic_paso2(result)
+        assert "÷1.05" in rendered, "edificio paso2 debe mostrar columna ÷1.05"
+        assert "Base s/IVA" in rendered, "edificio paso2 debe mostrar columna Base s/IVA"
+        assert "Descuento 5% sobre MO" in rendered, (
+            "edificio paso2 debe mostrar línea de descuento MO"
+        )
+        assert "excluye flete" in rendered.lower()
