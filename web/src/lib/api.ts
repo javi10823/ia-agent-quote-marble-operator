@@ -7,6 +7,17 @@ function handleAuthError(res: Response): void {
   }
 }
 
+export interface ResumenObraRecord {
+  pdf_url: string;
+  drive_url: string | null;
+  drive_file_id?: string | null;
+  notes: string;
+  generated_at: string;
+  quote_ids: string[];
+  client_name: string;
+  project: string;
+}
+
 export interface Quote {
   id: string;
   client_name: string;
@@ -27,6 +38,7 @@ export interface Quote {
   is_read: boolean;
   notes: string | null;
   sink_type: { basin_count: "simple" | "doble"; mount_type: "arriba" | "abajo" } | null;
+  resumen_obra?: ResumenObraRecord | null;
   created_at: string;
 }
 
@@ -183,6 +195,30 @@ export async function deriveMaterial(quoteId: string, payload: DeriveMaterialPay
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "Error al derivar presupuesto");
+  }
+  return res.json();
+}
+
+// ── Resumen de obra (consolidated multi-quote summary) ───────────────────────
+
+export interface ResumenObraRequest {
+  quote_ids: string[];
+  notes?: string;
+}
+
+export async function generateResumenObra(
+  payload: ResumenObraRequest
+): Promise<ResumenObraRecord> {
+  const res = await fetch(`${API_BASE}/api/quotes/resumen-obra`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    credentials: "include",
+  });
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al generar resumen de obra");
   }
   return res.json();
 }

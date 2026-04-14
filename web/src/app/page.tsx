@@ -1,12 +1,18 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { type Quote, deriveMaterial } from "@/lib/api";
+import { type Quote, type ResumenObraRecord, deriveMaterial } from "@/lib/api";
 import { useQuotes } from "@/lib/quotes-context";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import clsx from "clsx";
+import { ResumenObraModal } from "@/components/quote/ResumenObraModal";
+import { ResumenObraSuccessModal } from "@/components/quote/ResumenObraSuccessModal";
+
+function normalizeClient(name: string | null | undefined): string {
+  return (name || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
 
 const STATUS_LABEL: Record<Quote["status"], string> = {
   draft: "Borrador", pending: "Pendiente", validated: "Validado", sent: "Enviado",
@@ -40,6 +46,87 @@ export default function DashboardPage() {
   const [deriveThickness, setDeriveThickness] = useState("");
   const [deriving, setDeriving] = useState(false);
   const [deriveError, setDeriveError] = useState("");
+
+  // ── Multi-select state for "Resumen de obra" ─────────────────────────────
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false); // mobile-only toggle
+  const [resumenModalOpen, setResumenModalOpen] = useState(false);
+  const [resumenSuccess, setResumenSuccess] =
+    useState<{ record: ResumenObraRecord; affected: number } | null>(null);
+
+  // The "active client" for the current selection (normalized for comparison)
+  const selectedClient = useMemo(() => {
+    if (selectedIds.size === 0) return null;
+    const first = quotes.find((q) => selectedIds.has(q.id));
+    return first ? normalizeClient(first.client_name) : null;
+  }, [selectedIds, quotes]);
+
+  const selectedQuotes = useMemo(
+    () => quotes.filter((q) => selectedIds.has(q.id)),
+    [quotes, selectedIds]
+  );
+
+  const isSelectable = useCallback(
+    (q: Quote) => {
+      if (q.status !== "validated") return false;
+      if (selectedClient && normalizeClient(q.client_name) !== selectedClient)
+        return false;
+      return true;
+    },
+    [selectedClient]
+  );
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  // Keyboard: Esc clears selection, ⌘A / Ctrl+A selects all validated quotes
+  // of the currently active client (or all validated if nothing selected yet).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      // Do not hijack shortcuts when typing in form fields
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const isTyping =
+        tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable;
+      if (isTyping) return;
+      if (e.key === "Escape" && selectedIds.size > 0) {
+        clearSelection();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+        // Only act when there's a visible selection context
+        if (selectedClient || !resumenModalOpen) {
+          e.preventDefault();
+          setSelectedIds((prev) => {
+            const next = new Set(prev);
+            for (const q of quotes) {
+              if (q.status !== "validated") continue;
+              if (selectedClient && normalizeClient(q.client_name) !== selectedClient)
+                continue;
+              next.add(q.id);
+            }
+            return next;
+          });
+        }
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [clearSelection, quotes, resumenModalOpen, selectedClient, selectedIds.size]);
+
+  // Auto-exit mobile selection mode when selection is empty
+  useEffect(() => {
+    if (selectionMode && selectedIds.size === 0) {
+      // keep mode on intentionally — user may be picking; don't auto-exit
+    }
+  }, [selectionMode, selectedIds.size]);
 
   const staleDrafts = useMemo(() => quotes.filter(q => {
     if (q.status !== "draft") return false;
@@ -259,13 +346,79 @@ export default function DashboardPage() {
               </div>
             </div>
 
+            {/* Mobile — Selection mode toggle */}
+            <div className="md:hidden flex items-center justify-between px-3 py-2 border-b border-b1 bg-s2">
+              {selectionMode ? (
+                <>
+                  <button
+                    onClick={() => { clearSelection(); setSelectionMode(false); }}
+                    className="text-[12px] text-t3 bg-transparent border-none cursor-pointer p-0"
+                  >
+                    ✕ Cancelar
+                  </button>
+                  <span className="text-[12px] font-semibold text-t1">
+                    {selectedIds.size} seleccionado{selectedIds.size === 1 ? "" : "s"}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setSelectedIds(prev => {
+                        const next = new Set(prev);
+                        for (const q of filteredQuotes) {
+                          if (isSelectable(q) || next.has(q.id)) next.add(q.id);
+                        }
+                        return next;
+                      });
+                    }}
+                    className="text-[12px] text-acc bg-transparent border-none cursor-pointer p-0"
+                  >
+                    Todos
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setSelectionMode(true)}
+                  className="text-[12px] text-t2 bg-transparent border border-b1 rounded-md px-3 py-1 cursor-pointer"
+                >
+                  ☑ Seleccionar
+                </button>
+              )}
+            </div>
+
             {/* Mobile Cards */}
             <div className="md:hidden divide-y divide-white/[0.045]">
               {filteredQuotes.map(q => {
                 const isUnread = !q.is_read;
+                const isChecked = selectedIds.has(q.id);
+                const selectable = isSelectable(q);
+                const checkboxDisabled = !isChecked && !selectable;
                 return (
-                  <div key={q.id} onClick={() => { setSelectedId(q.id); router.push(`/quote/${q.id}`); }}
-                    className={clsx("flex items-center gap-3 px-3 py-3 cursor-pointer active:bg-white/[0.04] transition", isUnread && "bg-acc/[0.04]")}>
+                  <div
+                    key={q.id}
+                    onClick={() => {
+                      if (selectionMode) {
+                        if (!checkboxDisabled) toggleSelect(q.id);
+                      } else {
+                        setSelectedId(q.id);
+                        router.push(`/quote/${q.id}`);
+                      }
+                    }}
+                    className={clsx(
+                      "flex items-center gap-3 px-3 py-3 cursor-pointer active:bg-white/[0.04] transition",
+                      isChecked && "bg-acc/[0.09]",
+                      !isChecked && isUnread && "bg-acc/[0.04]",
+                      selectionMode && checkboxDisabled && "opacity-45"
+                    )}
+                  >
+                    {selectionMode && (
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        disabled={checkboxDisabled}
+                        onChange={() => toggleSelect(q.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-4 h-4 accent-acc shrink-0"
+                      />
+                    )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         {isUnread && <span className="w-[6px] h-[6px] rounded-full bg-acc shrink-0" />}
@@ -297,6 +450,7 @@ export default function DashboardPage() {
             <table className="w-full border-collapse hidden md:table">
               <thead className="bg-s2 border-b border-b1">
                 <tr>
+                  <th className="px-3 py-2.5 w-8"></th>
                   <th className="text-left px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em] w-[28%]">Cliente</th>
                   <th className="text-left px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Material</th>
                   <th className="text-right px-[18px] py-2.5 text-[10px] font-medium text-t3 uppercase tracking-[0.09em]">Importe</th>
@@ -312,19 +466,48 @@ export default function DashboardPage() {
                   const isStale = q.status === "draft" && daysOld > 5;
                   const isUnread = !q.is_read;
                   const isSelected = selectedId === q.id;
+                  const isChecked = selectedIds.has(q.id);
+                  const selectable = isSelectable(q);
+                  const checkboxDisabled = !isChecked && !selectable;
+                  const checkboxReason =
+                    q.status !== "validated"
+                      ? "Solo presupuestos validados"
+                      : selectedClient &&
+                          normalizeClient(q.client_name) !== selectedClient
+                        ? "Cliente distinto — limpiá la selección para elegir éste"
+                        : undefined;
                   return (
                     <tr
                       key={q.id}
                       onClick={() => { setSelectedId(q.id); router.push(`/quote/${q.id}`); }}
                       className={clsx(
                         "border-b border-white/[0.045] cursor-pointer transition-[background] duration-75",
-                        isSelected
-                          ? "bg-acc/[0.07] border-l-2 border-l-acc"
-                          : isUnread
-                            ? "bg-acc/[0.04] border-l-2 border-l-transparent hover:bg-acc/[0.07]"
-                            : "border-l-2 border-l-transparent hover:bg-white/[0.035]",
+                        isChecked
+                          ? "bg-acc/[0.09] border-l-2 border-l-acc"
+                          : checkboxDisabled && selectedIds.size > 0
+                            ? "opacity-45 border-l-2 border-l-transparent hover:bg-white/[0.02]"
+                            : isSelected
+                              ? "bg-acc/[0.07] border-l-2 border-l-acc"
+                              : isUnread
+                                ? "bg-acc/[0.04] border-l-2 border-l-transparent hover:bg-acc/[0.07]"
+                                : "border-l-2 border-l-transparent hover:bg-white/[0.035]",
                       )}
                     >
+                      {/* Checkbox */}
+                      <td className="px-3 py-[13px]" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          disabled={checkboxDisabled}
+                          onChange={() => toggleSelect(q.id)}
+                          title={checkboxReason}
+                          aria-label={checkboxReason || "Seleccionar presupuesto"}
+                          className={clsx(
+                            "w-4 h-4 accent-acc cursor-pointer",
+                            checkboxDisabled && "cursor-not-allowed"
+                          )}
+                        />
+                      </td>
                       {/* Cliente */}
                       <td className="px-[18px] py-[13px] max-w-[300px]">
                         <div className="flex items-center">
@@ -433,17 +616,81 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Mobile FAB — Nuevo presupuesto */}
-      <button
-        onClick={async () => {
-          try { const id = await addQuote(); router.push(`/quote/${id}`); } catch {}
+      {/* Selection action bar (desktop + tablet) — sticky bottom */}
+      {selectedIds.size > 0 && (
+        <div
+          className="hidden md:flex sticky bottom-0 left-0 right-0 z-30 items-center justify-between px-5 py-3 border-t border-b2 bg-s2/95 backdrop-blur-[8px]"
+        >
+          <div className="flex items-center gap-3 text-[13px]">
+            <span className="px-2 py-[2px] rounded-full text-[11px] font-medium bg-grn-bg text-grn">
+              {selectedIds.size} seleccionado{selectedIds.size === 1 ? "" : "s"}
+            </span>
+            <span className="text-t3">·</span>
+            <span className="text-t3">
+              Cliente:{" "}
+              <span className="text-t1">
+                {selectedQuotes[0]?.client_name || "—"}
+              </span>
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={clearSelection}
+              className="px-3 py-1.5 rounded-md text-xs font-medium font-sans cursor-pointer border border-b1 bg-transparent text-t2 hover:border-b2 hover:text-t1 transition"
+            >
+              Limpiar
+            </button>
+            <button
+              onClick={() => setResumenModalOpen(true)}
+              className="px-4 py-1.5 rounded-md text-xs font-medium font-sans border-none bg-acc text-white cursor-pointer hover:bg-blue-500 transition inline-flex items-center gap-1.5"
+            >
+              📑 Generar resumen de obra
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile — FAB resumen when selection active, else "Nuevo presupuesto" */}
+      {selectionMode && selectedIds.size > 0 ? (
+        <button
+          onClick={() => setResumenModalOpen(true)}
+          className="md:hidden fixed bottom-6 left-4 right-4 z-40 bg-acc text-white border-none rounded-full px-5 py-3 text-[13px] font-medium font-sans cursor-pointer flex items-center justify-center gap-2 shadow-[0_8px_24px_rgba(79,143,255,.35)] active:scale-95 transition-transform"
+          style={{ paddingBottom: `calc(12px + var(--safe-bottom, 0px))` }}
+        >
+          📑 Generar resumen ({selectedIds.size})
+        </button>
+      ) : (
+        <button
+          onClick={async () => {
+            try { const id = await addQuote(); router.push(`/quote/${id}`); } catch {}
+          }}
+          className="md:hidden fixed bottom-6 right-4 z-40 bg-acc text-white border-none rounded-full px-5 py-3 text-[13px] font-medium font-sans cursor-pointer flex items-center gap-2 shadow-[0_8px_24px_rgba(79,143,255,.35)] active:scale-95 transition-transform"
+          style={{ paddingBottom: `calc(12px + var(--safe-bottom, 0px))` }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Nuevo presupuesto
+        </button>
+      )}
+
+      {/* Resumen de obra — Confirmation + Success modals */}
+      <ResumenObraModal
+        open={resumenModalOpen}
+        quotes={selectedQuotes}
+        onClose={() => setResumenModalOpen(false)}
+        onSuccess={(record, affectedIds) => {
+          setResumenModalOpen(false);
+          setResumenSuccess({ record, affected: affectedIds.length });
+          clearSelection();
+          setSelectionMode(false);
+          refresh();
         }}
-        className="md:hidden fixed bottom-6 right-4 z-40 bg-acc text-white border-none rounded-full px-5 py-3 text-[13px] font-medium font-sans cursor-pointer flex items-center gap-2 shadow-[0_8px_24px_rgba(79,143,255,.35)] active:scale-95 transition-transform"
-        style={{ paddingBottom: `calc(12px + var(--safe-bottom, 0px))` }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Nuevo presupuesto
-      </button>
+      />
+      <ResumenObraSuccessModal
+        open={!!resumenSuccess}
+        record={resumenSuccess?.record || null}
+        affectedCount={resumenSuccess?.affected || 0}
+        onClose={() => setResumenSuccess(null)}
+      />
 
       {/* Delete modal */}
       {deleteTarget && (
