@@ -59,10 +59,26 @@ Cada tramo por separado, sumar.
 
 ## Frentin / Regrueso
 
+### ⛔ Faldón/frentín listado como pieza separada en brief → MO SOLO
+Cuando el operador lista el faldón como **concepto separado de material**
+con solo ml declarados (ej: `"Faldón recto — 2.90 ml"`, sin altura ni
+m²), **NO sumar m² al material**. El material ya está contabilizado en
+las piezas del despiece (planilla de cómputo del comitente). El faldón
+solo aporta MO:
+- SKU `FALDON` (o `FALDONDEKTON/NEOLITH` sinterizados) × ml.
+- CORTE45 solo si operador lo pide explícito.
+
+Caso DINALE 14/04/2026: brief dijo `"Faldón recto — 2.90 ml (listarlo
+como concepto separado de material)"`. Al agregarlo como pieza con altura
+default (0.05m) se duplicaba: sumaba 0.145 m² al material bruto **y**
+se cobraba como Armado frentín. El calculator ahora detecta piezas cuya
+descripción empieza con `faldón`/`frentín` y las excluye del m² de material.
+
 ```
-m2 frentin = largo_frente x alto_frentin
+m2 frentin = largo_frente x alto_frentin   # SOLO si el operador declara altura
 ```
-Si figura en plano → calcular directo. Si NO → preguntar. Sinterizado 12mm → sugerir frentin.
+Si figura en plano con altura → calcular directo y sumar al m². Si solo
+hay ml → MO únicamente. Sinterizado 12mm → sugerir frentin.
 
 ### Mano de obra frentin/regrueso — CRITICO
 

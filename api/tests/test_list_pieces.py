@@ -212,6 +212,78 @@ class TestMesadaConZocaloNoCollapsed:
         assert any("Mesada" in lbl for lbl in labels), labels
 
 
+class TestFrentinDoesNotDoubleCountMaterial:
+    """Regression: faldón/frentín listado como pieza separada NO debe
+    sumar m² al material (DINALE 14/04/2026).
+
+    Antes del fix: brief "Faldón recto — 2.90 ml" se convertía en una
+    pieza con prof=0.05 default → sumaba 0.145 m² al material bruto
+    Y al mismo tiempo se cobraba MO "Armado frentín" por 2.90 ml →
+    doble cobro.
+    """
+
+    def test_faldon_excluded_from_material_m2(self):
+        from app.modules.quote_engine.calculator import calculate_m2
+        total, details = calculate_m2([
+            {"description": "Mesada", "largo": 2.15, "prof": 0.60, "m2_override": 1.625},
+            {"description": "Faldón recto", "largo": 2.90, "prof": 0.05},
+        ])
+        # Solo la mesada debe contribuir: 1.625 ≈ 1.62 (round to 2)
+        assert total == 1.62, f"Expected 1.62 (faldón not summed), got {total}"
+        faldon = next(d for d in details if "Faldón" in d["description"])
+        assert faldon["_is_frentin"] is True
+        assert faldon["m2"] == 0, f"Faldón m² debe ser 0: {faldon}"
+
+    def test_frentin_piece_same_treatment(self):
+        """'Frentín' (sin tilde) debe comportarse igual."""
+        from app.modules.quote_engine.calculator import calculate_m2
+        total, _ = calculate_m2([
+            {"description": "Mesada", "largo": 2.0, "prof": 0.60},
+            {"description": "Frentin recto", "largo": 1.80, "prof": 0.10},
+        ])
+        # Solo mesada: 2.0 × 0.6 = 1.2
+        assert total == 1.2, f"Expected 1.2, got {total}"
+
+    def test_list_pieces_faldon_label_uses_ml(self):
+        """list_pieces para Paso 1 renderiza faldón como 'X.XXML FALDON'."""
+        result = list_pieces([
+            {"description": "Mesada", "largo": 2.15, "prof": 0.60},
+            {"description": "Faldón recto", "largo": 2.90, "prof": 0.05},
+        ])
+        labels = [p["label"] for p in result["pieces"]]
+        faldon = [l for l in labels if "FALDON" in l]
+        assert len(faldon) == 1, f"Expected 1 FALDON label, got: {labels}"
+        assert "2.90ML" in faldon[0], f"Expected 'X.XXML FALDON', got: {faldon[0]}"
+
+    def test_calculate_quote_faldon_as_mo_only(self):
+        """calculate_quote completo: faldón NO suma material, sí genera
+        línea MO 'Armado frentín' con ml (no m²)."""
+        result = calculate_quote({
+            "client_name": "DINALE",
+            "material": "GRANITO GRIS MARA EXTRA 2 ESP",
+            "pieces": [
+                {"description": "Mesada", "largo": 2.0, "prof": 0.60, "m2_override": 31.37},
+                {"description": "Faldón recto", "largo": 2.90, "prof": 0.05},
+            ],
+            "localidad": "rosario",
+            "plazo": "4 meses",
+            "is_edificio": True,
+            "colocacion": False,
+            "pileta": "empotrada_cliente",
+            "frentin": True,
+        })
+        assert result.get("ok"), result
+        # Material m²: solo la mesada (31.37), NO incluye 0.145 del faldón
+        assert result["material_m2"] == 31.37, (
+            f"material_m2 debe ser 31.37, got {result['material_m2']}"
+        )
+        # MO incluye Armado frentín con 2.90 ml
+        mo = result["mo_items"]
+        frentin_mo = [m for m in mo if "frentín" in m["description"].lower() or "frentin" in m["description"].lower()]
+        assert len(frentin_mo) == 1
+        assert frentin_mo[0]["quantity"] == 2.90
+
+
 # ── Verify list_pieces is in TOOLS schema ────────────────────────────────────
 
 class TestListPiecesInToolSchema:

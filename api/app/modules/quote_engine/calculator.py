@@ -251,14 +251,30 @@ def calculate_m2(pieces: list) -> tuple[float, list[dict]]:
         else:
             raw_m2 = largo * dim2
             used_override = False
-        total += raw_m2 * qty_in  # respect input quantity
+
+        # Faldón/frentín: contribuye SOLO a MO (armado frentín × ml), no al
+        # m² de material. Caso DINALE 14/04/2026: la planilla del comitente
+        # ya trae los m² con zócalo/frente incluidos; al listar el frentín
+        # como pieza aparte, sumar su m² al material lo duplica. La regla
+        # del negocio: los ml del frentín van al SKU FALDON (MO), no al
+        # material. Ver rules/calculation-formulas.md § Frentín.
+        _desc_head = (p.get("description") or "").lower().lstrip()
+        is_frentin_piece = (
+            _desc_head.startswith("faldón")
+            or _desc_head.startswith("faldon")
+            or _desc_head.startswith("frentín")
+            or _desc_head.startswith("frentin")
+        )
+        if not is_frentin_piece:
+            total += raw_m2 * qty_in  # respect input quantity
         raw_details.append({
             "description": p.get("description", ""),
             "largo": largo,
             "dim2": dim2,
-            "m2": round(raw_m2, 4),   # m² per unit (not × qty)
+            "m2": round(raw_m2, 4) if not is_frentin_piece else 0,
             "quantity": qty_in,        # preserve explicit qty
             "override": used_override, # renderer uses this to add '*' mark
+            "_is_frentin": is_frentin_piece,
         })
     # Group identical pieces by description+dimensions.
     # If the operator already provided an explicit quantity on each piece,
@@ -306,6 +322,11 @@ def list_pieces(pieces: list, is_edificio: bool = False) -> dict:
 
         if is_zocalo:
             label = f"{pd['largo']:.2f}ML X {pd['dim2']:.2f} ZOC"
+        elif pd.get("_is_frentin"):
+            # Faldón/frentín: solo se contabiliza como MO (armado × ml).
+            # NO sumar m² al material. Render con ml para que el operador
+            # sepa que no aporta al bruto material.
+            label = f"{pd['largo']:.2f}ML FALDON"
         else:
             label = f"{desc} — {pd['largo']:.2f} x {pd['dim2']:.2f}"
             if pd["largo"] >= 3.0 and not is_edificio:
