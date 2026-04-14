@@ -124,12 +124,48 @@ def _find_material(material_name: str) -> dict:
         if not all_materials:
             return {"found": False, "error": f"Material '{material_name}' no encontrado — catálogos vacíos"}
 
-        # Filter out LEATHER variants unless explicitly requested
+        # Filter out acabado variants (LEATHER, FIAMATADO, PULIDO, etc.)
+        # unless the operator explicitly requested them. Default acabado =
+        # "pulido/extra 2 esp" variant.
+        #
+        # Rule (PR #4 — pedido del usuario): cuando el brief no especifica
+        # variante/acabado y existe un variant "EXTRA 2 ESP" del material,
+        # se devuelve esa variante por default. Esto también cubre el caso
+        # de espesor no coincidente (ej: brief "25mm" vs catálogo 20mm):
+        # el filtrado se queda con el EXTRA 2 ESP y `_find_material` lo
+        # retorna sin preguntar. Ver rules/materials-guide.md § Espesor.
         input_lower = material_name.lower()
         has_leather = "leather" in input_lower
-        filtered = [(n, c) for n, c in all_materials if has_leather or "leather" not in n.lower()]
+        has_fiamatado = "fiamatado" in input_lower or "flameado" in input_lower
+        filtered = [
+            (n, c) for n, c in all_materials
+            if (has_leather or "leather" not in n.lower())
+            and (has_fiamatado or "fiamatado" not in n.lower())
+        ]
         names = [m[0] for m in (filtered if filtered else all_materials)]
         match = fuzz_process.extractOne(material_name, names, score_cutoff=70)
+
+        # If matched a non-EXTRA variant but an EXTRA 2 ESP exists for the
+        # same base name, prefer the EXTRA 2 ESP. Detect base name as the
+        # matched name minus the variant suffix.
+        if match:
+            matched_name = match[0]
+            m_upper = matched_name.upper()
+            if "EXTRA 2" not in m_upper and "EXTRA" not in m_upper:
+                # Look for a sibling with EXTRA 2 (ESP) and the same base tokens
+                base_tokens = set(
+                    t for t in m_upper.split()
+                    if t not in {"LEATHER", "FIAMATADO", "FLAMEADO", "PULIDO", "20MM", "-"}
+                )
+                for n, _c in filtered:
+                    n_upper = n.upper()
+                    if ("EXTRA 2" in n_upper or "EXTRA" in n_upper) and base_tokens.issubset(set(n_upper.split())):
+                        logging.info(
+                            f"[variant-default] '{material_name}' → preferring "
+                            f"'{n}' (EXTRA 2 ESP) over '{matched_name}'"
+                        )
+                        match = (n, match[1])
+                        break
 
         if match:
             matched_name, score = match[0], match[1]

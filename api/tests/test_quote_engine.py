@@ -91,6 +91,44 @@ class TestFindMaterial:
         result = _find_material("Material Inexistente XYZ")
         assert result["found"] is False
 
+    def test_default_variant_extra_2_esp_gris_mara(self):
+        """PR #4 — DINALE 14/04/2026: brief pide 'Granito Gris Mara' genérico
+        (sin variante ni espesor coincidente). Catálogo tiene 3 variantes:
+        EXTRA 2 ESP, FIAMATADO, LEATHER. Default debe ser EXTRA 2 ESP."""
+        result = _find_material("Granito Gris Mara")
+        assert result["found"] is True
+        assert "EXTRA 2" in result["name"].upper(), (
+            f"Expected EXTRA 2 ESP default, got: {result['name']}"
+        )
+
+    def test_default_variant_extra_2_esp_with_mismatched_thickness(self):
+        """Brief pide 25mm pero catálogo solo tiene 20mm → EXTRA 2 ESP default."""
+        result = _find_material("Granito Gris Mara 25mm")
+        assert result["found"] is True
+        assert "EXTRA 2" in result["name"].upper(), (
+            f"Expected EXTRA 2 ESP default on thickness mismatch, got: {result['name']}"
+        )
+
+    def test_explicit_leather_still_routes_to_leather(self):
+        """Si brief dice LEATHER, no aplicar default EXTRA 2 ESP."""
+        result = _find_material("Granito Gris Mara LEATHER")
+        assert result["found"] is True
+        assert "LEATHER" in result["name"].upper()
+
+    def test_explicit_fiamatado_still_routes_to_fiamatado(self):
+        """Si brief dice FIAMATADO, no aplicar default EXTRA 2 ESP."""
+        result = _find_material("Granito Gris Mara Fiamatado")
+        assert result["found"] is True
+        assert "FIAMATADO" in result["name"].upper()
+
+    def test_default_variant_negro_boreal(self):
+        """Segundo material con variante EXTRA 2 ESP: Granito Negro Boreal."""
+        result = _find_material("Granito Negro Boreal")
+        assert result["found"] is True
+        assert "EXTRA" in result["name"].upper(), (
+            f"Expected EXTRA 2 ESP default for Negro Boreal, got: {result['name']}"
+        )
+
 
 # ── _find_flete ──────────────────────────────────────────────────────────────
 
