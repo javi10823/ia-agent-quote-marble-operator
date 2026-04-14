@@ -251,8 +251,14 @@ def list_pieces(pieces: list, is_edificio: bool = False) -> dict:
     formatted = []
     for pd in piece_details:
         desc = pd.get("description", "")
-        desc_lower = desc.lower()
-        is_zocalo = "zócalo" in desc_lower or "zocalo" in desc_lower
+        desc_lower = desc.lower().lstrip()
+        # Pure zócalo: description starts with "zócalo". Mesadas que mencionan
+        # "c/zócalo h:Xcm" son mesadas, no zócalos — deben conservar su label.
+        is_zocalo = (
+            desc_lower.startswith("zócalo")
+            or desc_lower.startswith("zocalo")
+            or desc_lower.startswith("zoc ")
+        )
         qty = pd.get("quantity", 1)
 
         if is_zocalo:
@@ -691,8 +697,17 @@ def calculate_quote(input_data: dict) -> dict:
     has_m2_override = False
     for pd in piece_details:
         if pd["m2"] > 0:
-            desc_lower = (pd["description"] or "").lower()
-            is_zocalo = "zócalo" in desc_lower or "zocalo" in desc_lower
+            desc_lower = (pd["description"] or "").lower().lstrip()
+            # Pure zócalo pieces have descriptions that START with "zócalo"
+            # (e.g. "Zócalo 1.50 × 0.05"). Pieces like "Mesada recta c/zócalo
+            # h:10cm" are MESADAS that happen to include a zócalo in their
+            # m² — they must render with the full label, not collapsed to
+            # a ZOC row. Check start-of-string only.
+            is_zocalo = (
+                desc_lower.startswith("zócalo")
+                or desc_lower.startswith("zocalo")
+                or desc_lower.startswith("zoc ")
+            )
             if is_zocalo:
                 label = f'{pd["largo"]:.2f}ML X {pd["dim2"]:.2f} ZOC'
             else:

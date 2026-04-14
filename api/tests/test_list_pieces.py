@@ -146,6 +146,72 @@ class TestListPiecesToolDispatch:
         assert "ZOC" in zocalo[0]
 
 
+class TestMesadaConZocaloNoCollapsed:
+    """Regression: 'Mesada recta c/zócalo h:10cm' must render as MESADA, not ZOC.
+
+    Bug DINALE 14/04/2026: el PDF colapsaba todas las tipologías edificio
+    (ME01-B, ME02-B, etc.) con descripciones tipo "Mesada recta c/zócalo h:10cm"
+    a filas "X.XXML X 0.60 ZOC" porque el check `"zócalo" in desc` matcheaba
+    la palabra dentro de la descripción. Solo deben colapsarse piezas cuya
+    descripción EMPIECE con "zócalo".
+    """
+
+    def test_mesada_con_zocalo_keeps_description(self):
+        result = list_pieces([
+            {"description": "ME01-B Mesada recta c/zócalo h:10cm", "largo": 2.15, "prof": 0.60},
+        ])
+        assert result["ok"]
+        label = result["pieces"][0]["label"]
+        # Must preserve full description, NOT collapse to "ZOC"
+        assert "Mesada recta" in label
+        assert "ME01-B" in label
+        assert "ZOC" not in label
+
+    def test_mesada_con_zocalo_alto_50cm(self):
+        """ME04-B con zócalo h:50cm sigue siendo mesada."""
+        result = list_pieces([
+            {"description": "Mesada recta c/zócalo h:50cm", "largo": 2.30, "prof": 0.60},
+        ])
+        label = result["pieces"][0]["label"]
+        assert "Mesada" in label
+        assert "ZOC" not in label
+
+    def test_pure_zocalo_still_collapses(self):
+        """Zócalo puro (descripción empieza con 'Zócalo') se sigue colapsando."""
+        result = list_pieces([
+            {"description": "Zócalo trasero", "largo": 3.50, "alto": 0.05},
+        ])
+        label = result["pieces"][0]["label"]
+        assert "ZOC" in label
+        assert "ML" in label
+
+    def test_calculate_quote_sectors_keep_mesada_label(self):
+        """calculate_quote (código en sectors) también debe preservar label."""
+        result = calculate_quote({
+            "client_name": "TEST",
+            "material": "GRANITO GRIS MARA EXTRA 2 ESP",
+            "pieces": [
+                {"description": "ME01-B Mesada recta c/zócalo h:10cm",
+                 "largo": 2.15, "prof": 0.60, "m2_override": 1.625},
+                {"description": "ME04-B Mesada recta c/zócalo h:50cm",
+                 "largo": 2.30, "prof": 0.60, "quantity": 4, "m2_override": 3.130},
+            ],
+            "localidad": "rosario",
+            "plazo": "4 meses",
+            "is_edificio": True,
+            "colocacion": False,
+            "pileta": "empotrada_cliente",
+        })
+        assert result.get("ok"), result
+        sectors = result.get("sectors", [])
+        assert sectors
+        labels = sectors[0]["pieces"]
+        # Ninguno debe ser ZOC puro: el brief tiene solo mesadas c/zócalo
+        assert not any(" ZOC" in lbl.split("*")[0].rstrip() for lbl in labels), labels
+        # Debe preservar "Mesada" en los labels
+        assert any("Mesada" in lbl for lbl in labels), labels
+
+
 # ── Verify list_pieces is in TOOLS schema ────────────────────────────────────
 
 class TestListPiecesInToolSchema:
