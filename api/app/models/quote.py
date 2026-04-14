@@ -79,6 +79,18 @@ class Quote(Base):
     # Change history — log of modifications in patch mode
     change_history: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
 
+    # Consolidated site summary (resumen de obra) — generated from N quotes of
+    # the same client/project, attached back to each selected quote.
+    # Schema: { pdf_url, drive_url, notes, generated_at, quote_ids,
+    #           client_name, project }
+    resumen_obra: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Commercial email draft (AI-generated) for the client.
+    # Schema: { subject, body, generated_at, validated,
+    #           quote_updated_at_snapshot, resumen_updated_at_snapshot,
+    #           sibling_updated_at_snapshots: { quote_id: iso_str } }
+    email_draft: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     # Full chat history as JSON array
     messages: Mapped[list] = mapped_column(JSON, default=list)
 
