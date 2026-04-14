@@ -3335,6 +3335,14 @@ class AgentService:
                 "no provee la pileta", "no provee pileta",
                 "d'angelo no provee", "dangelo no provee",
                 "(sin producto", "pegadopileta mo",
+                # Operator explicit removal phrases (mid-conversation edit)
+                "sacar pileta el producto", "sacar el producto pileta",
+                "sacar el producto de pileta", "sacar producto pileta",
+                "sacar producto de pileta", "sacar la pileta producto",
+                "quitar pileta producto", "quitar producto pileta",
+                "eliminar pileta producto", "eliminar producto pileta",
+                "remover producto pileta", "remover pileta producto",
+                "sin la pileta producto", "sin pileta como producto",
             ]
             if any(phrase in _pileta_all_text for phrase in _no_product_phrases):
                 if inputs.get("pileta") != "empotrada_cliente":
