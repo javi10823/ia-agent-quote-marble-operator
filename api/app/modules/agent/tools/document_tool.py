@@ -1419,7 +1419,7 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
 def _generate_excel(output_path: Path, data: dict) -> None:
     """Generate Excel from template — only replace values, keep all formatting."""
     import openpyxl
-    from openpyxl.styles import Font, Alignment, Border, Side
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 
     TEMPLATE = TEMPLATES_DIR / "excel" / "quote-template.xlsx"
     wb = openpyxl.load_workbook(str(TEMPLATE))
@@ -1465,6 +1465,19 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     center_align = Alignment(horizontal="center")
     thin = Side(style="thin")
     box = Border(left=thin, right=thin, top=thin, bottom=thin)
+    # ── Zebra striping (matches PDF F3F3F3 on odd rows) ────────────────────
+    zebra_fill = PatternFill(start_color="F3F3F3", end_color="F3F3F3", fill_type="solid")
+    no_fill = PatternFill(fill_type=None)
+    _row_n = [0]
+
+    def _apply_zebra(sheet_row: int, cols: int = 6) -> None:
+        fill = zebra_fill if _row_n[0] % 2 == 1 else no_fill
+        for c in range(1, cols + 1):
+            ws.cell(sheet_row, c).fill = fill
+
+    def _zebra_done() -> None:
+        _row_n[0] += 1
+
     ars_fmt = '"$"#,##0.00'
     qty_fmt = '#,##0.00'
 
@@ -1493,6 +1506,9 @@ def _generate_excel(output_path: Path, data: dict) -> None:
         ws["E22"].number_format = ars_fmt
         ws["F22"].value = total_mat  # Bruto (before discount)
         ws["F22"].number_format = ars_fmt
+    # Zebra row 0 (material header) — no fill
+    _apply_zebra(22)
+    _zebra_done()
 
     # ── ONLY replace .value — NEVER touch .font, .fill, .alignment, .border ──
     # The template has all formatting correct. We just swap the data.
@@ -1522,12 +1538,15 @@ def _generate_excel(output_path: Path, data: dict) -> None:
         # pieces have room to expand without overwriting it.
         ws.insert_rows(MO_HEADER_ROW_BASE, extra_pieces)
 
-    # Clear values in dynamic rows (23 through max possible output row),
-    # accounting for inserted extra piece rows AND inserted extra MO rows.
+    # Clear values AND fills in dynamic rows (23 through max possible output
+    # row), accounting for inserted extra piece rows AND inserted extra MO
+    # rows. Wiping fills prevents inherited shading from ws.insert_rows().
     max_clear = 35 + extra_pieces + max(0, len(mo_items) - 4) + 5
     for row in range(23, max_clear + 1):
         for col in range(1, 7):
-            ws.cell(row, col).value = None
+            cell = ws.cell(row, col)
+            cell.value = None
+            cell.fill = no_fill
 
     # Build right-side overlay (Descuento + TOTAL) for USD
     italic_sm = Font(name="Calibri", italic=True, size=9)
@@ -1552,6 +1571,8 @@ def _generate_excel(output_path: Path, data: dict) -> None:
             ws.cell(r, 6).value = value
             ws.cell(r, 6).font = italic_sm if style == "I" else bold
             ws.cell(r, 6).alignment = right_align
+        _apply_zebra(r)
+        _zebra_done()
         r += 1
 
     # If fewer pieces than right_rows, add remaining
@@ -1564,6 +1585,8 @@ def _generate_excel(output_path: Path, data: dict) -> None:
             ws.cell(r, 6).value = value
             ws.cell(r, 6).font = italic_sm if style == "I" else bold
             ws.cell(r, 6).alignment = right_align
+            _apply_zebra(r)
+            _zebra_done()
             r += 1
 
     # MO items — template has 4 slots (base rows 28-31, shifted by any extra
@@ -1576,6 +1599,8 @@ def _generate_excel(output_path: Path, data: dict) -> None:
         ws.insert_rows(MO_START_ROW + TEMPLATE_MO_SLOTS, extra_mo)
 
     ws.cell(MO_HEADER_ROW, 1).value = "MANO DE OBRA"
+    _apply_zebra(MO_HEADER_ROW)
+    _zebra_done()
     for i, mo in enumerate(mo_items):
         row = MO_START_ROW + i
         ws.cell(row, 1).value = mo["description"]
@@ -1585,6 +1610,8 @@ def _generate_excel(output_path: Path, data: dict) -> None:
         ws.cell(row, 5).number_format = ars_fmt
         ws.cell(row, 6).value = f"=D{row}*E{row}"
         ws.cell(row, 6).number_format = ars_fmt
+        _apply_zebra(row)
+        _zebra_done()
 
     # MO commercial discount line (edificio "% sobre MO") — before Total PESOS
     mo_end_row = MO_START_ROW + len(mo_items) - 1
@@ -1598,6 +1625,8 @@ def _generate_excel(output_path: Path, data: dict) -> None:
         ws.cell(disc_row, 6).value = -_mo_disc_amt
         ws.cell(disc_row, 6).number_format = ars_fmt
         ws.cell(disc_row, 6).font = italic_sm
+        _apply_zebra(disc_row)
+        _zebra_done()
         mo_end_row = disc_row
 
     # Total PESOS — after all MO items (and discount line if present)
@@ -1607,6 +1636,8 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     ws.cell(total_pesos_row, 6).value = total_ars
     ws.cell(total_pesos_row, 6).number_format = ars_fmt
     ws.cell(total_pesos_row, 6).font = bold
+    _apply_zebra(total_pesos_row)
+    _zebra_done()
 
     # Grand total — 2 rows after total pesos
     grand_row = total_pesos_row + 2
@@ -1622,11 +1653,12 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     ws.cell(grand_row, 1).value = grand
     ws.cell(grand_row, 1).alignment = center_align
     ws.merge_cells(f"A{grand_row}:F{grand_row}")
-    # Apply box border + center align to grand total row
+    # Apply box border + center align + no fill to grand total row
     for col in range(1, 7):
         ws.cell(grand_row, col).border = box
         ws.cell(grand_row, col).font = bold
         ws.cell(grand_row, col).alignment = center_align
+        ws.cell(grand_row, col).fill = no_fill
 
     # Conditions block (CONDICIONES / FORMAS DE PAGO) + footer legend(s).
     # Mirrors the PDF layout so Excel is not a stripped-down version.
