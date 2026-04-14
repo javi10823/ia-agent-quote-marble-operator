@@ -177,6 +177,12 @@ def calculate_m2(pieces: list) -> tuple[float, list[dict]]:
     {largo: 1.43, prof: 0.62, quantity: 2} contributes 1.43 × 0.62 × 2
     to the total and keeps quantity=2 in its detail entry.
 
+    If a piece declares `m2_override` (float), that value is used as the
+    per-unit m² verbatim — largo × prof is NOT computed. Use case: Planilla
+    de Cómputo del comitente en obras de edificio, donde el m² ya incluye
+    zócalo/frente y D'Angelo cotiza sin recalcular. El detail entry conserva
+    `override=True` para que el renderer del PDF marque la fila con *.
+
     Rounding policy (BUG-045):
     - Per piece: NO rounding (sum raw values)
     - Total: round to 2 decimals
@@ -188,7 +194,20 @@ def calculate_m2(pieces: list) -> tuple[float, list[dict]]:
         largo = p.get("largo", 0)
         dim2 = p.get("prof") or p.get("alto") or 0
         qty_in = int(p.get("quantity", 1) or 1)
-        raw_m2 = largo * dim2
+        override = p.get("m2_override")
+        if override is not None:
+            try:
+                override_val = float(override)
+            except (TypeError, ValueError):
+                override_val = None
+        else:
+            override_val = None
+        if override_val is not None and override_val > 0:
+            raw_m2 = override_val
+            used_override = True
+        else:
+            raw_m2 = largo * dim2
+            used_override = False
         total += raw_m2 * qty_in  # respect input quantity
         raw_details.append({
             "description": p.get("description", ""),
@@ -196,6 +215,7 @@ def calculate_m2(pieces: list) -> tuple[float, list[dict]]:
             "dim2": dim2,
             "m2": round(raw_m2, 4),   # m² per unit (not × qty)
             "quantity": qty_in,        # preserve explicit qty
+            "override": used_override, # renderer uses this to add '*' mark
         })
     # Group identical pieces by description+dimensions.
     # If the operator already provided an explicit quantity on each piece,
@@ -668,6 +688,7 @@ def calculate_quote(input_data: dict) -> dict:
     # Build sectors for document generation (group identical pieces)
     sectors = []
     raw_labels = []
+    has_m2_override = False
     for pd in piece_details:
         if pd["m2"] > 0:
             desc_lower = (pd["description"] or "").lower()
@@ -681,6 +702,11 @@ def calculate_quote(input_data: dict) -> dict:
                 # already list many pieces by tipología, legend adds noise.
                 if pd["largo"] >= 3.0 and not is_edificio:
                     label += " (SE REALIZA EN 2 TRAMOS)"
+            # Mark rows whose m² came from operator-declared Planilla de
+            # Cómputo. Renderer looks for the trailing '*' to apply footnote.
+            if pd.get("override"):
+                label = f"{label} *"
+                has_m2_override = True
             raw_labels.append(label)
     # Group duplicates: "0.60 × 0.38 Mesada" × 6 → "0.60 × 0.38 Mesada (×6)"
     piece_labels = []
@@ -733,6 +759,7 @@ def calculate_quote(input_data: dict) -> dict:
         "total_ars": total_ars,
         "total_usd": total_usd,
         "sectors": sectors,
+        "has_m2_override": has_m2_override,
         "sinks": sinks,
         # Persist input params for patch mode reconstruction
         "localidad": localidad,
