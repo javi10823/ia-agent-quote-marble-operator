@@ -6,6 +6,9 @@ python-multipart==0.0.12
 # Database
 sqlalchemy[asyncio]==2.0.36
 asyncpg==0.30.0
+# psycopg2-binary: sync driver used by catalog_tool for side-channel DB reads
+# (avoids the 'No module named psycopg2' warnings that pollute Railway logs).
+psycopg2-binary==2.9.10
 
 # Anthropic
 anthropic==0.40.0
