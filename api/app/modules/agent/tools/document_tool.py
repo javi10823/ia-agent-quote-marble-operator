@@ -51,6 +51,85 @@ def invalidate_company_config_cache():
     _company_config_cache = None
 
 
+# ── Unicode → latin-1 sanitizer for FPDF helvetica ──────────────────────────
+# FPDF's default helvetica font is latin-1 only. Em/en dashes, smart quotes,
+# ellipsis, etc. crash with UnicodeEncodeError. Normalize everything we push
+# into PDF cells so the generator never blows up on punctuation variants that
+# the LLM or operator copy-paste into names/projects.
+_PDF_CHAR_MAP = {
+    "\u2014": "-",   # em dash —
+    "\u2013": "-",   # en dash –
+    "\u2212": "-",   # minus sign −
+    "\u2018": "'",   # left single quote ‘
+    "\u2019": "'",   # right single quote ’
+    "\u201C": '"',   # left double quote “
+    "\u201D": '"',   # right double quote ”
+    "\u2026": "...", # ellipsis …
+    "\u00A0": " ",   # non-breaking space
+    "\u2022": "-",   # bullet •
+    "\u00B7": "-",   # middle dot ·
+    "\u2009": " ",   # thin space
+    "\u200B": "",    # zero-width space
+    "\u2190": "<-",
+    "\u2192": "->",
+}
+
+
+def _pdf_safe(text) -> str:
+    """Return a latin-1-safe version of text for FPDF helvetica. Non-str inputs
+    are coerced to str; unknown non-latin-1 chars are replaced with '?'."""
+    if text is None:
+        return ""
+    s = str(text)
+    for src, dst in _PDF_CHAR_MAP.items():
+        if src in s:
+            s = s.replace(src, dst)
+    # Final safety net: drop anything else outside latin-1
+    try:
+        s.encode("latin-1")
+        return s
+    except UnicodeEncodeError:
+        return s.encode("latin-1", errors="replace").decode("latin-1")
+
+
+def _make_safe_fpdf():
+    """Return an FPDF subclass whose text-writing methods auto-sanitize Unicode.
+
+    This is the root-cause fix for 'UnicodeEncodeError: ... in helvetica' crashes
+    triggered by em dashes / smart quotes / etc. that operators or the LLM inject
+    into client names, project titles, piece descriptions, etc.
+    """
+    from fpdf import FPDF as _BaseFPDF
+
+    class _SafeFPDF(_BaseFPDF):
+        def cell(self, *args, **kwargs):
+            if "txt" in kwargs:
+                kwargs["txt"] = _pdf_safe(kwargs["txt"])
+            elif "text" in kwargs:
+                kwargs["text"] = _pdf_safe(kwargs["text"])
+            if len(args) >= 3 and isinstance(args[2], str):
+                args = list(args)
+                args[2] = _pdf_safe(args[2])
+                args = tuple(args)
+            return super().cell(*args, **kwargs)
+
+        def multi_cell(self, *args, **kwargs):
+            if "txt" in kwargs:
+                kwargs["txt"] = _pdf_safe(kwargs["txt"])
+            elif "text" in kwargs:
+                kwargs["text"] = _pdf_safe(kwargs["text"])
+            if len(args) >= 3 and isinstance(args[2], str):
+                args = list(args)
+                args[2] = _pdf_safe(args[2])
+                args = tuple(args)
+            return super().multi_cell(*args, **kwargs)
+
+        def text(self, x, y, txt):
+            return super().text(x, y, _pdf_safe(txt))
+
+    return _SafeFPDF
+
+
 def _fmt_ars(value: float) -> str:
     """Format ARS price: $65.147,34 (dot thousands, comma decimal, 2 decimals)."""
     n = round(value, 2)
@@ -236,7 +315,7 @@ async def generate_edificio_documents(
 
 def _generate_resumen_obra_pdf(pdf_path: Path, data: dict) -> None:
     """Generate consolidated project summary PDF — same D'Angelo look."""
-    from fpdf import FPDF
+    FPDF = _make_safe_fpdf()
     from app.modules.quote_engine.edificio_parser import _fmt_num
 
     co = _load_company_config()
@@ -549,7 +628,7 @@ def _generate_resumen_obra_excel(excel_path: Path, data: dict) -> None:
 
 def _generate_edificio_pdf(pdf_path: Path, data: dict) -> None:
     """Generate edificio PDF — same D'Angelo look, respects show_mo and grand_total_text."""
-    from fpdf import FPDF
+    FPDF = _make_safe_fpdf()
     import re as _re
 
     co = _load_company_config()
@@ -1051,7 +1130,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
 
 def _generate_pdf(pdf_path: Path, data: dict) -> None:
     """Generate clean PDF using fpdf2 — matches Excel content."""
-    from fpdf import FPDF
+    FPDF = _make_safe_fpdf()
 
     client_name = data.get("client_name", "")
     project = data.get("project", "")
@@ -1630,7 +1709,7 @@ def _format_grand_total(total_ars: float, total_usd: float, currency: str) -> st
 
 def generate_comparison_pdf(pdf_path: Path, client_name: str, project: str, quotes_data: list[dict]) -> None:
     """Generate a landscape comparison PDF for multiple material variants."""
-    from fpdf import FPDF
+    FPDF = _make_safe_fpdf()
 
     co = _load_company_config()
     date_str = datetime.now().strftime("%d/%m/%Y")
