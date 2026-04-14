@@ -51,7 +51,7 @@ class TestZocaloFormat:
         assert "2 TRAMOS" not in zocalo_labels[0]
 
     def test_mesada_still_gets_2_tramos(self):
-        """Mesada > 3m should still get '(SE REALIZA EN 2 TRAMOS)'."""
+        """Mesada > 3m should still get '(SE REALIZA EN 2 TRAMOS)' for residential."""
         result = calculate_quote(_base_input(
             pieces=[{"description": "Mesada", "largo": 4.10, "prof": 0.65}]
         ))
@@ -59,6 +59,32 @@ class TestZocaloFormat:
         labels = result["sectors"][0]["pieces"]
         mesada_labels = [l for l in labels if "mesada" in l.lower()]
         assert "2 TRAMOS" in mesada_labels[0]
+
+    def test_edificio_mesada_no_2_tramos_legend(self):
+        """Edificio with mesada > 3m should NOT add '(SE REALIZA EN 2 TRAMOS)'.
+        The tipología suffix (X 6, X 8) already lists how many pieces go."""
+        result = calculate_quote(_base_input(
+            pieces=[{"description": "Mesada DC-02", "largo": 3.00, "prof": 1.00}],
+            is_edificio=True,
+        ))
+        assert result["ok"]
+        labels = result["sectors"][0]["pieces"]
+        mesada_labels = [l for l in labels if "mesada" in l.lower()]
+        assert mesada_labels, "expected at least one mesada label"
+        assert "2 TRAMOS" not in mesada_labels[0], (
+            f"Edificio should NOT include '2 TRAMOS' legend, got: {mesada_labels[0]}"
+        )
+
+    def test_list_pieces_edificio_flag_suppresses_legend(self):
+        """list_pieces(is_edificio=True) must not add the 2 TRAMOS legend."""
+        from app.modules.quote_engine.calculator import list_pieces
+        pieces = [{"description": "Mesada", "largo": 4.10, "prof": 0.65}]
+        # Residential default → legend present
+        res_default = list_pieces(pieces)
+        assert any("2 TRAMOS" in p["label"] for p in res_default["pieces"])
+        # Edificio mode → legend absent
+        res_edif = list_pieces(pieces, is_edificio=True)
+        assert not any("2 TRAMOS" in p["label"] for p in res_edif["pieces"])
 
 
 # ── Fix 2: Delivery days tiers ──────────────────────────────────────────────

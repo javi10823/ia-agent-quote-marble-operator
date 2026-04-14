@@ -543,7 +543,8 @@ Ver calculation-formulas.md. Minimo 1 m² | Sobre total m² incluyendo zocalos |
 - Pasar `discount_pct` a `calculate_quote`
 
 ### Mesada >3m
-Agregar `(SE REALIZA EN 2 TRAMOS)`
+Agregar `(SE REALIZA EN 2 TRAMOS)` — SOLO en presupuestos residenciales/particulares.
+En edificios NO agregar esta leyenda.
 
 ### Sobrante
 - Desperdicio < 1.0 m² → NO cobrar/ofrecer/mencionar sobrante

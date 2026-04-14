@@ -205,11 +205,13 @@ def calculate_m2(pieces: list) -> tuple[float, list[dict]]:
     return round(total, 2), details
 
 
-def list_pieces(pieces: list) -> dict:
+def list_pieces(pieces: list, is_edificio: bool = False) -> dict:
     """Format pieces for Paso 1 display: correct labels + total m² (deterministic).
 
     Returns structured data that the agent must use verbatim in Paso 1.
-    Zócalos use "ml" format, mesadas use "largo × prof", >3m gets "2 TRAMOS".
+    Zócalos use "ml" format, mesadas use "largo × prof", >3m gets "2 TRAMOS"
+    ONLY for residential quotes (is_edificio=False). For edificios the legend
+    is suppressed since they list many pieces by tipología.
     """
     total_m2, piece_details = calculate_m2(
         [p if isinstance(p, dict) else p for p in pieces]
@@ -226,7 +228,7 @@ def list_pieces(pieces: list) -> dict:
             label = f"{pd['largo']:.2f}ML X {pd['dim2']:.2f} ZOC"
         else:
             label = f"{desc} — {pd['largo']:.2f} x {pd['dim2']:.2f}"
-            if pd["largo"] >= 3.0:
+            if pd["largo"] >= 3.0 and not is_edificio:
                 label += " (SE REALIZA EN 2 TRAMOS)"
 
         m2_display = round(pd["m2"] * qty, 2)
@@ -562,7 +564,9 @@ def calculate_quote(input_data: dict) -> dict:
             else:
                 dim2_label = f'{pd["largo"]:.2f} × {pd["dim2"]:.2f}'
                 label = f'{dim2_label} {pd["description"]}'
-                if pd["largo"] >= 3.0:
+                # "SE REALIZA EN 2 TRAMOS" only for residential — edificios
+                # already list many pieces by tipología, legend adds noise.
+                if pd["largo"] >= 3.0 and not is_edificio:
                     label += " (SE REALIZA EN 2 TRAMOS)"
             raw_labels.append(label)
     # Group duplicates: "0.60 × 0.38 Mesada" × 6 → "0.60 × 0.38 Mesada (×6)"

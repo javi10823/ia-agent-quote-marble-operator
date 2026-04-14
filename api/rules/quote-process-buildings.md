@@ -113,7 +113,9 @@ Linea explicita `ZOCALO X.XX ml x 0.05 m` (total ml, no por lado).
 Cocina → solo PEGADOPILETA. Solo presupuestar Johnson si lo menciona.
 
 ### Mesada >3m
-Leyenda **(SE REALIZA EN 2 TRAMOS)**. Alzada en enunciado → 1 TOMAS.
+En edificios NO agregar leyenda "(SE REALIZA EN 2 TRAMOS)" — las tipologías
+ya vienen listadas como DC-02 X 6, DC-03 X 8, etc. y la leyenda genera ruido.
+Alzada en enunciado → 1 TOMAS.
 
 ### Material no encontrado
 Informar operador. Preguntar cual usar — no sugerir alternativas.
