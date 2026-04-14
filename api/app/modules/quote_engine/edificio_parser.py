@@ -121,6 +121,10 @@ def _find_column_index(header: list[str], keywords: list[str]) -> Optional[int]:
 
     Uses token-level matching (split on whitespace/punctuation), not substring,
     to avoid false positives like "id" matching "cant**id**ad".
+
+    Keywords can be prefixes: "perforac" matches token "perforaciones",
+    "calado" matches token "calados" (plural), etc. Multi-word keywords
+    (with space) use substring match on the full cell.
     """
     for i, cell in enumerate(header):
         if not cell:
@@ -131,11 +135,19 @@ def _find_column_index(header: list[str], keywords: list[str]) -> Optional[int]:
         tokens = [t for t in tokens if t]
         for kw in keywords:
             kw_norm = kw.lower()
-            # Exact token match, OR multi-word keyword as substring (e.g. "tipo de material")
+            # Multi-word keyword: substring match on full cell
+            if " " in kw_norm:
+                if kw_norm in cell_norm:
+                    return i
+                continue
+            # Single-word keyword: exact token OR token starting with kw (prefix).
+            # Minimum prefix length 4 to avoid matching generic short prefixes.
             if kw_norm in tokens:
                 return i
-            if " " in kw_norm and kw_norm in cell_norm:
-                return i
+            if len(kw_norm) >= 4:
+                for token in tokens:
+                    if token.startswith(kw_norm):
+                        return i
     return None
 
 
