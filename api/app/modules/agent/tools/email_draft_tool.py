@@ -39,7 +39,10 @@ from app.modules.agent.tools.resumen_obra_tool import _normalize_client
 AMOUNT_TOLERANCE = 5
 
 # Haiku is cheap + fast; prompt caching isn't needed for a one-shot draft.
-EMAIL_MODEL = "claude-3-5-haiku-20241022"
+# PR #21 — actualizado de claude-3-5-haiku-20241022 (deprecated → 404
+# en producción) a claude-haiku-4-5 (versión vigente abril 2026,
+# 200k context, mismo precio range, soporta extended thinking).
+EMAIL_MODEL = "claude-haiku-4-5"
 
 
 class EmailDraftError(Exception):
