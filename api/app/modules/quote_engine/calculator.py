@@ -972,6 +972,13 @@ def build_deterministic_paso2(calc: dict) -> str:
     lines.append("| Pieza | Medida | m² |")
     lines.append("|---|---|---|")
     for p in pieces:
+        # Faldón/frentín NO va en el bloque material — se cobra solo como MO.
+        # Ver PR #164: piece._is_frentin marca estas piezas con m²=0 para que
+        # el calculator no las sume al material. El render también debe
+        # omitirlas para que no aparezcan como fila fantasma (PR #9, DINALE
+        # 15/04/2026).
+        if p.get("_is_frentin"):
+            continue
         desc = p.get("description", "")
         largo = p.get("largo", 0)
         dim2 = p.get("dim2", p.get("prof", 0))

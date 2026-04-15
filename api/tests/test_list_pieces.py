@@ -255,6 +255,34 @@ class TestFrentinDoesNotDoubleCountMaterial:
         assert len(faldon) == 1, f"Expected 1 FALDON label, got: {labels}"
         assert "2.90ML" in faldon[0], f"Expected 'X.XXML FALDON', got: {faldon[0]}"
 
+    def test_build_paso2_omits_faldon_row(self):
+        """PR #9 — el render del Paso 2 NO debe incluir fila para faldón.
+        DINALE 15/04/2026: aparecía 'Faldón recto 2,9 x 0,05 → 0,00' en
+        el bloque material aunque el m² ya era 0 (PR #164)."""
+        from app.modules.quote_engine.calculator import build_deterministic_paso2
+        calc_result = calculate_quote({
+            "client_name": "DINALE",
+            "material": "GRANITO GRIS MARA EXTRA 2 ESP",
+            "pieces": [
+                {"description": "Mesada", "largo": 2.0, "prof": 0.60, "m2_override": 31.37},
+                {"description": "Faldón recto", "largo": 2.90, "prof": 0.05},
+            ],
+            "localidad": "rosario",
+            "plazo": "4 meses",
+            "is_edificio": True,
+            "colocacion": False,
+            "pileta": "empotrada_cliente",
+            "frentin": True,
+        })
+        paso2 = build_deterministic_paso2(calc_result)
+        # No debe haber línea de tabla 'Faldón' en el bloque material
+        material_section = paso2.split("MANO DE OBRA")[0] if "MANO DE OBRA" in paso2 else paso2
+        assert "Faldón" not in material_section and "Faldon" not in material_section, (
+            f"Faldón no debe renderizarse en bloque material. Got:\n{material_section}"
+        )
+        # Pero SÍ debe seguir apareciendo Armado frentín en MO
+        assert "frentín" in paso2.lower() or "frentin" in paso2.lower()
+
     def test_calculate_quote_faldon_as_mo_only(self):
         """calculate_quote completo: faldón NO suma material, sí genera
         línea MO 'Armado frentín' con ml (no m²)."""
