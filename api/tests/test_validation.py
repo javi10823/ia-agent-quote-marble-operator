@@ -332,6 +332,40 @@ class TestPieceM2:
         errors, warnings = _check_piece_m2(qdata)
         assert errors == []
 
+    def test_override_pieces_skip_largo_dim2_check(self):
+        """PR #13 — DINALE 15/04/2026: piezas con m²_override (planilla
+        de cómputo del comitente) NO deben validarse contra largo×dim2.
+        El m² declarado incluye zócalo/frente, no es geometría pura."""
+        qdata = _valid_qdata()
+        # Piece con override flag y m² ≠ largo × dim2
+        qdata["piece_details"] = [
+            {
+                "description": "ME01-B Mesada c/zócalo h:10cm",
+                "largo": 2.15, "dim2": 0.60, "m2": 1.625,
+                "quantity": 1, "override": True,
+            },
+        ]
+        qdata["material_m2"] = 1.625
+        errors, _ = _check_piece_m2(qdata)
+        assert errors == [], (
+            f"Pieza con override=True NO debe fallar largo×dim2 check: {errors}"
+        )
+
+    def test_frentin_pieces_skip_check(self):
+        """Piezas faldón (_is_frentin) tienen m²=0 intencional."""
+        qdata = _valid_qdata()
+        qdata["piece_details"] = [
+            {
+                "description": "Faldón recto", "largo": 2.90, "dim2": 0.05,
+                "m2": 0, "quantity": 1, "_is_frentin": True,
+            },
+        ]
+        qdata["material_m2"] = 0
+        errors, _ = _check_piece_m2(qdata)
+        assert errors == [], (
+            f"Pieza _is_frentin con m²=0 NO debe fallar: {errors}"
+        )
+
 
 # ── TestMOTotals ────────────────────────────────────────────────────────────
 
