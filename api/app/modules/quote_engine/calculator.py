@@ -452,7 +452,19 @@ def calculate_quote(input_data: dict) -> dict:
     """
     warnings: list[str] = []  # Collect warnings visible to the agent
 
-    client_name = input_data["client_name"]
+    client_name = (input_data.get("client_name") or "").strip()
+    # PR: cliente obligatorio también (antes solo chequeaba project).
+    _placeholder_clients = {"", "n/a", "n/d", "sin cliente", "-", "—", "."}
+    if client_name.lower() in _placeholder_clients:
+        return {
+            "ok": False,
+            "error": (
+                "⛔ Falta el nombre del cliente. Es obligatorio. "
+                "PEDIRLO al operador antes de calcular: "
+                "'¿Nombre del cliente?'. NUNCA inventarlo ni tomarlo del "
+                "nombre del archivo/proyecto."
+            ),
+        }
     project = (input_data.get("project") or "").strip()
     # PR #15 — proyecto obligatorio. El operador siempre da contexto de la
     # OBRA en el brief (ej: "OBRA: Ampliación Unidad Penitenciaria N°12").
