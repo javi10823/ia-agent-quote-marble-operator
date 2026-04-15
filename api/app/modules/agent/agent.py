@@ -512,6 +512,14 @@ def build_system_prompt(has_plan: bool = False, is_building: bool = False, user_
             conditional_parts.append(f"## {bldg_path.stem}\n\n{_read_cached_file(bldg_path)}")
 
     if has_plan:
+        # PR #25 — plan-reader-v1.md es el prompt canónico de lectura de
+        # planos (4 pasadas, placa vs zócalo ml, esquinas L/U sin doble
+        # superficie, OCR rules, output JSON). Se incluye SIEMPRE antes
+        # que el legacy plan-reading.md para que el agente use las nuevas
+        # reglas como source of truth.
+        reader_v1 = rules_dir / "plan-reader-v1.md"
+        if reader_v1.exists():
+            conditional_parts.append(f"## plan-reader-v1\n\n{_read_cached_file(reader_v1)}")
         plan_path = rules_dir / "plan-reading.md"
         if plan_path.exists():
             conditional_parts.append(f"## {plan_path.stem}\n\n{_read_cached_file(plan_path)}")
