@@ -46,6 +46,10 @@ export function clientCoreTokens(
   );
 }
 
+function _escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function areFuzzySameClient(
   a: string | null | undefined,
   b: string | null | undefined
@@ -54,6 +58,19 @@ export function areFuzzySameClient(
   const na = normalizeClientName(a);
   const nb = normalizeClientName(b);
   if (na && na === nb) return true;
+  // Prefix/substring fallback (word-boundary-aware). Caso Estudio 72:
+  // "estudio 72" ⊂ "estudio 72 — fideicomiso ventus". Los core tokens
+  // son vacíos (estudio=stopword, 72 len<3), así que sin este fallback
+  // el checkbox no permitía agrupar quotes del mismo cliente.
+  if (na && nb) {
+    const [shorter, longer] = na.length <= nb.length ? [na, nb] : [nb, na];
+    if (shorter.length >= 3) {
+      const pat = new RegExp(
+        `(?:^|\\s|[-–—_/])${_escapeRegex(shorter)}(?:$|\\s|[-–—_/])`,
+      );
+      if (pat.test(longer)) return true;
+    }
+  }
   const ca = clientCoreTokens(a);
   const cb = clientCoreTokens(b);
   let found = false;
