@@ -114,6 +114,70 @@ async def test_generate_multi_quote_same_client_ok(
         assert row.resumen_obra["drive_url"] == "https://drive/x"
 
 
+async def test_resumen_obra_normalizes_client_name_in_db(
+    client, validated_quote_factory, db_session
+):
+    """PR #18 — tras generar el resumen, todos los presupuestos del grupo
+    quedan con el mismo client_name canónico (el más corto). Cubre el caso
+    Estudio 72 donde el dashboard mostraba 'Estudio 72' y
+    'Estudio 72 — Fideicomiso Ventus' mezclados."""
+    from sqlalchemy import update as _upd
+    qid1 = await validated_quote_factory(material="SILESTONE BLANCO NORTE")
+    qid2 = await validated_quote_factory(material="GRANITO CEARA", price=357)
+    # Set names so they match fuzzy but differ in length.
+    await db_session.execute(
+        _upd(Quote).where(Quote.id == qid1).values(client_name="Estudio 72 — Fideicomiso Ventus")
+    )
+    await db_session.execute(
+        _upd(Quote).where(Quote.id == qid2).values(client_name="Estudio 72")
+    )
+    await db_session.commit()
+
+    with patch(
+        "app.modules.agent.tools.resumen_obra_tool._upload_to_drive_safe",
+        return_value={"drive_url": "https://drive/x", "file_id": "x"},
+    ):
+        r = await client.post(
+            "/api/quotes/resumen-obra",
+            json={"quote_ids": [qid1, qid2], "force_same_client": True},
+        )
+    assert r.status_code == 200, r.text
+    # Ambos quotes quedan con el canónico (el más corto).
+    db_session.expire_all()
+    for qid in (qid1, qid2):
+        row = (await db_session.execute(
+            select(Quote).where(Quote.id == qid)
+        )).scalar_one()
+        assert row.client_name == "Estudio 72", (
+            f"Expected canonical client_name='Estudio 72', got {row.client_name!r}"
+        )
+
+
+async def test_quote_detail_exposes_resumen_obra(
+    client, validated_quote_factory
+):
+    """PR #18 — GET /api/quotes/:id debe devolver resumen_obra y
+    email_draft para que ResumenObraCard/EmailDraftCard rendericen."""
+    qid = await validated_quote_factory(material="SILESTONE BLANCO NORTE")
+    with patch(
+        "app.modules.agent.tools.resumen_obra_tool._upload_to_drive_safe",
+        return_value={"drive_url": "https://drive/y", "file_id": "y"},
+    ):
+        r = await client.post(
+            "/api/quotes/resumen-obra",
+            json={"quote_ids": [qid]},
+        )
+    assert r.status_code == 200, r.text
+    detail = (await client.get(f"/api/quotes/{qid}")).json()
+    # El campo debe existir en la respuesta JSON (antes se persistía en DB
+    # pero el endpoint lo omitía → frontend no renderizaba ResumenObraCard).
+    assert "resumen_obra" in detail
+    assert detail["resumen_obra"] is not None
+    assert detail["resumen_obra"]["drive_url"] == "https://drive/y"
+    # email_draft también debe estar presente (aunque sea None)
+    assert "email_draft" in detail
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Validation rejections
 # ─────────────────────────────────────────────────────────────────────────
