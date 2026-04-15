@@ -91,6 +91,33 @@ class TestFindMaterial:
         result = _find_material("Material Inexistente XYZ")
         assert result["found"] is False
 
+    def test_calculate_quote_requires_project(self):
+        """PR #15 — project es obligatorio. Vacío o placeholder devuelve error."""
+        from app.modules.quote_engine.calculator import calculate_quote
+        for empty in ["", "  ", "n/a", "Sin proyecto", "—", "-"]:
+            r = calculate_quote({
+                "client_name": "X", "project": empty,
+                "material": "GRANITO GRIS MARA EXTRA 2 ESP",
+                "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
+                "localidad": "rosario", "plazo": "30 dias",
+                "colocacion": False, "pileta": "empotrada_cliente",
+            })
+            assert r["ok"] is False, f"Esperaba error con project={empty!r}"
+            assert "obra" in r["error"].lower() or "proyecto" in r["error"].lower()
+
+    def test_calculate_quote_accepts_real_project(self):
+        """Project real (incluso 'Cocina') debe pasar."""
+        from app.modules.quote_engine.calculator import calculate_quote
+        for valid in ["Ampliación Unidad Penitenciaria N°12", "Cocina", "Casa Pérez"]:
+            r = calculate_quote({
+                "client_name": "X", "project": valid,
+                "material": "GRANITO GRIS MARA EXTRA 2 ESP",
+                "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
+                "localidad": "rosario", "plazo": "30 dias",
+                "colocacion": False, "pileta": "empotrada_cliente",
+            })
+            assert r.get("ok") is True, f"project={valid!r} debería pasar: {r.get('error')}"
+
     def test_default_variant_extra_2_esp_gris_mara(self):
         """PR #4 — DINALE 14/04/2026: brief pide 'Granito Gris Mara' genérico
         (sin variante ni espesor coincidente). Catálogo tiene 3 variantes:
