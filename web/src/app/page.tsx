@@ -539,10 +539,10 @@ export default function DashboardPage() {
                       </td>
                       {/* Material */}
                       <td className={clsx("px-[18px] py-[13px] text-xs max-w-[250px] truncate", isUnread ? "text-t1 font-medium" : "text-t2")}>
-                        {q.quote_kind === "building_parent" ? (
+                        {q.quote_kind === "building_parent" || q.is_building ? (
                           <span className="flex items-center gap-1.5">
                             <span className="text-[9px] font-semibold px-1.5 py-px rounded bg-purple-500/15 text-purple-400">OBRA</span>
-                            {q.material || q.project || "Edificio"}
+                            <span className="truncate">{q.material || q.project || "Edificio"}</span>
                           </span>
                         ) : (
                           q.material || "\u2014"

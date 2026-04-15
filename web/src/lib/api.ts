@@ -33,6 +33,7 @@ export interface Quote {
   drive_excel_url: string | null;
   parent_quote_id: string | null;
   quote_kind: "standard" | "building_parent" | "building_child_material" | "variant_option" | null;
+  is_building?: boolean | null;
   comparison_group_id: string | null;
   source: string | null;
   is_read: boolean;

@@ -25,6 +25,10 @@ class QuoteListResponse(BaseModel):
     drive_excel_url: Optional[str] = None
     parent_quote_id: Optional[str] = None
     quote_kind: Optional[str] = "standard"
+    # PR #19 — flag para mostrar badge OBRA en dashboard. Antes solo se
+    # mostraba para quote_kind='building_parent' (edificios multi-material),
+    # dejando los edificios single-material sin marca visible.
+    is_building: Optional[bool] = False
     comparison_group_id: Optional[str] = None
     source: Optional[str] = "operator"
     is_read: bool = True
