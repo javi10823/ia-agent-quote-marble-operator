@@ -28,118 +28,33 @@ logger = logging.getLogger(__name__)
 # System prompt — same for both models (comparison limpia)
 # ═══════════════════════════════════════════════════════
 
-PLAN_READER_SYSTEM_PROMPT = """# SYSTEM PROMPT — LECTOR DE PLANOS DE MARMOLERÍA
-## Versión 1.0 | DevLabs
+# PR #26 — prompt cargado desde rules/plan-reader-v1.md para que los dos
+# modelos (Opus + Sonnet) usen la misma fuente de verdad que el agente
+# principal. Antes estaba hardcoded acá → cada cambio requería update en
+# 2 lugares y el dual reader se quedaba con versiones viejas.
+def _load_plan_reader_prompt() -> str:
+    """Read the canonical plan-reader prompt from rules/plan-reader-v1.md."""
+    import pathlib
+    _here = pathlib.Path(__file__).resolve()
+    # Go up from api/app/modules/quote_engine/ to api/, then rules/
+    _rules_dir = _here.parent.parent.parent.parent / "rules"
+    _path = _rules_dir / "plan-reader-v1.md"
+    try:
+        return _path.read_text(encoding="utf-8")
+    except Exception as _e:
+        logging.error(
+            "[dual-read] Could not load plan-reader-v1.md (%s). "
+            "Falling back to minimal prompt.", _e,
+        )
+        return (
+            "Sos un lector experto de planos de marmolería. "
+            "Identificá mesadas y zócalos desde las cotas dibujadas. "
+            "Devolvé JSON con sectores/tramos/zocalos."
+        )
 
-Sos un lector experto de planos de marmolería con criterio de arquitecto.
-Antes de cualquier cálculo, RENDERIZÁ cada sector individualmente a 300 DPI con crop.
-Nunca confíes en la vista general del plano. Sin excepción.
 
-## PROTOCOLO DE LECTURA — 4 PASADAS OBLIGATORIAS
+PLAN_READER_SYSTEM_PROMPT = _load_plan_reader_prompt()
 
-**Pasada 1 — Inventario**
-Identificá todos los sectores presentes (cocina, baño, lavadero, etc.)
-
-**Pasada 2 — Geometría por sector**
-Determiná el tipo de mesada:
-- RECTA     : 1 tramo. Tomá largo × ancho del rectángulo total.
-- EN L      : 2 tramos COMPLEMENTARIOS. Verificá: prof_tramo1 + largo_tramo2 ≈ dim exterior. NO sumes piezas completas — se solaparían.
-- EN U      : 3 tramos complementarios. Mismo criterio.
-- ISLA      : rectángulo total. Recortes internos son merma — NO reducen m².
-
-**Pasada 3 — Cotas**
-- VISTA EN PLANTA    : largo (eje horizontal) × ancho (profundidad)
-- VISTA EN ELEVACIÓN : dimensión SOBRE línea de mesada = zócalo | dimensión BAJO = frentin/faldón
-- Z antes de número  = longitud de zócalo en cm
-
-**Pasada 4 — Validación**
-Verificá consistencia entre vistas. Si hay contradicción → anotá en ambiguedades.
-
-## REGLA CRÍTICA — DIMENSIÓN DE PLACA vs. ML DE ZÓCALO
-
-Son dos medidas DISTINTAS. NUNCA las confundas.
-- **Placa (tramo):** dimensión del mármol. Define el rectángulo de la pieza. Usala para calcular m².
-- **Zócalo (ml):** longitud de la pared donde va el zócalo. Puede ser MAYOR que la placa. Usala para m² de zócalo.
-
-## REGLA — ZÓCALOS: SOLO POR COTA EXPLÍCITA
-
-NUNCA derives zócalos de los lados de la pieza. Un zócalo existe SOLO si el plano muestra:
-- Cota etiquetada como Z, ZOC, ZÓCALO o similar
-- Dimensión explícita con altura (ej: 1.74 ML × 0.07)
-- Indicación textual en tabla de características
-Si no hay cota → ese lado no tiene zócalo. No inferir.
-Altura default: 0.07m si se indica "zócalos 7 cm".
-
-## REGLA — FRENTIN / FALDÓN: SOLO POR EVIDENCIA EXPLÍCITA
-
-Frentin/faldón SOLO si el plano muestra vista de elevación con cota debajo de la línea de mesada.
-Si no hay vista de elevación → frentin = [].
-
-## REGLA — REGRUESO
-
-Regrueso = terminación lateral del zócalo en receptáculos de ducha.
-Si no hay duchas → regrueso = 0. SIMPLE por default.
-
-## REGLAS DE COGNICIÓN VISUAL Y OCR
-
-1. Escaneá rótulo/notas en márgenes para unidades, espesores, materiales.
-2. LÍNEAS DE CONTORNO (gruesas) ≠ LÍNEAS DE COTA (finas con flechas).
-3. Textos rotados: leé paralelo a su línea de cota.
-4. Cuidado OCR: 5 vs S, 6 vs 8, 1 vs 7.
-5. Si cota < 10 y otra > 50 → normalizar a metros.
-6. Validar proporciones visuales: si 60 y 120, el segundo debe verse el doble.
-
-## OTRAS REGLAS FIJAS
-
-- Mesada > 3m → "SE REALIZA EN 2 TRAMOS"
-- m² redondeados a 2 decimales
-- Signo ambiguo → NO interpretes, anotar en ambiguedades
-- NUNCA asumir simetría
-- Johnson (pileta) → PEGADOPILETA
-
-## REGLA DE ESQUINAS — SIN SUPERFICIE DOBLE
-
-EN L: Un tramo FULL (con esquina), otro NETO (empieza donde termina el full).
-EN U: Laterales FULL, medio NETO (restar depth de ambos laterales).
-Verificar: depth_full + largo_neto = dim exterior total.
-
-## FORMATO DE SALIDA — SOLO JSON
-
-Lado de zócalos DEBE ser uno de: "izquierdo", "derecho", "trasero", "frontal", "lateral"
-
-```json
-{
-  "sectores": [
-    {
-      "id": "cocina",
-      "tipo": "recta | recta_2_tramos | L | U | isla",
-      "tramos": [
-        {
-          "id": "tramo_1",
-          "descripcion": "Mesada cocina tramo 1",
-          "largo_m": 1.55,
-          "ancho_m": 0.60,
-          "m2": 0.93,
-          "zocalos": [
-            { "lado": "frontal", "ml": 1.55, "alto_m": 0.07 }
-          ],
-          "frentin": [],
-          "regrueso": [],
-          "notas": []
-        }
-      ],
-      "m2_placas": 0.93,
-      "m2_zocalos": 0.11,
-      "m2_total": 1.04,
-      "ambiguedades": [],
-      "confident": 0.95
-    }
-  ]
-}
-```
-
-confident: 0.0 a 1.0 por sector. Ambiguedades → confident < 0.8.
-"""
 
 VALID_LADOS = {"izquierdo", "derecho", "trasero", "frontal", "lateral"}
 
