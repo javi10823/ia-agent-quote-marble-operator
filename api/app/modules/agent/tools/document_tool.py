@@ -1405,6 +1405,28 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
         pdf.cell(w[3], rh, _fmt_ars(sink['unit_price'] * sink['quantity']), align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
         row_done()
 
+    # ── SOBRANTE (merma) — línea separada sumada al grand total ──
+    # Regla: "Bloque separado e independiente, subtotal propio. Grand total
+    # suma principal + sobrante" (rules/calculation-formulas.md).
+    sobrante_m2_pdf = data.get("sobrante_m2", 0)
+    sobrante_total_pdf = data.get("sobrante_total", 0)
+    if sobrante_m2_pdf and sobrante_total_pdf:
+        pdf.ln(2)
+        f = row_fill()
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(total_w, rh, "SOBRANTE (MERMA)", fill=f, new_x="LMARGIN", new_y="NEXT")
+        row_done()
+        f = row_fill()
+        pdf.set_font("Helvetica", "", 9)
+        # Precio unit depende de la moneda del material
+        _sob_unit = mat_price  # mismo precio unitario que el material
+        _sob_fmt = _fmt_usd if currency == "USD" else _fmt_ars
+        pdf.cell(w[0], rh, "Sobrante disponible", fill=f)
+        pdf.cell(w[1], rh, f"{sobrante_m2_pdf:.2f}".replace(".", ","), align="R", fill=f)
+        pdf.cell(w[2], rh, _sob_fmt(_sob_unit), align="R", fill=f)
+        pdf.cell(w[3], rh, _sob_fmt(sobrante_total_pdf), align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
+        row_done()
+
     # Spacer
     pdf.ln(2)
 
@@ -1615,11 +1637,15 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     # Reservar filas para piletas: 1 header + N rows (si hay piletas).
     sinks_block_size = (1 + len(sinks)) if sinks else 0
     extra_for_sinks = sinks_block_size
-    if extra_pieces > 0 or extra_for_sinks > 0:
-        ws.insert_rows(MO_HEADER_ROW_BASE, extra_pieces + extra_for_sinks)
+    _sob_m2_pre = data.get("sobrante_m2", 0)
+    _sob_total_pre = data.get("sobrante_total", 0)
+    extra_for_sobrante_pre = 2 if (_sob_m2_pre and _sob_total_pre) else 0
+    total_extra = extra_pieces + extra_for_sinks + extra_for_sobrante_pre
+    if total_extra > 0:
+        ws.insert_rows(MO_HEADER_ROW_BASE, total_extra)
 
     # Clear values AND fills in dynamic rows.
-    max_clear = 35 + extra_pieces + extra_for_sinks + max(0, len(mo_items) - 4) + 5
+    max_clear = 35 + total_extra + max(0, len(mo_items) - 4) + 5
     for row in range(23, max_clear + 1):
         for col in range(1, 7):
             cell = ws.cell(row, col)
@@ -1672,8 +1698,6 @@ def _generate_excel(output_path: Path, data: dict) -> None:
             r += 1
 
     # ── PILETAS / SINKS — insertar entre piezas y MO header (igual que PDF) ─
-    # Sin esto, el Excel omite la pileta aunque el PDF la muestre (bug
-    # reportado: PDF muestra "PILETA JOHNSON LUXOR S171" pero Excel no).
     sinks_header_row = MO_HEADER_ROW_BASE + extra_pieces
     if sinks:
         ws.cell(sinks_header_row, 1).value = "PILETAS"
@@ -1692,9 +1716,33 @@ def _generate_excel(output_path: Path, data: dict) -> None:
             _apply_zebra(srow)
             _zebra_done()
 
-    # MO items — template has 4 slots, shifted by any extra piece rows AND
-    # the sinks block we inserted above.
-    MO_HEADER_ROW = MO_HEADER_ROW_BASE + extra_pieces + extra_for_sinks
+    # ── SOBRANTE (merma) — línea separada al grand total ──
+    sobrante_m2_xl = data.get("sobrante_m2", 0)
+    sobrante_total_xl = data.get("sobrante_total", 0)
+    extra_for_sobrante = 2 if (sobrante_m2_xl and sobrante_total_xl) else 0
+    if extra_for_sobrante:
+        sob_header_row = sinks_header_row + extra_for_sinks
+        ws.cell(sob_header_row, 1).value = "SOBRANTE (MERMA)"
+        ws.cell(sob_header_row, 1).font = bold
+        _apply_zebra(sob_header_row)
+        _zebra_done()
+        sob_row = sob_header_row + 1
+        ws.cell(sob_row, 1).value = "Sobrante disponible"
+        ws.cell(sob_row, 4).value = sobrante_m2_xl
+        ws.cell(sob_row, 4).number_format = qty_fmt
+        ws.cell(sob_row, 5).value = mat_price  # mismo precio que material
+        if currency == "USD":
+            ws.cell(sob_row, 5).value = _fmt_usd(mat_price)
+            ws.cell(sob_row, 6).value = _fmt_usd(sobrante_total_xl)
+        else:
+            ws.cell(sob_row, 5).number_format = ars_fmt
+            ws.cell(sob_row, 6).value = sobrante_total_xl
+            ws.cell(sob_row, 6).number_format = ars_fmt
+        _apply_zebra(sob_row)
+        _zebra_done()
+
+    # MO items — header shifted by extra_pieces + sinks + sobrante.
+    MO_HEADER_ROW = MO_HEADER_ROW_BASE + extra_pieces + extra_for_sinks + extra_for_sobrante
     MO_START_ROW = MO_HEADER_ROW + 1
     TEMPLATE_MO_SLOTS = 4
     extra_mo = max(0, len(mo_items) - TEMPLATE_MO_SLOTS)
