@@ -882,9 +882,11 @@ class AgentService:
                     "Seguí con el flujo: si falta cliente o proyecto, pedilos; "
                     "si ya están, avanzá al Paso 2 (búsqueda de precios y cálculo)."
                 )
-                # Limpiar plan_bytes para que no se re-procese el plano en este turno
-                plan_bytes = None
-                plan_filename = None
+                # NOTA: NO limpiamos plan_bytes — Claude necesita el plano +
+                # planilla (material, pileta, ubicación) para el Paso 2. Sin
+                # eso alucina (ej: reporta Silestone cuando el plano es
+                # Purastone). La skip-lógica de dual_read previene re-emisión
+                # de card porque verified_context ya quedó guardado arriba.
             except Exception as e:
                 logging.error(f"[dual-read] Confirmation handler failed: {e}", exc_info=True)
                 # Continuar con el mensaje original — Claude intentará responder
@@ -1990,6 +1992,19 @@ class AgentService:
                                     logging.info(
                                         f"[dual-read] re-emit saved result for quote {quote_id}"
                                     )
+                                    # Persistir el turno del usuario para que el siguiente
+                                    # turno tenga historia (Claude necesita ver el upload
+                                    # previo para dar contexto en Paso 2).
+                                    try:
+                                        _um_q = await db.execute(select(Quote).where(Quote.id == quote_id))
+                                        _um_quote = _um_q.scalar_one_or_none()
+                                        if _um_quote:
+                                            _user_entry = {"role": "user", "content": [{"type": "text", "text": (user_message or "").strip() or f"(adjuntó plano: {plan_filename})"}]}
+                                            _asst_entry = {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"}
+                                            await db.execute(update(Quote).where(Quote.id == quote_id).values(messages=list(_um_quote.messages or []) + [_user_entry, _asst_entry]))
+                                            await db.commit()
+                                    except Exception as _e:
+                                        logging.warning(f"[dual-read] Failed to persist turn: {_e}")
                                     yield {"type": "dual_read_result", "content": json.dumps(_existing_dr, ensure_ascii=False)}
                                     yield {"type": "done", "content": ""}
                                     return
@@ -2036,6 +2051,19 @@ class AgentService:
                                         except Exception as e:
                                             logging.warning(f"[dual-read] Failed to save result: {e}")
                                         logging.info(f"[dual-read] Result sent: source={_dual_result.get('source')}, review={_dual_result.get('requires_human_review')}")
+                                        # Persistir el turno para tener historia en el siguiente
+                                        # turno (confirmación). Sin esto, Claude en Paso 2 pierde
+                                        # el contexto del upload original.
+                                        try:
+                                            _um_q2 = await db.execute(select(Quote).where(Quote.id == quote_id))
+                                            _um_quote2 = _um_q2.scalar_one_or_none()
+                                            if _um_quote2:
+                                                _user_entry2 = {"role": "user", "content": [{"type": "text", "text": (user_message or "").strip() or f"(adjuntó plano: {plan_filename})"}]}
+                                                _asst_entry2 = {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"}
+                                                await db.execute(update(Quote).where(Quote.id == quote_id).values(messages=list(_um_quote2.messages or []) + [_user_entry2, _asst_entry2]))
+                                                await db.commit()
+                                        except Exception as _e2:
+                                            logging.warning(f"[dual-read] Failed to persist turn: {_e2}")
                                         # ── STOP: agent terminates turn, waits for operator confirmation ──
                                         yield {"type": "done", "content": ""}
                                         return
