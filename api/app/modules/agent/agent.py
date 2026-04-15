@@ -3923,6 +3923,54 @@ class AgentService:
 
             calc_result = calculate_quote(inputs)
 
+            # ── Surface variant negations from the brief (PR #10) ──────────
+            # El LLM normaliza el material name antes de pasarlo a
+            # calculate_quote, por lo que `_find_material` no ve frases como
+            # "NO Extra 2" / "sin Fiamatado" del brief original. Detectamos
+            # acá esas negaciones desde el conversation_history y, si la
+            # variante devuelta coincide con la que el operador negó,
+            # agregamos un warning visible al render del Paso 2.
+            if calc_result.get("ok"):
+                _neg_text = (current_user_message or "").lower()
+                if conversation_history:
+                    for _m in conversation_history:
+                        if _m.get("role") == "user":
+                            _c = _m.get("content", "")
+                            if isinstance(_c, str):
+                                _neg_text += " " + _c.lower()
+                            elif isinstance(_c, list):
+                                for _b in _c:
+                                    if isinstance(_b, dict) and _b.get("type") == "text":
+                                        _neg_text += " " + _b.get("text", "").lower()
+                import re as _re_neg
+                _neg_patterns = [
+                    (r'\bno\s+extra\s*2\b', "extra 2"),
+                    (r'\bsin\s+extra\s*2\b', "extra 2"),
+                    (r'\b(?:no|sin)\s+fiamatado\b', "fiamatado"),
+                    (r'\b(?:no|sin)\s+flameado\b', "flameado"),
+                    (r'\b(?:no|sin)\s+leather\b', "leather"),
+                    (r'\b(?:no|sin)\s+pulido\b', "pulido"),
+                ]
+                _matched_name_lower = (calc_result.get("material_name") or "").lower()
+                for _pat, _kw in _neg_patterns:
+                    if _re_neg.search(_pat, _neg_text) and _kw in _matched_name_lower:
+                        _w = (
+                            f"⚠️ VARIANT NEGADA: el operador escribió "
+                            f"'{_kw}' en el brief negándola, pero el catálogo "
+                            f"solo tiene '{calc_result['material_name']}' como "
+                            "opción. Se cotiza con esa variante — confirmar "
+                            "con operador antes de generar PDF."
+                        )
+                        existing = calc_result.setdefault("warnings", [])
+                        if _w not in existing:
+                            existing.append(_w)
+                        logging.warning(
+                            f"[variant-negated-agent] '{_kw}' negado por brief "
+                            f"pero match es '{calc_result['material_name']}' "
+                            f"para {save_to_qid}"
+                        )
+                        break
+
             # ── Post-calculate deterministic validation ──
             if calc_result.get("ok"):
                 validation = validate_despiece(calc_result)

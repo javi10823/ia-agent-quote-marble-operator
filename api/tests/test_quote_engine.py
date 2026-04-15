@@ -133,6 +133,32 @@ class TestFindMaterial:
         assert "extra" in vn["requested"].lower()
         assert vn["returned"] == result["name"]
 
+    def test_variant_negated_appears_in_paso2_render(self):
+        """PR #10 — el warning de variant_negated debe terminar en el array
+        `warnings` que renderiza build_deterministic_paso2."""
+        from app.modules.quote_engine.calculator import (
+            calculate_quote, build_deterministic_paso2,
+        )
+        result = calculate_quote({
+            "client_name": "DINALE",
+            "material": "Granito Gris Mara — 25mm (SKU estándar, NO Extra 2)",
+            "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.60, "m2_override": 31.37}],
+            "localidad": "rosario",
+            "plazo": "4 meses",
+            "is_edificio": True,
+            "colocacion": False,
+            "pileta": "empotrada_cliente",
+        })
+        assert result.get("ok"), result
+        warnings_text = " ".join(result.get("warnings", []))
+        assert "VARIANT NEGADA" in warnings_text, (
+            f"Expected negation warning in calc warnings, got: {result.get('warnings')}"
+        )
+        paso2 = build_deterministic_paso2(result)
+        assert "VARIANT NEGADA" in paso2, (
+            f"Paso 2 render must surface negation warning:\n{paso2[-800:]}"
+        )
+
     def test_no_negation_no_flag(self):
         """Caso sin negación: no debe haber variant_negated."""
         result = _find_material("Granito Gris Mara")
