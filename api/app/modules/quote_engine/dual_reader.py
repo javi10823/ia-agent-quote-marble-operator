@@ -270,18 +270,33 @@ def _is_obsolete(warning: str, rec_tramos: list[dict]) -> bool:
                 if has:
                     return True
 
-    # "calculado X vs declarado Y [diff N%]" → el modelo comparó su estimado
-    # (típicamente mesadas sola) con la planilla. Si el total reconciliado
-    # de la UI (mesadas + zócalos) ya coincide con el declarado, este warning
-    # es obsoleto: describe un estado intermedio que el reconciliador resolvió
-    # al agregar zócalos que un modelo vio y el otro no.
-    m = re.search(
-        r"calculad\w*\s*(\d+(?:[.,]\d+)?).{0,30}?declarad\w*\s*(\d+(?:[.,]\d+)?)",
+    # "calculado X vs declarado Y [diff N%]" (o al revés: declarado Y ... calculado X)
+    # → el modelo comparó su estimado (típicamente mesadas sola) con la planilla.
+    # Si el total reconciliado de la UI (mesadas + zócalos) ya coincide con el
+    # declarado, este warning es obsoleto: describe un estado intermedio que el
+    # reconciliador resolvió al agregar zócalos que un modelo vio y el otro no.
+    _reported_decl = None
+    _m1 = re.search(
+        r"calculad\w*\s*(\d+(?:[.,]\d+)?).{0,30}?declarad\w*[^\d]{0,10}(\d+(?:[.,]\d+)?)",
         t,
     )
-    if m:
+    _m2 = re.search(
+        r"declarad\w*[^\d]{0,10}(\d+(?:[.,]\d+)?).{0,30}?calculad\w*\s*(\d+(?:[.,]\d+)?)",
+        t,
+    )
+    if _m1:
         try:
-            reported_decl = float(m.group(2).replace(",", "."))
+            _reported_decl = float(_m1.group(2).replace(",", "."))
+        except ValueError:
+            pass
+    elif _m2:
+        try:
+            _reported_decl = float(_m2.group(1).replace(",", "."))
+        except ValueError:
+            pass
+
+    if _reported_decl is not None and _reported_decl > 0:
+        try:
             actual = 0.0
             for tr in rec_tramos:
                 m2 = tr.get("m2", {})
@@ -291,9 +306,9 @@ def _is_obsolete(warning: str, rec_tramos: list[dict]) -> bool:
                     alto = z.get("alto_m", 0) or 0
                     if ml > 0:
                         actual += ml * alto
-            if reported_decl > 0 and abs(actual - reported_decl) / reported_decl < 0.015:
+            if abs(actual - _reported_decl) / _reported_decl < 0.015:
                 return True
-        except (ValueError, ZeroDivisionError):
+        except ZeroDivisionError:
             pass
 
     return False
