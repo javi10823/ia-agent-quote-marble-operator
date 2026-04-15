@@ -33,7 +33,7 @@ async def test_canonicalize_overrides_sectors_from_db(db_session):
         id=qid,
         client_name="DINALE S.A.",
         material="GRANITO GRIS MARA EXTRA 2 ESP",
-        quote_breakdown=canonical,
+        project="Test", quote_breakdown=canonical,
     )
     db_session.add(q)
     await db_session.commit()
@@ -68,7 +68,7 @@ async def test_canonicalize_skips_when_no_match(db_session):
     qid = "test-canonical-002"
     q = Quote(
         id=qid, client_name="OTRO CLIENTE",
-        material="DEKTON KELYA", quote_breakdown={"material_name": "DEKTON KELYA"},
+        material="DEKTON KELYA", project="X", quote_breakdown={"material_name": "DEKTON KELYA"},
     )
     db_session.add(q)
     await db_session.commit()
@@ -88,7 +88,7 @@ async def test_canonicalize_skips_when_no_match(db_session):
 async def test_canonicalize_handles_missing_material_name(db_session):
     """Defensive: qdata sin material_name no debe crashear."""
     qid = "test-canonical-003"
-    q = Quote(id=qid, client_name="X", material=None, quote_breakdown={})
+    q = Quote(id=qid, client_name="X", material=None, project="X", quote_breakdown={})
     db_session.add(q)
     await db_session.commit()
     llm_quotes = [{"sectors": [{"label": "X", "pieces": ["a"]}]}]
