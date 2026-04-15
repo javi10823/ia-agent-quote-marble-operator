@@ -899,6 +899,10 @@ def calculate_quote(input_data: dict) -> dict:
         "merma": merma,
         "piece_details": piece_details,
         "mo_items": mo_items,
+        # MO subtotal solo (pegado + frentín + flete + ... − mo_discount).
+        # Distinto de total_ars que es el GRAND TOTAL (MO + sinks + material si ARS).
+        # Se expone para que el render del Paso 2 muestre TOTAL MO ≠ GRAND TOTAL.
+        "total_mo_ars": total_mo_ars,
         "total_ars": total_ars,
         "total_usd": total_usd,
         "sectors": sectors,
@@ -1029,50 +1033,74 @@ def build_deterministic_paso2(calc: dict) -> str:
     mo_discount_pct = calc.get("mo_discount_pct", 0)
     mo_discount_amount = calc.get("mo_discount_amount", 0)
 
+    # Helper: pick correct unit label per MO item. SKUs cobrados por
+    # metro lineal (FALDON, REGRUESO, CORTE45, BUÑA, MOLDURAs) usan "ml"
+    # — el resto (Colocación m², piezas count) usan "m²" o sin unidad.
+    def _qty_with_unit(mo: dict) -> str:
+        q = mo["quantity"]
+        d = (mo.get("description") or "").lower()
+        is_per_ml = any(
+            kw in d for kw in (
+                "frentín", "frentin", "faldón", "faldon",
+                "regrueso", "corte 45", "corte45", "buña",
+                "moldura", "media caña",
+            )
+        )
+        unit = "ml" if is_per_ml else "m²"
+        if isinstance(q, float) and q != int(q):
+            return f"{q:.2f} {unit}".replace(".", ",")
+        return str(int(q))
+
+    # TOTAL MO subtotal: priorizar el campo del calc; fallback al cálculo
+    # local sumando mo_items y restando mo_discount (compatibilidad con
+    # data legacy persistida sin total_mo_ars).
+    _total_mo_subtotal = calc.get(
+        "total_mo_ars",
+        sum(m["total"] for m in mo_items) - mo_discount_amount,
+    )
+
     lines.append("**MANO DE OBRA**")
     if is_edificio:
-        # Expanded format showing base price (sin IVA), ÷1.05 applied, and final total.
-        # Flete row shows ✗ in the ÷1.05 column to make the rule explicit.
         lines.append("| Item | Cant | Base s/IVA | ÷1.05 | Total c/IVA |")
         lines.append("|---|---|---|---|---|")
         for mo in mo_items:
-            qty = mo["quantity"]
-            qty_str = f"{qty:.2f} m²".replace(".", ",") if isinstance(qty, float) and qty != int(qty) else str(int(qty))
             base = mo.get("base_price", 0)
             is_flete = "flete" in mo["description"].lower()
             div_mark = "—" if is_flete else "✓"
             lines.append(
-                f"| {mo['description']} | {qty_str} | {fmt_ars(round(base))} | {div_mark} | {fmt_ars(mo['total'])} |"
+                f"| {mo['description']} | {_qty_with_unit(mo)} | {fmt_ars(round(base))} | {div_mark} | {fmt_ars(mo['total'])} |"
             )
         if mo_discount_pct:
             lines.append(
                 f"| **Descuento {mo_discount_pct}% sobre MO (excluye flete)** | | | | **-{fmt_ars(mo_discount_amount)}** |"
             )
-        lines.append(f"| **TOTAL MO** | | | | **{fmt_ars(total_ars)}** |")
+        lines.append(f"| **TOTAL MO** | | | | **{fmt_ars(_total_mo_subtotal)}** |")
     else:
         lines.append("| Item | Cant | Precio c/IVA | Total |")
         lines.append("|---|---|---|---|")
         for mo in mo_items:
-            qty = mo["quantity"]
-            qty_str = f"{qty:.2f} m²".replace(".", ",") if isinstance(qty, float) and qty != int(qty) else str(int(qty))
-            lines.append(f"| {mo['description']} | {qty_str} | {fmt_ars(mo['unit_price'])} | {fmt_ars(mo['total'])} |")
-        lines.append(f"| **TOTAL MO** | | | **{fmt_ars(total_ars)}** |")
+            lines.append(f"| {mo['description']} | {_qty_with_unit(mo)} | {fmt_ars(mo['unit_price'])} | {fmt_ars(mo['total'])} |")
+        lines.append(f"| **TOTAL MO** | | | **{fmt_ars(_total_mo_subtotal)}** |")
     lines.append("")
 
-    # Grand total
+    # Grand total — destacado con separador visual y heading
     # Only mention "+ piletas" when there is an actual sink product line (ARS)
     # bundled into total_ars; otherwise it misleads the reader.
-    lines.append("**GRAND TOTAL**")
+    lines.append("---")
+    lines.append("")
+    lines.append("## 💰 GRAND TOTAL")
     if currency == "USD" and total_usd:
         has_sink_product = bool(sinks) and any(
             (s.get("unit_price", 0) * s.get("quantity", 0)) > 0 for s in sinks
         )
         if has_sink_product:
-            lines.append(f"{fmt_ars(total_ars)} mano de obra + piletas + {fmt_usd(total_usd)} material")
+            lines.append(f"### {fmt_ars(total_ars)} mano de obra + piletas + {fmt_usd(total_usd)} material")
         else:
-            lines.append(f"{fmt_ars(total_ars)} mano de obra + {fmt_usd(total_usd)} material")
+            lines.append(f"### {fmt_ars(total_ars)} mano de obra + {fmt_usd(total_usd)} material")
     else:
-        lines.append(f"{fmt_ars(total_ars)} total")
+        lines.append(f"### {fmt_ars(total_ars)}")
+    lines.append("")
+    lines.append("---")
     lines.append("")
 
     # Warnings

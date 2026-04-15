@@ -255,6 +255,84 @@ class TestFrentinDoesNotDoubleCountMaterial:
         assert len(faldon) == 1, f"Expected 1 FALDON label, got: {labels}"
         assert "2.90ML" in faldon[0], f"Expected 'X.XXML FALDON', got: {faldon[0]}"
 
+    def test_total_mo_distinct_from_grand_total(self):
+        """PR #11 — TOTAL MO != GRAND TOTAL. Antes el render usaba total_ars
+        (que es el grand total para ARS) en la fila 'TOTAL MO', dando la
+        impresión de que MO == grand total."""
+        from app.modules.quote_engine.calculator import (
+            calculate_quote, build_deterministic_paso2,
+        )
+        r = calculate_quote({
+            "client_name": "DINALE",
+            "material": "GRANITO GRIS MARA EXTRA 2 ESP",
+            "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.60, "m2_override": 31.37}],
+            "localidad": "rosario", "plazo": "4 meses",
+            "is_edificio": True, "colocacion": False,
+            "pileta": "empotrada_cliente", "pileta_qty": 19,
+            "discount_pct": 15, "mo_discount_pct": 5,
+        })
+        # Calc result expone total_mo_ars (subtotal MO solo)
+        assert "total_mo_ars" in r
+        assert r["total_mo_ars"] < r["total_ars"], (
+            f"MO subtotal ({r['total_mo_ars']}) debe ser < grand total "
+            f"({r['total_ars']}) cuando hay material"
+        )
+        out = build_deterministic_paso2(r)
+        # La fila TOTAL MO debe mostrar el subtotal MO, NO el grand total
+        import re
+        mo_row_match = re.search(r'\*\*TOTAL MO\*\*[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\*\*\$([\d.]+)', out)
+        if not mo_row_match:
+            # try simpler format (residential, fewer columns)
+            mo_row_match = re.search(r'\*\*TOTAL MO\*\*[^|]*\|[^|]*\|[^|]*\|[^|]*\*\*\$([\d.]+)', out)
+        assert mo_row_match, f"No TOTAL MO row found in:\n{out}"
+        rendered_mo = int(mo_row_match.group(1).replace(".", ""))
+        assert rendered_mo == r["total_mo_ars"], (
+            f"TOTAL MO render ({rendered_mo}) debe igualar total_mo_ars "
+            f"({r['total_mo_ars']}), NO total_ars ({r['total_ars']})"
+        )
+
+    def test_grand_total_visually_emphasized(self):
+        """PR #11 — Grand Total debe destacarse visualmente en el render
+        para que el operador lo identifique de un vistazo."""
+        from app.modules.quote_engine.calculator import (
+            calculate_quote, build_deterministic_paso2,
+        )
+        r = calculate_quote({
+            "client_name": "T", "material": "GRANITO GRIS MARA EXTRA 2 ESP",
+            "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.60}],
+            "localidad": "rosario", "plazo": "30 dias",
+            "is_edificio": True, "colocacion": False,
+            "pileta": "empotrada_cliente",
+        })
+        out = build_deterministic_paso2(r)
+        assert "## 💰 GRAND TOTAL" in out, "Grand total debe usar heading h2 con emoji"
+        assert "### " in out, "Grand total amount debe usar heading h3"
+
+    def test_frentin_qty_uses_ml_unit(self):
+        """PR #12 — La fila de Armado frentín en MO debe decir 'ml' no 'm²'."""
+        from app.modules.quote_engine.calculator import (
+            calculate_quote, build_deterministic_paso2,
+        )
+        r = calculate_quote({
+            "client_name": "T", "material": "GRANITO GRIS MARA EXTRA 2 ESP",
+            "pieces": [
+                {"description": "Mesada", "largo": 2.0, "prof": 0.60, "m2_override": 5.0},
+                {"description": "Faldón recto", "largo": 2.90, "prof": 0.05},
+            ],
+            "localidad": "rosario", "plazo": "30 dias",
+            "is_edificio": True, "colocacion": False,
+            "pileta": "empotrada_cliente", "frentin": True,
+        })
+        out = build_deterministic_paso2(r)
+        # Buscar la fila de Armado frentín y asegurar 'ml' (no 'm²')
+        for line in out.splitlines():
+            if "Armado frentín" in line or "Armado frentin" in line:
+                assert "ml" in line, f"Frentín debe usar 'ml': {line}"
+                assert "m²" not in line, f"Frentín NO debe decir 'm²': {line}"
+                break
+        else:
+            raise AssertionError(f"No 'Armado frentín' row found:\n{out}")
+
     def test_build_paso2_omits_faldon_row(self):
         """PR #9 — el render del Paso 2 NO debe incluir fila para faldón.
         DINALE 15/04/2026: aparecía 'Faldón recto 2,9 x 0,05 → 0,00' en
