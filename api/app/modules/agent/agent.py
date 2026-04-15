@@ -664,15 +664,26 @@ TOOLS = [
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 
 def _extract_quote_info(user_message: str) -> dict:
-    """Extract client name and material from user message for early DB update."""
+    """Extract client name, project (obra) and material from user message.
+
+    Reconoce múltiples formatos típicos del operador:
+      - "Cliente: X, Obra: Y"         (keywords explícitas)
+      - "Munge, Obra: A1335"          (nombre + "obra:")
+      - "Munge / A1335"               (separador simple cliente/obra)
+      - "Pérez — obra Casa Laprida"   (dash)
+      - "cliente X proyecto Y material Z"
+    """
     import re
     info = {}
+    msg = (user_message or "").strip()
+    if not msg:
+        return info
 
-    # Try to find client name after "cliente" keyword (case insensitive)
-    # Cut at business keywords that signal the name ended
+    # Delimitadores que señalan fin del nombre. "obra" y "proyecto" son
+    # límite válido para cortar el nombre del cliente cuando vienen juntos.
     _DELIMITERS = (
         r"\s*,|\s+con\s|\s+en\s|\s+lleva|\s+sin\s"
-        r"|\s+proyecto\s|\s+presupuesto\s|\s+mesada\s|\s+cocina\s"
+        r"|\s+proyecto\s|\s+obra\s|\s+presupuesto\s|\s+mesada\s|\s+cocina\s"
         r"|\s+ba[ñn]o\s|\s+departamento\s|\s+edificio\s|\s+cotizar\s"
         r"|\s+medidas\s|\s+colocacion\s|\s+colocación\s|\s+z[oó]calo\s"
         r"|\s+anafe\s|\s+bacha\s|\s+pileta\s|\s+flete\s|\s+demora\s"
@@ -680,21 +691,41 @@ def _extract_quote_info(user_message: str) -> dict:
         r"|\s+revestimiento\s|\s+frentin\s|\s+frent[ií]n\s|\s+regrueso\s"
         r"|\s+pulido\s|\s+descuento\s|\s+consultar\s"
     )
+    # 1) "Cliente: X" / "Clienta: X" explícito
     match = re.search(
         rf"(?:cliente|clienta)[:\s]+(.+?)(?:{_DELIMITERS}|\n|$)",
-        user_message, re.IGNORECASE,
+        msg, re.IGNORECASE,
     )
     if match:
-        name = match.group(1).strip()
-        info["client_name"] = name.title()
+        info["client_name"] = match.group(1).strip().title()
 
-    # Try to find project name
+    # 2) "Proyecto: Y" / "Obra: Y" (ambos aceptados)
     proj_match = re.search(
-        r"(?:proyecto)[:\s]+(.+?)(?:\n|$)",
-        user_message, re.IGNORECASE,
+        r"(?:proyecto|obra)[:\s]+(.+?)(?:\n|,|$)",
+        msg, re.IGNORECASE,
     )
     if proj_match:
         info["project"] = proj_match.group(1).strip().title()
+
+    # 3) Fallback cliente: si no hay keyword "cliente" pero hay estructura
+    #    "X, Obra: Y" o "X — Obra Y" → X es el cliente.
+    if not info.get("client_name"):
+        m = re.match(
+            r"\s*([A-Za-zÁÉÍÓÚÑáéíóúñ][A-Za-zÁÉÍÓÚÑáéíóúñ0-9\s\.'&]{1,80}?)\s*[,—\-]\s*(?:obra|proyecto)\b",
+            msg, re.IGNORECASE,
+        )
+        if m:
+            info["client_name"] = m.group(1).strip().title()
+
+    # 4) Fallback adicional: "Nombre / Obra" — separador /
+    if not info.get("client_name") and not info.get("project"):
+        m2 = re.match(
+            r"\s*([A-Za-zÁÉÍÓÚÑáéíóúñ][A-Za-zÁÉÍÓÚÑáéíóúñ\s\.'&]{1,80}?)\s*/\s*(.+?)$",
+            msg,
+        )
+        if m2:
+            info["client_name"] = m2.group(1).strip().title()
+            info["project"] = m2.group(2).strip().title()
 
     # Try to find material name
     material_keywords = [
