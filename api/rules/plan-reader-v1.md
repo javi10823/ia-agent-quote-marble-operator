@@ -69,11 +69,6 @@ directo:
 NO marques como ambigüedad ningún dato que esté cubierto por el bloque
 ESPECIFICACIONES.
 
-⚠️ TOLERANCIA DE M² — NO REPORTES DIFERENCIAS MENORES:
-No anotes en `ambiguedades` diferencias de m² menores al 5% respecto del
-m² declarado en planilla. Son tolerancia normal de redondeo / zócalos no
-contados en la planilla. Solo reportá discrepancias significativas (≥5%).
-
 ---
 
 ## REGLA — FRENTIN / FALDÓN: SOLO POR EVIDENCIA EXPLÍCITA
