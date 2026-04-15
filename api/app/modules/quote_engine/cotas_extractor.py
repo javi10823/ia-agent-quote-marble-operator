@@ -326,3 +326,135 @@ def format_cotas_for_prompt(cotas: list[Cota]) -> str:
             f"{prefix_str}{rot_str}"
         )
     return "\n".join(lines)
+
+
+# ═══════════════════════════════════════════════════════
+# Specs extraction — leyendas / tablas de características
+# ═══════════════════════════════════════════════════════
+#
+# El plano normalmente tiene, al costado del dibujo o debajo, una tabla de
+# características con texto tipo "ZOCALOS: 7 cm de altura", "PILETA: Johnson
+# LUXOR COMPACT SI71", "MATERIAL: Purastone Blanco Paloma", etc.
+#
+# `extract_cotas_from_drawing` ignora todo esto porque filtra por decimales
+# y excluye el área de la tabla (x0 >= table_x0). Resultado: los modelos de
+# visión NO reciben los datos explícitos del plano y terminan reportando
+# como "ambigüedad" cosas que están escritas literalmente al lado del dibujo.
+#
+# Esta extractor capta TODO el texto legible (sin filtro numérico) de áreas
+# candidatas a leyenda y lo formatea para inyectar en el prompt.
+
+# Keys conocidas — líneas con alguna de estas se consideran "spec útil"
+_SPEC_KEYS = (
+    "zocalo", "zócalo", "zocalos", "zócalos",
+    "pileta", "bacha",
+    "material", "mármol", "marmol", "granito", "silestone", "dekton",
+    "neolith", "purastone", "puraprima", "laminatto", "quartz",
+    "espesor", "20mm", "30mm", "2cm", "3cm",
+    "frentin", "faldón", "faldon",
+    "regrueso",
+    "pulido", "pulida", "canto",
+    "color", "terminación", "terminacion",
+    "altura", "cm de altura",
+)
+
+
+def _is_spec_line(text: str) -> bool:
+    """True si la línea parece contener una especificación útil (no un número suelto)."""
+    t = text.lower().strip()
+    if not t or len(t) < 3:
+        return False
+    # Solo un número → es una cota, no spec
+    if COTA_REGEX.match(t):
+        return False
+    return any(k in t for k in _SPEC_KEYS)
+
+
+def _group_words_into_lines(words: list[dict], y_tolerance: float = 3.0) -> list[str]:
+    """Agrupa words por línea (misma `top` ± tolerancia) y ordena x0."""
+    if not words:
+        return []
+    sorted_ws = sorted(words, key=lambda w: (w.get("top", 0), w.get("x0", 0)))
+    lines: list[list[dict]] = []
+    for w in sorted_ws:
+        if lines and abs(w.get("top", 0) - lines[-1][-1].get("top", 0)) < y_tolerance:
+            lines[-1].append(w)
+        else:
+            lines.append([w])
+    return [
+        " ".join(str(w.get("text", "")).strip() for w in ln if w.get("text"))
+        for ln in lines
+    ]
+
+
+def extract_specs_from_table(page, table_x0: float) -> list[str]:
+    """Extraé líneas de la tabla de características / leyenda del plano.
+
+    Captura texto a la DERECHA de table_x0 (típicamente la tabla de
+    especificaciones) y también el margen inferior del área del dibujo
+    (notas "ZOCALOS 7 cm", etc.). Filtra por keywords conocidas para
+    descartar ruido (nombre del estudio, logo, escalas, etc.).
+    """
+    if not page:
+        return []
+    try:
+        raw_words = page.extract_words(use_text_flow=True) or []
+    except Exception as e:
+        logger.warning(f"[specs] extract_words failed: {e}")
+        return []
+
+    # Tabla lateral: x0 >= table_x0. Además, capturamos cualquier texto del
+    # dibujo que matchee keywords (notas al pie tipo "ZOCALOS 7 cm altura").
+    page_h = float(getattr(page, "height", 0) or 0)
+    footer_cutoff = page_h * 0.95 if page_h else float("inf")
+    caratula_cutoff = page_h * 0.05 if page_h else 0
+
+    table_words = [
+        w for w in raw_words
+        if w.get("x0", 0) >= table_x0 and caratula_cutoff < w.get("top", 0) < footer_cutoff
+    ]
+    drawing_words_with_spec_kw = [
+        w for w in raw_words
+        if w.get("x0", 0) < table_x0
+        and any(k in str(w.get("text", "")).lower() for k in _SPEC_KEYS)
+    ]
+
+    lines = _group_words_into_lines(table_words + drawing_words_with_spec_kw)
+    specs = [ln for ln in lines if _is_spec_line(ln)]
+    # Dedup preservando orden
+    seen: set[str] = set()
+    out: list[str] = []
+    for s in specs:
+        key = s.lower().strip()
+        if key not in seen:
+            seen.add(key)
+            out.append(s.strip())
+    logger.info(f"[specs] Extracted {len(out)} spec lines from table/legend: {out}")
+    return out
+
+
+def format_specs_for_prompt(specs: list[str]) -> str:
+    """Formatea las especificaciones como bloque para inyectar en el prompt."""
+    if not specs:
+        return ""
+    lines = [
+        "ESPECIFICACIONES EXPLÍCITAS DEL PLANO (texto literal — NO las marques como ambigüedad):",
+        "Si alguna de estas líneas cubre un dato (altura de zócalo, modelo de pileta, material,",
+        "espesor, etc.), usá ese valor directo y NO reportes 'no especificado' en ambiguedades.",
+        "",
+    ]
+    for s in specs:
+        lines.append(f"- {s}")
+    return "\n".join(lines)
+
+
+def format_cotas_and_specs(cotas: list[Cota], specs: list[str]) -> str:
+    """Combine cotas + specs en un único bloque de contexto."""
+    parts = []
+    cotas_block = format_cotas_for_prompt(cotas)
+    if cotas_block:
+        parts.append(cotas_block)
+    specs_block = format_specs_for_prompt(specs)
+    if specs_block:
+        parts.append(specs_block)
+    return "\n\n".join(parts)
