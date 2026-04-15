@@ -244,6 +244,7 @@ class TestDeterministicPaso2:
         from app.modules.quote_engine.calculator import calculate_quote, build_deterministic_paso2
         result = calculate_quote({
             "client_name": "Test", "project": "Cocina",
+            "project": "Cocina",
             "material": "Blanco Paloma", "catalog": "materials-purastone", "sku": "PALOMA",
             "pieces": [{"largo": 1.72, "prof": 0.75, "descripcion": "Mesada"}],
             "localidad": "Rosario", "colocacion": True,

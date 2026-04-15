@@ -7,6 +7,7 @@ from app.modules.quote_engine.calculator import calculate_quote, _find_flete
 def _base_input(**overrides):
     base = {
         "client_name": "Test",
+        "project": "Cocina",
         "material": "Silestone Blanco Norte",
         "pieces": [
             {"description": "Mesada", "largo": 2.0, "prof": 0.6},

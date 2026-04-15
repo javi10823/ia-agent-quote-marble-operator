@@ -16,6 +16,7 @@ class TestSinkTypePost:
         with patch("app.modules.quote_engine.router.upload_to_drive", return_value={"ok": True, "drive_url": "https://drive.test"}):
             resp = await client.post("/api/v1/quote", json={
                 "client_name": "Test Sink",
+                "project": "Cocina",
                 "material": "Silestone Blanco Norte",
                 "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
                 "localidad": "Rosario",
@@ -44,6 +45,7 @@ class TestSinkTypePost:
         with patch("app.modules.quote_engine.router.upload_to_drive", return_value={"ok": True, "drive_url": "https://drive.test"}):
             resp = await client.post("/api/v1/quote", json={
                 "client_name": "Test No Sink",
+                "project": "Cocina",
                 "material": "Silestone Blanco Norte",
                 "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
                 "localidad": "Rosario",
@@ -60,6 +62,7 @@ class TestSinkTypePost:
         """Quote without pieces (pending review) should also persist sink_type."""
         resp = await client.post("/api/v1/quote", json={
             "client_name": "Test Pending",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "localidad": "Rosario",
             "pileta": "empotrada_johnson",
@@ -79,6 +82,7 @@ class TestSinkTypePost:
         """Invalid basin_count or mount_type should be rejected by schema."""
         resp = await client.post("/api/v1/quote", json={
             "client_name": "Test Invalid",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "localidad": "Rosario",
             "sink_type": {"basin_count": "triple", "mount_type": "abajo"},

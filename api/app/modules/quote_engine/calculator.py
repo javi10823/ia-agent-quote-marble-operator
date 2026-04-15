@@ -453,7 +453,26 @@ def calculate_quote(input_data: dict) -> dict:
     warnings: list[str] = []  # Collect warnings visible to the agent
 
     client_name = input_data["client_name"]
-    project = input_data.get("project", "")
+    project = (input_data.get("project") or "").strip()
+    # PR #15 — proyecto obligatorio. El operador siempre da contexto de la
+    # OBRA en el brief (ej: "OBRA: Ampliación Unidad Penitenciaria N°12").
+    # Antes el calculator caía a default "Cocina" cuando project venía vacío,
+    # lo que enmascaraba que la agente no había extraído la información.
+    # Ahora retornamos error explícito → la agente debe pedirlo al operador.
+    # "Cocina" se permite (presupuestos residenciales suelen usarlo como
+    # proyecto). Lo que NO se permite es vacío o placeholders genéricos
+    # tipo "n/a", "sin proyecto", "-".
+    _placeholder_projects = {"", "n/a", "n/d", "sin proyecto", "sin obra", "-", "—", "."}
+    if project.lower().strip() in _placeholder_projects:
+        return {
+            "ok": False,
+            "error": (
+                "⛔ Falta el nombre del proyecto/obra. Es obligatorio. "
+                "Buscarlo en el brief del operador (suele venir como 'OBRA:', "
+                "'PROYECTO:', 'Obra:'). Si no aparece, PEDIRLO al operador "
+                "antes de calcular: '¿Cuál es el nombre de la obra/proyecto?'."
+            ),
+        }
     material_name = input_data["material"]
     pieces = input_data["pieces"]
     localidad = input_data.get("localidad") or "rosario"  # Default Rosario if empty
@@ -872,7 +891,7 @@ def calculate_quote(input_data: dict) -> dict:
             piece_labels.append(lbl)
     piece_labels = [f"{lbl} (×{seen[lbl]})" if seen[lbl] > 1 else lbl for lbl in piece_labels]
     if piece_labels:
-        sectors.append({"label": project or "Cocina", "pieces": piece_labels})
+        sectors.append({"label": project, "pieces": piece_labels})
 
     # ── Delivery days: apply tier by m² only if range_enabled in config ──
     import re as _re_plazo
@@ -891,7 +910,7 @@ def calculate_quote(input_data: dict) -> dict:
     return {
         "ok": True,
         "client_name": client_name,
-        "project": project or "Cocina",
+        "project": project,
         "date": date_str.replace("/", "."),
         "delivery_days": plazo,
         "material_name": mat_result.get("name", material_name),

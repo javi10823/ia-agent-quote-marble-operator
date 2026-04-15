@@ -99,6 +99,7 @@ class TestListPieces:
         lp_result = list_pieces(pieces)
         cq_result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": pieces,
             "localidad": "Rosario",
@@ -189,6 +190,7 @@ class TestMesadaConZocaloNoCollapsed:
         """calculate_quote (código en sectors) también debe preservar label."""
         result = calculate_quote({
             "client_name": "TEST",
+            "project": "Cocina",
             "material": "GRANITO GRIS MARA EXTRA 2 ESP",
             "pieces": [
                 {"description": "ME01-B Mesada recta c/zócalo h:10cm",
@@ -263,6 +265,7 @@ class TestFrentinDoesNotDoubleCountMaterial:
         from app.modules.quote_engine.calculator import calculate_quote
         result = calculate_quote({
             "client_name": "DINALE", "material": "GRANITO GRIS MARA EXTRA 2 ESP",
+            "project": "Cocina",
             "pieces": [
                 {"description": "ME01-B Mesada recta c/zócalo h:10cm",
                  "largo": 2.15, "prof": 0.60, "m2_override": 1.625},
@@ -297,6 +300,7 @@ class TestFrentinDoesNotDoubleCountMaterial:
         )
         r = calculate_quote({
             "client_name": "DINALE",
+            "project": "Cocina",
             "material": "GRANITO GRIS MARA EXTRA 2 ESP",
             "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.60, "m2_override": 31.37}],
             "localidad": "rosario", "plazo": "4 meses",
@@ -332,6 +336,7 @@ class TestFrentinDoesNotDoubleCountMaterial:
         )
         r = calculate_quote({
             "client_name": "T", "material": "GRANITO GRIS MARA EXTRA 2 ESP",
+            "project": "Cocina",
             "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.60}],
             "localidad": "rosario", "plazo": "30 dias",
             "is_edificio": True, "colocacion": False,
@@ -348,6 +353,7 @@ class TestFrentinDoesNotDoubleCountMaterial:
         )
         r = calculate_quote({
             "client_name": "T", "material": "GRANITO GRIS MARA EXTRA 2 ESP",
+            "project": "Cocina",
             "pieces": [
                 {"description": "Mesada", "largo": 2.0, "prof": 0.60, "m2_override": 5.0},
                 {"description": "Faldón recto", "largo": 2.90, "prof": 0.05},
@@ -373,6 +379,7 @@ class TestFrentinDoesNotDoubleCountMaterial:
         from app.modules.quote_engine.calculator import build_deterministic_paso2
         calc_result = calculate_quote({
             "client_name": "DINALE",
+            "project": "Cocina",
             "material": "GRANITO GRIS MARA EXTRA 2 ESP",
             "pieces": [
                 {"description": "Mesada", "largo": 2.0, "prof": 0.60, "m2_override": 31.37},
@@ -399,6 +406,7 @@ class TestFrentinDoesNotDoubleCountMaterial:
         línea MO 'Armado frentín' con ml (no m²)."""
         result = calculate_quote({
             "client_name": "DINALE",
+            "project": "Cocina",
             "material": "GRANITO GRIS MARA EXTRA 2 ESP",
             "pieces": [
                 {"description": "Mesada", "largo": 2.0, "prof": 0.60, "m2_override": 31.37},

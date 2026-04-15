@@ -184,6 +184,22 @@ Si el operador NO declara m² per-pieza (flujo normal), NO pasar `m2_override`.
 
 ---
 
+## ⛔ REGLA — PROYECTO/OBRA es OBLIGATORIO
+
+Antes de llamar `calculate_quote` siempre **extraer el nombre del proyecto/obra**
+del brief. Suele venir como:
+- `OBRA: <nombre>` (ej: `OBRA: Ampliación Unidad Penitenciaria N°12 — Rosario`)
+- `PROYECTO: <nombre>`
+- `Obra: <nombre>`
+
+Si el brief NO menciona obra/proyecto → **PEDIRLO al operador antes de calcular**:
+> "¿Cuál es el nombre de la obra o proyecto?"
+
+NO inventar "Cocina" / "Sin proyecto" / "N/A" como default. El campo aparece
+en el header del PDF/Excel y es lo primero que ve el cliente.
+
+---
+
 ## ⛔ REGLA — MANO DE OBRA LISTADA ES EXHAUSTIVA
 
 Cuando el operador escribe un brief con la sección **MANO DE OBRA** listando
