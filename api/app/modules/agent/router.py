@@ -1432,50 +1432,6 @@ async def chat(
     plan_filename = validated_files[0][1] if validated_files else None
     extra_files = validated_files[1:] if len(validated_files) > 1 else []
 
-    # ── GATE: cliente + proyecto bloqueantes antes de procesar plano ─────────
-    # Si el operador adjunta archivos pero el quote aún no tiene cliente y/o
-    # proyecto, NO arrancamos el agente. Cortamos acá con una pregunta
-    # directa. El agente se salteaba esta regla cuando venía un plano.
-    _needs_client = not (quote.client_name or "").strip()
-    _needs_project = not (quote.project or "").strip()
-    if validated_files and (_needs_client or _needs_project):
-        if _needs_client and _needs_project:
-            _gate_msg = (
-                "Antes de procesar el plano necesito **cliente** y **proyecto** "
-                "(p. ej. *Cliente: Pérez — Obra: Casa Laprida 1245*). ¿Me los pasás?"
-            )
-        elif _needs_client:
-            _gate_msg = "Antes de procesar el plano: ¿**nombre del cliente**?"
-        else:
-            _gate_msg = "Antes de procesar el plano: ¿**nombre del proyecto / obra**?"
-
-        # Persistimos el turno para que quede en el historial del chat
-        _files_note = ", ".join(vf[1] for vf in validated_files)
-        _user_entry = {
-            "role": "user",
-            "content": (message or "") + (f"\n\n[archivos adjuntos: {_files_note}]" if _files_note else ""),
-        }
-        _assistant_entry = {"role": "assistant", "content": _gate_msg}
-        _updated = list(quote.messages or []) + [_user_entry, _assistant_entry]
-        await db.execute(
-            update(Quote).where(Quote.id == quote_id).values(messages=_updated)
-        )
-        await db.commit()
-
-        async def _gate_stream():
-            yield f"data: {json.dumps({'type': 'text', 'content': _gate_msg})}\n\n"
-            yield f"data: {json.dumps({'type': 'done', 'content': ''})}\n\n"
-
-        return StreamingResponse(
-            _gate_stream(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",
-                "Connection": "keep-alive",
-            },
-        )
-
     async def event_stream():
         full_response = ""
         try:
