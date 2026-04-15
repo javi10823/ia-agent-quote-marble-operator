@@ -1927,7 +1927,29 @@ class AgentService:
                                     logging.warning(f"[cotas+specs] Extraction failed, falling back to vision-only: {e}")
 
                                 # ── DUAL READ: send crop to Sonnet (+ Opus if unsure) ──
+                                # Skip si ya corrió OK para este quote. El archivo persiste
+                                # entre mensajes pero dual_read es costoso y determinístico:
+                                # no tiene sentido re-ejecutarlo en cada turno. Si el operador
+                                # quiere re-leer, usa "verificar con Opus" de la card.
                                 try:
+                                    _dr_check_q = await db.execute(select(Quote).where(Quote.id == quote_id))
+                                    _dr_check_quote = _dr_check_q.scalar_one_or_none()
+                                    _existing_dr = (
+                                        (_dr_check_quote.quote_breakdown or {}).get("dual_read_result")
+                                        if _dr_check_quote else None
+                                    )
+                                except Exception:
+                                    _existing_dr = None
+
+                                _skip_dual = bool(_existing_dr) and not _existing_dr.get("error")
+                                if _skip_dual:
+                                    logging.info(
+                                        f"[dual-read] skip (already ran) for quote {quote_id}"
+                                    )
+
+                                try:
+                                    if _skip_dual:
+                                        raise RuntimeError("__dual_read_skip__")
                                     from app.modules.quote_engine.dual_reader import dual_read_crop
                                     _dual_enabled = ai_cfg.get("dual_read_enabled", True) if 'ai_cfg' in dir() else get_ai_config().get("dual_read_enabled", True)
                                     yield {"type": "action", "content": "📐 Leyendo medidas del plano..."}
@@ -1972,7 +1994,10 @@ class AgentService:
                                         logging.warning(f"[dual-read] Error: {_dual_result.get('error')}")
                                         # Error → fall through to normal Claude flow
                                 except Exception as e:
-                                    logging.error(f"[dual-read] Exception: {e}", exc_info=True)
+                                    if str(e) == "__dual_read_skip__":
+                                        pass  # no-op — skip intencional
+                                    else:
+                                        logging.error(f"[dual-read] Exception: {e}", exc_info=True)
                                     # Non-fatal — fall through to normal Claude flow
 
                         except Exception as e:
