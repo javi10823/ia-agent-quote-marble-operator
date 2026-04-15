@@ -391,6 +391,7 @@ class TestQuoteEngine:
         """No pieces, no notes → DRAFT."""
         resp = await client.post("/api/v1/quote", json={
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "localidad": "Rosario",
         })
@@ -406,6 +407,7 @@ class TestQuoteEngine:
         """Notes present but no pieces → PENDING (operator has data)."""
         resp = await client.post("/api/v1/quote", json={
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "localidad": "Rosario",
             "notes": "Plano adjunto: Marmoleria.pdf. Zócalo de 5cm.",
@@ -420,6 +422,7 @@ class TestQuoteEngine:
         """With notes → merma motivo should say 'revision por operador'."""
         resp = await client.post("/api/v1/quote", json={
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "localidad": "Rosario",
             "notes": "Plano adjunto",
@@ -432,6 +435,7 @@ class TestQuoteEngine:
         """Without notes → merma motivo should say 'medidas'."""
         resp = await client.post("/api/v1/quote", json={
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "localidad": "Rosario",
         })
@@ -443,6 +447,7 @@ class TestQuoteEngine:
         """Plazo not provided should not cause validation error."""
         resp = await client.post("/api/v1/quote", json={
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "localidad": "Rosario",
             "notes": "Solo un test",
@@ -455,6 +460,7 @@ class TestQuoteEngine:
         """New fields should be saved in quote creation."""
         resp = await client.post("/api/v1/quote", json={
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "localidad": "Rosario",
             "colocacion": True,
@@ -474,6 +480,7 @@ class TestQuoteEngine:
         """Fuzzy match should correct typos in material name."""
         resp = await client.post("/api/v1/quote", json={
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Sileston Blanco Nort",  # typo
             "localidad": "Rosario",
             "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
@@ -489,6 +496,7 @@ class TestQuoteEngine:
         """Fuzzy match should add correction note to quote."""
         resp = await client.post("/api/v1/quote", json={
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Sileston Blanco Nort",
             "localidad": "Rosario",
             "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
@@ -502,6 +510,7 @@ class TestQuoteEngine:
         """Exact match should not trigger fuzzy or add correction note."""
         resp = await client.post("/api/v1/quote", json={
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "localidad": "Rosario",
             "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
@@ -515,6 +524,7 @@ class TestQuoteEngine:
         """Web quotes should have source=web."""
         resp = await client.post("/api/v1/quote", json={
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "localidad": "Rosario",
             "notes": "test quote",
