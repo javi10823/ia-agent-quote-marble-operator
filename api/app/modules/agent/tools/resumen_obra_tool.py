@@ -175,7 +175,14 @@ def _build_resumen_data(
     quotes: list[Quote], notes: str
 ) -> dict[str, Any]:
     """Shape the dict expected by _generate_resumen_obra_pdf from N quotes."""
-    client_name = next((q.client_name for q in quotes if q.client_name), "")
+    # PR #17 — nombre canónico del cliente: usar el MÁS CORTO del grupo.
+    # Cuando el dashboard agrupa variantes como "Estudio 72" y
+    # "Estudio 72 — Fideicomiso Ventus" (mismo cliente, nombre largo con
+    # proyecto embebido), el PDF del resumen usa la forma "núcleo" para
+    # que el cliente lo vea consistente. Si hay empate de longitud, cae
+    # al que aparece primero (determinístico por orden de entrada).
+    _candidates = [q.client_name.strip() for q in quotes if (q.client_name or "").strip()]
+    client_name = min(_candidates, key=len) if _candidates else ""
     project = next((q.project for q in quotes if q.project), "")
 
     material_rows: list[dict] = []
