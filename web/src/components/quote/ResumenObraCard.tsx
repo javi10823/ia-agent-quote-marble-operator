@@ -73,16 +73,14 @@ export function ResumenObraCard({
           <div className="text-[12px] text-t4 mb-3 italic">Sin notas adicionales.</div>
         )}
 
+        {/*
+          PR #23 — solo ofrecer Drive. El operador pidió esconder el botón
+          'Descargar PDF' del card del resumen porque el flujo real es
+          mandar el link de Drive al cliente, no descargar local. Si Drive
+          falló (drive_url null) caemos al PDF local como fallback.
+        */}
         <div className="flex gap-2 flex-wrap">
-          <a
-            href={record.pdf_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium font-sans no-underline border border-b1 bg-transparent text-t2 hover:border-b2 hover:text-t1 transition"
-          >
-            📄 Descargar PDF
-          </a>
-          {record.drive_url && (
+          {record.drive_url ? (
             <a
               href={record.drive_url}
               target="_blank"
@@ -90,6 +88,16 @@ export function ResumenObraCard({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium font-sans no-underline border border-b1 bg-transparent text-t2 hover:border-b2 hover:text-t1 transition"
             >
               ☁ Ver en Drive
+            </a>
+          ) : (
+            <a
+              href={record.pdf_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium font-sans no-underline border border-b1 bg-transparent text-t2 hover:border-b2 hover:text-t1 transition"
+              title="Drive no disponible — abriendo PDF local"
+            >
+              📄 Descargar PDF
             </a>
           )}
         </div>
