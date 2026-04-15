@@ -6,21 +6,24 @@ forma más corta (núcleo del cliente).
 """
 import pytest
 
-from app.models.quote import Quote
 from app.modules.agent.tools.resumen_obra_tool import _build_resumen_data
 
 
-def _make(cid: str, name: str) -> Quote:
-    q = Quote.__new__(Quote)
-    q.id = cid
-    q.client_name = name
-    q.project = "Fideicomiso Ventus"
-    q.quote_breakdown = {"mo_items": []}
-    # Fields _collect_material_row might touch
-    q.material = "GRANITO CEARA"
-    q.total_ars = 0
-    q.total_usd = 0
-    return q
+class _Q:
+    """Duck-typed stub — evita instanciar el modelo SQLAlchemy."""
+
+    def __init__(self, cid: str, name: str) -> None:
+        self.id = cid
+        self.client_name = name
+        self.project = "Fideicomiso Ventus"
+        self.quote_breakdown = {"mo_items": []}
+        self.material = "GRANITO CEARA"
+        self.total_ars = 0
+        self.total_usd = 0
+
+
+def _make(cid: str, name: str):
+    return _Q(cid, name)
 
 
 def test_canonical_picks_shortest_client_name():
