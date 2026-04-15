@@ -30,8 +30,7 @@ def _safe_filename(client_name: str, project: str) -> str:
 
 def _render_condiciones_pdf(pdf_path: Path, data: dict) -> None:
     """Render Condiciones de Contratación as a clean A4 PDF (fpdf2)."""
-    from app.modules.agent.tools.document_tool import _make_safe_fpdf
-    from app.core.static import TEMPLATES_DIR
+    from app.modules.agent.tools.document_tool import _make_safe_fpdf, TEMPLATES_DIR
 
     FPDF = _make_safe_fpdf()
     pdf = FPDF(orientation="P", unit="mm", format="A4")
