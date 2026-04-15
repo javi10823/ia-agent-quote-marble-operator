@@ -88,6 +88,41 @@ def test_fuzzy_same_both_none_is_true():
     assert are_fuzzy_same_client(None, None) is True
 
 
+# ── PR #16 — prefix/substring fallback ──────────────────────────────────────
+
+@pytest.mark.parametrize(
+    "a,b",
+    [
+        # Caso Estudio 72 15/04/2026 — core tokens vacíos pero un nombre
+        # contiene al otro. Debe considerarse mismo cliente.
+        ("Estudio 72", "Estudio 72 — Fideicomiso Ventus"),
+        ("Estudio 72 — Fideicomiso Ventus", "Estudio 72"),
+        # DINALE y otros apocopados comunes.
+        ("DINALE", "DINALE S.A."),
+        ("DINALE S.A.", "DINALE"),
+        # Separadores distintos (guion, em-dash, slash).
+        ("Cliente Foo", "Cliente Foo - Obra Bar"),
+        ("Cliente Foo", "Cliente Foo / Obra Bar"),
+    ],
+)
+def test_fuzzy_same_prefix_substring(a, b):
+    assert are_fuzzy_same_client(a, b) is True
+
+
+@pytest.mark.parametrize(
+    "a,b",
+    [
+        # "sa" ⊂ "Sacasa Constructora" pero NO debe matchear — el short
+        # tiene 2 chars, el gate requiere >=3.
+        ("SA", "Sacasa Constructora"),
+        # Substrings NO alineados a palabras NO deben matchear.
+        ("Carlos", "Arqcarlos Perez"),  # "carlos" aparece pero sin boundary
+    ],
+)
+def test_fuzzy_same_prefix_does_not_over_match(a, b):
+    assert are_fuzzy_same_client(a, b) is False
+
+
 # ── grouping ─────────────────────────────────────────────────────────────
 
 class _Q:

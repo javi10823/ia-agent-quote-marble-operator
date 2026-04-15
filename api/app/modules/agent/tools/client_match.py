@@ -89,7 +89,17 @@ def are_fuzzy_same_client(a: str | None, b: str | None) -> bool:
 
     Decision rule:
       1. If both normalize to equal strings → same (fast path).
-      2. Else, their core-token sets must share at least one token of len>=4.
+      2. **Prefix/substring fallback**: one normalized name contiene a la
+         otra como substring alineado a palabras. Cubre:
+           - "DINALE" ⊂ "DINALE S.A."
+           - "Estudio 72" ⊂ "Estudio 72 — Fideicomiso Ventus"
+           - "Fideicomiso Ventus" ⊂ "Estudio 72 — Fideicomiso Ventus"
+         (Caso Estudio 72 15/04/2026: los tokens core de "Estudio 72" son
+         vacíos — "estudio" es stopword y "72" tiene len<3 — por eso
+         rows de "Estudio 72" no clusterizaban con "Estudio 72 —
+         Fideicomiso Ventus". El substring lo resuelve sin relajar
+         stopwords/longitud.)
+      3. Else, sus core-token sets deben compartir al menos un token len>=4.
 
     This is intentionally a bit permissive. A false positive the operator
     can always dismiss; a false negative (blocking a valid group) is more
@@ -101,6 +111,17 @@ def are_fuzzy_same_client(a: str | None, b: str | None) -> bool:
     nb = normalize_client_name(b)
     if na and na == nb:
         return True
+    # Prefix/substring fallback (word-boundary-aware).
+    if na and nb:
+        shorter, longer = (na, nb) if len(na) <= len(nb) else (nb, na)
+        # Require >=3 chars to avoid matching noise like "sa" ⊂ "casa xyz".
+        if len(shorter) >= 3:
+            # Build word-bounded pattern: shorter must appear between word
+            # boundaries inside longer. Using re.search with \b anchors.
+            import re as _re_sub
+            pat = r"(?:^|\s|[-–—_/])" + _re_sub.escape(shorter) + r"(?:$|\s|[-–—_/])"
+            if _re_sub.search(pat, longer):
+                return True
     ca = client_core_tokens(a)
     cb = client_core_tokens(b)
     shared = ca & cb
