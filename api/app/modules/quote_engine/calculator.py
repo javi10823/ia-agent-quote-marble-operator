@@ -339,16 +339,19 @@ def calculate_m2(pieces: list) -> tuple[float, list[dict]]:
             or _desc_head.startswith("frentín")
             or _desc_head.startswith("frentin")
         )
+        # m² por pieza con half-up a 2 decimales (lo que el operador ve en la
+        # columna m²). Sumamos al total el valor ya redondeado para que el
+        # total coincida con la suma visual — antes total_m2 usaba los raw
+        # floats (1.5749...), generando inconsistencias entre display (5.34)
+        # y precio calculado (5.33 × USD → cobraba menos de lo mostrado).
+        m2_piece_2d = _round_half_up(raw_m2, 2) if not is_frentin_piece else 0
         if not is_frentin_piece:
-            total += raw_m2 * qty_in  # respect input quantity
+            total += m2_piece_2d * qty_in  # respect input quantity
         raw_details.append({
             "description": p.get("description", ""),
             "largo": largo,
             "dim2": dim2,
-            # Half-up rounding para evitar 1.575 → 1.57 (bug de float).
-            # Se guarda a 4 decimales para preservar precisión interna y se
-            # redondea a 2 al display, ambos con half-up.
-            "m2": _round_half_up(raw_m2, 4) if not is_frentin_piece else 0,
+            "m2": m2_piece_2d,
             "quantity": qty_in,        # preserve explicit qty
             "override": used_override, # renderer uses this to add '*' mark
             "_is_frentin": is_frentin_piece,

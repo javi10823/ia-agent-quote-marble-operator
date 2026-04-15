@@ -20,8 +20,9 @@ class TestListPieces:
 
         assert result["ok"]
 
-        # Total MUST include zócalo: 2.665 + 1.82 + 0.345 = 4.83
-        assert result["total_m2"] == 4.83, f"Expected 4.83, got {result['total_m2']}"
+        # Total = suma de displays half-up (PR consistencia m²):
+        # 2.67 (2.665 up) + 1.82 + 0.35 (0.345 up) = 4.84
+        assert result["total_m2"] == 4.84, f"Expected 4.84, got {result['total_m2']}"
 
         # Check each piece label
         labels = [p["label"] for p in result["pieces"]]
@@ -139,7 +140,7 @@ class TestListPiecesToolDispatch:
         )
 
         assert result["ok"]
-        assert result["total_m2"] == 4.83
+        assert result["total_m2"] == 4.84
 
         labels = [p["label"] for p in result["pieces"]]
         zocalo = [l for l in labels if "ZOC" in l]
@@ -230,8 +231,8 @@ class TestFrentinDoesNotDoubleCountMaterial:
             {"description": "Mesada", "largo": 2.15, "prof": 0.60, "m2_override": 1.625},
             {"description": "Faldón recto", "largo": 2.90, "prof": 0.05},
         ])
-        # Solo la mesada debe contribuir: 1.625 ≈ 1.62 (round to 2)
-        assert total == 1.62, f"Expected 1.62 (faldón not summed), got {total}"
+        # Solo la mesada contribuye. m2_override=1.625 → half-up 2dec = 1.63.
+        assert total == 1.63, f"Expected 1.63 (half-up de 1.625, faldón no se suma), got {total}"
         faldon = next(d for d in details if "Faldón" in d["description"])
         assert faldon["_is_frentin"] is True
         assert faldon["m2"] == 0, f"Faldón m² debe ser 0: {faldon}"

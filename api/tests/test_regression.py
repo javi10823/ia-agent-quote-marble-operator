@@ -151,13 +151,25 @@ class TestBug038NegroBrasilMerma:
         assert "Negro Brasil" in merma["motivo"]
 
 
-# ── BUG-045: Blanco Nube — m² inconsistente, anafe falso, rounding cascado ──
+# ── BUG-045 → revertido por decisión comercial / UX ──────────────────────
+# Historia: al principio el calculator sumaba valores redondeados (3.89) y
+# alguien lo marcó como "per-piece rounding bug", pidiendo round(sum(raw))
+# que da 3.88. Esa regla generó la inconsistencia UX de: el operador veía
+# "1,86 + 0,70 + 1,21 + 0,12 = 3.89" en la columna pero el total cobrado
+# era 3.88.
+#
+# Decisión nueva: sumar los m² display (half-up a 2 decimales). Motivos:
+#   - UX: lo que se ve en la columna = lo que se cobra. Cero fricción con
+#     el cliente que suma a ojo la tabla.
+#   - Comercial: B ≥ A siempre (half-up acumula .xx5 a favor del marmolero).
+#   - Magnitud: ±0.01 m² por pieza borde → diferencia insignificante.
+#
+# Estos tests ahora validan la regla invertida.
 
-class TestBug045BlancoNubeM2Rounding:
-    """BUG-045: Per-piece rounding caused 3.89 instead of 3.88."""
+class TestM2SumOfDisplayedValues:
+    """El total debe coincidir con la suma visual de la columna m² (display)."""
 
-    def test_no_per_piece_rounding(self):
-        """Pieces must NOT be rounded individually before summing."""
+    def test_total_equals_sum_of_rounded_pieces(self):
         pieces = [
             {"description": "Mesada principal", "largo": 3.00, "prof": 0.62},
             {"description": "Mesada secundaria", "largo": 1.16, "prof": 0.60},
@@ -165,11 +177,10 @@ class TestBug045BlancoNubeM2Rounding:
             {"description": "Zócalo", "largo": 2.01, "alto": 0.06},
         ]
         m2, details = calculate_m2(pieces)
-        # Raw: 1.86 + 0.696 + 1.2078 + 0.1206 = 3.8844 → round(2) = 3.88
-        assert m2 == 3.88, f"Expected 3.88 but got {m2} — likely per-piece rounding"
+        # Cada pieza half-up a 2 dec: 1.86 + 0.70 + 1.21 + 0.12 = 3.89
+        assert m2 == 3.89, f"Expected 3.89 (sum of display values) but got {m2}"
 
-    def test_total_is_sum_rounded_not_sum_of_rounded(self):
-        """Verify round(sum) != sum(round) for this specific case."""
+    def test_sum_of_displays_equals_total(self):
         pieces = [
             {"description": "Mesada principal", "largo": 3.00, "prof": 0.62},
             {"description": "Mesada secundaria", "largo": 1.16, "prof": 0.60},
@@ -177,10 +188,9 @@ class TestBug045BlancoNubeM2Rounding:
             {"description": "Zócalo", "largo": 2.01, "alto": 0.06},
         ]
         m2, details = calculate_m2(pieces)
-        # Sum of individually rounded (2 dec) = 1.86 + 0.70 + 1.21 + 0.12 = 3.89
-        sum_of_rounded = sum(round(d["largo"] * d["dim2"], 2) for d in details)
-        assert m2 != round(sum_of_rounded, 2), \
-            "m2 should be round(raw_sum) not sum(round(each))"
+        sum_of_displayed = round(sum(d["m2"] for d in details), 2)
+        assert m2 == sum_of_displayed, \
+            f"Total ({m2}) debe coincidir con la suma de la columna ({sum_of_displayed})"
 
 
 class TestBug045AnafeSinEvidencia:

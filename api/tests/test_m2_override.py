@@ -16,8 +16,9 @@ def test_no_override_uses_largo_prof():
     total, details = calculate_m2(
         [{"description": "DC-02", "largo": 1.43, "prof": 0.62, "quantity": 2}]
     )
-    # 1.43 * 0.62 * 2 = 1.7732 → rounded 2 decimals
-    assert abs(total - 1.77) < 0.01
+    # 1.43 * 0.62 = 0.8866 → half-up 2 dec = 0.89 → × 2 = 1.78
+    # (PR consistencia m²: el total es suma de displays, no round(raw))
+    assert abs(total - 1.78) < 0.01
     assert details[0]["override"] is False
 
 
