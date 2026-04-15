@@ -28,6 +28,9 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; }
 
+/* Native form controls follow dark theme + accent color */
+:root { color-scheme: dark; accent-color: var(--acc); }
+
 /* Mobile-specific */
 @media (max-width: 767px) {
   html { font-size: 14px; }
