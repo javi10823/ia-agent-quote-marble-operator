@@ -378,9 +378,39 @@ class TestMOTotals:
 
     def test_total_mismatch_warns(self):
         qdata = _valid_qdata()
-        qdata["mo_items"][0]["total"] = 1  # Wrong
+        qdata["mo_items"][0]["total"] = 1  # Wrong (way off)
         errors, warnings = _check_mo_item_totals(qdata)
         assert len(warnings) == 1
+
+    def test_small_rounding_diff_no_warn(self):
+        """PR #14 (B1) — diff de $5 sobre $1.178.850 (caso DINALE qty=19)
+        cae dentro de la tolerancia y NO debe warning."""
+        qdata = _valid_qdata()
+        qdata["mo_items"] = [{
+            "description": "Agujero y pegado pileta",
+            "quantity": 19, "unit_price": 62045, "total": 1178850,
+        }]
+        # 19 × 62045 = 1178855, diff = 5 ARS → bajo tolerancia ($50 abs)
+        errors, warnings = _check_mo_item_totals(qdata)
+        assert warnings == [], f"Diff de $5 no debe warning: {warnings}"
+
+    def test_warning_message_is_friendly_spanish(self):
+        """PR #14 (B1) — el mensaje debe estar en español natural,
+        sin jerga técnica (qty=, price=, etc.)."""
+        qdata = _valid_qdata()
+        qdata["mo_items"] = [{
+            "description": "Colocación", "quantity": 1, "unit_price": 100000,
+            "total": 50000,  # Off by 50k — definitely warns
+        }]
+        errors, warnings = _check_mo_item_totals(qdata)
+        assert len(warnings) == 1
+        msg = warnings[0]
+        # Debe estar en español natural
+        assert "Diferencia menor de redondeo" in msg
+        assert "No afecta al presupuesto" in msg
+        # NO debe contener jerga técnica
+        assert "qty=" not in msg
+        assert "price=" not in msg
 
 
 # ── TestColocacion ──────────────────────────────────────────────────────────

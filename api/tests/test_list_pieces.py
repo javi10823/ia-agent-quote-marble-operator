@@ -255,6 +255,39 @@ class TestFrentinDoesNotDoubleCountMaterial:
         assert len(faldon) == 1, f"Expected 1 FALDON label, got: {labels}"
         assert "2.90ML" in faldon[0], f"Expected 'X.XXML FALDON', got: {faldon[0]}"
 
+    def test_sectors_label_includes_quantity_multiplier(self):
+        """PR #14 (B3) — labels en sectors deben incluir (×N) cuando
+        quantity > 1. Caso DINALE: ME04-B con 4 unidades, ME04b-B con 2.
+        Antes solo se agrupaban duplicados textuales, no piezas con qty
+        explícito."""
+        from app.modules.quote_engine.calculator import calculate_quote
+        result = calculate_quote({
+            "client_name": "DINALE", "material": "GRANITO GRIS MARA EXTRA 2 ESP",
+            "pieces": [
+                {"description": "ME01-B Mesada recta c/zócalo h:10cm",
+                 "largo": 2.15, "prof": 0.60, "m2_override": 1.625},
+                {"description": "ME04-B Mesada recta c/zócalo h:50cm",
+                 "largo": 2.30, "prof": 0.60, "quantity": 4, "m2_override": 12.520},
+                {"description": "ME04b-B Mesada recta",
+                 "largo": 1.45, "prof": 0.50, "quantity": 2, "m2_override": 1.840},
+            ],
+            "localidad": "rosario", "plazo": "4 meses",
+            "is_edificio": True, "colocacion": False,
+            "pileta": "empotrada_cliente",
+        })
+        assert result.get("ok"), result
+        sectors = result.get("sectors", [])
+        labels = sectors[0]["pieces"]
+        # ME01-B (qty=1) — sin multiplicador
+        me01 = [l for l in labels if "ME01-B" in l]
+        assert me01 and "(×" not in me01[0], f"qty=1 no debe llevar (×N): {me01}"
+        # ME04-B (qty=4) — con multiplicador
+        me04 = [l for l in labels if "ME04-B" in l]
+        assert me04 and "(×4)" in me04[0], f"qty=4 debe mostrar (×4): {me04}"
+        # ME04b-B (qty=2) — con multiplicador
+        me04b = [l for l in labels if "ME04b-B" in l]
+        assert me04b and "(×2)" in me04b[0], f"qty=2 debe mostrar (×2): {me04b}"
+
     def test_total_mo_distinct_from_grand_total(self):
         """PR #11 — TOTAL MO != GRAND TOTAL. Antes el render usaba total_ars
         (que es el grand total para ARS) en la fila 'TOTAL MO', dando la

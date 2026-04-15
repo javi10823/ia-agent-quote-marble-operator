@@ -737,7 +737,11 @@ def _generate_edificio_pdf(pdf_path: Path, data: dict) -> None:
     pdf.ln(3)
 
     # Table header
-    w = [92, 22, 38, 38]
+    # PR #14 — ampliar columna Descripción (92→112mm) para que entren labels
+    # de tipologías edificio largos como "1.45 × 0.50 ME04b-B Mesada recta
+    # c/zócalo h:5cm c/frente h:5cm * (×2)". Reduce levemente las columnas
+    # de números (~total se mantiene en 190mm).
+    w = [112, 18, 30, 30]
     rh = 5
     total_w = sum(w)
     row_n = [0]
@@ -1261,7 +1265,11 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
     pdf.ln(3)
 
     # Table header
-    w = [92, 22, 38, 38]
+    # PR #14 — ampliar columna Descripción (92→112mm) para que entren labels
+    # de tipologías edificio largos como "1.45 × 0.50 ME04b-B Mesada recta
+    # c/zócalo h:5cm c/frente h:5cm * (×2)". Reduce levemente las columnas
+    # de números (~total se mantiene en 190mm).
+    w = [112, 18, 30, 30]
     pdf.set_font("Helvetica", "B", 9)
     pdf.cell(w[0], 6, "Descripcion")
     pdf.cell(w[1], 6, "Cantidad", align="R")

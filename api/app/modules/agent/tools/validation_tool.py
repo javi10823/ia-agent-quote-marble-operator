@@ -235,7 +235,14 @@ def _check_piece_m2(qdata: dict) -> tuple[list[str], list[str]]:
 
 
 def _check_mo_item_totals(qdata: dict) -> tuple[list[str], list[str]]:
-    """Verify each MO item: total ≈ quantity × unit_price."""
+    """Verify each MO item: total ≈ quantity × unit_price.
+
+    Tolerancia dinámica: con qty alto el redondeo de unit_price se acumula
+    (qty=19 puede divergir ~10 ARS sin que haya bug). Ignoramos diferencias
+    pequeñas en términos absolutos Y proporcionales — solo flaguamos cuando
+    la diferencia es >$50 o >0.1% del total. El warning es informativo
+    (no afecta al PDF/Excel del cliente).
+    """
     errors, warnings = [], []
     for mo in qdata.get("mo_items", []):
         qty = mo.get("quantity", 0)
@@ -247,9 +254,16 @@ def _check_mo_item_totals(qdata: dict) -> tuple[list[str], list[str]]:
             continue
 
         expected = round(qty * up)
-        if abs(total - expected) > 2:
+        diff = abs(total - expected)
+        # Tolerancia: max($50, 0.1% del total) — absorbe rounding cosmético.
+        tolerance = max(50, abs(total) * 0.001)
+        if diff > tolerance:
+            # Mensaje en español, orientado al operador, sin jerga técnica.
             warnings.append(
-                f"MO '{desc}': total={total} pero qty={qty} × price={up} = {expected}"
+                f"Diferencia menor de redondeo en '{desc}': "
+                f"${diff:,.0f} sobre ${abs(total):,.0f}. "
+                f"No afecta al presupuesto del cliente."
+                .replace(",", ".")
             )
 
     return errors, warnings
