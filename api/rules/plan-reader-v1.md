@@ -210,3 +210,111 @@ Si el OCR extrae medidas, validalas contra la proporción del dibujo:
 - Usarlo como referencia de formato, no de valores.
 - confident va de 0.0 a 1.0 por sector. Si hay ambiguedades → confident < 0.8.
 - Si confident < 0.7 → listar todas las ambiguedades antes de procesar.
+
+---
+
+## REGLA — IDENTIFICACIÓN VISUAL DE ZÓCALOS (CRÍTICO)
+
+Los zócalos se dibujan en el plano como **rectángulos DELGADOS con hachurado interno `//`**
+(el hachurado indica material / canto pulido). Tienen **2 cotas**: `largo (ml) × alto`.
+
+Señales visuales que identifican un zócalo (NO una pieza de mesada):
+- **Alto ≤ 0.15 m** (típico 5–10 cm)
+- Hachurado `//` interno
+- **Ratio largo : alto > 10 : 1** (rectángulo muy fino y alargado)
+- Dibujado SEPARADO de la vista en planta de la mesada
+- Una cota en ml (largo) + una cota corta (altura 5–15 cm)
+- NO tiene profundidad
+
+NO confundir con:
+- **Vista lateral/elevación de mesada:** tiene prof ≥ 0.30 m → es la misma mesada vista desde otro ángulo
+- **Alzada / revestimiento vertical:** alto ≥ 0.30 m (hasta muros altos) → pieza de material
+- **Frentín / faldón:** cuelga BAJO la línea de mesada, no sube por pared
+
+Si ves un rectángulo fino, hachurado, con cota en ml y altura 5–15 cm → **ZÓCALO**. Punto.
+No es pieza de material, no es vista de elevación de la mesada.
+
+---
+
+## REGLA — TRATAR TRAMOS COMO INDEPENDIENTES POR DEFAULT
+
+Cuando el plano muestra 2 o más tramos de mesada **NO asumir forma compuesta**:
+- 2 tramos ≠ automáticamente **L**
+- 3 tramos ≠ automáticamente **U**
+
+Tratar cada tramo como **pieza independiente** salvo que el plano muestre EXPLÍCITO:
+- Una nota textual ("en L", "en U", "con esquina", "tramo 1 + tramo 2")
+- Cotas de solape / unión dibujada entre tramos
+- Símbolo de corte a 45° (`INGLETE`) en el encuentro
+
+Sin esas señales → tramos independientes, cada uno con sus zócalos propios.
+
+---
+
+## REGLA — FRENTÍN / INGLETE: CORTES VERTICALES EN ELEVACIÓN
+
+Señal visual adicional para detectar frentín/inglete:
+- **Corte vertical recto** en elevación → frentín recto (FALDON)
+- **Corte vertical a 45°** en elevación → frentín en inglete (FALDON + CORTE45 en MO)
+
+Complementa las señales textuales (`INGLETE`, `Frente revestido`) y de posición
+(cota bajo línea de mesada).
+
+---
+
+## EJEMPLO CANÓNICO — A1335 COCINA (RESUELTO)
+
+Plano real: cocina Purastone Blanco Paloma, 2 tramos, 3 zócalos, sin frentin.
+
+Lectura correcta (paso a paso):
+
+1. **Tramos:** cuento rectángulos de mesada dibujados → **2 tramos**. No asumo L.
+2. **Mesadas:**
+   - Tramo 1: `1.72 × 0.75` → m² = 1.29
+   - Tramo 2 (retorno): `0.60 × 1.55` → m² = 0.93
+3. **Zócalos** (rectángulos finos hachurados, h:7cm de la planilla):
+   - Fondo: `1.74 ml × 0.07` → m² = 0.122
+   - Lateral izq: `1.55 ml × 0.07` → m² = 0.109
+   - Lateral der: `0.75 ml × 0.07` → m² = 0.053
+4. **Frentín:** no hay vistas con cortes verticales → `frentin = []`.
+5. **Regrueso:** no hay duchas → `regrueso = []`.
+6. **Piletas:** 1 Johnson LUXOR COMPACT SI71 (planilla) → PEGADOPILETA × 1.
+7. **Validación vs declarado:**
+   - Suma: 1.29 + 0.93 + 0.122 + 0.109 + 0.053 = **2.504 m²**
+   - Planilla: **2.50 m²**
+   - diff = 0.004 / 2.50 = **0.16%** → OK (tolerancia ≤ 1%)
+
+⛔ **ERROR TÍPICO que NO debe cometerse (caso real observado):**
+Interpretar la vista del retorno (0.60 × 1.55) como **"alzada vertical"** o
+**pieza de material separada**. Es la MESADA DEL RETORNO vista en planta, no
+una alzada ni un revestimiento. Los rectángulos finos hachurados con ml × 0.07
+son los ZÓCALOS, no piezas de material.
+
+---
+
+## VALIDACIÓN CRUZADA vs m² DECLARADO
+
+Si la planilla/rótulo del plano declara un m² total ("M2: 2,50 m² — con zócalos
+incluidos"):
+- Usar ese valor **SOLO para validar**, NUNCA como `m2_override` input.
+- Reconstruir el m² desde tus piezas: `Σ placas + Σ (zócalo_ml × zócalo_alto)`.
+- Comparar: `|reconstruido − declarado| / declarado ≤ 1%` → OK.
+- Si diff > 1% → **flag duro, no asumir**. Probable causa: falta una pieza o
+  un zócalo, o alguna cota mal leída.
+
+No confiar en el declarado como atajo — siempre reconstruir.
+
+---
+
+## TIPADO OBLIGATORIO (cuando hay plano)
+
+Al pasar piezas a `list_pieces`, cada una DEBE tener un campo `tipo` explícito:
+- `mesada` → pieza horizontal de material (tiene prof ≥ 0.30 m)
+- `zocalo` → tira hachurada (tiene alto ≤ 0.15 m, NO prof)
+- `alzada` → pieza vertical de material, alto ≥ 0.30 m
+- `frentin` → cuelga bajo mesada (alto típico 5–10 cm, trasera visible)
+
+El sistema rechaza combinaciones inconsistentes:
+- `tipo=mesada` con `prof < 0.30` → rechazado (señal de que confundiste con zócalo)
+- `tipo=zocalo` con `alto > 0.15` → rechazado (señal de que confundiste con alzada)
+- Planilla menciona "zócalo" y `list_pieces` no tiene ningún `tipo=zocalo` → rechazado
