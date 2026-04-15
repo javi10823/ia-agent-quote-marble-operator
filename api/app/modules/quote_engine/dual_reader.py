@@ -269,6 +269,32 @@ def _is_obsolete(warning: str, rec_tramos: list[dict]) -> bool:
                 has = any((z.get("ml") or 0) > 0 for z in tr.get("zocalos", []))
                 if has:
                     return True
+
+    # "diferencia con m² declarado: calculado X vs declarado Y (diff N%)"
+    # Si la diff es < 5% → tolerancia normal, no warnings. Además el total
+    # de la UI suma mesadas + zócalos, por lo que pequeñas discrepancias
+    # con el m² declarado en la planilla son esperables.
+    m = re.search(
+        r"(?:diferencia|diff).{0,40}?(\d+(?:[.,]\d+)?)\s*(?:vs|y|con)?\s*(\d+(?:[.,]\d+)?).{0,40}?(\d+(?:[.,]\d+)?)\s*%",
+        t,
+    )
+    if m:
+        try:
+            pct = float(m.group(3).replace(",", "."))
+            if pct < 5:
+                return True
+        except ValueError:
+            pass
+    # Fallback: warning de "diff N%" sin capturar los valores
+    m = re.search(r"diff\w*\s*(\d+(?:[.,]\d+)?)\s*%", t)
+    if m:
+        try:
+            pct = float(m.group(1).replace(",", "."))
+            if pct < 5:
+                return True
+        except ValueError:
+            pass
+
     return False
 
 
