@@ -1346,6 +1346,87 @@ async def chat(
     if errors:
         raise HTTPException(status_code=400, detail=" | ".join(errors))
 
+    # ── RESTAURAR archivo guardado si este mensaje no trae uno ──────────────
+    # El PDF/imagen del plano NO debe perderse entre mensajes: una vez que
+    # el operador subió el plano, queda disponible en todas las requests
+    # siguientes. Recuperamos el más reciente desde source_files si este
+    # mensaje no adjuntó nada nuevo.
+    if not validated_files and quote.source_files:
+        from app.core.static import OUTPUT_DIR as _OUT_RE
+        # Tomamos el archivo más reciente (último en la lista)
+        for _sf in reversed(quote.source_files):
+            _sf_name = _sf.get("filename", "")
+            _sf_type = (_sf.get("type") or "").lower()
+            _is_plan = (
+                _sf_name.lower().endswith((".pdf", ".jpg", ".jpeg", ".png", ".webp"))
+                or _sf_type.startswith(("application/pdf", "image/"))
+            )
+            if not _is_plan:
+                continue
+            _sf_path = _OUT_RE / quote_id / "sources" / _sf_name
+            try:
+                if _sf_path.exists():
+                    _bytes = _sf_path.read_bytes()
+                    validated_files.append((_bytes, _sf_name))
+                    logging.info(
+                        f"[chat] Restoring saved plan {_sf_name} "
+                        f"({len(_bytes)} bytes) for quote {quote_id}"
+                    )
+                    break
+            except Exception as e:
+                logging.warning(f"[chat] Failed to restore {_sf_name}: {e}")
+
+    # ── GATE: planos multi-página bloqueantes (fase 2/3) ────────────────────
+    # Por ahora solo se soportan planos de 1 página (PDF) o imágenes sueltas.
+    # Si llega un PDF de 2+ páginas, no procesamos y avisamos al operador.
+    _gate_multipage_msg = None
+    for _fbytes, _fname in validated_files:
+        if _fname.lower().endswith(".pdf"):
+            try:
+                import pdfplumber as _pp
+                import io as _io
+                with _pp.open(_io.BytesIO(_fbytes)) as _pdf:
+                    _n_pages = len(_pdf.pages)
+                if _n_pages > 1:
+                    _gate_multipage_msg = (
+                        f"El PDF **{_fname}** tiene {_n_pages} páginas. "
+                        f"Por ahora solo se procesan planos de **1 página**. "
+                        f"Si es un edificio o tiene varias tipologías, próximamente. "
+                        f"Pasame un PDF de 1 página (o foto) del plano que querés cotizar."
+                    )
+                    break
+            except Exception as e:
+                logging.warning(f"[chat] page count failed for {_fname}: {e}")
+
+    if _gate_multipage_msg:
+        _files_note = ", ".join(vf[1] for vf in validated_files)
+        _user_entry = {
+            "role": "user",
+            "content": (message or "") + (
+                f"\n\n[archivos adjuntos: {_files_note}]" if _files_note else ""
+            ),
+        }
+        _assistant_entry = {"role": "assistant", "content": _gate_multipage_msg}
+        _updated = list(quote.messages or []) + [_user_entry, _assistant_entry]
+        await db.execute(
+            update(Quote).where(Quote.id == quote_id).values(messages=_updated)
+        )
+        await db.commit()
+
+        async def _gate_mp_stream():
+            yield f"data: {json.dumps({'type': 'text', 'content': _gate_multipage_msg})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'content': ''})}\n\n"
+
+        return StreamingResponse(
+            _gate_mp_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+        )
+
     # Pass ALL files to Claude (not just the first one)
     plan_bytes = validated_files[0][0] if validated_files else None
     plan_filename = validated_files[0][1] if validated_files else None
