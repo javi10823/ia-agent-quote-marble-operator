@@ -3,9 +3,44 @@
 import math
 import logging
 from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
 
 from app.modules.agent.tools.catalog_tool import catalog_lookup
 from app.core.company_config import get as cfg
+
+
+def _round_half_up(value: float, decimals: int = 2) -> float:
+    """Redondeo half-up (1.575 → 1.58, no 1.57 como hace Python por float).
+
+    Usa Decimal sobre la representación string para evitar el bug clásico
+    de Python: round(1.575, 2) == 1.57 porque el float 1.575 es internamente
+    1.5749999...
+    """
+    if value is None:
+        return 0.0
+    quant = Decimal("1").scaleb(-decimals)  # ej: 0.01 para decimals=2
+    return float(Decimal(str(value)).quantize(quant, rounding=ROUND_HALF_UP))
+
+
+_AMBIENTE_KEYWORDS = {
+    "cocina": "Cocina",
+    "lavadero": "Lavadero",
+    "baño": "Baño",
+    "bano": "Baño",
+    "vanitory": "Vanitory",
+    "isla": "Isla",
+    "barra": "Barra",
+    "bar": "Barra",
+}
+
+
+def _detect_ambiente(desc: str) -> str | None:
+    """Detecta el ambiente de una pieza por keyword en la descripción."""
+    d = (desc or "").lower()
+    for kw, name in _AMBIENTE_KEYWORDS.items():
+        if kw in d:
+            return name
+    return None
 
 # Material classifications — read from config.json, fallback to defaults
 def _set(path: str, default: list) -> set:
@@ -310,7 +345,10 @@ def calculate_m2(pieces: list) -> tuple[float, list[dict]]:
             "description": p.get("description", ""),
             "largo": largo,
             "dim2": dim2,
-            "m2": round(raw_m2, 4) if not is_frentin_piece else 0,
+            # Half-up rounding para evitar 1.575 → 1.57 (bug de float).
+            # Se guarda a 4 decimales para preservar precisión interna y se
+            # redondea a 2 al display, ambos con half-up.
+            "m2": _round_half_up(raw_m2, 4) if not is_frentin_piece else 0,
             "quantity": qty_in,        # preserve explicit qty
             "override": used_override, # renderer uses this to add '*' mark
             "_is_frentin": is_frentin_piece,
@@ -371,7 +409,7 @@ def list_pieces(pieces: list, is_edificio: bool = False) -> dict:
             if pd["largo"] >= 3.0 and not is_edificio:
                 label += " (SE REALIZA EN 2 TRAMOS)"
 
-        m2_display = round(pd["m2"] * qty, 2)
+        m2_display = _round_half_up(pd["m2"] * qty, 2)
         entry = {"label": label, "m2": m2_display}
         if qty > 1:
             entry["qty"] = qty
@@ -655,12 +693,47 @@ def calculate_quote(input_data: dict) -> dict:
             "total": round(price * anafe_qty),
         })
 
-    # Colocación
+    # Colocación — split por ambiente cuando se detectan varios.
+    # Si las piezas tienen keywords "cocina", "lavadero", "baño", etc., emitimos
+    # una línea de colocación por ambiente. Cada uno respeta el mínimo de 1m².
+    # Si todas las piezas son del mismo ambiente (o no se detecta ninguno),
+    # se mantiene la línea única "Colocación" como antes.
     if colocacion:
         sku = "COLOCACIONDEKTON/NEOLITH" if is_sint else "COLOCACION"
         price, base = _get_mo_price(sku)
-        qty = max(total_m2, cfg("colocacion.min_quantity", 1.0))
-        mo_items.append({"description": "Colocación", "quantity": round(qty, 2), "unit_price": price, "base_price": base, "total": round(price * qty)})
+        min_qty = cfg("colocacion.min_quantity", 1.0)
+
+        # Agrupar m² por ambiente leyendo descriptions de las piezas finales
+        ambientes_m2: dict[str, float] = {}
+        for pd in piece_details:
+            if pd.get("_is_frentin"):
+                continue
+            amb = _detect_ambiente(pd.get("description", ""))
+            if amb is None:
+                continue
+            qty_p = pd.get("quantity", 1) or 1
+            ambientes_m2[amb] = ambientes_m2.get(amb, 0) + (pd.get("m2", 0) * qty_p)
+
+        # Decidir: split solo si hay >= 2 ambientes detectados; si no, línea única.
+        if len(ambientes_m2) >= 2:
+            for amb, m2_amb in ambientes_m2.items():
+                qty = max(m2_amb, min_qty)
+                mo_items.append({
+                    "description": f"Colocación {amb.lower()}",
+                    "quantity": _round_half_up(qty, 2),
+                    "unit_price": price,
+                    "base_price": base,
+                    "total": round(price * qty),
+                })
+        else:
+            qty = max(total_m2, min_qty)
+            mo_items.append({
+                "description": "Colocación",
+                "quantity": _round_half_up(qty, 2),
+                "unit_price": price,
+                "base_price": base,
+                "total": round(price * qty),
+            })
 
     # Frentín/faldón — MO is charged per METRO LINEAL, not per piece
     # frentin_ml = total metros lineales of faldón/frentín pieces
