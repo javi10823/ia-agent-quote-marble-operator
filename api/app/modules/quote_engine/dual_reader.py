@@ -266,6 +266,45 @@ def reconcile(opus: dict, sonnet: dict) -> dict:
                     "status": status,
                 }
 
+            # PR #28 — convención: largo ≥ ancho. Si Opus y Sonnet están
+            # "swapped" (uno dice 0.6×1.55 y el otro 1.55×0.6), preferir la
+            # variante con largo ≥ ancho. Evita que la UI muestre el
+            # retorno al revés cuando los modelos invierten ejes.
+            ov_l, sv_l = ot.get("largo_m", 0) or 0, st.get("largo_m", 0) or 0
+            ov_a, sv_a = ot.get("ancho_m", 0) or 0, st.get("ancho_m", 0) or 0
+            _swapped = (
+                abs(ov_l - sv_a) < 0.02 and abs(ov_a - sv_l) < 0.02
+                and ov_l > 0 and sv_l > 0
+                and (ov_l != sv_l)
+            )
+            if _swapped:
+                # Prefer the variant with largo >= ancho
+                opus_ok = ov_l >= ov_a
+                sonnet_ok = sv_l >= sv_a
+                _pick_largo, _pick_ancho = None, None
+                if opus_ok and not sonnet_ok:
+                    _pick_largo, _pick_ancho = ov_l, ov_a
+                elif sonnet_ok and not opus_ok:
+                    _pick_largo, _pick_ancho = sv_l, sv_a
+                elif opus_ok and sonnet_ok:
+                    _pick_largo, _pick_ancho = max(ov_l, sv_l), min(ov_a, sv_a)
+                if _pick_largo is not None:
+                    logger.info(
+                        f"[dual-read] tramo {tid}: dims swapped (opus={ov_l}×{ov_a} "
+                        f"vs sonnet={sv_l}×{sv_a}) → normalizando a "
+                        f"{_pick_largo}×{_pick_ancho} (largo≥ancho)"
+                    )
+                    fields["largo_m"]["valor"] = _pick_largo
+                    fields["largo_m"]["status"] = "OK"
+                    fields["ancho_m"]["valor"] = _pick_ancho
+                    fields["ancho_m"]["status"] = "OK"
+                    # Clear the conflict flag we added earlier for this tramo
+                    _marker_l = f"{sid}.{tid}.largo_m"
+                    _marker_a = f"{sid}.{tid}.ancho_m"
+                    conflict_fields = [
+                        c for c in conflict_fields if c not in (_marker_l, _marker_a)
+                    ]
+
             # Compare zócalos
             o_zocs = ot.get("zocalos", [])
             s_zocs = st.get("zocalos", [])

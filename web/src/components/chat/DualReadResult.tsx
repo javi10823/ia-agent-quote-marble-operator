@@ -184,7 +184,15 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
               <FieldRow label="Largo" field={tramo.largo_m} onEdit={(v) => updateField(si, ti, "largo_m", v)} />
               <FieldRow label="Ancho" field={tramo.ancho_m} onEdit={(v) => updateField(si, ti, "ancho_m", v)} />
               <FieldRow label="m²" field={tramo.m2} onEdit={(v) => updateField(si, ti, "m2", v)} />
-              {tramo.zocalos.map((z, zi) => (
+              {tramo.zocalos.map((z, zi) => {
+                // PR #28 — ocultar zócalos con ml=0 (lados sin zócalo). El
+                // prompt obliga a enumerar los 4 lados con ml=0 cuando no
+                // hay, pero en la UI eso es ruido. Mantener render solo si
+                // hay ml>0 o si el status es conflictivo (requiere revisión).
+                const hasMl = (z.ml ?? 0) > 0;
+                const needsReview = z.status === "CONFLICTO" || z.status === "DUDOSO";
+                if (!hasMl && !needsReview) return null;
+                return (
                 <div key={zi} className="flex items-center gap-2 py-1 px-2 text-[13px]">
                   <span className="w-5 text-center">{STATUS_ICONS[z.status] || ""}</span>
                   <span className="text-t3 w-24 shrink-0">Zóc. {z.lado}</span>
@@ -202,7 +210,8 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                     </span>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           ))}
           {sector.ambiguedades.length > 0 && (
