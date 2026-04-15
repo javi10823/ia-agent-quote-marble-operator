@@ -1533,6 +1533,7 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     discount_pct = data.get("discount_pct", 0)
     sectors = data.get("sectors", [])
     mo_items = data.get("mo_items", [])
+    sinks = data.get("sinks", [])
     total_ars = data.get("total_ars", 0)
     total_usd = data.get("total_usd", 0)
 
@@ -1611,15 +1612,14 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     TEMPLATE_PIECE_SLOTS = 4
     MO_HEADER_ROW_BASE = 27
     extra_pieces = max(0, len(all_pieces) - TEMPLATE_PIECE_SLOTS)
-    if extra_pieces > 0:
-        # Insert rows at the MO header position, pushing MO block down so
-        # pieces have room to expand without overwriting it.
-        ws.insert_rows(MO_HEADER_ROW_BASE, extra_pieces)
+    # Reservar filas para piletas: 1 header + N rows (si hay piletas).
+    sinks_block_size = (1 + len(sinks)) if sinks else 0
+    extra_for_sinks = sinks_block_size
+    if extra_pieces > 0 or extra_for_sinks > 0:
+        ws.insert_rows(MO_HEADER_ROW_BASE, extra_pieces + extra_for_sinks)
 
-    # Clear values AND fills in dynamic rows (23 through max possible output
-    # row), accounting for inserted extra piece rows AND inserted extra MO
-    # rows. Wiping fills prevents inherited shading from ws.insert_rows().
-    max_clear = 35 + extra_pieces + max(0, len(mo_items) - 4) + 5
+    # Clear values AND fills in dynamic rows.
+    max_clear = 35 + extra_pieces + extra_for_sinks + max(0, len(mo_items) - 4) + 5
     for row in range(23, max_clear + 1):
         for col in range(1, 7):
             cell = ws.cell(row, col)
@@ -1671,9 +1671,30 @@ def _generate_excel(output_path: Path, data: dict) -> None:
             _zebra_done()
             r += 1
 
-    # MO items — template has 4 slots (base rows 28-31, shifted by any extra
-    # piece rows we inserted above). Insert more rows if len(mo_items) > 4.
-    MO_HEADER_ROW = MO_HEADER_ROW_BASE + extra_pieces
+    # ── PILETAS / SINKS — insertar entre piezas y MO header (igual que PDF) ─
+    # Sin esto, el Excel omite la pileta aunque el PDF la muestre (bug
+    # reportado: PDF muestra "PILETA JOHNSON LUXOR S171" pero Excel no).
+    sinks_header_row = MO_HEADER_ROW_BASE + extra_pieces
+    if sinks:
+        ws.cell(sinks_header_row, 1).value = "PILETAS"
+        ws.cell(sinks_header_row, 1).font = bold
+        _apply_zebra(sinks_header_row)
+        _zebra_done()
+        for i, sink in enumerate(sinks):
+            srow = sinks_header_row + 1 + i
+            ws.cell(srow, 1).value = sink.get("name", "")
+            ws.cell(srow, 4).value = sink.get("quantity", 1)
+            ws.cell(srow, 4).number_format = qty_fmt
+            ws.cell(srow, 5).value = sink.get("unit_price", 0)
+            ws.cell(srow, 5).number_format = ars_fmt
+            ws.cell(srow, 6).value = f"=D{srow}*E{srow}"
+            ws.cell(srow, 6).number_format = ars_fmt
+            _apply_zebra(srow)
+            _zebra_done()
+
+    # MO items — template has 4 slots, shifted by any extra piece rows AND
+    # the sinks block we inserted above.
+    MO_HEADER_ROW = MO_HEADER_ROW_BASE + extra_pieces + extra_for_sinks
     MO_START_ROW = MO_HEADER_ROW + 1
     TEMPLATE_MO_SLOTS = 4
     extra_mo = max(0, len(mo_items) - TEMPLATE_MO_SLOTS)
