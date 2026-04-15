@@ -850,6 +850,16 @@ def calculate_quote(input_data: dict) -> dict:
             if pd.get("override"):
                 label = f"{label} *"
                 has_m2_override = True
+            # PR #14 — multiplicador embebido en el label cuando la pieza
+            # tiene cantidad > 1 (caso DINALE: ME04-B × 4, ME04b-B × 2).
+            # Antes el grouping deduplicaba por label idéntico y agregaba
+            # "(×N)" solo si había duplicados textuales. Cuando el operador
+            # pasa una sola pieza con quantity=N, el label tiene que reflejar
+            # esa cantidad explícitamente para que el cliente no confunda 1
+            # tipología con 1 unidad.
+            _qty = pd.get("quantity", 1)
+            if _qty and _qty > 1:
+                label = f"{label} (×{_qty})"
             raw_labels.append(label)
     # Group duplicates: "0.60 × 0.38 Mesada" × 6 → "0.60 × 0.38 Mesada (×6)"
     piece_labels = []
