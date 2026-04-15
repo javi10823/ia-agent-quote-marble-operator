@@ -230,6 +230,7 @@ class TestDeriveMaterial:
             await db.execute(
                 sql_update(Quote).where(Quote.id == qid).values(
                     client_name="Test Fallback",
+                    project="Cocina",  # Required since PR #15
                     material="SILESTONE BLANCO NORTE",
                     localidad="rosario",
                     quote_breakdown=bd,
