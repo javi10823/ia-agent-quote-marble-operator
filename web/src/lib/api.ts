@@ -40,6 +40,13 @@ export interface Quote {
   notes: string | null;
   sink_type: { basin_count: "simple" | "doble"; mount_type: "arriba" | "abajo" } | null;
   resumen_obra?: ResumenObraRecord | null;
+  condiciones_pdf?: {
+    pdf_url: string;
+    drive_url?: string | null;
+    drive_file_id?: string | null;
+    generated_at: string;
+    plazo: string;
+  } | null;
   created_at: string;
 }
 

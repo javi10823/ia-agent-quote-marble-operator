@@ -9,6 +9,7 @@ import ZoneSelector from "@/components/chat/ZoneSelector";
 import { selectZone } from "@/lib/api";
 import { ResumenObraCard } from "@/components/quote/ResumenObraCard";
 import { EmailDraftCard } from "@/components/quote/EmailDraftCard";
+import { CondicionesCard } from "@/components/quote/CondicionesCard";
 import clsx from "clsx";
 import { A, I, O, N, DOT, SUP2, DASH, ITEM, WARN, CIRCLE, ARROW, XMARK, CLOUD, WAVE, PAGE, PICTURE, CLIP, RULER, TAG, FOLDER, CHART } from "@/lib/chars";
 
@@ -579,6 +580,12 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
         <Section title="Notas del cliente">
           <p className="text-[13px] text-t2 leading-[1.65] whitespace-pre-wrap">{quote.notes}</p>
         </Section>
+      )}
+
+      {/* PR #24 — Condiciones de Contratación: solo edificios. Se genera
+          automáticamente al hacer generate_documents si is_building=true. */}
+      {quote.is_building && quote.condiciones_pdf && (
+        <CondicionesCard record={quote.condiciones_pdf} />
       )}
 
       {quote.resumen_obra && (

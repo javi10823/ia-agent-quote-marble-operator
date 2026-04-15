@@ -3387,6 +3387,33 @@ class AgentService:
                     "error": result.get("error"),
                 })
 
+            # PR #24 — Generar PDF de Condiciones para cada quote edificio.
+            # Anexo legal/comercial separado del presupuesto (template fijo
+            # de config.condiciones_edificio + plazo del quote). Best-effort:
+            # si falla no aborta la generación de docs.
+            for r in all_results:
+                if not r.get("ok"):
+                    continue
+                target_qid = r["quote_id"]
+                try:
+                    _q_res = await db.execute(select(Quote).where(Quote.id == target_qid))
+                    _q = _q_res.scalar_one_or_none()
+                    if not _q or not _q.is_building:
+                        continue
+                    # Plazo: leer del calc_result persistido si existe
+                    _bd = _q.quote_breakdown if isinstance(_q.quote_breakdown, dict) else {}
+                    _plazo = _bd.get("delivery_days") or _bd.get("plazo")
+                    from app.modules.agent.tools.condiciones_tool import (
+                        generate_condiciones_pdf,
+                    )
+                    rec = await generate_condiciones_pdf(db, target_qid, plazo_override=_plazo)
+                    r["condiciones_pdf_url"] = rec.get("pdf_url")
+                    r["condiciones_drive_url"] = rec.get("drive_url")
+                except Exception as _ce:
+                    logging.warning(
+                        f"[condiciones] Could not generate PDF for {target_qid}: {_ce}"
+                    )
+
             result = {"ok": True, "generated": len(all_results), "results": all_results}
             if all_warnings:
                 result["warnings"] = all_warnings
