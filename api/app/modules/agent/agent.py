@@ -139,6 +139,83 @@ def _backfill_material_price_base(quotes_data: list[dict]) -> None:
         qdata["material_price_base"] = base
 
 
+async def _canonicalize_quotes_data_from_db(
+    quote_id: str, quotes_data: list[dict], db,
+) -> None:
+    """Replace LLM-constructed fields with canonical calc_result from DB.
+
+    The `generate_documents` tool schema lets the LLM build `sectors`,
+    `piece_details`, `mo_items`, totals, etc. directly. This is risky:
+    Valentina sometimes mangles labels (truncates descriptions, rounds
+    largos, deduplicates pieces with same dim2 ignoring different
+    largos). Each \`calculate_quote\` call persists its full result into
+    \`quote.quote_breakdown\` — that's the deterministic source of truth.
+
+    For each quote in `quotes_data`, look up the matching persisted
+    calc_result (by material_name match) and override the visual /
+    monetary fields with the canonical values. Identification fields
+    (client_name, project, date, delivery_days) are left untouched.
+
+    Mutates `quotes_data` in place.
+    """
+    from sqlalchemy import select as _sqsel
+    # Collect all candidate calc_results visible from this conversation:
+    # the current quote + any sibling quotes for the same client.
+    cur_res = await db.execute(_sqsel(Quote).where(Quote.id == quote_id))
+    cur = cur_res.scalar_one_or_none()
+    candidates: list[dict] = []
+    if cur and isinstance(cur.quote_breakdown, dict):
+        candidates.append(cur.quote_breakdown)
+    if cur and cur.client_name:
+        sib_res = await db.execute(
+            _sqsel(Quote).where(Quote.client_name == cur.client_name)
+        )
+        for sib in sib_res.scalars().all():
+            if sib.id == quote_id:
+                continue
+            if isinstance(sib.quote_breakdown, dict):
+                candidates.append(sib.quote_breakdown)
+
+    if not candidates:
+        return
+
+    # Fields to copy verbatim from the canonical calc into the LLM dict.
+    # These determine what the PDF/Excel renders.
+    _VISUAL_FIELDS = (
+        "sectors", "piece_details",
+        "material_m2", "material_price_unit", "material_price_base",
+        "material_total", "material_currency",
+        "discount_pct", "discount_amount",
+        "mo_items", "mo_discount_pct", "mo_discount_amount",
+        "total_ars", "total_usd", "total_mo_ars",
+        "thickness_mm",
+    )
+
+    for qdata in quotes_data:
+        mat = (qdata.get("material_name") or "").strip().upper()
+        if not mat:
+            continue
+        # Find best matching calc_result by material name (substring match
+        # in either direction to tolerate slight variations like " 20mm").
+        best = None
+        for c in candidates:
+            cmat = (c.get("material_name") or "").strip().upper()
+            if not cmat:
+                continue
+            if cmat == mat or mat in cmat or cmat in mat:
+                best = c
+                break
+        if not best:
+            continue
+        for f in _VISUAL_FIELDS:
+            if f in best and best[f] is not None:
+                qdata[f] = best[f]
+        logging.info(
+            f"[canonical-sectors] Replaced LLM fields with canonical "
+            f"calc_result for material {mat!r} in quote {quote_id}"
+        )
+
+
 # ── BUILDING DETECTION (unified — delegates to edificio_parser) ──────────────
 
 def _detect_building(user_message: str) -> bool:
@@ -3070,6 +3147,19 @@ class AgentService:
             # check. Without this the validator emitted "Falta
             # material_price_base" for every quote (DINALE 14/04/2026).
             _backfill_material_price_base(quotes_data)
+
+            # ── Override LLM-built fields with canonical calc_result ──────
+            # Issue DINALE 15/04/2026: el LLM construía sectors, piece_details,
+            # mo_items con valores propios (a veces distintos del calc_result
+            # real — ej: largos de mesada inventados/redondeados, descripciones
+            # truncadas a solo el código). Reemplazamos esos campos con los
+            # que persistió calculate_quote en quote.quote_breakdown.
+            try:
+                await _canonicalize_quotes_data_from_db(quote_id, quotes_data, db)
+            except Exception as _ce:
+                logging.warning(
+                    f"[canonical-sectors] Could not canonicalize for {quote_id}: {_ce}"
+                )
 
             # Pre-flight checklist before generating
             all_warnings: list[str] = []
