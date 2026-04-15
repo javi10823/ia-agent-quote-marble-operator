@@ -1338,6 +1338,18 @@ async def chat(
                 **({f"drive_{k}": v for k, v in source_drive_info.items()} if source_drive_info else {}),
             })
             bd["files_v2"] = fv2
+
+            # Una subida de archivo nueva INVALIDA cualquier lectura previa:
+            # el operador está presentando un plano (quizás el mismo, quizás
+            # distinto) y espera ver la card de dual_read. Si dejamos
+            # dual_read_result / verified_measurements del turno anterior,
+            # el skip check los interpreta como "ya confirmado" y la card
+            # nunca aparece.
+            for _stale_key in ("dual_read_result", "verified_measurements",
+                               "verified_context", "dual_read_planilla_m2",
+                               "dual_read_crop_label", "measurements_confirmed"):
+                bd.pop(_stale_key, None)
+
             await db.execute(
                 update(Quote).where(Quote.id == quote_id).values(quote_breakdown=bd)
             )
