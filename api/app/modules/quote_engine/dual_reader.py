@@ -270,31 +270,6 @@ def _is_obsolete(warning: str, rec_tramos: list[dict]) -> bool:
                 if has:
                     return True
 
-    # "diferencia con m² declarado: calculado X vs declarado Y (diff N%)"
-    # Si la diff es < 5% → tolerancia normal, no warnings. Además el total
-    # de la UI suma mesadas + zócalos, por lo que pequeñas discrepancias
-    # con el m² declarado en la planilla son esperables.
-    m = re.search(
-        r"(?:diferencia|diff).{0,40}?(\d+(?:[.,]\d+)?)\s*(?:vs|y|con)?\s*(\d+(?:[.,]\d+)?).{0,40}?(\d+(?:[.,]\d+)?)\s*%",
-        t,
-    )
-    if m:
-        try:
-            pct = float(m.group(3).replace(",", "."))
-            if pct < 5:
-                return True
-        except ValueError:
-            pass
-    # Fallback: warning de "diff N%" sin capturar los valores
-    m = re.search(r"diff\w*\s*(\d+(?:[.,]\d+)?)\s*%", t)
-    if m:
-        try:
-            pct = float(m.group(1).replace(",", "."))
-            if pct < 5:
-                return True
-        except ValueError:
-            pass
-
     return False
 
 
@@ -664,18 +639,42 @@ async def dual_read_crop(
 
 
 def _check_m2(result: dict, planilla_m2: Optional[float]) -> Optional[str]:
-    """Check if calculated m2 matches planilla m2."""
-    if planilla_m2 is None:
+    """Check if calculated m2 (mesadas + zócalos) matches planilla m2.
+
+    IMPORTANT: el total se calcula sumando m2 de cada tramo + área de los
+    zócalos (ml × alto_m), igual que lo que muestra la UI. Antes usaba
+    sector.m2_total que reportan los modelos (típicamente solo mesadas),
+    lo que hacía que el warning no coincidiera con lo que el operador
+    ve en la card y escondía casos de piezas faltantes.
+
+    Threshold: 2%. Una diff de 2% suele indicar un zócalo no detectado
+    (ej: 0.05 m² = ~0.75 ml × 0.07 m). Con threshold más alto se perdía
+    esa señal.
+    """
+    if planilla_m2 is None or planilla_m2 <= 0:
         return None
-    total = sum(
-        s.get("m2_total", {}).get("valor", 0) if isinstance(s.get("m2_total"), dict) else s.get("m2_total", 0)
-        for s in result.get("sectores", [])
-    )
+
+    total = 0.0
+    for s in result.get("sectores", []):
+        for t in s.get("tramos", []):
+            m2 = t.get("m2", {})
+            total += (m2.get("valor", 0) if isinstance(m2, dict) else (m2 or 0))
+            for z in t.get("zocalos", []):
+                ml = z.get("ml", 0) or 0
+                alto = z.get("alto_m", 0) or 0
+                if ml > 0:
+                    total += ml * alto
+
     if total == 0:
         return None
     diff_pct = abs(total - planilla_m2) / planilla_m2
-    if diff_pct > 0.10:
-        return f"⚠️ M² calculado ({total:.2f}) no coincide con planilla ({planilla_m2:.2f}). Diferencia: {diff_pct*100:.0f}%"
+    if diff_pct >= 0.015:
+        falta = planilla_m2 - total
+        sign = "faltan" if falta > 0 else "sobran"
+        return (
+            f"M² detectado ({total:.2f}) no coincide con planilla ({planilla_m2:.2f}) · "
+            f"{sign} {abs(falta):.2f} m² — revisá si falta un zócalo o pieza en el plano."
+        )
     return None
 
 
