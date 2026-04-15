@@ -330,12 +330,22 @@ async def generate_resumen_obra(
         "project": data["project"],
     }
 
-    # Persist: attach record to each quote; invalidate email_draft.
+    # PR #18 — normalizar client_name en DB al nombre canónico del resumen.
+    # Antes: el dashboard mostraba variantes distintas ("Estudio 72" vs
+    # "Estudio 72 — Fideicomiso Ventus") aunque todas pertenecían al mismo
+    # cliente consolidado. Ahora todos los presupuestos del grupo quedan
+    # con el mismo client_name → lista unificada + menos confusión.
+    canonical_name = data["client_name"]
+
+    # Persist: attach record to each quote; invalidate email_draft; unify name.
     for qid in deduped:
+        _values: dict = {"resumen_obra": record, "email_draft": None}
+        if canonical_name:
+            _values["client_name"] = canonical_name
         await db.execute(
             update(Quote)
             .where(Quote.id == qid)
-            .values(resumen_obra=record, email_draft=None)
+            .values(**_values)
         )
     await db.commit()
 

@@ -47,6 +47,11 @@ class QuoteDetailResponse(QuoteListResponse):
     messages: list
     quote_breakdown: Optional[dict] = None
     source_files: Optional[list] = None
+    # PR #18 — expuestos al frontend para que ResumenObraCard y
+    # EmailDraftCard rendericen. Antes quedaban en la DB pero el
+    # endpoint /api/quotes/:id no los devolvía → cards invisibles.
+    resumen_obra: Optional[dict] = None
+    email_draft: Optional[dict] = None
 
 
 class QuoteCompareItem(BaseModel):
