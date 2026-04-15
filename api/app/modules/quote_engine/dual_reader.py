@@ -270,6 +270,32 @@ def _is_obsolete(warning: str, rec_tramos: list[dict]) -> bool:
                 if has:
                     return True
 
+    # "calculado X vs declarado Y [diff N%]" → el modelo comparó su estimado
+    # (típicamente mesadas sola) con la planilla. Si el total reconciliado
+    # de la UI (mesadas + zócalos) ya coincide con el declarado, este warning
+    # es obsoleto: describe un estado intermedio que el reconciliador resolvió
+    # al agregar zócalos que un modelo vio y el otro no.
+    m = re.search(
+        r"calculad\w*\s*(\d+(?:[.,]\d+)?).{0,30}?declarad\w*\s*(\d+(?:[.,]\d+)?)",
+        t,
+    )
+    if m:
+        try:
+            reported_decl = float(m.group(2).replace(",", "."))
+            actual = 0.0
+            for tr in rec_tramos:
+                m2 = tr.get("m2", {})
+                actual += m2.get("valor", 0) if isinstance(m2, dict) else (m2 or 0)
+                for z in tr.get("zocalos", []):
+                    ml = z.get("ml", 0) or 0
+                    alto = z.get("alto_m", 0) or 0
+                    if ml > 0:
+                        actual += ml * alto
+            if reported_decl > 0 and abs(actual - reported_decl) / reported_decl < 0.015:
+                return True
+        except (ValueError, ZeroDivisionError):
+            pass
+
     return False
 
 
