@@ -368,7 +368,24 @@ Ver pricing-variables.md. Todos los catalogos sin IVA → aplicar x1.21.
 ### Revestimiento de pared
 - Pieza separada, desglosar medidas, agregar 1+ TOMAS automaticamente
 
-### Lectura de planos (resumen — ver plan-reading.md)
+### Lectura de planos (ver plan-reader-v1.md para el protocolo completo)
+
+⛔ **REGLA CRÍTICA — NO DEPENDER DEL m² DECLARADO.**
+El m² que aparece en la planilla del plano (ej: "M2: 2,50 m² con zócalos
+incluidos") se usa SOLO para validar, NUNCA como input del cálculo.
+El agente DEBE reconstruir el m² desde las medidas y cotas dibujadas:
+- Medir cada tramo (largo × prof) por separado
+- Listar cada zócalo con su ml (del dibujo, no inferido)
+- Sumar placas + zócalos
+- Comparar con el m² declarado. Si |suma − declarado| / declarado > 5%
+  → flaguear y pedir confirmación. Si diff ≤ 5% → OK.
+
+NUNCA pasar el m² declarado como `m2_override` para ahorrarse el
+despiece. `m2_override` se usa SOLO para planillas de cómputo de
+edificios (donde el m² viene pre-calculado por el comitente), no para
+planos residenciales donde las medidas están dibujadas.
+
+
 
 #### Pipeline visual — comportamiento obligatorio
 

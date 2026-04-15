@@ -185,8 +185,10 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
       mesadasM2 += t.m2.valor || 0;
       piecesCount += 1;
       t.zocalos.forEach((z) => {
-        zocalosM2 += (z.ml || 0) * (z.alto_m || 0);
-        zocalosCount += 1;
+        if ((z.ml || 0) > 0) {
+          zocalosM2 += z.ml * (z.alto_m || 0);
+          zocalosCount += 1;
+        }
       });
     })
   );
@@ -262,30 +264,35 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                     </div>
                   </div>
 
-                  {/* Zócalos rows */}
-                  {tramo.zocalos.map((z, zi) => (
-                    <div
-                      key={zi}
-                      className="grid grid-cols-[22px_1fr_80px_80px_80px] items-center gap-3 px-5 py-2 text-[13px] font-mono tabular-nums border-t border-b1"
-                    >
-                      <StatusIcon status={z.status} />
-                      <div className="font-sans text-t2 pl-4 relative">
-                        <span className="absolute left-0 top-1/2 w-2.5 h-px bg-b2" />
-                        Zóc. {z.lado}
+                  {/* Zócalos rows — ocultar ml=0 salvo que requieran revisión */}
+                  {tramo.zocalos.map((z, zi) => {
+                    const hasMl = (z.ml ?? 0) > 0;
+                    const needsReview = z.status === "CONFLICTO" || z.status === "DUDOSO";
+                    if (!hasMl && !needsReview) return null;
+                    return (
+                      <div
+                        key={zi}
+                        className="grid grid-cols-[22px_1fr_80px_80px_80px] items-center gap-3 px-5 py-2 text-[13px] font-mono tabular-nums border-t border-b1"
+                      >
+                        <StatusIcon status={z.status} />
+                        <div className="font-sans text-t2 pl-4 relative">
+                          <span className="absolute left-0 top-1/2 w-2.5 h-px bg-b2" />
+                          Zóc. {z.lado}
+                        </div>
+                        <div className="text-t2 text-right">
+                          <EditableZocalo z={z} onEdit={(v) => updateField(si, ti, `zocalo_${zi}`, v)} />
+                          <span className="text-t4 ml-0.5">ml</span>
+                        </div>
+                        <div className="text-t2 text-right">
+                          {z.alto_m.toFixed(2)}
+                          <span className="text-t4 ml-0.5">m</span>
+                        </div>
+                        <div className="text-t1 font-medium text-right">
+                          {(z.ml * z.alto_m).toFixed(2)}
+                        </div>
                       </div>
-                      <div className="text-t2 text-right">
-                        <EditableZocalo z={z} onEdit={(v) => updateField(si, ti, `zocalo_${zi}`, v)} />
-                        <span className="text-t4 ml-0.5">ml</span>
-                      </div>
-                      <div className="text-t2 text-right">
-                        {z.alto_m.toFixed(2)}
-                        <span className="text-t4 ml-0.5">m</span>
-                      </div>
-                      <div className="text-t1 font-medium text-right">
-                        {(z.ml * z.alto_m).toFixed(2)}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </React.Fragment>
               ))}
             </div>
