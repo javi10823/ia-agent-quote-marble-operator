@@ -12,6 +12,7 @@ class TestBug043ZocaloOmitido:
         """A piece of 2.01 × 0.06 must be included in total m² as a zócalo."""
         result = calculate_quote({
             "client_name": "Basa Arquitectura",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [
                 {"description": "Mesada principal", "largo": 3.00, "prof": 0.62},
@@ -33,6 +34,7 @@ class TestBug043RevestimientoTomas:
         """If any piece has 'revestimiento' in description, add TOMAS."""
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [
                 {"description": "Mesada", "largo": 3.00, "prof": 0.62},
@@ -50,6 +52,7 @@ class TestBug043RevestimientoTomas:
         """Without revestimiento and without tall zócalo, no TOMAS added."""
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [
                 {"description": "Mesada", "largo": 2.00, "prof": 0.60},
@@ -72,6 +75,7 @@ class TestBug042TallZocaloTomas:
     def test_zocalo_15cm_adds_tomas(self):
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [
                 {"description": "Mesada", "largo": 2.00, "prof": 0.60},
@@ -102,10 +106,12 @@ class TestBug044StatuariettoM2:
 
         r_without = calculate_quote({
             "client_name": "Test", "material": "Blanco Nube",
+            "project": "Cocina",
             "pieces": pieces_without_zocalo, "localidad": "Rosario", "plazo": "30 días",
         })
         r_with = calculate_quote({
             "client_name": "Test", "material": "Blanco Nube",
+            "project": "Cocina",
             "pieces": pieces_with_zocalo, "localidad": "Rosario", "plazo": "30 días",
         })
         assert r_with["ok"] and r_without["ok"]
@@ -117,6 +123,7 @@ class TestBug044StatuariettoM2:
         """Total USD must equal round(m2 × price_unit). No invented adjustments."""
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Blanco Nube",
             "pieces": [
                 {"description": "Mesada", "largo": 3.00, "prof": 0.62},
@@ -183,6 +190,7 @@ class TestBug045AnafeSinEvidencia:
         """ANAFE must not appear when anafe=False (no evidence)."""
         result = calculate_quote({
             "client_name": "Test Arquitectura",
+            "project": "Cocina",
             "material": "Blanco Nube",
             "pieces": [{"description": "Mesada cocina", "largo": 3.00, "prof": 0.62}],
             "localidad": "Rosario",
@@ -198,6 +206,7 @@ class TestBug045AnafeSinEvidencia:
         """ANAFE must appear when anafe=True (evidence exists)."""
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Blanco Nube",
             "pieces": [{"description": "Mesada cocina", "largo": 3.00, "prof": 0.62}],
             "localidad": "Rosario",
@@ -216,6 +225,7 @@ class TestBug045ColocacionMatchesMaterial:
     def test_colocacion_qty_equals_material_m2(self):
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Blanco Nube",
             "pieces": [
                 {"description": "Mesada", "largo": 3.00, "prof": 0.62},
@@ -239,6 +249,7 @@ class TestBug045IVATraceability:
     def test_mo_items_have_base_price(self):
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Blanco Nube",
             "pieces": [{"description": "Mesada", "largo": 2.00, "prof": 0.60}],
             "localidad": "Rosario",
@@ -257,6 +268,7 @@ class TestBug045IVATraceability:
         """calculate_quote must return piece_details for preview."""
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Blanco Nube",
             "pieces": [
                 {"description": "Mesada", "largo": 3.00, "prof": 0.62},

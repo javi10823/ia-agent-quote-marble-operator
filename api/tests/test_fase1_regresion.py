@@ -184,6 +184,7 @@ class TestMoDiscountAndFleteRules:
         """Descuento 5% sobre MO aplica a pegado/anafe pero NO al flete."""
         result = calculate_quote({
             "client_name": "Edificio Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [
                 {"description": "DC-A mesada", "largo": 2.00, "prof": 0.60, "quantity": 4},
@@ -222,6 +223,7 @@ class TestMoDiscountAndFleteRules:
         """
         result = calculate_quote({
             "client_name": "DINALE",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [
                 {"description": "Mesada", "largo": 2.00, "prof": 0.60, "quantity": 10},
@@ -265,6 +267,7 @@ class TestMoDiscountAndFleteRules:
         """Sin mo_discount_pct, mo_discount_amount = 0."""
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
             "localidad": "Rosario",
@@ -281,6 +284,7 @@ class TestMoDiscountAndFleteRules:
         from app.modules.quote_engine.calculator import build_deterministic_paso2
         result = calculate_quote({
             "client_name": "Edificio Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [
                 {"description": "DC-A mesada", "largo": 2.00, "prof": 0.60, "quantity": 4},
@@ -431,6 +435,7 @@ class TestVentusEdificioEndToEnd:
         QUADRA Q71A default (el bug Ventus)."""
         result = calculate_quote({
             "client_name": "Test sin producto",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
             "localidad": "Rosario",
@@ -446,6 +451,7 @@ class TestVentusEdificioEndToEnd:
         """pileta=empotrada_cliente jamás agrega producto pileta."""
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
             "localidad": "Rosario",
@@ -460,6 +466,7 @@ class TestVentusEdificioEndToEnd:
         """Override también funciona en residencial (no solo edificio)."""
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
             "localidad": "Rosario",

@@ -168,6 +168,7 @@ class TestFindMaterial:
         )
         result = calculate_quote({
             "client_name": "DINALE",
+            "project": "Cocina",
             "material": "Granito Gris Mara — 25mm (SKU estándar, NO Extra 2)",
             "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.60, "m2_override": 31.37}],
             "localidad": "rosario",
@@ -220,6 +221,7 @@ class TestCalculateQuote:
     def test_simple_quote(self):
         result = calculate_quote({
             "client_name": "Test Client",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [
                 {"description": "Mesada", "largo": 2.0, "prof": 0.6},
@@ -243,6 +245,7 @@ class TestCalculateQuote:
     def test_quote_without_pileta_anafe(self):
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [{"description": "Mesada", "largo": 1.5, "prof": 0.6}],
             "localidad": "Rosario",
@@ -262,6 +265,7 @@ class TestCalculateQuote:
         """Zócalo > 10cm alto should auto-add 1 TOMAS to MO."""
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [
                 {"description": "Mesada", "largo": 2.0, "prof": 0.6},
@@ -278,6 +282,7 @@ class TestCalculateQuote:
         """Zócalo <= 10cm should NOT add TOMAS."""
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [
                 {"description": "Mesada", "largo": 2.0, "prof": 0.6},
@@ -294,6 +299,7 @@ class TestCalculateQuote:
         """Puerto San Martín should resolve via zone_aliases in config.json."""
         result = calculate_quote({
             "client_name": "Test PSM",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [{"description": "Mesada", "largo": 1.5, "prof": 0.6}],
             "localidad": "puerto san martin",
@@ -319,6 +325,7 @@ class TestCalculateQuote:
     def test_material_not_found_error(self):
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Material Fake XYZ",
             "pieces": [{"description": "Mesada", "largo": 1.0, "prof": 0.6}],
             "localidad": "Rosario",
@@ -331,6 +338,7 @@ class TestCalculateQuote:
     def test_discount_applied(self):
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
             "localidad": "Rosario",
@@ -354,6 +362,7 @@ class TestQuoteEndpoint:
         with patch("app.modules.quote_engine.router.upload_to_drive", return_value={"ok": True, "drive_url": "https://drive.test"}):
             resp = await client.post("/api/v1/quote", json={
                 "client_name": "Test API",
+                "project": "Cocina",
                 "material": "Silestone Blanco Norte",
                 "pieces": [
                     {"description": "Mesada", "largo": 2.0, "prof": 0.6},
@@ -377,6 +386,7 @@ class TestQuoteEndpoint:
         with patch("app.modules.quote_engine.router.upload_to_drive", return_value={"ok": True, "drive_url": "https://drive.test"}):
             resp = await client.post("/api/v1/quote", json={
                 "client_name": "Test Multi",
+                "project": "Cocina",
                 "material": ["Silestone Blanco Norte", "Blanco Paloma"],
                 "pieces": [
                     {"description": "Mesada", "largo": 2.0, "prof": 0.6},
@@ -397,6 +407,7 @@ class TestQuoteEndpoint:
     async def test_missing_required_fields(self, client):
         resp = await client.post("/api/v1/quote", json={
             "client_name": "Test",
+            "project": "Cocina",
             # missing material, pieces, localidad, plazo
         })
         assert resp.status_code == 422
@@ -405,6 +416,7 @@ class TestQuoteEndpoint:
     async def test_material_not_found(self, client):
         resp = await client.post("/api/v1/quote", json={
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Material Fake XYZ",
             "pieces": [{"description": "Mesada", "largo": 1.0, "prof": 0.6}],
             "localidad": "Rosario",

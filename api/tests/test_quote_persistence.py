@@ -14,6 +14,7 @@ def _make_breakdown(**overrides):
     """Create a realistic quote_breakdown dict."""
     base = calculate_quote({
         "client_name": "Test Client",
+        "project": "Cocina",
         "material": "Silestone Blanco Norte",
         "pieces": [
             {"description": "Mesada", "largo": 2.0, "prof": 0.6},
@@ -41,6 +42,7 @@ class TestValidateUsesCompleteBreakdown:
 
         await client.patch(f"/api/quotes/{qid}", json={
             "client_name": bd["client_name"],
+            "project": "Cocina",
             "material": bd["material_name"],
         })
 
@@ -102,6 +104,7 @@ class TestDraftMaterialChange:
         """Recalculating same material on DRAFT should produce valid result."""
         bd1 = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
             "localidad": "Rosario",
@@ -112,6 +115,7 @@ class TestDraftMaterialChange:
         # Recalculate with different material (simulates operator changing material)
         bd2 = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "Blanco Paloma",
             "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
             "localidad": "Rosario",

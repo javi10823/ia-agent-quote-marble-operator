@@ -66,6 +66,7 @@ class TestTomasQtyOverride:
     def test_tomas_qty_creates_mo_line(self):
         result = calculate_quote({
             "client_name": "DINALE",
+            "project": "Cocina",
             "material": "GRANITO GRIS MARA EXTRA 2 ESP",
             "pieces": [
                 {"description": "Mesada", "largo": 2.0, "prof": 0.60, "m2_override": 31.37},
@@ -85,6 +86,7 @@ class TestTomasQtyOverride:
     def test_tomas_qty_greater_than_one(self):
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "GRANITO GRIS MARA EXTRA 2 ESP",
             "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.60, "m2_override": 20}],
             "localidad": "rosario",
@@ -103,6 +105,7 @@ class TestTomasQtyOverride:
         """Sin tomas_qty ni zócalo alto/revestimiento → no hay toma."""
         result = calculate_quote({
             "client_name": "Test",
+            "project": "Cocina",
             "material": "GRANITO GRIS MARA EXTRA 2 ESP",
             "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.60}],
             "localidad": "rosario",
