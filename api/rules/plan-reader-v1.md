@@ -58,6 +58,17 @@ No preguntar, no inferir, no completar.
 Altura default: 0.07 m si se indica "zócalos 7 cm" en características generales.
 Si no hay altura especificada → anotá en ambiguedades.
 
+⚠️ IMPORTANTE — ESPECIFICACIONES EXPLÍCITAS:
+Si el prompt incluye un bloque "ESPECIFICACIONES EXPLÍCITAS DEL PLANO", ese
+texto viene extraído literal de la leyenda/tabla de características. Usalo
+directo:
+  - "ZOCALOS: 7 cm" → alto_m = 0.07 (confirmado, NO anotes ambigüedad)
+  - "PILETA: Johnson LUXOR COMPACT SI71" → modelo definido (NO anotes
+    "modelo no indicado")
+  - "MATERIAL: Purastone Blanco Paloma" → material definido
+NO marques como ambigüedad ningún dato que esté cubierto por el bloque
+ESPECIFICACIONES.
+
 ---
 
 ## REGLA — FRENTIN / FALDÓN: SOLO POR EVIDENCIA EXPLÍCITA
