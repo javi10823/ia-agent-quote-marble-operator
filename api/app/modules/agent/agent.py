@@ -1976,13 +1976,25 @@ class AgentService:
                                     _dr_bd = (_dr_check_quote.quote_breakdown or {}) if _dr_check_quote else {}
                                     _existing_dr = _dr_bd.get("dual_read_result")
                                     _already_confirmed = bool(_dr_bd.get("verified_context") or _dr_bd.get("measurements_confirmed"))
+                                    # Si ya se corrió calculate_quote (Paso 2), el quote ya
+                                    # avanzó más allá del dual_read. No tiene sentido re-emitir
+                                    # la card ni re-correr el análisis visual.
+                                    _past_paso2 = bool(
+                                        _dr_bd.get("material_name") or _dr_bd.get("total_ars") or _dr_bd.get("mo_items")
+                                    )
                                 except Exception:
                                     _existing_dr = None
                                     _already_confirmed = False
+                                    _past_paso2 = False
 
                                 _has_valid_existing = bool(_existing_dr) and not _existing_dr.get("error")
 
-                                if _has_valid_existing and _already_confirmed:
+                                if _past_paso2:
+                                    # Ya pasamos Paso 2 (cálculo hecho). No re-emitir ni re-correr.
+                                    logging.info(
+                                        f"[dual-read] skip (past paso 2) for quote {quote_id}"
+                                    )
+                                elif _has_valid_existing and _already_confirmed:
                                     # Operador ya confirmó — no re-emitir, seguir con Claude
                                     logging.info(
                                         f"[dual-read] skip (confirmed) for quote {quote_id}"
@@ -2009,7 +2021,7 @@ class AgentService:
                                     yield {"type": "done", "content": ""}
                                     return
 
-                                _skip_dual = _has_valid_existing and _already_confirmed
+                                _skip_dual = _past_paso2 or (_has_valid_existing and _already_confirmed)
 
                                 try:
                                     if _skip_dual:
@@ -4395,8 +4407,22 @@ class AgentService:
                     # muestre el badge OBRA en edificios single-material
                     # (DINALE, Estudio 72 individual, etc.). Antes solo se
                     # marcaba en el flow building_parent multi-material.
+                    #
+                    # Preservar keys de dual_read que el reemplazo completo
+                    # de calc_result borraba (causaba que al confirmar Paso 2
+                    # el dual_read corriera de nuevo y apareciera otra card).
+                    _merged_bd = dict(calc_result)
+                    if old_quote and isinstance(old_quote.quote_breakdown, dict):
+                        for _keep_key in (
+                            "dual_read_result", "verified_measurements",
+                            "verified_context", "dual_read_planilla_m2",
+                            "dual_read_crop_label", "files_v2",
+                        ):
+                            if _keep_key in old_quote.quote_breakdown and _keep_key not in _merged_bd:
+                                _merged_bd[_keep_key] = old_quote.quote_breakdown[_keep_key]
+
                     _values = {
-                        "quote_breakdown": calc_result,
+                        "quote_breakdown": _merged_bd,
                         "total_ars": calc_result.get("total_ars"),
                         "total_usd": calc_result.get("total_usd"),
                         "material": calc_result.get("material_name"),
