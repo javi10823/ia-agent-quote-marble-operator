@@ -58,8 +58,17 @@ const STATUS_STYLE: Record<string, IconStyle> = {
   ALERTA:       { cls: "bg-amb-bg text-amb",                        char: "!" },
   CONFLICTO:    { cls: "bg-[rgba(255,69,58,0.15)] text-err",        char: "✕" },
   DUDOSO:       { cls: "bg-[rgba(191,85,236,0.15)] text-[#bf55ec]", char: "?" },
-  SOLO_SONNET:  { cls: "bg-[rgba(79,143,255,0.15)] text-acc",       char: "S" },
-  SOLO_OPUS:    { cls: "bg-[rgba(191,85,236,0.15)] text-[#bf55ec]", char: "O" },
+  SOLO_SONNET:  { cls: "bg-grn-bg text-grn",                        char: "✓" },
+  SOLO_OPUS:    { cls: "bg-grn-bg text-grn",                        char: "✓" },
+};
+
+const STATUS_TITLE: Record<string, string> = {
+  CONFIRMADO: "Ambos lectores coincidieron",
+  ALERTA: "Diferencia menor — se tomó el promedio",
+  CONFLICTO: "Conflicto entre lectores — requiere revisión",
+  DUDOSO: "Valor dudoso — requiere revisión",
+  SOLO_SONNET: "Solo Sonnet detectó este valor",
+  SOLO_OPUS: "Solo Opus detectó este valor",
 };
 
 function StatusIcon({ status }: { status: string }) {
@@ -67,8 +76,8 @@ function StatusIcon({ status }: { status: string }) {
   return (
     <span
       className={`inline-grid place-items-center w-[18px] h-[18px] rounded-[5px] text-[10px] font-bold ${s.cls}`}
-      title={status}
-      aria-label={status}
+      title={STATUS_TITLE[status] || status}
+      aria-label={STATUS_TITLE[status] || status}
     >
       {s.char}
     </span>
@@ -197,8 +206,13 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
   const allAmbiguedades = editedData.sectores.flatMap((s) => s.ambiguedades);
   const title =
     data.source === "DUAL" ? "Doble lectura del plano" : `Lectura ${data.source.replace("SOLO_", "")}`;
+  const prettify = (s: string) =>
+    s
+      .replace(/_/g, " ")
+      .toLowerCase()
+      .replace(/\b\w/g, (c) => c.toUpperCase());
   const firstSectorHead = editedData.sectores[0]
-    ? `${editedData.sectores[0].id} — ${editedData.sectores[0].tipo}`
+    ? `${prettify(editedData.sectores[0].id)} — ${prettify(editedData.sectores[0].tipo)}`
     : "";
 
   return (
@@ -210,7 +224,7 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
         </span>
         <h3 className="text-[15px] font-semibold text-t1 tracking-tight">{firstSectorHead || title}</h3>
         <span className="ml-auto text-[12px] text-t3 font-mono">
-          {piecesCount} {piecesCount === 1 ? "pieza" : "piezas"} · {zocalosCount}{" "}
+          {piecesCount} {piecesCount === 1 ? "mesada" : "mesadas"} · {zocalosCount}{" "}
           {zocalosCount === 1 ? "zócalo" : "zócalos"}
         </span>
       </div>
@@ -307,13 +321,14 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
             <span className="text-[16px] text-t2 font-medium ml-1 tracking-tight font-sans">m²</span>
           </div>
           <div className="mt-4 grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-[12px] font-mono tabular-nums">
-            <span className="text-t3 font-sans">Mesadas</span>
+            <span className="text-t3 font-sans">
+              Mesadas <span className="text-t4">({piecesCount})</span>
+            </span>
             <span className="text-t1 text-right">{mesadasM2.toFixed(2)} m²</span>
-            <span className="text-t3 font-sans">Zócalos</span>
+            <span className="text-t3 font-sans">
+              Zócalos <span className="text-t4">({zocalosCount})</span>
+            </span>
             <span className="text-t1 text-right">{zocalosM2.toFixed(2)} m²</span>
-            <span className="col-span-2 h-px bg-b1 my-1" />
-            <span className="text-t3 font-sans">Piezas</span>
-            <span className="text-t1 text-right">{piecesCount + zocalosCount}</span>
           </div>
         </div>
       </div>
