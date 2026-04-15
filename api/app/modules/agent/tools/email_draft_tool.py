@@ -347,8 +347,24 @@ async def _call_llm(context: dict, prior_error: str | None = None) -> dict:
             messages=[{"role": "user", "content": user_prompt}],
         )
     except Exception as e:
-        logging.error(f"[email-draft] LLM call failed: {e}")
-        raise EmailDraftError(502, "Error contactando al modelo de IA")
+        # PR #20 — surface the underlying error class/message instead of
+        # a generic 'Error contactando al modelo de IA'. Helps the operator
+        # distinguish entre rate limit, modelo deprecated, API key inválida,
+        # network, etc. — antes era una caja negra.
+        logging.error(f"[email-draft] LLM call failed: {type(e).__name__}: {e}", exc_info=True)
+        _err_class = type(e).__name__
+        _err_msg = str(e)[:200]  # truncate to avoid leaking long stacks
+        # Mensaje amigable + detalle técnico para el operador.
+        if "rate" in _err_msg.lower() or "429" in _err_msg:
+            raise EmailDraftError(429, "El modelo de IA está saturado momentáneamente. Reintentar en unos segundos.")
+        if "401" in _err_msg or "unauthorized" in _err_msg.lower() or "api key" in _err_msg.lower():
+            raise EmailDraftError(502, "API key del modelo inválida. Avisar al admin.")
+        if "404" in _err_msg or "not found" in _err_msg.lower() or "model" in _err_msg.lower():
+            raise EmailDraftError(502, f"Modelo de IA no disponible ({EMAIL_MODEL}). Avisar al admin.")
+        raise EmailDraftError(
+            502,
+            f"Error contactando al modelo de IA — {_err_class}: {_err_msg}",
+        )
 
     text = ""
     for block in resp.content or []:
