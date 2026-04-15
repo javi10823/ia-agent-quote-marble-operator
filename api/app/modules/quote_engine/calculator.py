@@ -1084,25 +1084,29 @@ def build_deterministic_paso2(calc: dict) -> str:
     lines.append(f"Fecha: {calc.get('date', '')} | Demora: {delivery} | {calc.get('localidad', 'Rosario')}")
     lines.append("")
 
-    # Material header
-    lines.append(f"**MATERIAL — {mat_name} — {mat_m2:.2f} m²**".replace(".", ","))
+    # Material header — display half-up para que coincida con Paso 1.
+    # Sin esto f"{1.575:.2f}" → "1.57" porque el float es 1.5749999...
+    # El operador veía 1.57 en Paso 2 aunque Paso 1 mostraba 1.58.
+    _mat_m2_disp = _round_half_up(mat_m2, 2)
+    lines.append(f"**MATERIAL — {mat_name} — {_mat_m2_disp:.2f} m²**".replace(".", ","))
     lines.append("")
     lines.append("| Pieza | Medida | m² |")
     lines.append("|---|---|---|")
+    _sum_disp = 0.0
     for p in pieces:
-        # Faldón/frentín NO va en el bloque material — se cobra solo como MO.
-        # Ver PR #164: piece._is_frentin marca estas piezas con m²=0 para que
-        # el calculator no las sume al material. El render también debe
-        # omitirlas para que no aparezcan como fila fantasma (PR #9, DINALE
-        # 15/04/2026).
         if p.get("_is_frentin"):
             continue
         desc = p.get("description", "")
         largo = p.get("largo", 0)
         dim2 = p.get("dim2", p.get("prof", 0))
-        m2 = p.get("m2", 0)
-        lines.append(f"| {desc} | {largo} x {dim2} | {m2:.2f} |".replace(".", ","))
-    lines.append(f"| **TOTAL** | | **{mat_m2:.2f} m²** |".replace(".", ","))
+        m2_disp = _round_half_up(p.get("m2", 0), 2)
+        _sum_disp = _round_half_up(_sum_disp + m2_disp, 2)
+        lines.append(f"| {desc} | {largo} x {dim2} | {m2_disp:.2f} |".replace(".", ","))
+    # Total visible = suma de los m² ya redondeados (lo que el operador suma
+    # a ojo en la columna). Si difiere de mat_m2 (raw), es el redondeo half-up
+    # de cada pieza acumulado — esperable y consistente.
+    _total_show = _sum_disp if _sum_disp > 0 else _mat_m2_disp
+    lines.append(f"| **TOTAL** | | **{_total_show:.2f} m²** |".replace(".", ","))
     lines.append("")
 
     # Precio
