@@ -299,9 +299,19 @@ si tiene zócalo o no. No dejes ningún lado sin decisión.
 
 Los 4 lados de una mesada rectangular en planta:
 - **frontal** (borde hacia el usuario)
-- **trasero / fondo** (contra pared del fondo)
+- **trasero** (contra pared del fondo)
 - **lateral_izq**
 - **lateral_der**
+
+⛔ **Nombrar cada zócalo por UN ÚNICO lado** — nunca usar sinónimos
+simultáneos. Usar SOLO los 4 valores literales de arriba:
+`frontal | trasero | lateral_izq | lateral_der`.
+NO usar `frente`, `fondo`, `lateral` genérico, `derecho`, `izquierdo`.
+
+⛔ **Un zócalo de fondo es `trasero`, NUNCA `frontal` ni `frente`.**
+Los frentes de mesada (borde visible hacia el usuario) normalmente NO
+llevan zócalo — ese lado queda libre. Si ves un rectángulo hachurado
+con cota grande, está contra la pared del fondo → `trasero`.
 
 Para cada lado, buscar en el plano un rectángulo fino hachurado `//` cuyo
 largo **coincida o supere** el largo del lado. Decisión binaria:
