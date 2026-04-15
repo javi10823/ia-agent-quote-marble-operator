@@ -292,6 +292,52 @@ son los ZÓCALOS, no piezas de material.
 
 ---
 
+## REGLA — ENUMERACIÓN EXPLÍCITA DE ZÓCALOS POR LADO (CRÍTICO)
+
+Para CADA tramo de mesada, recorré los **4 lados** y decidí explícitamente
+si tiene zócalo o no. No dejes ningún lado sin decisión.
+
+Los 4 lados de una mesada rectangular en planta:
+- **frontal** (borde hacia el usuario)
+- **trasero / fondo** (contra pared del fondo)
+- **lateral_izq**
+- **lateral_der**
+
+Para cada lado, buscar en el plano un rectángulo fino hachurado `//` cuyo
+largo **coincida o supere** el largo del lado. Decisión binaria:
+- **Sí hay zócalo** → reportar `{ lado, ml: X, alto: Y }` con cota leída
+- **No hay zócalo** → el lado conecta con otro tramo, o con aire (termina
+  en un borde libre), o el plano no tiene cota para ese lado. Reportar
+  `{ lado, ml: 0 }` y agregar a `ambiguedades` si es dudoso.
+
+⛔ **NO REPORTAR SOLO LOS ZÓCALOS QUE VES EVIDENTES.** La forma correcta
+es recorrer los 4 lados por tramo y decidir cada uno. Si solo ves 1
+rectángulo hachurado pero el plano tiene 2 tramos independientes, los
+otros 2–3 lados de la mesada que toca pared también llevan zócalo — tenés
+que buscar sus cotas ACTIVAMENTE en el plano (suelen estar dibujadas en
+una sub-vista de elevación lateral cerca del tramo correspondiente).
+
+**Ejemplo A1335 aplicado — enumeración por lado:**
+
+Tramo 1 (Mesada cocina, 1.72 × 0.75, en planta principal):
+- frontal     → sin zócalo (borde libre hacia cocina) → ml=0
+- trasero     → zócalo 1.74 ml × 0.07 (pared del fondo)
+- lateral_izq → sin zócalo (une con tramo 2) → ml=0
+- lateral_der → zócalo 0.75 ml × 0.07 (pared lateral)
+
+Tramo 2 (Mesada retorno, 0.60 × 1.55, en planta secundaria):
+- frontal     → sin zócalo (borde libre) → ml=0
+- trasero     → sin zócalo (une con tramo 1) → ml=0 *(o el lado que toca tramo 1)*
+- lateral_izq → zócalo 1.55 ml × 0.07 (pared lateral larga)
+- lateral_der → sin zócalo
+
+Total: 3 zócalos reales (1.74 + 0.75 + 1.55 ml). Suma m² zócalos = 0.28.
+
+El modelo debe entregar 4 decisiones por tramo (con ml=0 en los lados
+sin zócalo), NO solo los 1-2 zócalos más visibles.
+
+---
+
 ## VALIDACIÓN CRUZADA vs m² DECLARADO
 
 Si la planilla/rótulo del plano declara un m² total ("M2: 2,50 m² — con zócalos
