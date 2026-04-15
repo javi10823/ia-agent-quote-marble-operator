@@ -81,6 +81,90 @@ def _validate_quote_data(qdata: dict) -> tuple[list[str], list[str]]:
     return errors, warnings
 
 
+def _validate_plan_pieces(pieces: list[dict]) -> list[str]:
+    """PR #25 — validar piezas de list_pieces cuando hay plano adjunto.
+
+    Enforza tipado + coherencia dimensional para evitar los errores típicos
+    de lectura de planos:
+    - confundir vista en elevación de mesada con pieza de material aparte
+    - confundir zócalo con mesada chica
+    - confundir alzada con zócalo alto
+
+    Retorna lista de mensajes de error; vacía si todo OK.
+    Gated a has_plan en el caller — briefs de texto puro NO pasan por acá.
+    """
+    errors: list[str] = []
+    if not isinstance(pieces, list) or not pieces:
+        return errors
+
+    has_any_zocalo = False
+    for idx, p in enumerate(pieces):
+        if not isinstance(p, dict):
+            errors.append(f"Pieza #{idx}: formato inválido")
+            continue
+        desc = p.get("description", f"pieza #{idx}")
+        tipo = (p.get("tipo") or "").strip().lower()
+        largo = p.get("largo") or 0
+        prof = p.get("prof") or 0
+        alto = p.get("alto") or 0
+
+        if not tipo:
+            errors.append(
+                f"'{desc}': falta el campo `tipo` (mesada/zocalo/alzada/frentin). "
+                "Cuando hay plano adjunto el tipo es obligatorio."
+            )
+            continue
+
+        if tipo == "mesada":
+            if prof and prof < 0.30:
+                errors.append(
+                    f"'{desc}' marcada como mesada pero prof={prof} < 0.30 m. "
+                    "Puede ser un zócalo mal tipado — releer el plano."
+                )
+            if alto and alto > 0.15:
+                errors.append(
+                    f"'{desc}' marcada como mesada pero alto={alto} > 0.15 m "
+                    "(una mesada no tiene campo `alto`, solo prof)."
+                )
+        elif tipo == "zocalo":
+            has_any_zocalo = True
+            if not alto:
+                errors.append(
+                    f"'{desc}' marcada como zócalo pero falta `alto`. "
+                    "Un zócalo se mide como largo (ml) × alto (5–15 cm)."
+                )
+            elif alto > 0.15:
+                errors.append(
+                    f"'{desc}' marcada como zócalo pero alto={alto} > 0.15 m. "
+                    "Los zócalos típicos tienen 5–15 cm de alto. "
+                    "Si es más alto, probablemente es una alzada."
+                )
+            if prof and prof >= 0.30:
+                errors.append(
+                    f"'{desc}' marcada como zócalo pero prof={prof} ≥ 0.30 m. "
+                    "Un zócalo no tiene profundidad — releer el plano."
+                )
+        elif tipo == "alzada":
+            if alto and alto < 0.30:
+                errors.append(
+                    f"'{desc}' marcada como alzada pero alto={alto} < 0.30 m. "
+                    "Una alzada es una pieza vertical de material (≥ 30 cm)."
+                )
+        elif tipo == "frentin":
+            if alto and alto > 0.30:
+                errors.append(
+                    f"'{desc}' marcada como frentín pero alto={alto} > 0.30 m. "
+                    "Un frentín típico tiene 5–15 cm. Si es más alto, revisar."
+                )
+        else:
+            errors.append(
+                f"'{desc}': tipo '{tipo}' inválido. "
+                "Válidos: mesada, zocalo, alzada, frentin."
+            )
+
+    return errors
+
+
 def _backfill_material_price_base(quotes_data: list[dict]) -> None:
     """Populate `material_price_base` on each quote dict from the catalog.
 
@@ -512,6 +596,14 @@ def build_system_prompt(has_plan: bool = False, is_building: bool = False, user_
             conditional_parts.append(f"## {bldg_path.stem}\n\n{_read_cached_file(bldg_path)}")
 
     if has_plan:
+        # PR #25 — plan-reader-v1.md es el prompt canónico de lectura de
+        # planos (4 pasadas, placa vs zócalo ml, esquinas L/U sin doble
+        # superficie, OCR rules, output JSON). Se incluye SIEMPRE antes
+        # que el legacy plan-reading.md para que el agente use las nuevas
+        # reglas como source of truth.
+        reader_v1 = rules_dir / "plan-reader-v1.md"
+        if reader_v1.exists():
+            conditional_parts.append(f"## plan-reader-v1\n\n{_read_cached_file(reader_v1)}")
         plan_path = rules_dir / "plan-reading.md"
         if plan_path.exists():
             conditional_parts.append(f"## {plan_path.stem}\n\n{_read_cached_file(plan_path)}")
@@ -556,7 +648,7 @@ def build_system_prompt(has_plan: bool = False, is_building: bool = False, user_
 # ── TOOL DEFINITIONS ──────────────────────────────────────────────────────────
 
 TOOLS = [
-    {"name": "list_pieces", "description": "PASO 1 OBLIGATORIO: lista piezas con formato correcto + total m². Usar SIEMPRE en Paso 1 para mostrar piezas. Zócalos salen en ml. El total incluye zócalos.", "input_schema": {"type": "object", "properties": {"pieces": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}, "largo": {"type": "number"}, "prof": {"type": "number"}, "alto": {"type": "number"}}, "required": ["description", "largo"]}}}, "required": ["pieces"]}},
+    {"name": "list_pieces", "description": "PASO 1 OBLIGATORIO: lista piezas con formato correcto + total m². Usar SIEMPRE en Paso 1 para mostrar piezas. Zócalos salen en ml. El total incluye zócalos. ⛔ Cuando hay plano (imagen/PDF adjunto), cada pieza DEBE llevar `tipo`: mesada/zocalo/alzada/frentin — ver plan-reader-v1.md.", "input_schema": {"type": "object", "properties": {"pieces": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}, "largo": {"type": "number"}, "prof": {"type": "number"}, "alto": {"type": "number"}, "tipo": {"type": "string", "enum": ["mesada", "zocalo", "alzada", "frentin"], "description": "Tipo de pieza. OBLIGATORIO cuando hay plano adjunto. Opcional en briefs de texto puro."}}, "required": ["description", "largo"]}}}, "required": ["pieces"]}},
     {"name": "catalog_lookup", "description": "Busca precio de 1 SKU en catálogo.", "input_schema": {"type": "object", "properties": {"catalog": {"type": "string"}, "sku": {"type": "string"}}, "required": ["catalog", "sku"]}},
     {"name": "catalog_batch_lookup", "description": "Busca múltiples SKUs. Preferir sobre catalog_lookup para 2+.", "input_schema": {"type": "object", "properties": {"queries": {"type": "array", "items": {"type": "object", "properties": {"catalog": {"type": "string"}, "sku": {"type": "string"}}, "required": ["catalog", "sku"]}}}, "required": ["queries"]}},
     {"name": "check_stock", "description": "Verifica retazos en stock.", "input_schema": {"type": "object", "properties": {"material_sku": {"type": "string"}}, "required": ["material_sku"]}},
@@ -3099,14 +3191,45 @@ class AgentService:
         if name == "list_pieces":
             # Detect is_edificio from the breakdown if persisted
             _is_edif = False
+            _has_plan_ctx = False
             try:
                 _qr = await db.execute(select(Quote).where(Quote.id == quote_id))
                 _q = _qr.scalar_one_or_none()
                 if _q:
                     _bd = _q.quote_breakdown or {}
                     _is_edif = bool(_bd.get("is_edificio") or _bd.get("building_step"))
+                    # Plano detectado: hubo read_plan previo, o hay source_files
+                    # con imagen/PDF, o el breakdown lo registró.
+                    _has_plan_ctx = bool(
+                        _bd.get("has_plan")
+                        or _bd.get("plan_read")
+                        or (_q.source_files and any(
+                            (sf.get("filename") or "").lower().endswith(
+                                (".pdf", ".jpg", ".jpeg", ".png", ".webp")
+                            )
+                            for sf in (_q.source_files or [])
+                            if isinstance(sf, dict)
+                        ))
+                    )
             except Exception:
                 pass
+
+            # PR #25 — VALIDACIÓN ESTRICTA cuando hay plano adjunto.
+            # Se exige tipo explícito por pieza + coherencia dims. Texto
+            # puro (DINALE, Estudio 72) sigue sin cambios.
+            if _has_plan_ctx and not _is_edif:
+                _errs = _validate_plan_pieces(inputs.get("pieces", []))
+                if _errs:
+                    return {
+                        "ok": False,
+                        "error": (
+                            "⛔ Piezas inválidas detectadas al leer el plano. "
+                            "Releer el plano con atención a los rectángulos hachurados "
+                            "(zócalos) y las vistas en planta vs elevación. "
+                            "Errores:\n- " + "\n- ".join(_errs)
+                        ),
+                    }
+
             result = list_pieces(inputs["pieces"], is_edificio=_is_edif)
             # ── Persist Paso 1 pieces for Paso 2 consistency guardrail ──
             try:
@@ -3941,6 +4064,40 @@ class AgentService:
                 if _gquote:
                     _gbd = _gquote.quote_breakdown or {}
 
+                    # PR #25 — detectar si hay plano adjunto en el contexto.
+                    # Cuando hay plano, residencial (is_edificio=False) NO
+                    # permite m2_override: se debe reconstruir desde medidas.
+                    _has_plan_ctx = bool(
+                        _gbd.get("has_plan")
+                        or _gbd.get("plan_read")
+                        or (_gquote.source_files and any(
+                            (sf.get("filename") or "").lower().endswith(
+                                (".pdf", ".jpg", ".jpeg", ".png", ".webp")
+                            )
+                            for sf in (_gquote.source_files or [])
+                            if isinstance(sf, dict)
+                        ))
+                    )
+                    _is_edif_ctx = bool(inputs.get("is_edificio"))
+                    if _has_plan_ctx and not _is_edif_ctx:
+                        _override_pieces = [
+                            (p.get("description") or "?")
+                            for p in inputs.get("pieces", [])
+                            if p.get("m2_override") is not None
+                        ]
+                        if _override_pieces:
+                            return {
+                                "ok": False,
+                                "error": (
+                                    "⛔ m2_override está prohibido en presupuestos "
+                                    "residenciales con plano adjunto. El m² debe "
+                                    "reconstruirse desde las medidas del plano "
+                                    "(largo × prof por cada pieza, zócalos como "
+                                    "ml × alto). Piezas con override: "
+                                    + ", ".join(_override_pieces)
+                                ),
+                            }
+
                     # Calculate m2 of what Claude is trying to pass now.
                     # If a piece declares m2_override (operator's Planilla de
                     # Cómputo), that value takes precedence over largo×prof —
@@ -3970,12 +4127,16 @@ class AgentService:
                     if _paso1_pieces:
                         _diff_m2 = abs(_current_m2 - _paso1_m2)
                         _diff_count = abs(len(inputs.get("pieces", [])) - len(_paso1_pieces))
-                        if _diff_m2 > 0.5 or _diff_count > 0:
+                        # PR #25 — tolerancia ajustada a max(0.05 m², 2% del
+                        # declarado). Antes 0.5 absolutos era demasiado laxo:
+                        # un 2.50 vs 2.00 pasaba sin flag.
+                        _a_tol = max(0.05, (_paso1_m2 or 1) * 0.02)
+                        if _diff_m2 > _a_tol or _diff_count > 0:
                             logging.error(
                                 f"[guardrail-A] PASO1↔PASO2 mismatch for {save_to_qid}: "
                                 f"paso1={len(_paso1_pieces)}p/{_paso1_m2:.2f}m² "
-                                f"vs paso2={len(inputs.get('pieces', []))}p/{_current_m2:.2f}m². "
-                                "OVERRIDING with paso1 pieces."
+                                f"vs paso2={len(inputs.get('pieces', []))}p/{_current_m2:.2f}m² "
+                                f"(tol={_a_tol:.3f}). OVERRIDING with paso1 pieces."
                             )
                             inputs["pieces"] = _paso1_pieces
 
