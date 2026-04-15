@@ -222,6 +222,29 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
         </div>
       ))}
 
+      {(() => {
+        let mesadas = 0;
+        let zocalos = 0;
+        editedData.sectores.forEach(s => s.tramos.forEach(t => {
+          mesadas += t.m2.valor || 0;
+          t.zocalos.forEach(z => { zocalos += (z.ml || 0) * (z.alto_m || 0); });
+        }));
+        const total = mesadas + zocalos;
+        return (
+          <div className="mt-3 pt-2 border-t border-b1 flex items-baseline justify-between px-2">
+            <div>
+              <div className="text-[12px] text-t3 uppercase tracking-wide">Total</div>
+              <div className="text-[10px] text-t4 mt-0.5">
+                mesadas {mesadas.toFixed(2)} + zócalos {zocalos.toFixed(2)}
+              </div>
+            </div>
+            <div className="text-[15px] font-semibold text-t1 font-mono">
+              {total.toFixed(2)} m²
+            </div>
+          </div>
+        );
+      })()}
+
       {data.source !== "DUAL" && !data._retry && (
         <button
           className="w-full mt-2 py-2 rounded-lg text-[12px] font-medium bg-orange-600/20 hover:bg-orange-600/30 border border-orange-600/40 text-orange-200 transition disabled:opacity-50"
