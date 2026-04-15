@@ -666,6 +666,12 @@ def calculate_quote(input_data: dict) -> dict:
         discount_amount = 0
         material_total_net = material_total
 
+    # 4c. Sobrante (merma) — por regla calculation-formulas.md:
+    # "Bloque separado e independiente, subtotal propio. Grand total suma
+    # principal + sobrante." Mismo precio unitario que el material.
+    sobrante_m2 = merma.get("sobrante_m2", 0) if merma.get("aplica") else 0
+    sobrante_total = round(sobrante_m2 * price_unit) if sobrante_m2 else 0
+
     # 5. MO items
     mo_items = []
 
@@ -918,9 +924,9 @@ def calculate_quote(input_data: dict) -> dict:
 
     if currency == "USD":
         total_ars = total_mo_ars + total_sinks_ars
-        total_usd = material_total_net
+        total_usd = material_total_net + sobrante_total
     else:
-        total_ars = total_mo_ars + total_sinks_ars + material_total_net
+        total_ars = total_mo_ars + total_sinks_ars + material_total_net + sobrante_total
         total_usd = 0
 
     # Build sectors for document generation (group identical pieces)
@@ -1011,6 +1017,8 @@ def calculate_quote(input_data: dict) -> dict:
         "mo_discount_pct": mo_discount_pct,
         "mo_discount_amount": mo_discount_amount,
         "merma": merma,
+        "sobrante_m2": sobrante_m2,
+        "sobrante_total": sobrante_total,
         "piece_details": piece_details,
         "mo_items": mo_items,
         # MO subtotal solo (pegado + frentín + flete + ... − mo_discount).
@@ -1117,14 +1125,17 @@ def build_deterministic_paso2(calc: dict) -> str:
         lines.append(f"- Con IVA: {fmt_ars(price_unit)} | Total: {fmt_ars(mat_total_bruto)}")
     lines.append("")
 
-    # Merma
+    # Merma — se COBRA como línea separada (regla calculation-formulas.md:
+    # "Grand total suma principal + sobrante"). Antes se mostraba como info
+    # sin sumar al total; ahora explicitamos que va al grand total.
     if merma.get("aplica"):
         lines.append("**MERMA — APLICA**")
         lines.append(f"- {merma.get('motivo', '')}")
         if merma.get("sobrante_m2"):
             sob_m2 = merma["sobrante_m2"]
             sob_total = round(sob_m2 * price_unit)
-            lines.append(f"- Sobrante disponible: {sob_m2:.2f} m² ({fmt_usd(sob_total) if currency == 'USD' else fmt_ars(sob_total)})".replace(".", ","))
+            _fmt_sob = fmt_usd(sob_total) if currency == "USD" else fmt_ars(sob_total)
+            lines.append(f"- Sobrante facturable: **{sob_m2:.2f} m² × {fmt_usd(price_unit) if currency == 'USD' else fmt_ars(price_unit)} = {_fmt_sob}** (se suma al total)".replace(".", ","))
     lines.append("")
 
     # Descuento
