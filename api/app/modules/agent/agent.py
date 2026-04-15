@@ -148,8 +148,8 @@ async def _canonicalize_quotes_data_from_db(
     `piece_details`, `mo_items`, totals, etc. directly. This is risky:
     Valentina sometimes mangles labels (truncates descriptions, rounds
     largos, deduplicates pieces with same dim2 ignoring different
-    largos). Each \`calculate_quote\` call persists its full result into
-    \`quote.quote_breakdown\` — that's the deterministic source of truth.
+    largos). Each calculate_quote call persists its full result into
+    quote.quote_breakdown — that's the deterministic source of truth.
 
     For each quote in `quotes_data`, look up the matching persisted
     calc_result (by material_name match) and override the visual /

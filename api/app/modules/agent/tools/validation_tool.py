@@ -207,13 +207,20 @@ def _check_piece_m2(qdata: dict) -> tuple[list[str], list[str]]:
         dim2 = p.get("dim2", 0)
         m2 = p.get("m2", 0)
         qty = p.get("quantity", 1)
-        expected_m2 = largo * dim2
 
-        if abs(m2 - expected_m2) > 0.01:
-            errors.append(
-                f"Pieza '{p.get('description', '?')}': m2={m2} pero "
-                f"largo={largo} × dim2={dim2} = {expected_m2:.4f}"
-            )
+        # Skip largo×dim2 consistency check when:
+        # - override=True (Planilla de Cómputo del comitente: m² incluye
+        #   zócalo/frente, NO se recalcula desde largo×prof). DINALE
+        #   15/04/2026 fallaba cada vez aquí.
+        # - _is_frentin=True (PR #164: faldón/frentín tiene m²=0
+        #   intencional, contribuye solo a MO).
+        if not p.get("override") and not p.get("_is_frentin"):
+            expected_m2 = largo * dim2
+            if abs(m2 - expected_m2) > 0.01:
+                errors.append(
+                    f"Pieza '{p.get('description', '?')}': m2={m2} pero "
+                    f"largo={largo} × dim2={dim2} = {expected_m2:.4f}"
+                )
         total_m2 += m2 * qty
 
     declared_m2 = qdata.get("material_m2")
