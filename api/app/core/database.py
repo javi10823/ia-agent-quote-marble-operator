@@ -68,6 +68,12 @@ async def init_db():
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS drive_excel_url VARCHAR(500)",
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS resumen_obra JSON",
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS email_draft JSON",
+            # PR #19 — backfill is_building para quotes que tenían is_edificio=true
+            # solo en el JSON breakdown. Idempotente (UPDATE WHERE).
+            "UPDATE quotes SET is_building = TRUE "
+            "WHERE (is_building IS NULL OR is_building = FALSE) "
+            "AND quote_breakdown IS NOT NULL "
+            "AND (quote_breakdown->>'is_edificio')::text = 'true'",
         ]:
             try:
                 await conn.execute(__import__("sqlalchemy").text(col_sql))

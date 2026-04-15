@@ -4110,14 +4110,22 @@ class AgentService:
                     history = list(old_quote.change_history or []) if old_quote else []
                     history.append(change_entry)
 
+                    # PR #19 — propagar is_edificio del calc_result a la
+                    # columna is_building del Quote para que el dashboard
+                    # muestre el badge OBRA en edificios single-material
+                    # (DINALE, Estudio 72 individual, etc.). Antes solo se
+                    # marcaba en el flow building_parent multi-material.
+                    _values = {
+                        "quote_breakdown": calc_result,
+                        "total_ars": calc_result.get("total_ars"),
+                        "total_usd": calc_result.get("total_usd"),
+                        "material": calc_result.get("material_name"),
+                        "change_history": history,
+                    }
+                    if calc_result.get("is_edificio"):
+                        _values["is_building"] = True
                     await db.execute(
-                        update(Quote).where(Quote.id == save_to_qid).values(
-                            quote_breakdown=calc_result,
-                            total_ars=calc_result.get("total_ars"),
-                            total_usd=calc_result.get("total_usd"),
-                            material=calc_result.get("material_name"),
-                            change_history=history,
-                        )
+                        update(Quote).where(Quote.id == save_to_qid).values(**_values)
                     )
                     await db.commit()
                     logging.info(f"Saved breakdown for {save_to_qid} after calculate_quote | ARS: {change_entry['total_ars_before']} → {change_entry['total_ars_after']}")
