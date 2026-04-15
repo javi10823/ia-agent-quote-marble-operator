@@ -1927,25 +1927,41 @@ class AgentService:
                                     logging.warning(f"[cotas+specs] Extraction failed, falling back to vision-only: {e}")
 
                                 # ── DUAL READ: send crop to Sonnet (+ Opus if unsure) ──
-                                # Skip si ya corrió OK para este quote. El archivo persiste
-                                # entre mensajes pero dual_read es costoso y determinístico:
-                                # no tiene sentido re-ejecutarlo en cada turno. Si el operador
-                                # quiere re-leer, usa "verificar con Opus" de la card.
+                                # Si ya corrió OK para este quote (está guardado en
+                                # quote_breakdown.dual_read_result), NO re-ejecutamos la API
+                                # — re-emitimos el resultado guardado para que la card
+                                # aparezca. Evita duplicación de cards y re-llamadas caras
+                                # cuando el PDF persiste entre mensajes.
+                                # Si el operador ya confirmó medidas (verified_context en bd),
+                                # saltamos silenciosamente y dejamos que Claude siga con el
+                                # flujo de cálculo.
                                 try:
                                     _dr_check_q = await db.execute(select(Quote).where(Quote.id == quote_id))
                                     _dr_check_quote = _dr_check_q.scalar_one_or_none()
-                                    _existing_dr = (
-                                        (_dr_check_quote.quote_breakdown or {}).get("dual_read_result")
-                                        if _dr_check_quote else None
-                                    )
+                                    _dr_bd = (_dr_check_quote.quote_breakdown or {}) if _dr_check_quote else {}
+                                    _existing_dr = _dr_bd.get("dual_read_result")
+                                    _already_confirmed = bool(_dr_bd.get("verified_context") or _dr_bd.get("measurements_confirmed"))
                                 except Exception:
                                     _existing_dr = None
+                                    _already_confirmed = False
 
-                                _skip_dual = bool(_existing_dr) and not _existing_dr.get("error")
-                                if _skip_dual:
+                                _has_valid_existing = bool(_existing_dr) and not _existing_dr.get("error")
+
+                                if _has_valid_existing and _already_confirmed:
+                                    # Operador ya confirmó — no re-emitir, seguir con Claude
                                     logging.info(
-                                        f"[dual-read] skip (already ran) for quote {quote_id}"
+                                        f"[dual-read] skip (confirmed) for quote {quote_id}"
                                     )
+                                elif _has_valid_existing:
+                                    # Corrió antes pero no se confirmó → re-emitir card desde DB
+                                    logging.info(
+                                        f"[dual-read] re-emit saved result for quote {quote_id}"
+                                    )
+                                    yield {"type": "dual_read_result", "content": json.dumps(_existing_dr, ensure_ascii=False)}
+                                    yield {"type": "done", "content": ""}
+                                    return
+
+                                _skip_dual = _has_valid_existing and _already_confirmed
 
                                 try:
                                     if _skip_dual:
