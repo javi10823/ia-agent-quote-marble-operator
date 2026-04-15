@@ -164,6 +164,162 @@ async def _call_vision(
 # Reconciliation
 # ═══════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════
+# Ambigüedades — dedup, filtro de obsoletas, categorización
+# ═══════════════════════════════════════════════════════
+#
+# Los modelos Opus y Sonnet a veces escriben el mismo warning con palabras
+# distintas (ej. "altura de zócalo asumida 0.07m" vs "se asume 0.07 m por
+# convención estándar (7 cm)"). Un `set()` no las dedupea porque las strings
+# difieren. Además, a veces un modelo levanta una ambigüedad que el otro
+# modelo resolvió, y después de reconciliar queda como warning "huérfano"
+# que contradice el resultado final (ej. "solo 1 zócalo" cuando Opus
+# encontró los otros dos).
+#
+# Solución: agrupar por "bucket" temático basado en keywords, filtrar las
+# que contradicen el reconciliado, y categorizar como DEFAULT / INFO /
+# REVISION para que la UI pueda darles jerarquía.
+
+_AMBIG_BUCKETS: list[tuple[str, list[list[str]]]] = [
+    # (bucket_id, list of keyword groups — all keywords in a group must match)
+    ("altura_zocalo_default", [
+        ["altura", "zócal", "asum"],
+        ["altura", "zocal", "asum"],
+        ["altura", "zócal", "default"],
+        ["altura", "zocal", "default"],
+        ["altura", "zócal", "convenci"],
+        ["altura", "zocal", "convenci"],
+        ["altura", "zócal", "7 cm"],
+        ["altura", "zocal", "7 cm"],
+        ["altura", "zócal", "7cm"],
+        ["altura", "zocal", "7cm"],
+    ]),
+    ("pileta_sin_modelo", [
+        ["pileta", "modelo"],
+        ["pileta", "marca"],
+    ]),
+    ("forma_l_sin_indicacion", [
+        ["forma", "l", "no"],
+        ["unión", "tramos"],
+        ["union", "tramos"],
+        ["inglete"],
+        ["solape"],
+        ["tramos", "independientes"],
+    ]),
+    ("conteo_zocalos", [
+        ["solo", "zócal", "identific"],
+        ["solo", "zocal", "identific"],
+        ["no muestra", "zócal"],
+        ["no muestra", "zocal"],
+    ]),
+]
+
+
+def _normalize_text(s: str) -> str:
+    """Lowercase, collapse whitespace, strip accents lightly."""
+    t = s.lower().strip()
+    t = re.sub(r"\s+", " ", t)
+    return t
+
+
+def _bucket_of(warning: str) -> str:
+    """Return bucket id if matches any known group, else the normalized text itself."""
+    t = _normalize_text(warning)
+    for bucket_id, groups in _AMBIG_BUCKETS:
+        for group in groups:
+            if all(kw in t for kw in group):
+                return bucket_id
+    # Fallback: fingerprint from content words (ignore numbers + stopwords)
+    stopwords = {
+        "de","el","la","los","las","en","por","un","una","no","se","con",
+        "al","del","para","que","y","o","a","es","esta","está","pese","ni",
+        "su","sus","lo","le","ya","ha","se","hay","sin","solo","explícito",
+    }
+    clean = re.sub(r"\d+[.,]?\d*\s*(m|cm|ml|mm)?", " ", t)
+    clean = re.sub(r"[^\w\sáéíóúñ]", " ", clean)
+    words = sorted({w for w in clean.split() if len(w) > 3 and w not in stopwords})
+    return "fp:" + " ".join(words)
+
+
+def _is_obsolete(warning: str, rec_tramos: list[dict]) -> bool:
+    """True if the warning contradicts the reconciled sector state."""
+    t = _normalize_text(warning)
+
+    # "solo se identifica N zócalo(s)" vs actual reconciled count
+    m = re.search(r"solo se identific\w*\s*(\d+)\s*z[oó]cal", t)
+    if m:
+        reported = int(m.group(1))
+        actual = sum(
+            1
+            for tr in rec_tramos
+            for z in tr.get("zocalos", [])
+            if (z.get("ml") or 0) > 0
+        )
+        if actual > reported:
+            return True
+
+    # "tramo X no muestra zócalos..." but that tramo now has zócalos
+    m = re.search(r"tramo[_\s]*([a-z0-9_]+).*(no muestra|sin z[oó]cal)", t)
+    if m:
+        key = m.group(1).strip("_ ")
+        for tr in rec_tramos:
+            tid = (tr.get("id") or "").lower()
+            desc = (tr.get("descripcion") or "").lower()
+            if key and (key in tid or key in desc):
+                has = any((z.get("ml") or 0) > 0 for z in tr.get("zocalos", []))
+                if has:
+                    return True
+    return False
+
+
+def _categorize(warning: str) -> str:
+    """Classify warning as DEFAULT (info-only), INFO (falta dato externo), REVISION (necesita vista al plano)."""
+    t = _normalize_text(warning)
+    if any(k in t for k in ("asum", "default", "convenci")) and ("altura" in t or "7 cm" in t or "7cm" in t):
+        return "DEFAULT"
+    if "pileta" in t and any(k in t for k in ("modelo", "marca", "no indicad")):
+        return "INFO"
+    if any(
+        k in t
+        for k in (
+            "solo se identific",
+            "no muestra",
+            "no hay texto",
+            "no hay indicación",
+            "no hay indicacion",
+            "pese a",
+            "dudos",
+            "conflict",
+            "tramos independientes",
+            "inglete",
+            "solape",
+        )
+    ):
+        return "REVISION"
+    return "REVISION"
+
+
+_CATEGORY_ORDER = {"REVISION": 0, "INFO": 1, "DEFAULT": 2}
+
+
+def _clean_ambiguedades(raw: list[str], rec_tramos: list[dict]) -> list[dict]:
+    """Dedup (by bucket), filter obsoletas, categorize, sort by priority."""
+    seen: set[str] = set()
+    out: list[dict] = []
+    for w in raw:
+        if not isinstance(w, str) or not w.strip():
+            continue
+        if _is_obsolete(w, rec_tramos):
+            continue
+        key = _bucket_of(w)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"tipo": _categorize(w), "texto": w.strip()})
+    out.sort(key=lambda d: _CATEGORY_ORDER.get(d["tipo"], 99))
+    return out
+
+
 def _compare_float(a: float, b: float) -> tuple[str, float]:
     """Compare two float values, return (status, reconciled_value)."""
     if a == b:
@@ -333,7 +489,10 @@ def reconcile(opus: dict, sonnet: dict) -> dict:
             "tipo": os.get("tipo", ss.get("tipo", "")),
             "tramos": rec_tramos,
             "m2_total": {"opus": o_m2, "sonnet": s_m2, "valor": m2_val or o_m2, "status": m2_status},
-            "ambiguedades": list(set(os.get("ambiguedades", []) + ss.get("ambiguedades", []))),
+            "ambiguedades": _clean_ambiguedades(
+                list(os.get("ambiguedades", [])) + list(ss.get("ambiguedades", [])),
+                rec_tramos,
+            ),
         })
 
     return {
@@ -371,7 +530,7 @@ def _build_single_result(data: dict, source: str) -> dict:
             "tipo": s.get("tipo", ""),
             "tramos": tramos,
             "m2_total": {"valor": s.get("m2_total", 0), "status": source},
-            "ambiguedades": s.get("ambiguedades", []),
+            "ambiguedades": _clean_ambiguedades(list(s.get("ambiguedades", [])), tramos),
         })
     return {
         "sectores": sectores,

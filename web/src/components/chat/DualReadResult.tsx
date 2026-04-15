@@ -28,12 +28,15 @@ interface Tramo {
   regrueso: unknown[];
 }
 
+type AmbiguedadTipo = "DEFAULT" | "INFO" | "REVISION";
+type Ambiguedad = string | { tipo: AmbiguedadTipo; texto: string };
+
 interface Sector {
   id: string;
   tipo: string;
   tramos: Tramo[];
   m2_total: FieldValue;
-  ambiguedades: string[];
+  ambiguedades: Ambiguedad[];
 }
 
 interface DualReadData {
@@ -333,22 +336,44 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
         </div>
       </div>
 
-      {/* Alerts */}
-      {allAmbiguedades.length > 0 && (
-        <div className="mx-5 mb-4 p-3.5 bg-amb-bg border border-amb/25 rounded-xl">
-          <h4 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-amb mb-2">
-            Revisar antes de confirmar
-          </h4>
-          <ul className="flex flex-col gap-1.5">
-            {allAmbiguedades.map((a, i) => (
-              <li key={i} className="text-t2 text-[12px] leading-[1.5] pl-3.5 relative">
-                <span className="absolute left-0 top-[9px] w-1 h-1 rounded-full bg-amb" />
-                {a}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {/* Alerts categorizadas */}
+      {allAmbiguedades.length > 0 && (() => {
+        const norm = allAmbiguedades.map((a) =>
+          typeof a === "string" ? { tipo: "REVISION" as AmbiguedadTipo, texto: a } : a
+        );
+        const groups: Record<AmbiguedadTipo, string[]> = { REVISION: [], INFO: [], DEFAULT: [] };
+        norm.forEach((a) => {
+          const t = (a.tipo || "REVISION") as AmbiguedadTipo;
+          (groups[t] || groups.REVISION).push(a.texto);
+        });
+        const META: Record<AmbiguedadTipo, { label: string; color: string; bg: string; border: string; dot: string }> = {
+          REVISION: { label: "Revisar en plano",   color: "text-amb", bg: "bg-amb-bg",                      border: "border-amb/25",                      dot: "bg-amb" },
+          INFO:     { label: "Falta dato",         color: "text-acc", bg: "bg-acc-bg",                      border: "border-acc/25",                      dot: "bg-acc" },
+          DEFAULT:  { label: "Valores por default", color: "text-t2", bg: "bg-[rgba(255,255,255,0.03)]",    border: "border-b1",                          dot: "bg-t3" },
+        };
+        const order: AmbiguedadTipo[] = ["REVISION", "INFO", "DEFAULT"];
+        return (
+          <div className="mx-5 mb-4 flex flex-col gap-2">
+            {order.map((t) =>
+              groups[t].length === 0 ? null : (
+                <div key={t} className={`p-3.5 ${META[t].bg} border ${META[t].border} rounded-xl`}>
+                  <h4 className={`text-[11px] font-semibold uppercase tracking-[0.06em] ${META[t].color} mb-2`}>
+                    {META[t].label}
+                  </h4>
+                  <ul className="flex flex-col gap-1.5">
+                    {groups[t].map((text, i) => (
+                      <li key={i} className="text-t2 text-[12px] leading-[1.5] pl-3.5 relative">
+                        <span className={`absolute left-0 top-[9px] w-1 h-1 rounded-full ${META[t].dot}`} />
+                        {text}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )
+            )}
+          </div>
+        );
+      })()}
 
       {/* Retry if needed */}
       {data.source !== "DUAL" && !data._retry && (
