@@ -614,6 +614,7 @@ class TestOperatorFlowSmoke:
             "calculate_quote",
             {
                 "client_name": "Test",
+                "project": "Cocina",
                 "material": "Silestone Blanco Norte",
                 "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
                 "localidad": "Rosario",
@@ -637,6 +638,7 @@ class TestOperatorFlowSmoke:
             "calculate_quote",
             {
                 "client_name": "Test",
+                "project": "Cocina",
                 "material": "Blanco Paloma",
                 "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
                 "localidad": "Rosario",
