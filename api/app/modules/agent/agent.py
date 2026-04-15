@@ -856,6 +856,39 @@ class AgentService:
         db: AsyncSession = None,
     ) -> AsyncGenerator[dict, None]:
 
+        # ── Handle DUAL_READ_CONFIRMED EARLY: save verified_context + replace
+        # user_message BEFORE content is built. Si hacemos esto más tarde,
+        # `content` ya tiene el JSON crudo y Claude lo ve como mensaje.
+        # Además evitamos que el check de dual_read (más abajo) intercepte.
+        if user_message.startswith("[DUAL_READ_CONFIRMED]"):
+            try:
+                _confirmed_json = json.loads(user_message[len("[DUAL_READ_CONFIRMED]"):])
+                from app.modules.quote_engine.dual_reader import build_verified_context
+                _verified_ctx = build_verified_context(_confirmed_json)
+                _qr0 = await db.execute(select(Quote).where(Quote.id == quote_id))
+                _q0 = _qr0.scalar_one_or_none()
+                if _q0:
+                    _bd0 = dict(_q0.quote_breakdown or {})
+                    _bd0["verified_measurements"] = _confirmed_json
+                    _bd0["verified_context"] = _verified_ctx
+                    await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd0))
+                    await db.commit()
+                logging.info(f"[dual-read] Verified measurements saved for {quote_id} (early handler)")
+                # Reemplazar el mensaje por un prompt que Claude entienda.
+                # El verified_context entra al system prompt via build_system_prompt.
+                user_message = (
+                    "El operador acaba de confirmar las medidas del plano. "
+                    "Tenés las medidas verificadas en tu system prompt. "
+                    "Seguí con el flujo: si falta cliente o proyecto, pedilos; "
+                    "si ya están, avanzá al Paso 2 (búsqueda de precios y cálculo)."
+                )
+                # Limpiar plan_bytes para que no se re-procese el plano en este turno
+                plan_bytes = None
+                plan_filename = None
+            except Exception as e:
+                logging.error(f"[dual-read] Confirmation handler failed: {e}", exc_info=True)
+                # Continuar con el mensaje original — Claude intentará responder
+
         # Build system prompt per request with contextual loading
         has_plan = plan_bytes is not None and plan_filename is not None
 
@@ -2215,28 +2248,9 @@ class AgentService:
         # System triggers are internal — don't pass them to Claude or save as user message
         _is_system_trigger = user_message.startswith("[SYSTEM_TRIGGER:")
 
-        # ── Handle DUAL_READ_CONFIRMED: inject verified measurements ──
-        if user_message.startswith("[DUAL_READ_CONFIRMED]"):
-            try:
-                _confirmed_json = json.loads(user_message[len("[DUAL_READ_CONFIRMED]"):])
-                from app.modules.quote_engine.dual_reader import build_verified_context
-                _verified_ctx = build_verified_context(_confirmed_json)
-                # Save to breakdown
-                _qr = await db.execute(select(Quote).where(Quote.id == quote_id))
-                _q = _qr.scalar_one_or_none()
-                if _q:
-                    _bd = dict(_q.quote_breakdown or {})
-                    _bd["verified_measurements"] = _confirmed_json
-                    _bd["verified_context"] = _verified_ctx
-                    await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd))
-                    await db.commit()
-                logging.info(f"[dual-read] Verified measurements saved for {quote_id}")
-                yield {"type": "text", "content": "✅ Medidas verificadas guardadas en contexto."}
-                yield {"type": "done", "content": ""}
-                return
-            except Exception as e:
-                logging.error(f"[dual-read] Confirmation failed: {e}")
-                # Fall through to normal processing
+        # Nota: [DUAL_READ_CONFIRMED] ya fue manejado al inicio de stream_chat
+        # (reasigna user_message antes de construir content). Si por algún
+        # motivo el prefijo llegó hasta acá, Claude lo procesa tal cual.
 
         if _is_system_trigger:
             new_messages = clean_messages  # No user message for Claude
