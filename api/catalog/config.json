@@ -157,5 +157,22 @@
     "granito blanco ceara": "Granito Ceara",
     "blanco ceara": "Granito Ceara",
     "ceara": "Granito Ceara"
+  },
+  "condiciones_edificio": {
+    "_comment": "Template de Condiciones de Contratación que se genera como PDF aparte para cada presupuesto de edificio. Variables: {cliente}, {obra}, {fecha}, {plazo}. Editable desde el panel de Configuración.",
+    "title": "CONDICIONES CONTRATACIÓN MARMOLERIA",
+    "header_line": "Cliente: {cliente} - {obra} - {fecha}",
+    "items": [
+      "El presupuesto enviado es estimativo según medidas de planos. El presupuesto definitivo se ajustará según medidas relevadas en obra.",
+      "Plazo de entrega estimado {plazo}. Se realizan entregas parciales cada 15/20 días por certificación.",
+      "Por ser el granito un material de la naturaleza las partidas pueden venir con vetas, tonalidades o variaciones propias del material.",
+      "En cada una de las entregas se deberá firmar un remito con detalle de dicha entrega. Este será controlado por parte del cliente y una vez firmado conformidad no se aceptarán reclamos de piezas faltantes o rotura de material.",
+      "Condiciones de pago material y mano de obra: El presupuesto se seña con el 80% de acopio, pago contado o cheques 0-15-30. El 20% contra certificación de entrega 0-15-30.",
+      "Material presupuestado calidad EXTRA - 20MM ESPESOR.",
+      "LAS MESADAS SE DEJAN EN PIE DE OBRA.",
+      "NO INCLUYE COLOCACIÓN DE MESADAS.",
+      "NO INCLUYE PILETAS."
+    ],
+    "default_plazo": "60 DIAS HÁBILES DESDE LA TOMA DE MEDIDAS EN OBRA"
   }
 }

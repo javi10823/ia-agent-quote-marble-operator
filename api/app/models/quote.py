@@ -91,6 +91,11 @@ class Quote(Base):
     #           sibling_updated_at_snapshots: { quote_id: iso_str } }
     email_draft: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # PR #24 — Condiciones de Contratación PDF (solo edificios). Schema:
+    # { pdf_url, drive_url, drive_file_id, generated_at, plazo }.
+    # Generado automáticamente cuando se llaman los docs en is_edificio=True.
+    condiciones_pdf: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     # Full chat history as JSON array
     messages: Mapped[list] = mapped_column(JSON, default=list)
 

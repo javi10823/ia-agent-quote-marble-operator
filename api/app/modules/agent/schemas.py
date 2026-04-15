@@ -56,6 +56,9 @@ class QuoteDetailResponse(QuoteListResponse):
     # endpoint /api/quotes/:id no los devolvía → cards invisibles.
     resumen_obra: Optional[dict] = None
     email_draft: Optional[dict] = None
+    # PR #24 — PDF de Condiciones (solo edificios). Frontend lo muestra
+    # como card debajo del PDF principal cuando is_building=True.
+    condiciones_pdf: Optional[dict] = None
 
 
 class QuoteCompareItem(BaseModel):
