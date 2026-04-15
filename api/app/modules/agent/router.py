@@ -1351,7 +1351,17 @@ async def chat(
     # el operador subió el plano, queda disponible en todas las requests
     # siguientes. Recuperamos el más reciente desde source_files si este
     # mensaje no adjuntó nada nuevo.
-    if not validated_files and quote.source_files:
+    #
+    # EXCEPCIÓN: no restaurar para triggers de sistema ([DUAL_READ_CONFIRMED],
+    # [SYSTEM_TRIGGER:*]). Esos mensajes se procesan en handlers específicos
+    # de stream_chat y NO deben entrar al flow de plan_bytes (si entran,
+    # el check de dual_read corre ANTES del handler y re-emite la card
+    # en vez de dejarlo ejecutar).
+    _is_system_message = (
+        message.startswith("[DUAL_READ_CONFIRMED]")
+        or message.startswith("[SYSTEM_TRIGGER:")
+    )
+    if not validated_files and quote.source_files and not _is_system_message:
         from app.core.static import OUTPUT_DIR as _OUT_RE
         # Tomamos el archivo más reciente (último en la lista)
         for _sf in reversed(quote.source_files):
