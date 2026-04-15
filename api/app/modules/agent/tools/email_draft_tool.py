@@ -398,14 +398,48 @@ async def _call_llm(context: dict, prior_error: str | None = None) -> dict:
 # Orchestrator
 # ─────────────────────────────────────────────────────────────────────────
 
+def _build_template_email(context: dict) -> dict:
+    """Plantilla fija de Agostina (D'Angelo). NO usa LLM — el contenido del
+    email es siempre el mismo (saludo + 'envío presupuesto según planos' +
+    firma). Los detalles van en los PDFs adjuntos.
+
+    PR #22 — reemplaza el flujo IA porque el operador confirmó que el
+    email real es plantilla. La IA generaba versiones formales con montos
+    duplicados/inconsistentes que se diferenciaban del estilo real.
+    """
+    client = (context.get("client_name") or "").strip()
+    project = (context.get("project") or "").strip()
+    saludo_obra = ""
+    if project:
+        saludo_obra = f" — {project}"
+    subject = f"Presupuesto D'Angelo Marmolería{(' — ' + client) if client else ''}{saludo_obra}".strip()
+
+    body = (
+        "Buenas tardes\n\n"
+        "Te envío presupuesto solicitado según medidas planos. "
+        "Ante cualquier consulta estoy a tu disposición.\n"
+        "Confirmar recepción.\n\n"
+        "Saludos\n\n\n"
+        "Saludos\n\n"
+        "Agostina\n"
+        "--\n\n"
+        "Marmolería D'Angelo\n"
+        "Tel: 3413 082996\n"
+        "San Nicolas 1160 - Rosario\n"
+        "Rosario - Santa Fe - Argentina\n"
+        "www.marmoleriadangelo.com.ar"
+    )
+    return {"subject": subject, "body": body}
+
+
 async def generate_email_draft(
     db: AsyncSession, anchor_id: str, force: bool = False
 ) -> dict:
     """Return (and persist) an email draft for `anchor_id`.
 
-    Honors the cache unless `force` is True. Runs validator; on first failure
-    retries once with the error in the prompt; on second failure returns the
-    body with validated=False.
+    PR #22 — usa plantilla fija (no LLM). El email es siempre el mismo
+    contenido (Agostina). Si necesitamos volver a personalizar con IA en
+    el futuro, restaurar la llamada a _call_llm.
     """
     context = await build_email_context(db, anchor_id)
 
@@ -416,23 +450,8 @@ async def generate_email_draft(
     if not force and not is_email_stale(anchor.email_draft, context):
         return anchor.email_draft
 
-    first = await _call_llm(context)
-    errors = validate_email_amounts(first["body"], context)
+    final = _build_template_email(context)
     validated = True
-    final = first
-    if errors:
-        logging.info(
-            f"[email-draft] validator errors on first attempt: {errors}"
-        )
-        err_msg = "; ".join(errors[:3])
-        second = await _call_llm(context, prior_error=err_msg)
-        second_errors = validate_email_amounts(second["body"], context)
-        final = second
-        validated = not second_errors
-        if second_errors:
-            logging.warning(
-                f"[email-draft] second attempt still has errors: {second_errors}"
-            )
 
     record = {
         "subject": final["subject"],
