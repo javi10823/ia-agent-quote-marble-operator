@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   type Quote,
@@ -105,6 +105,9 @@ export default function DashboardPage() {
       if (e.key === "Escape" && selectedIds.size > 0) {
         clearSelection();
       }
+      // Pagination: Left/Right arrows
+      if (e.key === "ArrowLeft") { setPage(p => Math.max(0, p - 1)); }
+      if (e.key === "ArrowRight") { setPage(p => Math.min(totalPages - 1, p + 1)); }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
         // Only act when there's a visible selection context
         if (selectionAnchor || !resumenModalOpen) {
@@ -169,6 +172,47 @@ export default function DashboardPage() {
     sent: quotes.filter(q => q.status === "sent").length,
     web: quotes.filter(q => q.source === "web").length,
   }), [quotes]);
+
+  // ── Paginación dinámica ─────────────────────────────────────────────────
+  // Calcula cuántas filas caben según viewport, recalcula en resize.
+  const listRef = useRef<HTMLDivElement>(null);
+  const [pageSize, setPageSize] = useState(8);
+  const [page, setPage] = useState(0);
+
+  useEffect(() => {
+    function calc() {
+      // Row heights: desktop ~57px, mobile ~72px
+      const isMobile = window.innerWidth < 768;
+      const rowH = isMobile ? 72 : 57;
+      // Reservar espacio para header, tabs, filter bar, pagination bar, etc.
+      const reserved = isMobile ? 280 : 340;
+      const available = window.innerHeight - reserved;
+      const size = Math.max(3, Math.min(50, Math.floor(available / rowH)));
+      setPageSize(size);
+    }
+    calc();
+    let timer: ReturnType<typeof setTimeout>;
+    function onResize() {
+      clearTimeout(timer);
+      timer = setTimeout(calc, 200);
+    }
+    window.addEventListener("resize", onResize);
+    return () => { window.removeEventListener("resize", onResize); clearTimeout(timer); };
+  }, []);
+
+  // Reset page cuando cambian filtros
+  useEffect(() => { setPage(0); }, [statusFilter, search, dateFrom, dateTo]);
+
+  // Clamp page si datos cambian (ej: quote eliminado)
+  const totalPages = Math.max(1, Math.ceil(filteredQuotes.length / pageSize));
+  useEffect(() => {
+    if (page >= totalPages) setPage(Math.max(0, totalPages - 1));
+  }, [page, totalPages]);
+
+  const pageQuotes = useMemo(
+    () => filteredQuotes.slice(page * pageSize, (page + 1) * pageSize),
+    [filteredQuotes, page, pageSize]
+  );
 
   function toggleStatus(e: React.MouseEvent, id: string, current: Quote["status"]) {
     e.stopPropagation();
@@ -394,7 +438,7 @@ export default function DashboardPage() {
 
             {/* Mobile Cards */}
             <div className="md:hidden divide-y divide-white/[0.045]">
-              {filteredQuotes.map(q => {
+              {pageQuotes.map(q => {
                 const isUnread = !q.is_read;
                 const isChecked = selectedIds.has(q.id);
                 const selectable = isSelectable(q);
@@ -469,7 +513,7 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredQuotes.map(q => {
+                {pageQuotes.map(q => {
                   const daysOld = (Date.now() - new Date(q.created_at).getTime()) / 86400000;
                   const isStale = q.status === "draft" && daysOld > 5;
                   const isUnread = !q.is_read;
@@ -611,6 +655,34 @@ export default function DashboardPage() {
                 })}
               </tbody>
             </table>
+            {/* Pagination bar — solo si hay más de 1 página */}
+            {filteredQuotes.length > 0 && totalPages > 1 && (
+              <div className="flex items-center justify-between px-4 py-2.5 border-t border-b1 bg-s2/80 text-[12px]">
+                <span className="text-t3 font-mono tabular-nums">
+                  {page * pageSize + 1}–{Math.min((page + 1) * pageSize, filteredQuotes.length)} de {filteredQuotes.length}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    disabled={page === 0}
+                    onClick={() => setPage(p => p - 1)}
+                    className="px-2.5 py-1 rounded-md text-t2 bg-transparent border border-b1 cursor-pointer disabled:opacity-30 disabled:cursor-default hover:bg-white/[0.04] hover:text-t1 transition text-[11px] font-medium"
+                  >
+                    ← Anterior
+                  </button>
+                  <span className="px-2 text-t3 font-mono tabular-nums">
+                    {page + 1}/{totalPages}
+                  </span>
+                  <button
+                    disabled={page >= totalPages - 1}
+                    onClick={() => setPage(p => p + 1)}
+                    className="px-2.5 py-1 rounded-md text-t2 bg-transparent border border-b1 cursor-pointer disabled:opacity-30 disabled:cursor-default hover:bg-white/[0.04] hover:text-t1 transition text-[11px] font-medium"
+                  >
+                    Siguiente →
+                  </button>
+                </div>
+              </div>
+            )}
+
             {filteredQuotes.length === 0 && (
               <div className="flex flex-col items-center justify-center py-16 gap-2 text-t3">
                 <span className="text-2xl">📋</span>
