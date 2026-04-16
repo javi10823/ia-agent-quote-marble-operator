@@ -4429,24 +4429,41 @@ class AgentService:
                     (r'\b(?:no|sin)\s+pulido\b', "pulido"),
                 ]
                 _matched_name_lower = (calc_result.get("material_name") or "").lower()
-                for _pat, _kw in _neg_patterns:
-                    if _re_neg.search(_pat, _neg_text) and _kw in _matched_name_lower:
-                        _w = (
-                            f"⚠️ VARIANT NEGADA: el operador escribió "
-                            f"'{_kw}' en el brief negándola, pero el catálogo "
-                            f"solo tiene '{calc_result['material_name']}' como "
-                            "opción. Se cotiza con esa variante — confirmar "
-                            "con operador antes de generar PDF."
-                        )
-                        existing = calc_result.setdefault("warnings", [])
-                        if _w not in existing:
-                            existing.append(_w)
-                        logging.warning(
-                            f"[variant-negated-agent] '{_kw}' negado por brief "
-                            f"pero match es '{calc_result['material_name']}' "
-                            f"para {save_to_qid}"
-                        )
-                        break
+                # PR #46 — suprimir falsos positivos: si el brief contiene el
+                # nombre canónico completo del material literalmente (ej:
+                # "GRANITO GRIS MARA EXTRA 2 ESP"), el operador lo pidió
+                # explícito y no hay variant negada que confirmar. Una
+                # negación accidental ("no dejar extra 2 mm de tolerancia")
+                # no debe disparar el warning en ese caso.
+                _explicit_request = bool(
+                    _matched_name_lower
+                    and _matched_name_lower in _neg_text
+                )
+                if not _explicit_request:
+                    for _pat, _kw in _neg_patterns:
+                        if _re_neg.search(_pat, _neg_text) and _kw in _matched_name_lower:
+                            _w = (
+                                f"⚠️ VARIANT NEGADA: el operador escribió "
+                                f"'{_kw}' en el brief negándola, pero el catálogo "
+                                f"solo tiene '{calc_result['material_name']}' como "
+                                "opción. Se cotiza con esa variante — confirmar "
+                                "con operador antes de generar PDF."
+                            )
+                            existing = calc_result.setdefault("warnings", [])
+                            if _w not in existing:
+                                existing.append(_w)
+                            logging.warning(
+                                f"[variant-negated-agent] '{_kw}' negado por brief "
+                                f"pero match es '{calc_result['material_name']}' "
+                                f"para {save_to_qid}"
+                            )
+                            break
+                else:
+                    logging.info(
+                        f"[variant-negated-agent] SUPPRESSED: brief contiene "
+                        f"'{_matched_name_lower}' literal → operador lo pidió "
+                        f"explícito, no es variant negada."
+                    )
 
             # ── Post-calculate deterministic validation ──
             if calc_result.get("ok"):
