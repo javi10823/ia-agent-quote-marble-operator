@@ -30,11 +30,19 @@ def test_mesada_with_shallow_prof_rejected():
     assert any("zócalo" in e.lower() or "zocalo" in e.lower() for e in errs)
 
 
-def test_zocalo_with_high_alto_rejected():
-    """Zócalo con alto > 0.15 → probablemente alzada."""
-    pieces = [{"description": "Alto", "tipo": "zocalo", "largo": 1.55, "alto": 0.50}]
+def test_zocalo_tall_splashback_accepted():
+    """PR #42 — zócalos hasta 60 cm se aceptan (splashback baños/lavaderos
+    industriales). Antes el límite era 15 cm y rechazaba ME04 DINALE (50cm)."""
+    pieces = [{"description": "Splashback", "tipo": "zocalo", "largo": 2.30, "alto": 0.50}]
     errs = _validate_plan_pieces(pieces)
-    assert any("alzada" in e.lower() for e in errs)
+    assert errs == [], f"Zócalo de 50cm debe aceptarse: {errs}"
+
+
+def test_zocalo_above_60cm_rejected():
+    """Más de 60 cm ya es alzada/revestimiento, no zócalo."""
+    pieces = [{"description": "Pared", "tipo": "zocalo", "largo": 2.0, "alto": 0.80}]
+    errs = _validate_plan_pieces(pieces)
+    assert any("alzada" in e.lower() or "revestimiento" in e.lower() for e in errs)
 
 
 def test_zocalo_missing_alto_rejected():

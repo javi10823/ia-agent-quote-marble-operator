@@ -136,13 +136,16 @@ def _validate_plan_pieces(pieces: list[dict]) -> list[str]:
             if not alto:
                 errors.append(
                     f"'{desc}' marcada como zócalo pero falta `alto`. "
-                    "Un zócalo se mide como largo (ml) × alto (5–15 cm)."
+                    "Un zócalo se mide como largo (ml) × alto."
                 )
-            elif alto > 0.15:
+            elif alto > 0.60:
+                # PR #42 — límite subido de 0.15 a 0.60. Existen zócalos
+                # tipo splashback de hasta 50 cm (baños penitenciarios,
+                # lavaderos industriales). Solo rechazar si > 60 cm (ahí
+                # sí es alzada o revestimiento, no zócalo).
                 errors.append(
-                    f"'{desc}' marcada como zócalo pero alto={alto} > 0.15 m. "
-                    "Los zócalos típicos tienen 5–15 cm de alto. "
-                    "Si es más alto, probablemente es una alzada."
+                    f"'{desc}' marcada como zócalo pero alto={alto} > 0.60 m. "
+                    "Ese alto ya corresponde a alzada/revestimiento, no a zócalo."
                 )
             if prof and prof >= 0.30:
                 errors.append(

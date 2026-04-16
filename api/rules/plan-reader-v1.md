@@ -382,11 +382,106 @@ No confiar en el declarado como atajo — siempre reconstruir.
 
 Al pasar piezas a `list_pieces`, cada una DEBE tener un campo `tipo` explícito:
 - `mesada` → pieza horizontal de material (tiene prof ≥ 0.30 m)
-- `zocalo` → tira hachurada (tiene alto ≤ 0.15 m, NO prof)
+- `zocalo` → tira vertical que sube por la pared (alto típicamente 5–15 cm,
+  pero puede ser hasta **50 cm** — ver "zócalos altos" abajo)
 - `alzada` → pieza vertical de material, alto ≥ 0.30 m
 - `frentin` → cuelga bajo mesada (alto típico 5–10 cm, trasera visible)
 
 El sistema rechaza combinaciones inconsistentes:
 - `tipo=mesada` con `prof < 0.30` → rechazado (señal de que confundiste con zócalo)
-- `tipo=zocalo` con `alto > 0.15` → rechazado (señal de que confundiste con alzada)
+- `tipo=zocalo` con `alto > 0.60` → rechazado (eso ya sería alzada)
 - Planilla menciona "zócalo" y `list_pieces` no tiene ningún `tipo=zocalo` → rechazado
+
+---
+
+## REGLA — FORMA EN L / U DETECTABLE VISUALMENTE
+
+La regla general es "2 tramos independientes por default" (ver arriba), PERO
+cuando el plano muestra CLARAMENTE un quiebre 90° con cotas compartiendo
+vértice, SÍ es L (o U con 3 tramos):
+
+Señales visuales de forma compuesta:
+- 2 tramos con cotas que comparten un vértice / esquina dibujada
+- Una mesada continua dibujada con un codo de 90°
+- El brazo más corto sale perpendicular al largo principal
+- En la tabla aparece "FORMA: L" / "ESQUINA" / "TRAMO 1 + TRAMO 2"
+
+Tratamiento L (crítico — sin doble superficie):
+- Tramo_1 = **full** (incluye la esquina): `largo_1 × prof_1`
+- Tramo_2 = **neto** (empieza donde termina el full): `(largo_2 − prof_1) × prof_2`
+- Ejemplo ME03 (4.10 × 0.60 + brazo 1.00 × 0.60):
+  - Tramo_1: `4.10 × 0.60 = 2.46 m²` (con la esquina 0.60×0.60)
+  - Tramo_2 neto: `(1.00 − 0.60) × 0.60 = 0.24 m²` si el brazo incluye la esquina
+  - Si el brazo NO incluye la esquina: `1.00 × 0.60 = 0.60 m²` (cuenta completa)
+- Verificar: si `tramo1_prof + tramo2_largo ≈ dim_exterior_total`, los tramos
+  son complementarios y el método "full + neto" aplica.
+
+Forma U (3 tramos):
+- 2 tramos laterales = full (cada uno con su esquina)
+- Tramo medio = neto (resta ambas profundidades laterales)
+
+Si tenés dudas entre L y independientes: **preguntar al operador**.
+
+---
+
+## REGLA — ZÓCALOS ALTOS (hasta 50 cm)
+
+Un zócalo puede tener altura **mucho mayor que 15 cm** en casos típicos:
+- Baños penitenciarios, industriales → zócalos de **50 cm** (splashback alto)
+- Lavaderos institucionales → zócalos de **30–40 cm**
+- Cocinas con tabla de pared → zócalos de **20–25 cm**
+
+La diferencia clave vs alzada/revestimiento:
+- **Zócalo**: corre como una tira perimetral fina, pegada a la pared, continuando
+  el material de la mesada. Suele tener el MISMO largo que el lado de la mesada.
+- **Alzada / revestimiento**: es una pieza vertical independiente, puede ser
+  más ancha que el lado de la mesada, dibujada en vista de elevación separada.
+
+Si la tabla dice explícito `"ZOCALO: alt. 50cm"` → es zócalo con `alto=0.50`,
+no alzada. El validador acepta hasta 0.60 para tipo=zocalo.
+
+---
+
+## REGLA — "ZÓCALO Y FRENTE" combinado en la tabla
+
+Cuando la tabla de características dice `"ZOCALO Y FRENTE"` con una sola
+altura (ej: `"Granito Natural Gris Mara. Esp. 2,5cm, alt. 5cm"`) → son
+**DOS piezas separadas**:
+
+1. **Zócalo trasero** (sube por pared): `ml = largo_lado_pared × alto`
+   → `tipo = "zocalo"`
+2. **Frente / faldón** (cuelga hacia abajo de la mesada): `ml = largo_frente × alto`
+   → `tipo = "frentin"`
+
+Ambos comparten el `alto` declarado. Cada uno cuenta su propio ml.
+Ejemplo ME05 (1.45 × 0.50, "ZOCALO Y FRENTE alt. 5cm"):
+- Mesada: `1.45 × 0.50 = 0.725 m²`
+- Zócalo trasero: `1.45 ml × 0.05 = 0.0725 m²`
+- Frentín frontal: `1.45 ml × 0.05 = 0.0725 m²`
+
+Si ves ambos ítems en la tabla bajo una única fila ("ZOCALO Y FRENTE"),
+recordar reportar dos piezas en `list_pieces` (`tipo=zocalo` + `tipo=frentin`).
+
+---
+
+## REGLA — ML DE ZÓCALO cuando no hay cotas dibujadas
+
+Excepción controlada a la regla "solo por cota explícita" (§ Zócalos).
+
+Cuando la tabla de características declara `"ZOCALO: alt. Xcm"` o similar
+PERO el plano **no tiene rectángulos hachurados con cotas de ml**:
+- La altura del zócalo sale de la tabla.
+- El ml de cada zócalo se deduce del **perímetro de la mesada que toca pared**.
+  - Lado contra pared (hatching visible en planta) → tiene zócalo con ml =
+    largo de ese lado.
+  - Lado que conecta con otro tramo (union L/U) → NO tiene zócalo.
+  - Lado libre (hacia el frente del usuario) → NO tiene zócalo.
+- Enumerar los 4 lados (ver "Enumeración explícita de zócalos por lado") y
+  decidir cada uno con base en las paredes visibles en la planta.
+
+Esta regla se aplica **solo** cuando:
+1. Hay declaración explícita del zócalo en la tabla (alt.), Y
+2. No hay cotas de ml dibujadas.
+
+Si el plano **SÍ** tiene rectángulos hachurados con ml → usar esas cotas
+literales (regla original).
