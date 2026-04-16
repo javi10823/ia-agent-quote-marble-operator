@@ -568,7 +568,7 @@ def _generate_resumen_obra_excel(excel_path: Path, data: dict) -> None:
         cur = m["currency"]
         ws.cell(r, 1, m["name"]).font = normal
         ws.cell(r, 2, m["m2"]).font = normal
-        ws.cell(r, 2).number_format = '#,##0.####'
+        ws.cell(r, 2).number_format = 'General'
         ws.cell(r, 3, cur).font = normal
         if cur == "USD":
             ws.cell(r, 4, _fmt_usd(m['price_unit'])).font = normal
@@ -1119,10 +1119,10 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
             ws.cell(r, 1).alignment = left_align
             # PR #37 — escribir qty numérica (no string) para que el
             # operador pueda editarla directamente en Google Sheets sin
-            # perder decimales. Formato '#,##0.####' preserva hasta 4
+            # perder decimales. Formato 'General' preserva hasta 4
             # decimales sin trailing zeros.
             ws.cell(r, 4).value = mo["quantity"]
-            ws.cell(r, 4).number_format = '#,##0.####'
+            ws.cell(r, 4).number_format = 'General'
             ws.cell(r, 4).font = normal_9
             ws.cell(r, 4).alignment = right_align
             # MO prices always ARS with 2 decimals
@@ -1610,7 +1610,7 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     #  4.30   → '4,3'
     #  4.295  → '4,295'
     #  4.2955 → '4,2955'
-    qty_fmt = '#,##0.####'
+    qty_fmt = 'General'
 
     # Header — replace values, keep template formatting
     ws["A13"].value = f"Fecha: {date_str}"
