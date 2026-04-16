@@ -146,7 +146,18 @@ Simbolo hornallas/tomas en planta → ANAFE/TOMAS. Anotar cantidad.
 | 89 Z / 118 Z | Largo zocalo cm | Usar esa medida |
 
 > Z → lleva zocalo. Sin excepciones.
-> Alto zocalo: si no hay cota → **5cm (0.05m)** por defecto. NUNCA preguntar.
+>
+> **Alto zócalo — prioridad de lectura (usar el primer valor disponible):**
+> 1. Leyenda explícita tipo `ZÓCALOS H=10cm`, `Z=10`, `H zócalo = 10 cm`.
+> 2. Cota suelta en el **borde lateral** de la planta (vertical), valor
+>    entre 0.05 y 0.50 m, que no esté etiquetada como "prof" ni como otra
+>    cosa y no coincida con la profundidad de mesada.
+> 3. Leyenda/rotulado del plano (bloque de notas general).
+> 4. Default = **5 cm (0.05 m)** solo si no hay NINGÚN valor leíble.
+>
+> ⛔ Si en el plano hay cotas verticales en los bordes (ej: `0.10 m`
+> arriba y/o abajo del rectángulo de mesada) y NO coinciden con la prof,
+> interpretarlas como **alto de zócalo** — no como segundas profundidades.
 
 ### Profundidad de mesada
 - Sin cota → 0.60m estandar
