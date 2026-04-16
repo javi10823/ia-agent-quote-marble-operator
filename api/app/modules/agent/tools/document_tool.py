@@ -211,6 +211,24 @@ def _normalize_delivery(raw: str) -> str:
 async def generate_documents(quote_id: str, quote_data: dict) -> dict:
     """Generate PDF and Excel for a quote."""
     try:
+        # PR #40 — reemplazar delivery_days vago (A confirmar, A convenir,
+        # N/A, vacío, -) con el default del config.json. Se aplica acá en
+        # vez de solo en _validate_quote_data para que el flujo /regenerate
+        # (que NO pasa por el validator) también lo corrija.
+        _current = (quote_data.get("delivery_days") or "").strip()
+        _VAGUE = {"", "a confirmar", "a convenir", "n/a", "n/d", "-", "—", "."}
+        if _current.lower() in _VAGUE:
+            try:
+                import json as _json
+                from pathlib import Path as _P
+                _cfg_path = _P(__file__).resolve().parent.parent.parent.parent / "catalog" / "config.json"
+                _cfg = _json.loads(_cfg_path.read_text(encoding="utf-8"))
+                quote_data["delivery_days"] = _cfg.get("delivery_days", {}).get(
+                    "display", "30 dias desde la toma de medidas"
+                )
+            except Exception:
+                quote_data["delivery_days"] = "30 dias desde la toma de medidas"
+
         client_name = quote_data["client_name"]
         material = quote_data.get("material_name", "")
         prefix = quote_data.get("filename_prefix", "")
