@@ -27,6 +27,23 @@ El número está dentro del rectángulo de un objeto (anafe, pileta, heladera). 
 Varias cotas alineadas que se suman. Cada una mide un tramo y juntas dan el largo total.
 → Sumar todos los tramos para obtener el largo total del segmento.
 
+⛔ **RECONCILIACIÓN obligatoria contra cota del muro.** Si el plano también
+muestra una cota global del muro (típicamente arriba/afuera, paralela a los
+parciales), compará:
+
+  Σ parciales ≈ cota muro (tolerancia 2%)
+
+- Si coinciden → OK, usar ese valor.
+- Si NO coinciden → **error del plano** (el arquitecto se equivocó). NO elegir
+  ninguno en silencio. Anotar en `ambiguedades` con ambos números y preguntar
+  al operador cuál es correcto.
+
+Ejemplo real:
+- Arriba (pared): `3.10 m`
+- Abajo (encadenadas): `0.70 + 1.55 + 3.60 + 3.10 + 0.70 = 9.65 m`
+- Delta: 211% → conflicto fuerte → pedir confirmación al operador, NO cotizar
+  ni con 3.10 ni con 9.65.
+
 ### 5. Cota de profundidad
 Cota perpendicular a la pared. Mide qué tan fondo entra la mesada desde la pared hacia el centro del ambiente.
 → Es la profundidad (ancho) de la mesada. Típicamente 55-65cm.
