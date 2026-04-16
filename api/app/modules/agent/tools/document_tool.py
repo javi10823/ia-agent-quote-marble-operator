@@ -1361,14 +1361,15 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
         # row so the user sees the net material total in the material block.
         right_rows.append(("B", f"TOTAL {currency}", fmt_price(total_mat)))
 
-    # Calculate which piece rows get right-side content
-    # Overlay on last N piece rows (N = len(right_rows))
+    # PR #34 — overlay RIGHT COLUMN content (Descuento / TOTAL USD/ARS) en
+    # las PRIMERAS filas de piezas, no las últimas. Antes se ponía al final,
+    # quedando el TOTAL USD flotando cerca de la sección MANO DE OBRA y
+    # confundiendo al cliente. Ahora aparece inmediatamente debajo del
+    # subtotal de material — junto a las primeras piezas del despiece.
     piece_indices = [i for i, (is_hdr, _) in enumerate(all_piece_rows) if not is_hdr]
-    overlay_start = max(0, len(piece_indices) - len(right_rows))
     overlay_map = {}  # piece_index -> right_row_index
-    for ri, pi_offset in enumerate(range(overlay_start, len(piece_indices))):
-        if ri < len(right_rows):
-            overlay_map[piece_indices[pi_offset]] = ri
+    for ri, pi_offset in enumerate(range(0, min(len(right_rows), len(piece_indices)))):
+        overlay_map[piece_indices[pi_offset]] = ri
 
     # Render all rows consecutively
     for idx, (is_hdr, text) in enumerate(all_piece_rows):
@@ -1679,12 +1680,13 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     elif currency == "USD":
         right_rows_xl.append(("B", f"TOTAL {currency}", _xl_fmt(total_mat_net)))
 
-    # Overlay on last N pieces
-    overlay_start_xl = max(0, len(all_pieces) - len(right_rows_xl))
+    # PR #34 — overlay en las PRIMERAS piezas (no las últimas), para que
+    # TOTAL USD/ARS aparezca inmediatamente debajo del subtotal del
+    # material y no floating al final del despiece.
     r = 23
     for i, piece in enumerate(all_pieces):
         ws.cell(r, 1).value = piece
-        ri = i - overlay_start_xl
+        ri = i  # ri direct index — primeras N filas obtienen right_row
         if 0 <= ri < len(right_rows_xl):
             style, label, value = right_rows_xl[ri]
             ws.cell(r, 5).value = label
