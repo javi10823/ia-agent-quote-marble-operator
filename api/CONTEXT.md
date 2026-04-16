@@ -257,6 +257,26 @@ en el header del PDF/Excel y es lo primero que ve el cliente.
 
 ---
 
+## ⛔ REGLA — ZÓCALOS AMBIGUOS EN PLANO: PREGUNTAR, NO ADIVINAR
+
+Cuando el brief es **solo plano** (sin despiece textual ni lista MO) y el
+plano **NO muestra zócalos explícitamente** (sin hachurado, sin leyenda Z/H=,
+sin cotas 0.05-0.50m en bordes) pero la mesada toca pared → Valentina
+**DEBE preguntar** al operador antes de Paso 2:
+
+> *"El plano no muestra zócalos explícitamente. ¿Lleva zócalos? Si sí, alto
+> (default común: 5cm) y contra qué paredes (fondo, lat izq, lat der)."*
+
+Bloqueante — no llamar `calculate_quote` hasta tener respuesta. Ver regla
+completa en `rules/plan-reading.md §REGLA — ZÓCALOS AMBIGUOS`.
+
+Excepciones (NO preguntar, calcular directo):
+- Brief dice "sin zócalos" / "no lleva zócalos" explícito
+- Brief lista despiece completo sin zócalos (respetar literal)
+- Mesada isla (no toca pared) → zócalos = []
+
+---
+
 ## ⛔ REGLA — MANO DE OBRA LISTADA ES EXHAUSTIVA
 
 Cuando el operador escribe un brief con la sección **MANO DE OBRA** listando
