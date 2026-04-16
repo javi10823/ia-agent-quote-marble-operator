@@ -531,11 +531,11 @@ def _generate_resumen_obra_excel(excel_path: Path, data: dict) -> None:
     ws = wb.active
     ws.title = "Resumen Obra"
 
-    bold = Font(name="Calibri", bold=True, size=10)
-    bold_big = Font(name="Calibri", bold=True, size=12)
-    normal = Font(name="Calibri", size=10)
-    small = Font(name="Calibri", size=9)
-    italic = Font(name="Calibri", italic=True, size=9)
+    bold = Font(name="Arial", bold=True, size=10)
+    bold_big = Font(name="Arial", bold=True, size=12)
+    normal = Font(name="Arial", size=10)
+    small = Font(name="Arial", size=9)
+    italic = Font(name="Arial", italic=True, size=9)
     ars_fmt = '"$"#,##0'
 
     ws.column_dimensions["A"].width = 35
@@ -547,7 +547,7 @@ def _generate_resumen_obra_excel(excel_path: Path, data: dict) -> None:
     ws.column_dimensions["G"].width = 16
 
     r = 1
-    ws.cell(r, 1, "D'ANGELO MARMOLERIA").font = Font(name="Calibri", bold=True, size=14)
+    ws.cell(r, 1, "D'ANGELO MARMOLERIA").font = Font(name="Arial", bold=True, size=14)
     r = 3
     ws.cell(r, 1, f"Cliente: {data['client_name']}").font = bold
     ws.cell(r, 4, "Forma de pago: CONTADO EFVO").font = normal
@@ -657,7 +657,7 @@ def _generate_resumen_obra_excel(excel_path: Path, data: dict) -> None:
     # Conditions — match PDF
     r += 1
     co = _load_company_config()
-    cond_font = Font(name="Calibri", size=7)
+    cond_font = Font(name="Arial", size=7)
     ws.cell(r, 1, "Forma de pago: Contado").font = cond_font
     r += 1
     if co.get("conditions_general"):
@@ -673,9 +673,10 @@ def _generate_resumen_obra_excel(excel_path: Path, data: dict) -> None:
                 r += 1
     # Footer
     r += 1
-    ws.cell(r, 1, "No se suben mesadas que no entren en ascensor").font = Font(name="Calibri", italic=True, size=7)
+    ws.cell(r, 1, "No se suben mesadas que no entren en ascensor").font = Font(name="Arial", italic=True, size=7)
 
     wb.save(str(excel_path))
+    _force_arial_font(str(excel_path))
 
 
 def _generate_edificio_pdf(pdf_path: Path, data: dict) -> None:
@@ -929,11 +930,11 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     # ── Font sizes matching PDF exactly ──
     # PDF: table header = bold 9pt, material = bold 9pt, sector = bold 8pt,
     #       piece = normal 8pt, MO header = bold 9pt, MO item = normal 9pt
-    bold_9 = Font(name="Calibri", bold=True, size=9)
-    normal_9 = Font(name="Calibri", bold=False, size=9)
-    bold_8 = Font(name="Calibri", bold=True, size=8)
-    normal_8 = Font(name="Calibri", bold=False, size=8)
-    italic_8 = Font(name="Calibri", italic=True, size=8)
+    bold_9 = Font(name="Arial", bold=True, size=9)
+    normal_9 = Font(name="Arial", bold=False, size=9)
+    bold_8 = Font(name="Arial", bold=True, size=8)
+    normal_8 = Font(name="Arial", bold=False, size=8)
+    italic_8 = Font(name="Arial", italic=True, size=8)
 
     # ARS with 2 decimals matching PDF _fmt_ars → "$65.147,34"
     ars_fmt = '"$"#,##0.00'
@@ -1146,7 +1147,7 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
         ws.merge_cells(f"A{r}:F{r}")
         cell_gt = ws.cell(r, 1)
         cell_gt.value = grand_text
-        cell_gt.font = Font(name="Calibri", bold=True, size=9)
+        cell_gt.font = Font(name="Arial", bold=True, size=9)
         cell_gt.alignment = center_align
         cell_gt.border = thin_border
         for col in range(2, 7):
@@ -1155,8 +1156,8 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     # Conditions — match PDF 7pt, merge A:F + wrap so text flows full width
     r += 2
     co = _load_company_config()
-    cond_font = Font(name="Calibri", size=7)
-    cond_font_i = Font(name="Calibri", italic=True, size=7)
+    cond_font = Font(name="Arial", size=7)
+    cond_font_i = Font(name="Arial", italic=True, size=7)
     wrap_align = Alignment(wrap_text=True)
 
     # Planilla de Cómputo footnote — goes above the standard conditions.
@@ -1192,13 +1193,14 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     # Footer — match PDF italic 7pt
     r += 1
     _write_cond_line(r, "No se suben mesadas que no entren en ascensor",
-                     Font(name="Calibri", italic=True, size=7))
+                     Font(name="Arial", italic=True, size=7))
     # Edificio-only: las piezas se dejan en pie de obra (no se colocan)
     r += 1
     _write_cond_line(r, "Las mesadas se dejan en pie de obra",
-                     Font(name="Calibri", italic=True, size=7))
+                     Font(name="Arial", italic=True, size=7))
 
     wb.save(str(excel_path))
+    _force_arial_font(str(excel_path))
     _inject_locale(str(excel_path))
 
 
@@ -1574,9 +1576,9 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     total_ars = data.get("total_ars", 0)
     total_usd = data.get("total_usd", 0)
 
-    bold = Font(name="Calibri", bold=True, size=10)
-    normal = Font(name="Calibri", bold=False, size=10)
-    small = Font(name="Calibri", bold=False, size=9)
+    bold = Font(name="Arial", bold=True, size=10)
+    normal = Font(name="Arial", bold=False, size=10)
+    small = Font(name="Arial", bold=False, size=9)
     right_align = Alignment(horizontal="right")
     center_align = Alignment(horizontal="center")
     thin = Side(style="thin")
@@ -1670,7 +1672,7 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     # Build right-side overlay (Descuento + TOTAL)
     # Applies to both USD and ARS — originally gated to USD only which hid
     # the discount line for ARS edificios (bug DINALE 14/04/2026).
-    italic_sm = Font(name="Calibri", italic=True, size=9)
+    italic_sm = Font(name="Arial", italic=True, size=9)
     _xl_fmt = _fmt_usd if currency == "USD" else _fmt_ars
     right_rows_xl = []
     if discount_pct:
@@ -1830,9 +1832,9 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     # Conditions block (CONDICIONES / FORMAS DE PAGO) + footer legend(s).
     # Mirrors the PDF layout so Excel is not a stripped-down version.
     co = _load_company_config()
-    cond_font_b = Font(name="Calibri", bold=True, size=7)
-    cond_font = Font(name="Calibri", size=7)
-    cond_font_i = Font(name="Calibri", italic=True, size=7)
+    cond_font_b = Font(name="Arial", bold=True, size=7)
+    cond_font = Font(name="Arial", size=7)
+    cond_font_i = Font(name="Arial", italic=True, size=7)
     wrap_align = Alignment(wrap_text=True, vertical="top")
     cr = grand_row + 2
 
@@ -1876,7 +1878,7 @@ def _generate_excel(output_path: Path, data: dict) -> None:
 
     # Footer legend — always show "No se suben mesadas…"; edificio adds the
     # "Las mesadas se dejan en pie de obra" line.
-    legend_font = Font(name="Calibri", italic=True, bold=True, size=8)
+    legend_font = Font(name="Arial", italic=True, bold=True, size=8)
     center_legend = Alignment(horizontal="center", vertical="center")
     ws.cell(cr, 1).value = "No se suben mesadas que no entren en ascensor"
     ws.cell(cr, 1).font = legend_font
@@ -1890,7 +1892,46 @@ def _generate_excel(output_path: Path, data: dict) -> None:
         ws.merge_cells(f"A{cr}:F{cr}")
 
     wb.save(str(output_path))
+    _force_arial_font(str(output_path))
     _inject_locale(str(output_path))
+
+
+def _force_arial_font(xlsx_path: str) -> None:
+    """Replace Calibri → Arial in the saved xlsx file.
+
+    PR #35 — Google Sheets doesn't have Calibri installed. When users open
+    the xlsx from Drive, fonts fall back to a system font rendered larger
+    at the same point size. Arial exists on both Excel and Sheets → same
+    visual size in both. Post-processes styles.xml + sharedStrings if any.
+    """
+    import zipfile
+    import shutil
+    from pathlib import Path as _P
+    _p = _P(xlsx_path)
+    if not _p.exists():
+        return
+    _tmp = _p.with_suffix(".arial.tmp")
+    try:
+        with zipfile.ZipFile(str(_p), "r") as zin:
+            with zipfile.ZipFile(str(_tmp), "w", zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    data = zin.read(item.filename)
+                    if item.filename.endswith(".xml"):
+                        try:
+                            text = data.decode("utf-8")
+                            text = text.replace('name="Calibri"', 'name="Arial"')
+                            text = text.replace('val="Calibri"', 'val="Arial"')
+                            data = text.encode("utf-8")
+                        except UnicodeDecodeError:
+                            pass
+                    zout.writestr(item, data)
+        shutil.move(str(_tmp), str(_p))
+    except Exception as e:
+        logging.warning(f"[force_arial] failed for {_p.name}: {e}")
+        try:
+            _tmp.unlink()
+        except Exception:
+            pass
 
 
 def _inject_locale(xlsx_path: str):
