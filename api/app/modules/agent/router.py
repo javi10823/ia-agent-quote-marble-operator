@@ -430,6 +430,125 @@ async def validate_quote(
     }
 
 
+# ── REGENERATE — re-emit PDF/Excel from existing breakdown, no recalc ────────
+#
+# Caso de uso: corregiste un bug en el template (grand total duplicado, SKU
+# mal, formato Excel) y querés refrescar los archivos de un presupuesto
+# YA validado, SIN re-correr Valentina y SIN tocar ningún dato del negocio.
+#
+# Diferencias con /validate (que sí podría usarse pero cambia estado):
+#   - NO toca status (un quote validated/sent sigue como estaba).
+#   - NO toca client_name, project, totales, quote_breakdown.
+#   - Solo actualiza las URLs de archivos (pdf_url, excel_url, drive_url,
+#     drive_file_id) y appendea un entry a change_history para auditoría.
+
+@router.post("/quotes/{quote_id}/regenerate")
+async def regenerate_quote_docs(
+    quote_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-generate PDF/Excel from existing breakdown. No recalc, no status change."""
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+
+    bd = quote.quote_breakdown
+    if not bd:
+        raise HTTPException(
+            status_code=400,
+            detail="El presupuesto no tiene desglose calculado — no hay datos para regenerar",
+        )
+
+    from app.modules.agent.tools.document_tool import generate_documents
+    from app.modules.agent.tools.drive_tool import upload_to_drive, delete_drive_file
+
+    # Same fallback pattern as /validate (line 370+): breakdown is source of
+    # truth, fill only fields that legacy quotes might not have.
+    doc_data = dict(bd)
+    doc_data.setdefault("client_name", quote.client_name)
+    doc_data.setdefault("project", quote.project)
+    doc_data.setdefault("material_name", quote.material)
+    doc_data.setdefault("total_ars", quote.total_ars)
+    doc_data.setdefault("total_usd", quote.total_usd)
+    doc_data.setdefault("discount_pct", 0)
+    doc_data.setdefault("sectors", [])
+    doc_data.setdefault("mo_items", [])
+
+    doc_result = await generate_documents(quote_id, doc_data)
+    if not doc_result.get("ok"):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Falló la generación de documentos: {doc_result.get('error')}",
+        )
+
+    pdf_url = doc_result.get("pdf_url")
+    excel_url = doc_result.get("excel_url")
+
+    # Drive: replace old file with new one (same strategy as /validate).
+    existing_drive_file_id = quote.drive_file_id
+    existing_drive_url = quote.drive_url
+    new_drive_url = None
+    new_drive_file_id = None
+    if existing_drive_file_id:
+        try:
+            await delete_drive_file(existing_drive_file_id)
+        except Exception as e:
+            logging.warning(f"[regenerate] delete_drive_file failed for {quote_id}: {e}")
+    try:
+        drive_result = await upload_to_drive(
+            quote_id,
+            doc_data["client_name"],
+            doc_data["material_name"],
+            doc_data.get("date"),
+        )
+        if drive_result.get("ok"):
+            new_drive_url = drive_result.get("drive_url")
+            new_drive_file_id = drive_result.get("drive_file_id")
+    except Exception as e:
+        logging.warning(f"[regenerate] upload_to_drive failed for {quote_id}: {e}")
+
+    final_drive_url = new_drive_url or existing_drive_url
+    final_drive_file_id = new_drive_file_id or existing_drive_file_id
+
+    # Audit log: append to change_history (column ya existe, formato igual
+    # que el que usa calculate_quote save al final del loop).
+    regenerated_at = datetime.now().isoformat()
+    change_entry = {
+        "timestamp": regenerated_at,
+        "action": "regenerate_docs",
+        "pdf_url_before": quote.pdf_url,
+        "excel_url_before": quote.excel_url,
+        "pdf_url_after": pdf_url,
+        "excel_url_after": excel_url,
+    }
+    history = list(quote.change_history or [])
+    history.append(change_entry)
+
+    update_values = {
+        "pdf_url": pdf_url,
+        "excel_url": excel_url,
+        "change_history": history,
+    }
+    if new_drive_url:
+        update_values["drive_url"] = new_drive_url
+        update_values["drive_file_id"] = new_drive_file_id
+
+    await db.execute(
+        update(Quote).where(Quote.id == quote_id).values(**update_values)
+    )
+    await db.commit()
+
+    logging.info(f"[regenerate] Quote {quote_id} docs regenerated (status unchanged)")
+    return {
+        "ok": True,
+        "pdf_url": pdf_url,
+        "excel_url": excel_url,
+        "drive_url": final_drive_url,
+        "regenerated_at": regenerated_at,
+    }
+
+
 # ── DERIVE MATERIAL — create new quote with different material ───────────────
 
 @router.post("/quotes/{quote_id}/derive-material")

@@ -10,6 +10,7 @@ import { selectZone } from "@/lib/api";
 import { ResumenObraCard } from "@/components/quote/ResumenObraCard";
 import { EmailDraftCard } from "@/components/quote/EmailDraftCard";
 import { CondicionesCard } from "@/components/quote/CondicionesCard";
+import RegenerateButton from "@/components/quote/RegenerateButton";
 import clsx from "clsx";
 import { A, I, O, N, DOT, SUP2, DASH, ITEM, WARN, CIRCLE, ARROW, XMARK, CLOUD, WAVE, PAGE, PICTURE, CLIP, RULER, TAG, FOLDER, CHART } from "@/lib/chars";
 
@@ -351,6 +352,15 @@ export default function QuotePage() {
           {quote?.drive_pdf_url && <FileLink href={quote.drive_pdf_url} label="PDF Drive" cls="border-acc/20 text-acc" />}
           {quote?.drive_excel_url && <FileLink href={quote.drive_excel_url} label="Excel Drive" cls="border-emerald-400/20 text-emerald-400" />}
           {!quote?.drive_pdf_url && quote?.pdf_url && <FileLink href={quote.pdf_url} label="PDF" cls="border-red-400/20 text-red-400" />}
+          {/* Regenerar: solo si hay docs ya generados Y hay breakdown para reutilizar */}
+          <RegenerateButton
+            quoteId={quoteId}
+            enabled={!!quote && !!bd && (!!quote.pdf_url || !!quote.drive_pdf_url)}
+            onRegenerated={async () => {
+              const updated = await fetchQuote(quoteId);
+              setQuote(updated);
+            }}
+          />
         </div>
       </div>
 
