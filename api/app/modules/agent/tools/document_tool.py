@@ -568,7 +568,7 @@ def _generate_resumen_obra_excel(excel_path: Path, data: dict) -> None:
         cur = m["currency"]
         ws.cell(r, 1, m["name"]).font = normal
         ws.cell(r, 2, m["m2"]).font = normal
-        ws.cell(r, 2).number_format = '#,##0.00'
+        ws.cell(r, 2).number_format = '#,##0.####'
         ws.cell(r, 3, cur).font = normal
         if cur == "USD":
             ws.cell(r, 4, _fmt_usd(m['price_unit'])).font = normal
@@ -1117,8 +1117,12 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
             ws.cell(r, 1).value = mo["description"]
             ws.cell(r, 1).font = normal_9
             ws.cell(r, 1).alignment = left_align
-            # Qty: integer → no decimals, decimal → 2 decimals (matching PDF _fmt_qty)
-            ws.cell(r, 4).value = _fmt_qty(mo["quantity"])
+            # PR #37 — escribir qty numérica (no string) para que el
+            # operador pueda editarla directamente en Google Sheets sin
+            # perder decimales. Formato '#,##0.####' preserva hasta 4
+            # decimales sin trailing zeros.
+            ws.cell(r, 4).value = mo["quantity"]
+            ws.cell(r, 4).number_format = '#,##0.####'
             ws.cell(r, 4).font = normal_9
             ws.cell(r, 4).alignment = right_align
             # MO prices always ARS with 2 decimals
@@ -1597,7 +1601,16 @@ def _generate_excel(output_path: Path, data: dict) -> None:
         _row_n[0] += 1
 
     ars_fmt = '"$"#,##0.00'
-    qty_fmt = '#,##0.00'
+    # PR #37 — formato de cantidades preserva hasta 4 decimales sin
+    # trailing zeros. Antes '#,##0.00' redondeaba a 2 decimales en el
+    # display — cuando el operador editaba 4.295 en Google Sheets/Excel,
+    # veía 4.30 (aunque el valor interno era correcto). Ahora:
+    #  4      → '4'
+    #  4.5    → '4,5'
+    #  4.30   → '4,3'
+    #  4.295  → '4,295'
+    #  4.2955 → '4,2955'
+    qty_fmt = '#,##0.####'
 
     # Header — replace values, keep template formatting
     ws["A13"].value = f"Fecha: {date_str}"
