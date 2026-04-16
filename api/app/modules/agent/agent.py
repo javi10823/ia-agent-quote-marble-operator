@@ -4429,41 +4429,71 @@ class AgentService:
                     (r'\b(?:no|sin)\s+pulido\b', "pulido"),
                 ]
                 _matched_name_lower = (calc_result.get("material_name") or "").lower()
-                # PR #46 — suprimir falsos positivos: si el brief contiene el
-                # nombre canónico completo del material literalmente (ej:
-                # "GRANITO GRIS MARA EXTRA 2 ESP"), el operador lo pidió
-                # explícito y no hay variant negada que confirmar. Una
-                # negación accidental ("no dejar extra 2 mm de tolerancia")
-                # no debe disparar el warning en ese caso.
-                _explicit_request = bool(
-                    _matched_name_lower
-                    and _matched_name_lower in _neg_text
-                )
-                if not _explicit_request:
-                    for _pat, _kw in _neg_patterns:
-                        if _re_neg.search(_pat, _neg_text) and _kw in _matched_name_lower:
-                            _w = (
-                                f"⚠️ VARIANT NEGADA: el operador escribió "
-                                f"'{_kw}' en el brief negándola, pero el catálogo "
-                                f"solo tiene '{calc_result['material_name']}' como "
-                                "opción. Se cotiza con esa variante — confirmar "
-                                "con operador antes de generar PDF."
-                            )
-                            existing = calc_result.setdefault("warnings", [])
-                            if _w not in existing:
-                                existing.append(_w)
-                            logging.warning(
-                                f"[variant-negated-agent] '{_kw}' negado por brief "
-                                f"pero match es '{calc_result['material_name']}' "
-                                f"para {save_to_qid}"
-                            )
-                            break
-                else:
-                    logging.info(
-                        f"[variant-negated-agent] SUPPRESSED: brief contiene "
-                        f"'{_matched_name_lower}' literal → operador lo pidió "
-                        f"explícito, no es variant negada."
+
+                def _has_affirmative_mention(kw: str, text: str) -> bool:
+                    """¿El kw aparece al menos una vez en `text` sin estar
+                    inmediatamente precedido por 'no ' o 'sin '?
+
+                    Maneja variantes multi-palabra (ej: "extra 2") y caracteres
+                    no-palabra alrededor (dash, guión, punto, paréntesis).
+                    Ejemplos que retornan True:
+                      - "GRANITO GRIS MARA EXTRA 2 ESP"
+                      - "granito gris mara - 20mm extra 2 esp"
+                      - "mara (extra 2) 20mm"
+                    Ejemplos que retornan False:
+                      - "mara sin extra 2, quiero fiamatado"
+                      - "NO Extra 2" (único match, todo negado)
+                    """
+                    kw_escaped = _re_neg.escape(kw).replace(r'\ ', r'\s+')
+                    # Match con word boundary flexible: cualquier char no-palabra
+                    # antes/después (incluye inicio/fin de string).
+                    kw_regex = r'(?<![A-Za-z0-9])' + kw_escaped + r'(?![A-Za-z0-9])'
+                    for _m in _re_neg.finditer(kw_regex, text):
+                        _start = _m.start()
+                        # Mirar los ~6 chars antes: si hay "no " o "sin " justo
+                        # antes del kw, esa ocurrencia es negada. Si al menos una
+                        # ocurrencia NO está negada → afirmativa → True.
+                        _prefix = text[max(0, _start - 6):_start]
+                        if not _re_neg.search(r'\b(no|sin)\s+$', _prefix):
+                            return True
+                    return False
+
+                for _pat, _kw in _neg_patterns:
+                    if not _re_neg.search(_pat, _neg_text):
+                        continue
+                    if _kw not in _matched_name_lower:
+                        continue
+                    # PR #47 — suprimir falso positivo: si el operador menciona
+                    # el kw afirmativamente en algún lado del brief, claramente
+                    # quiere esa variante. Casos cubiertos:
+                    #   - "GRANITO GRIS MARA EXTRA 2 ESP" → afirmativo
+                    #   - "mara - 20mm - extra 2 esp" → afirmativo (dashes OK)
+                    #   - "no dejar extra 2 mm pero SI Extra 2 ESP" → afirmativo
+                    # Casos que siguen firing:
+                    #   - "Mara, NO Extra 2, quiero fiamatado" → todas negadas
+                    if _has_affirmative_mention(_kw, _neg_text):
+                        logging.info(
+                            f"[variant-negated-agent] SUPPRESSED: '{_kw}' "
+                            f"aparece afirmativamente en brief → operador "
+                            f"pidió esta variante explícito, no es negada."
+                        )
+                        break
+                    _w = (
+                        f"⚠️ VARIANT NEGADA: el operador escribió "
+                        f"'{_kw}' en el brief negándola, pero el catálogo "
+                        f"solo tiene '{calc_result['material_name']}' como "
+                        "opción. Se cotiza con esa variante — confirmar "
+                        "con operador antes de generar PDF."
                     )
+                    existing = calc_result.setdefault("warnings", [])
+                    if _w not in existing:
+                        existing.append(_w)
+                    logging.warning(
+                        f"[variant-negated-agent] '{_kw}' negado por brief "
+                        f"pero match es '{calc_result['material_name']}' "
+                        f"para {save_to_qid}"
+                    )
+                    break
 
             # ── Post-calculate deterministic validation ──
             if calc_result.get("ok"):
