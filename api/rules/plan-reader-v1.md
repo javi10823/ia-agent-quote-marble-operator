@@ -143,10 +143,16 @@ La esquina (cuadrado depth × depth) pertenece a UN SOLO tramo. Nunca a los dos.
    → Ejemplo: cota "87" desde pared exterior izq, depth_izq = 62cm
      → aporte neto al medio = 87 - 62 = 25cm.
 
-VERIFICACIÓN OBLIGATORIA para L y U:
+VERIFICACIÓN OBLIGATORIA para L, U y RECTA:
    L: depth_tramo_full + largo_neto = dimensión exterior total del lado neto.
    U: depth_izq + largo_neto_medio + depth_der = ancho total cocina.
+   RECTA: si el plano muestra cota del muro Y cotas parciales encadenadas en el
+     mismo eje (ej: pared 3.10m arriba + "0.70 + 1.55 + 3.60 + 3.10 + 0.70"
+     abajo), sumar los parciales y comparar contra la cota del muro (tolerancia
+     2%). No son dos mediciones redundantes — una es error del arquitecto.
    Si no cierra → anotar en ambigüedades, NO asumir.
+   ⛔ PROHIBIDO elegir silenciosamente uno de los dos valores cuando hay
+   conflicto. El brief debe reportar la ambigüedad al operador.
 
    ## REGLAS DE COGNICIÓN VISUAL Y OCR ESPACIAL
 
@@ -305,6 +311,51 @@ Interpretar la vista del retorno (0.60 × 1.55) como **"alzada vertical"** o
 **pieza de material separada**. Es la MESADA DEL RETORNO vista en planta, no
 una alzada ni un revestimiento. Los rectángulos finos hachurados con ml × 0.07
 son los ZÓCALOS, no piezas de material.
+
+---
+
+## EJEMPLO CANÓNICO — COCINA RECTA EN NICHO 3 PAREDES (RESUELTO)
+
+Plano real: mesada recta confinada entre 2 paredes laterales + 1 pared de
+fondo (nicho tipo galley). Una sola línea de mesada, sin quiebres en L/U.
+
+Claves visuales del nicho:
+- Rectángulo único de mesada (sin quiebre a 90°).
+- Las **3 paredes** que la rodean se ven como líneas gruesas/hachurado de pared
+  en: fondo (arriba), lateral izq (borde izq), lateral der (borde der).
+- El frente (hacia el usuario) está libre → sin zócalo frontal.
+
+Ejemplo de cotas: pared fondo = 3.10m, prof mesada = 0.60m, alto zócalos = 10cm.
+
+Lectura correcta:
+
+1. **Tramos:** 1 solo rectángulo → **1 mesada recta** (NO es L ni U ni "2 tramos").
+2. **Mesada:** `3.10 × 0.60` → m² = 1.86.
+3. **Zócalos** (1 por cada pared del nicho):
+   - Trasero: `3.10 ml × 0.10` → m² = 0.31
+   - Lateral izq: `0.60 ml × 0.10` → m² = 0.06
+   - Lateral der: `0.60 ml × 0.10` → m² = 0.06
+4. **Frente:** libre (no hay pared) → `frontal: ml=0`.
+5. **Piletas/anafes embutidos:** detectar símbolos dentro del rectángulo de
+   mesada y generar MO correspondiente (1 pileta → PEGADOPILETA, 1 anafe →
+   ANAFE).
+
+⛔ **ERRORES TÍPICOS a evitar en este caso:**
+
+(a) **Colapsar a 1 solo zócalo (trasero) imitando A1335.** Un nicho de 3
+    paredes genera **3 zócalos**, no 1. Enumerar los 4 lados y marcar `ml=0`
+    sólo en el frente.
+
+(b) **Confundir cotas encadenadas del frente con tramos de mesada.** Si el
+    plano muestra parciales abajo (ej: `0.70 + 1.55 + 3.60 + 3.10 + 0.70`)
+    **Y** la cota de pared arriba (ej: `3.10`), aplicar reconciliación:
+    si Σ parciales ≠ cota muro (>2% delta), **preguntar al operador** — NO
+    elegir uno silenciosamente. Ver `plan-reading-cotas.md` §4.
+
+(c) **Leer los `0.10 m` de los bordes laterales como profundidad.** En este
+    tipo de plano, las cotas `0.10` en los extremos verticales son el **alto
+    del zócalo** (H=10 cm), no una segunda profundidad. La prof real de la
+    mesada está en la cota `0.60` central.
 
 ---
 
