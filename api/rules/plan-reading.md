@@ -134,6 +134,16 @@ Hatching/rayado = pared → NO canto expuesto → NO frentin. Lados sin tachar =
 ## Deteccion de anafe/tomas
 Simbolo hornallas/tomas en planta → ANAFE/TOMAS. Anotar cantidad.
 
+**Brief solo-plano (sin lista MO explícita del operador):** si el plano muestra
+anafe/hornallas empotradas → MO obligatoria `anafe=True` + `anafe_qty=N`. Si
+muestra pileta empotrada → `pileta="empotrada_cliente"` (o `empotrada_johnson`
+si es Johnson). No olvidar ninguno de los dos aunque el brief no los repita en
+texto — el plano ES el brief.
+
+⚠️ Esto aplica **solo cuando no hay MO exhaustiva listada** (ver CONTEXT.md
+§"MANO DE OBRA LISTADA ES EXHAUSTIVA"). Si el operador listó la MO ítem por
+ítem, esa lista manda y Valentina NO agrega anafe/pileta que no figuren ahí.
+
 ---
 
 ## Anotaciones en planos
