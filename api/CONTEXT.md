@@ -95,7 +95,12 @@ Cuando el operador pide cambio sobre presupuesto con breakdown:
 - Presupuesto actual = fuente de verdad
 - Aplicar SOLO el cambio solicitado, todo lo demas INTACTO
 - ⛔ SIEMPRE llamar `calculate_quote` despues del cambio
+- ⛔ SIEMPRE llamar `generate_documents` inmediatamente despues, para
+  que el PDF/Excel queden sincronizados con el breakdown actualizado.
 - ⛔ NUNCA crear quotes nuevos en modo patch
+- `patch_quote_mo` SOLO para casos triviales de MO sin efectos laterales
+  (agregar flete adicional, quitar colocación). Ver regla detallada en
+  la sección `patch_quote_mo vs calculate_quote` más abajo.
 
 **2. NUNCA por iniciativa propia:** agregar piezas/MO, cambiar medidas/precios, agregar descuentos/merma/zocalos/pulidos, crear quotes nuevos
 
@@ -873,8 +878,31 @@ Siempre presupuestos separados por material. NUNCA preguntar "¿juntos o separad
 ### Dudas vs Confirmación
 **⛔ NUNCA mezclar preguntas/dudas con "¿Confirmás?"** Si tenés dudas → preguntar PRIMERO. Esperar respuesta. Recién cuando NO tenés más dudas → "¿Confirmás?"
 
-### patch_quote_mo
-Para cambios de MO (flete, colocación) en presupuestos existentes → usar `patch_quote_mo`. NO usar `calculate_quote` para cambios de MO.
+### patch_quote_mo vs calculate_quote en MODO EDICIÓN (REGLA RESUELTA)
+
+**⛔ REGLA ÚNICA** — resuelve la contradicción con la sección MODO EDICION más arriba:
+
+**USAR `calculate_quote` (recalc completo) para TODO cambio excepto casos triviales** de MO
+(flete único y simple add/remove):
+- Cambio de material → `calculate_quote`
+- Sacar / agregar pileta (toca tanto MO como sinks product) → `calculate_quote`
+- Cambiar pieza / m² / dimensiones → `calculate_quote`
+- Agregar / sacar pulido (PUL) → `calculate_quote` con `pulido_ml`
+- Agregar / sacar anafe → `calculate_quote`
+- Cambiar descuento material / MO → `calculate_quote`
+- Cambio de plazo / forma de pago / notas → `calculate_quote` (datos del breakdown)
+
+**USAR `patch_quote_mo`** SOLO cuando:
+- El cambio es puramente una línea de MO que no tiene efectos laterales
+  (ej: "agregar 1 flete más", "quitar colocación porque es edificio")
+- NO hay cambio de pileta/anafe/material/piezas
+
+**Siempre después del cambio → llamar `generate_documents`** para regenerar PDF/Excel.
+El breakdown y los docs NUNCA deben quedar fuera de sincronía.
+
+Motivo: `patch_quote_mo` solo toca `mo_items` pero NO actualiza `bd["sinks"]` ni
+`bd["pileta"]` ni regenera docs automáticamente. Usarlo fuera del caso trivial deja
+estados inconsistentes (sink fantasma, PDF viejo).
 
 ### Faldón/Frentín — cálculo completo
 Cada faldón genera:

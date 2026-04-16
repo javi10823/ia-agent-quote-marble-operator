@@ -278,6 +278,13 @@ async def _canonicalize_quotes_data_from_db(
         "mo_items", "mo_discount_pct", "mo_discount_amount",
         "total_ars", "total_usd", "total_mo_ars",
         "thickness_mm",
+        # PR #41 — canonicalizar también el producto pileta.
+        # Antes la LLM podía dejar `sinks` con una pileta fantasma que el
+        # calc_result ya había eliminado (ej: operador dijo "sacar pileta"
+        # pero la LLM olvidó limpiar sinks de su payload). El resultado
+        # era PILETAS block en el PDF con producto que no estaba en la
+        # quote recalculada.
+        "sinks",
     )
 
     for qdata in quotes_data:
@@ -3842,6 +3849,38 @@ class AgentService:
                     # Auto-inject inglete
                     if not inputs.get("inglete") and ebd.get("inglete"):
                         inputs["inglete"] = True
+
+                    # PR #41 — carry-over de flags de MO/flete previos al
+                    # recalcular. Antes solo se preservaban pileta/anafe/
+                    # frentin/pulido/inglete. Con esto, 'cambiar material' o
+                    # cualquier recálculo mantiene 'sin flete', '5% sobre MO',
+                    # y las cantidades ya acordadas.
+                    # Detect "re-add flete" operator phrases — si el operador
+                    # pide reactivar el flete, no preservar el skip_flete
+                    # previo (aunque ebd lo tenga en True).
+                    _re_add_flete = any(kw in msg_lower for kw in [
+                        "agregar flete", "volver a agregar flete", "con flete",
+                        "volver flete", "re agregar flete", "poner flete",
+                    ])
+                    if (
+                        "skip_flete" not in inputs
+                        and ebd.get("skip_flete")
+                        and not _re_add_flete
+                    ):
+                        inputs["skip_flete"] = True
+                        logging.info(f"Auto-preserved skip_flete=True from breakdown for {save_to_qid}")
+                    if not inputs.get("mo_discount_pct") and ebd.get("mo_discount_pct"):
+                        inputs["mo_discount_pct"] = ebd["mo_discount_pct"]
+                        logging.info(f"Auto-preserved mo_discount_pct={ebd['mo_discount_pct']} from breakdown for {save_to_qid}")
+                    if not inputs.get("flete_qty") and ebd.get("flete_qty"):
+                        inputs["flete_qty"] = ebd["flete_qty"]
+                        logging.info(f"Auto-preserved flete_qty={ebd['flete_qty']} from breakdown for {save_to_qid}")
+                    if not inputs.get("tomas_qty") and ebd.get("tomas_qty"):
+                        inputs["tomas_qty"] = ebd["tomas_qty"]
+                        logging.info(f"Auto-preserved tomas_qty={ebd['tomas_qty']} from breakdown for {save_to_qid}")
+                    if not inputs.get("pileta_qty") and ebd.get("pileta_qty") and (ebd["pileta_qty"] or 0) > 1:
+                        inputs["pileta_qty"] = ebd["pileta_qty"]
+                        logging.info(f"Auto-preserved pileta_qty={ebd['pileta_qty']} from breakdown for {save_to_qid}")
             except Exception as e:
                 logging.warning(f"Could not check existing breakdown for {save_to_qid}: {e}")
 
@@ -3890,6 +3929,13 @@ class AgentService:
                 "eliminar pileta producto", "eliminar producto pileta",
                 "remover producto pileta", "remover pileta producto",
                 "sin la pileta producto", "sin pileta como producto",
+                # PR #41 — frases "bare" (sin la palabra 'producto').
+                # Antes estas quedaban solo en `removing_pileta` (que suprime
+                # auto-preserve) pero NO forzaban empotrada_cliente → el
+                # producto sink seguía apareciendo en el PDF.
+                "sacar pileta", "quitar pileta", "sin pileta",
+                "remover pileta", "eliminar pileta", "sacar la pileta",
+                "quitar la pileta", "ya no lleva pileta",
             ]
             if any(phrase in _pileta_all_text for phrase in _no_product_phrases):
                 if inputs.get("pileta") != "empotrada_cliente":
@@ -3986,8 +4032,18 @@ class AgentService:
                                 for blk in c:
                                     if isinstance(blk, dict) and blk.get("type") == "text":
                                         _all_user_text += " " + blk.get("text", "").lower()
-                _skip_phrases = ["lo retiro", "retiro yo", "retiro en", "voy a buscar", "lo busco",
-                                 "retira en fábrica", "retira en fabrica", "sin flete", "no necesita flete"]
+                # PR #41 — incluir frases de EDICIÓN ('sacar/quitar/remover
+                # flete', 'ya no lleva flete') además de las iniciales.
+                # Antes 'sacar flete' (frase natural) no matcheaba y el flete
+                # re-aparecía silenciosamente al recalcular.
+                _skip_phrases = [
+                    "lo retiro", "retiro yo", "retiro en", "voy a buscar", "lo busco",
+                    "retira en fábrica", "retira en fabrica", "sin flete", "no necesita flete",
+                    # Frases de modificación
+                    "sacar flete", "quitar flete", "remover flete", "eliminar flete",
+                    "sacar el flete", "quitar el flete", "ya no lleva flete",
+                    "sin el flete",
+                ]
                 if any(phrase in _all_user_text for phrase in _skip_phrases):
                     inputs["skip_flete"] = True
                     logging.info(f"Auto-set skip_flete=True from conversation keywords for {save_to_qid}")
