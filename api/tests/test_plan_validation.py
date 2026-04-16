@@ -83,3 +83,52 @@ def test_empty_pieces_list_does_not_crash():
 def test_non_dict_piece_flagged():
     errs = _validate_plan_pieces(["not a dict"])
     assert any("formato" in e.lower() for e in errs)
+
+
+# ── PR #54 — Hard gate contra drift: zócalos con alto=0.05 default ──
+
+def test_all_zocalos_with_default_alto_rejected():
+    """Si TODOS los zócalos tienen alto=0.05 exacto → default silencioso.
+    Bloquear y forzar pregunta al operador antes de calcular."""
+    pieces = [
+        {"description": "Mesada", "tipo": "mesada", "largo": 3.10, "prof": 0.60},
+        {"description": "Zócalo trasero", "tipo": "zocalo", "largo": 3.10, "alto": 0.05},
+        {"description": "Zócalo lat izq", "tipo": "zocalo", "largo": 0.60, "alto": 0.05},
+        {"description": "Zócalo lat der", "tipo": "zocalo", "largo": 0.60, "alto": 0.05},
+    ]
+    errs = _validate_plan_pieces(pieces)
+    assert any("default" in e.lower() for e in errs), (
+        f"Default 5cm silencioso en todos los zócalos debe bloquear: {errs}"
+    )
+
+
+def test_zocalo_with_explicit_alto_10cm_passes():
+    """Zócalos con alto distinto del default (ej: 10cm del plano) → OK."""
+    pieces = [
+        {"description": "Mesada", "tipo": "mesada", "largo": 3.10, "prof": 0.60},
+        {"description": "Zócalo trasero", "tipo": "zocalo", "largo": 3.10, "alto": 0.10},
+        {"description": "Zócalo lat izq", "tipo": "zocalo", "largo": 0.60, "alto": 0.10},
+    ]
+    errs = _validate_plan_pieces(pieces)
+    assert errs == [], f"Altos explícitos del plano deben pasar: {errs}"
+
+
+def test_mixed_zocalo_altos_passes():
+    """Si algunos zócalos tienen default 0.05 y otros no → hay al menos uno
+    explícito, pasa. (El default completo es lo sospechoso)."""
+    pieces = [
+        {"description": "Mesada", "tipo": "mesada", "largo": 2.0, "prof": 0.60},
+        {"description": "Zócalo trasero", "tipo": "zocalo", "largo": 2.0, "alto": 0.10},
+        {"description": "Zócalo lat", "tipo": "zocalo", "largo": 0.60, "alto": 0.05},
+    ]
+    errs = _validate_plan_pieces(pieces)
+    assert errs == [], f"Altos mixtos deben pasar: {errs}"
+
+
+def test_no_zocalos_passes():
+    """Sin zócalos → no aplica el gate."""
+    pieces = [
+        {"description": "Mesada", "tipo": "mesada", "largo": 3.10, "prof": 0.60},
+    ]
+    errs = _validate_plan_pieces(pieces)
+    assert errs == [], f"Sin zócalos no aplica el gate: {errs}"

@@ -95,6 +95,11 @@ def _validate_plan_pieces(pieces: list[dict]) -> list[str]:
     - confundir zócalo con mesada chica
     - confundir alzada con zócalo alto
 
+    PR #54: hard gate adicional contra drift del modelo — si Valentina agrega
+    zócalos con alto=0.05 exacto (default silencioso sin leer plano ni
+    preguntar al operador), bloquear con error explícito. Ver rules/
+    plan-reading.md §REGLA — ZÓCALOS AMBIGUOS.
+
     Retorna lista de mensajes de error; vacía si todo OK.
     Gated a has_plan en el caller — briefs de texto puro NO pasan por acá.
     """
@@ -103,6 +108,7 @@ def _validate_plan_pieces(pieces: list[dict]) -> list[str]:
         return errors
 
     has_any_zocalo = False
+    zocalo_altos: list[float] = []
     for idx, p in enumerate(pieces):
         if not isinstance(p, dict):
             errors.append(f"Pieza #{idx}: formato inválido")
@@ -133,6 +139,8 @@ def _validate_plan_pieces(pieces: list[dict]) -> list[str]:
                 )
         elif tipo == "zocalo":
             has_any_zocalo = True
+            if alto:
+                zocalo_altos.append(float(alto))
             if not alto:
                 errors.append(
                     f"'{desc}' marcada como zócalo pero falta `alto`. "
@@ -169,6 +177,30 @@ def _validate_plan_pieces(pieces: list[dict]) -> list[str]:
                 f"'{desc}': tipo '{tipo}' inválido. "
                 "Válidos: mesada, zocalo, alzada, frentin."
             )
+
+    # PR #54 — Hard gate contra drift del prompt: si TODOS los zócalos tienen
+    # alto=0.05 exacto (default silencioso), asumimos que Valentina no leyó
+    # el alto del plano ni preguntó al operador. Bloquear y forzar
+    # re-lectura/pregunta.
+    #
+    # El default 5cm solo es legítimo cuando:
+    #   - el plano no muestra NINGÚN alto y
+    #   - el operador lo confirmó explícitamente
+    # Como el validator no puede saber si preguntó, adoptamos la regla
+    # conservadora: "alto=0.05 exacto en ≥1 zócalo y plano adjunto" ⇒ error.
+    # Para los casos legítimos, Valentina puede pasar un alto ligeramente
+    # distinto (ej: 0.050 con 3+ decimales es el valor real, no el default)
+    # o actualizar tras confirmación del operador.
+    if zocalo_altos and all(round(a, 4) == 0.05 for a in zocalo_altos):
+        errors.append(
+            "⛔ ZÓCALOS CON ALTO=0.05 (DEFAULT). El plano no mostró el alto "
+            "explícito (leyenda H=Xcm, cota 0.05-0.50m en borde, o rotulado) "
+            "y no registrás haber preguntado al operador. Antes de seguir: "
+            "(1) releer el plano buscando H=Xcm / cotas de alto en bordes; "
+            "(2) si no hay, PREGUNTAR al operador '¿Lleva zócalos? Alto y "
+            "contra qué paredes'. Una vez confirmado, re-emitir con ese valor. "
+            "Ver rules/plan-reading.md §REGLA — ZÓCALOS AMBIGUOS."
+        )
 
     return errors
 
