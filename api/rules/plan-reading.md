@@ -169,6 +169,39 @@ texto — el plano ES el brief.
 > arriba y/o abajo del rectángulo de mesada) y NO coinciden con la prof,
 > interpretarlas como **alto de zócalo** — no como segundas profundidades.
 
+---
+
+## ⛔ REGLA — ZÓCALOS AMBIGUOS: PREGUNTAR AL OPERADOR
+
+Cuando el plano **NO muestra zócalos explícitamente** (ninguno de estos
+marcadores presente):
+- Rectángulos finos hachurados `//` con ratio ≥10:1
+- Leyenda `Z`, `ZOC`, `ZÓCALOS`, `H=Xcm`
+- Cotas de alto (0.05–0.50 m) en bordes del rectángulo de mesada
+
+Y simultáneamente:
+- La mesada toca al menos una pared (caso típico residencial)
+- El brief de texto **NO** dice "sin zócalos" / "no lleva zócalos" explícito
+
+→ Valentina **DEBE preguntar al operador** antes de seguir con Paso 2:
+
+> *"El plano no muestra zócalos explícitamente. ¿Esta mesada lleva zócalos?
+> Si sí, ¿de qué alto? (default común: 5 cm). Especificame también contra
+> qué paredes: fondo / lateral izq / lateral der."*
+
+⛔ **PROHIBIDO** calcular silenciosamente con:
+- **0 zócalos** (omitir por completo) cuando la presencia es ambigua
+- **5 cm default** cuando la existencia misma no está confirmada
+
+La pregunta es bloqueante — esperar respuesta del operador antes de `calculate_quote`.
+
+### Excepciones (NO preguntar, calcular directo)
+
+- Brief dice explícitamente `"sin zócalos"` / `"no lleva zócalos"` → `zócalos = []`
+- Brief lista el despiece completo sin zócalos → respetar esa lista literal
+- Mesada **isla** (no toca pared en ningún lado) → `zócalos = []`
+- Brief dice `"zócalos según plano"` y el plano SÍ los muestra → usar los del plano
+
 ### Profundidad de mesada
 - Sin cota → 0.60m estandar
 - Cota no obvia → evaluar si es tramo adicional o detalle estructural
