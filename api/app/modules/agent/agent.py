@@ -205,6 +205,176 @@ def _validate_plan_pieces(pieces: list[dict]) -> list[str]:
     return errors
 
 
+async def _run_dual_read(
+    db,
+    quote_id: str,
+    draw_bytes: bytes,
+    *,
+    crop_label: str = "plano",
+    planilla_m2: float | None = None,
+    cotas_text: str | None = None,
+    user_message: str = "",
+    plan_filename: str = "",
+) -> tuple[bool, list[dict]]:
+    """PR #55 — Corre dual_read sobre cualquier plano y devuelve chunks SSE.
+
+    Antes: dual_read solo corría cuando había tabla de Planilla de Cómputo
+    parseada (_planilla_data con table_x0 > 0). Imágenes sueltas y PDFs sin
+    planilla se saltaban la card → operador perdía la verificación visual
+    del Opus+Sonnet en la mayoría de casos residenciales.
+
+    Esta helper centraliza el flujo para llamarse desde los 3 paths:
+    (1) planilla PDF, (2) imagen suelta, (3) PDF sin planilla.
+
+    Args:
+        draw_bytes: bytes JPEG del plano a analizar. El caller debe
+            rasterizar/convertir PNG/WebP/PDF antes de llamar.
+        crop_label: etiqueta para el crop (ubicación de planilla si existe,
+            sino "plano" / "cocina").
+        planilla_m2: m² declarado por planilla si existe. None si no.
+        cotas_text: texto de cotas pre-extraído del PDF (si aplica).
+
+    Returns:
+        (handled, chunks) donde:
+            handled=True → el caller debe yield los chunks y return (turn done)
+            handled=False → el caller sigue el flujo normal (Claude)
+    """
+    import json as _json
+    chunks: list[dict] = []
+
+    try:
+        _dr_check_q = await db.execute(select(Quote).where(Quote.id == quote_id))
+        _dr_check_quote = _dr_check_q.scalar_one_or_none()
+        _dr_bd = (_dr_check_quote.quote_breakdown or {}) if _dr_check_quote else {}
+        _existing_dr = _dr_bd.get("dual_read_result")
+        _already_confirmed = bool(
+            _dr_bd.get("verified_context") or _dr_bd.get("measurements_confirmed")
+        )
+        _past_paso2 = bool(
+            _dr_bd.get("material_name")
+            or _dr_bd.get("total_ars")
+            or _dr_bd.get("mo_items")
+        )
+    except Exception:
+        _existing_dr = None
+        _already_confirmed = False
+        _past_paso2 = False
+
+    _has_valid_existing = bool(_existing_dr) and not _existing_dr.get("error")
+
+    if _past_paso2:
+        logging.info(f"[dual-read] skip (past paso 2) for quote {quote_id}")
+        return (False, chunks)
+
+    if _has_valid_existing and _already_confirmed:
+        logging.info(f"[dual-read] skip (confirmed) for quote {quote_id}")
+        return (False, chunks)
+
+    if _has_valid_existing:
+        # Re-emit saved card + persist turn
+        logging.info(f"[dual-read] re-emit saved result for quote {quote_id}")
+        try:
+            _um_q = await db.execute(select(Quote).where(Quote.id == quote_id))
+            _um_quote = _um_q.scalar_one_or_none()
+            if _um_quote:
+                _user_entry = {
+                    "role": "user",
+                    "content": [{
+                        "type": "text",
+                        "text": (user_message or "").strip() or f"(adjuntó plano: {plan_filename})",
+                    }],
+                }
+                _asst_entry = {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"}
+                await db.execute(
+                    update(Quote)
+                    .where(Quote.id == quote_id)
+                    .values(messages=list(_um_quote.messages or []) + [_user_entry, _asst_entry])
+                )
+                await db.commit()
+        except Exception as _e:
+            logging.warning(f"[dual-read] Failed to persist turn: {_e}")
+        chunks.append({"type": "dual_read_result", "content": _json.dumps(_existing_dr, ensure_ascii=False)})
+        chunks.append({"type": "done", "content": ""})
+        return (True, chunks)
+
+    # Fresh run
+    try:
+        from app.modules.quote_engine.dual_reader import dual_read_crop
+        _dual_enabled = get_ai_config().get("dual_read_enabled", True)
+        chunks.append({"type": "action", "content": "📐 Leyendo medidas del plano..."})
+        _dual_result = await dual_read_crop(
+            draw_bytes,
+            crop_label=crop_label,
+            planilla_m2=planilla_m2,
+            dual_enabled=_dual_enabled,
+            cotas_text=cotas_text,
+        )
+        if _dual_result.get("error"):
+            logging.warning(f"[dual-read] Error: {_dual_result.get('error')}")
+            return (False, chunks)
+
+        # Save crop for Opus retry
+        try:
+            from app.core.static import OUTPUT_DIR as _OUT
+            _crop_dir = _OUT / quote_id
+            _crop_dir.mkdir(parents=True, exist_ok=True)
+            _crop_path = _crop_dir / "dual_read_crop.jpg"
+            _crop_path.write_bytes(draw_bytes)
+            _dual_result["_crop_path"] = str(_crop_path)
+        except Exception as e:
+            logging.warning(f"[dual-read] Failed to save crop: {e}")
+
+        chunks.append({"type": "dual_read_result", "content": _json.dumps(_dual_result, ensure_ascii=False)})
+
+        # Persist in DB
+        try:
+            _qr = await db.execute(select(Quote).where(Quote.id == quote_id))
+            _q = _qr.scalar_one_or_none()
+            if _q:
+                _bd = dict(_q.quote_breakdown or {})
+                _bd["dual_read_result"] = _dual_result
+                _bd["dual_read_planilla_m2"] = planilla_m2
+                _bd["dual_read_crop_label"] = crop_label
+                await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd))
+                await db.commit()
+        except Exception as e:
+            logging.warning(f"[dual-read] Failed to save result: {e}")
+
+        logging.info(
+            f"[dual-read] Result sent: source={_dual_result.get('source')}, "
+            f"review={_dual_result.get('requires_human_review')}"
+        )
+
+        # Persist turn
+        try:
+            _um_q2 = await db.execute(select(Quote).where(Quote.id == quote_id))
+            _um_quote2 = _um_q2.scalar_one_or_none()
+            if _um_quote2:
+                _user_entry2 = {
+                    "role": "user",
+                    "content": [{
+                        "type": "text",
+                        "text": (user_message or "").strip() or f"(adjuntó plano: {plan_filename})",
+                    }],
+                }
+                _asst_entry2 = {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"}
+                await db.execute(
+                    update(Quote)
+                    .where(Quote.id == quote_id)
+                    .values(messages=list(_um_quote2.messages or []) + [_user_entry2, _asst_entry2])
+                )
+                await db.commit()
+        except Exception as _e2:
+            logging.warning(f"[dual-read] Failed to persist turn: {_e2}")
+
+        chunks.append({"type": "done", "content": ""})
+        return (True, chunks)
+
+    except Exception as e:
+        logging.error(f"[dual-read] Exception: {e}", exc_info=True)
+        return (False, chunks)
+
+
 def _backfill_material_price_base(quotes_data: list[dict]) -> None:
     """Populate `material_price_base` on each quote dict from the catalog.
 
@@ -2039,133 +2209,21 @@ class AgentService:
                                 except Exception as e:
                                     logging.warning(f"[cotas+specs] Extraction failed, falling back to vision-only: {e}")
 
-                                # ── DUAL READ: send crop to Sonnet (+ Opus if unsure) ──
-                                # Si ya corrió OK para este quote (está guardado en
-                                # quote_breakdown.dual_read_result), NO re-ejecutamos la API
-                                # — re-emitimos el resultado guardado para que la card
-                                # aparezca. Evita duplicación de cards y re-llamadas caras
-                                # cuando el PDF persiste entre mensajes.
-                                # Si el operador ya confirmó medidas (verified_context en bd),
-                                # saltamos silenciosamente y dejamos que Claude siga con el
-                                # flujo de cálculo.
-                                try:
-                                    _dr_check_q = await db.execute(select(Quote).where(Quote.id == quote_id))
-                                    _dr_check_quote = _dr_check_q.scalar_one_or_none()
-                                    _dr_bd = (_dr_check_quote.quote_breakdown or {}) if _dr_check_quote else {}
-                                    _existing_dr = _dr_bd.get("dual_read_result")
-                                    _already_confirmed = bool(_dr_bd.get("verified_context") or _dr_bd.get("measurements_confirmed"))
-                                    # Si ya se corrió calculate_quote (Paso 2), el quote ya
-                                    # avanzó más allá del dual_read. No tiene sentido re-emitir
-                                    # la card ni re-correr el análisis visual.
-                                    _past_paso2 = bool(
-                                        _dr_bd.get("material_name") or _dr_bd.get("total_ars") or _dr_bd.get("mo_items")
-                                    )
-                                except Exception:
-                                    _existing_dr = None
-                                    _already_confirmed = False
-                                    _past_paso2 = False
-
-                                _has_valid_existing = bool(_existing_dr) and not _existing_dr.get("error")
-
-                                if _past_paso2:
-                                    # Ya pasamos Paso 2 (cálculo hecho). No re-emitir ni re-correr.
-                                    logging.info(
-                                        f"[dual-read] skip (past paso 2) for quote {quote_id}"
-                                    )
-                                elif _has_valid_existing and _already_confirmed:
-                                    # Operador ya confirmó — no re-emitir, seguir con Claude
-                                    logging.info(
-                                        f"[dual-read] skip (confirmed) for quote {quote_id}"
-                                    )
-                                elif _has_valid_existing:
-                                    # Corrió antes pero no se confirmó → re-emitir card desde DB
-                                    logging.info(
-                                        f"[dual-read] re-emit saved result for quote {quote_id}"
-                                    )
-                                    # Persistir el turno del usuario para que el siguiente
-                                    # turno tenga historia (Claude necesita ver el upload
-                                    # previo para dar contexto en Paso 2).
-                                    try:
-                                        _um_q = await db.execute(select(Quote).where(Quote.id == quote_id))
-                                        _um_quote = _um_q.scalar_one_or_none()
-                                        if _um_quote:
-                                            _user_entry = {"role": "user", "content": [{"type": "text", "text": (user_message or "").strip() or f"(adjuntó plano: {plan_filename})"}]}
-                                            _asst_entry = {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"}
-                                            await db.execute(update(Quote).where(Quote.id == quote_id).values(messages=list(_um_quote.messages or []) + [_user_entry, _asst_entry]))
-                                            await db.commit()
-                                    except Exception as _e:
-                                        logging.warning(f"[dual-read] Failed to persist turn: {_e}")
-                                    yield {"type": "dual_read_result", "content": json.dumps(_existing_dr, ensure_ascii=False)}
-                                    yield {"type": "done", "content": ""}
+                                # ── DUAL READ (planilla path) — via helper ──
+                                _handled, _dr_chunks = await _run_dual_read(
+                                    db,
+                                    quote_id,
+                                    _draw_bytes,
+                                    crop_label=_planilla_data.ubicacion or "cocina",
+                                    planilla_m2=_planilla_data.m2,
+                                    cotas_text=_cotas_text,
+                                    user_message=user_message,
+                                    plan_filename=plan_filename,
+                                )
+                                for _c in _dr_chunks:
+                                    yield _c
+                                if _handled:
                                     return
-
-                                _skip_dual = _past_paso2 or (_has_valid_existing and _already_confirmed)
-
-                                try:
-                                    if _skip_dual:
-                                        raise RuntimeError("__dual_read_skip__")
-                                    from app.modules.quote_engine.dual_reader import dual_read_crop
-                                    _dual_enabled = ai_cfg.get("dual_read_enabled", True) if 'ai_cfg' in dir() else get_ai_config().get("dual_read_enabled", True)
-                                    yield {"type": "action", "content": "📐 Leyendo medidas del plano..."}
-                                    _dual_result = await dual_read_crop(
-                                        _draw_bytes,
-                                        crop_label=_planilla_data.ubicacion or "cocina",
-                                        planilla_m2=_planilla_data.m2,
-                                        dual_enabled=_dual_enabled,
-                                        cotas_text=_cotas_text,
-                                    )
-                                    if not _dual_result.get("error"):
-                                        # Save crop to disk for potential Opus retry
-                                        try:
-                                            from app.core.static import OUTPUT_DIR as _OUT
-                                            _crop_dir = _OUT / quote_id
-                                            _crop_dir.mkdir(parents=True, exist_ok=True)
-                                            _crop_path = _crop_dir / "dual_read_crop.jpg"
-                                            _crop_path.write_bytes(_draw_bytes)
-                                            _dual_result["_crop_path"] = str(_crop_path)
-                                        except Exception as e:
-                                            logging.warning(f"[dual-read] Failed to save crop: {e}")
-                                        # Send to frontend
-                                        yield {"type": "dual_read_result", "content": json.dumps(_dual_result, ensure_ascii=False)}
-                                        # Store in quote breakdown
-                                        try:
-                                            _qr = await db.execute(select(Quote).where(Quote.id == quote_id))
-                                            _q = _qr.scalar_one_or_none()
-                                            if _q:
-                                                _bd = dict(_q.quote_breakdown or {})
-                                                _bd["dual_read_result"] = _dual_result
-                                                _bd["dual_read_planilla_m2"] = _planilla_data.m2
-                                                _bd["dual_read_crop_label"] = _planilla_data.ubicacion or "cocina"
-                                                await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd))
-                                                await db.commit()
-                                        except Exception as e:
-                                            logging.warning(f"[dual-read] Failed to save result: {e}")
-                                        logging.info(f"[dual-read] Result sent: source={_dual_result.get('source')}, review={_dual_result.get('requires_human_review')}")
-                                        # Persistir el turno para tener historia en el siguiente
-                                        # turno (confirmación). Sin esto, Claude en Paso 2 pierde
-                                        # el contexto del upload original.
-                                        try:
-                                            _um_q2 = await db.execute(select(Quote).where(Quote.id == quote_id))
-                                            _um_quote2 = _um_q2.scalar_one_or_none()
-                                            if _um_quote2:
-                                                _user_entry2 = {"role": "user", "content": [{"type": "text", "text": (user_message or "").strip() or f"(adjuntó plano: {plan_filename})"}]}
-                                                _asst_entry2 = {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"}
-                                                await db.execute(update(Quote).where(Quote.id == quote_id).values(messages=list(_um_quote2.messages or []) + [_user_entry2, _asst_entry2]))
-                                                await db.commit()
-                                        except Exception as _e2:
-                                            logging.warning(f"[dual-read] Failed to persist turn: {_e2}")
-                                        # ── STOP: agent terminates turn, waits for operator confirmation ──
-                                        yield {"type": "done", "content": ""}
-                                        return
-                                    else:
-                                        logging.warning(f"[dual-read] Error: {_dual_result.get('error')}")
-                                        # Error → fall through to normal Claude flow
-                                except Exception as e:
-                                    if str(e) == "__dual_read_skip__":
-                                        pass  # no-op — skip intencional
-                                    else:
-                                        logging.error(f"[dual-read] Exception: {e}", exc_info=True)
-                                    # Non-fatal — fall through to normal Claude flow
 
                         except Exception as e:
                             logging.warning(f"[planilla] Drawing crop failed, falling back to full PDF: {e}")
@@ -2202,6 +2260,36 @@ class AgentService:
                         # 5+ pages with vector density = almost certainly a building project
                         is_visual_building = True
                         logging.info(f"Visual building detected by page count: {num_pages} pages (keywords={_keyword_hits})")
+
+                    # PR #55 — DUAL READ para PDF sin planilla (single-cocina flow).
+                    # Rasteriza página 1 a JPEG y corre dual_read. Skipea visual
+                    # buildings (usan pipeline propio).
+                    if pdf_has_images and not is_visual_building:
+                        try:
+                            from pdf2image import convert_from_bytes as _cfb_nopl
+                            import io as _io_nopl
+                            _plan_dpi_nopl = get_ai_config().get("plan_rasterization_dpi", 200)
+                            _pages_nopl = _cfb_nopl(plan_bytes, dpi=_plan_dpi_nopl, first_page=1, last_page=1)
+                            if _pages_nopl:
+                                _buf_nopl = _io_nopl.BytesIO()
+                                _pages_nopl[0].save(_buf_nopl, format="JPEG", quality=85)
+                                _draw_bytes_nopl = _buf_nopl.getvalue()
+                                _handled_nopl, _chunks_nopl = await _run_dual_read(
+                                    db,
+                                    quote_id,
+                                    _draw_bytes_nopl,
+                                    crop_label="plano",
+                                    planilla_m2=None,
+                                    cotas_text=None,
+                                    user_message=user_message,
+                                    plan_filename=plan_filename,
+                                )
+                                for _cc in _chunks_nopl:
+                                    yield _cc
+                                if _handled_nopl:
+                                    return
+                        except Exception as _e_nopl:
+                            logging.warning(f"[dual-read] PDF sin planilla: rasterize fallback failed: {_e_nopl}")
                 else:
                     logging.info(f"PDF is text-only (no images) — skipping vision pass, using extracted text only")
             else:
@@ -2214,6 +2302,34 @@ class AgentService:
                         "data": base64.b64encode(plan_bytes).decode(),
                     },
                 })
+
+                # PR #55 — DUAL READ para imagen suelta (PNG/JPG/WebP).
+                # Convierte a JPEG si hace falta y corre dual_read.
+                try:
+                    from PIL import Image as _PILImg
+                    import io as _io_img
+                    _img = _PILImg.open(_io_img.BytesIO(plan_bytes))
+                    if _img.mode != "RGB":
+                        _img = _img.convert("RGB")
+                    _buf_img = _io_img.BytesIO()
+                    _img.save(_buf_img, format="JPEG", quality=85)
+                    _draw_bytes_img = _buf_img.getvalue()
+                    _handled_img, _chunks_img = await _run_dual_read(
+                        db,
+                        quote_id,
+                        _draw_bytes_img,
+                        crop_label="plano",
+                        planilla_m2=None,
+                        cotas_text=None,
+                        user_message=user_message,
+                        plan_filename=plan_filename,
+                    )
+                    for _cc in _chunks_img:
+                        yield _cc
+                    if _handled_img:
+                        return
+                except Exception as _e_img:
+                    logging.warning(f"[dual-read] Imagen: conversión fallback failed: {_e_img}")
                 # Also send a 90° rotated version to catch margin text (configurable)
                 if get_ai_config().get("rotate_plan_images", True):
                     try:
