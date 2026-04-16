@@ -989,7 +989,7 @@ def calculate_quote(input_data: dict) -> dict:
 
     # ── Delivery days: apply tier by m² only if range_enabled in config ──
     import re as _re_plazo
-    default_days = cfg("delivery_days.default", 40)
+    default_days = cfg("delivery_days.default", 30)
     range_enabled = cfg("delivery_days.range_enabled", False)
     _plazo_match = _re_plazo.search(r'(\d+)', plazo or "")
     _plazo_days = int(_plazo_match.group(1)) if _plazo_match else None

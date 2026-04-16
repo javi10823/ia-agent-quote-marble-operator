@@ -39,10 +39,10 @@ def _validate_quote_data(qdata: dict) -> tuple[list[str], list[str]]:
     if not qdata.get("delivery_days"):
         # Read default from config.json (editable from the catalog panel)
         try:
-            cfg = json.loads((BASE_DIR / "catalog" / "config.json").read_text(encoding="utf-8"))
-            qdata["delivery_days"] = cfg.get("delivery_days", {}).get("display", "40 dias desde la toma de medidas")
+            _cfg_raw = json.loads((BASE_DIR / "catalog" / "config.json").read_text(encoding="utf-8"))
+            qdata["delivery_days"] = _cfg_raw.get("delivery_days", {}).get("display", "30 dias desde la toma de medidas")
         except Exception:
-            qdata["delivery_days"] = "40 dias desde la toma de medidas"
+            qdata["delivery_days"] = "30 dias desde la toma de medidas"
     if not qdata.get("total_ars") and not qdata.get("total_usd"):
         errors.append("Totales en $0 — verificar cálculo")
     sectors = qdata.get("sectors", [])
@@ -560,7 +560,7 @@ def _get_stable_text() -> str:
     try:
         import json as _json
         _config = _json.loads((BASE_DIR / "catalog" / "config.json").read_text(encoding="utf-8"))
-        _delivery = _config.get("delivery_days", {}).get("display", "40 dias")
+        _delivery = _config.get("delivery_days", {}).get("display", "30 dias desde la toma de medidas")
         config_block = f"## Valores actuales de config.json\n\n- **Plazo de entrega default:** {_delivery}\n- SIEMPRE usar este valor cuando el operador no especifica plazo. NUNCA inventar otro."
         core_rules.append(config_block)
     except Exception:

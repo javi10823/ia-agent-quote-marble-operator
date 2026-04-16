@@ -487,9 +487,9 @@ async def derive_material(
     if not plazo:
         try:
             from app.core.company_config import get as _cfg
-            plazo = _cfg("delivery_days.display", "40 dias desde la toma de medidas")
+            plazo = _cfg("delivery_days.display", _cfg("delivery_days.display", "30 dias desde la toma de medidas"))
         except Exception:
-            plazo = "40 dias desde la toma de medidas"
+            plazo = _cfg("delivery_days.display", "30 dias desde la toma de medidas")
 
     # ── Build calculate_quote input ──
     calc_input = {
