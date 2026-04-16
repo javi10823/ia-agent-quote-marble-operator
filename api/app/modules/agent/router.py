@@ -486,29 +486,57 @@ async def regenerate_quote_docs(
     pdf_url = doc_result.get("pdf_url")
     excel_url = doc_result.get("excel_url")
 
-    # Drive: replace old file with new one (same strategy as /validate).
-    existing_drive_file_id = quote.drive_file_id
-    existing_drive_url = quote.drive_url
-    new_drive_url = None
-    new_drive_file_id = None
-    if existing_drive_file_id:
-        try:
-            await delete_drive_file(existing_drive_file_id)
-        except Exception as e:
-            logging.warning(f"[regenerate] delete_drive_file failed for {quote_id}: {e}")
-    try:
-        drive_result = await upload_to_drive(
-            quote_id,
-            doc_data["client_name"],
-            doc_data["material_name"],
-            doc_data.get("date"),
-        )
-        if drive_result.get("ok"):
-            new_drive_url = drive_result.get("drive_url")
-            new_drive_file_id = drive_result.get("drive_file_id")
-    except Exception as e:
-        logging.warning(f"[regenerate] upload_to_drive failed for {quote_id}: {e}")
+    # PR #38 — el regenerate debe reemplazar los LINKS DE DRIVE separados
+    # (drive_pdf_url y drive_excel_url). Antes solo se actualizaba
+    # drive_url/file_id (uno solo), dejando los botones PDF/Excel Drive
+    # del UI apuntando a los archivos VIEJOS → operador veía el layout
+    # pre-fix aunque regenerara.
+    from app.modules.agent.tools.drive_tool import (
+        upload_single_file_to_drive, delete_drive_file,
+    )
+    from app.core.static import OUTPUT_DIR as _OUT_DIR
+    from pathlib import Path as _P2
 
+    # Delete the previous Drive files if we had file ids.
+    for _old_id in (quote.drive_file_id, getattr(quote, "drive_pdf_file_id", None)):
+        if _old_id:
+            try:
+                await delete_drive_file(_old_id)
+            except Exception as e:
+                logging.warning(f"[regenerate] delete_drive_file({_old_id}) failed: {e}")
+
+    # Re-upload PDF and Excel as SEPARATE files. upload_to_drive returns only
+    # the last url, which is why the previous implementation ended up with
+    # stale Drive links. upload_single_file_to_drive returns per-file info.
+    new_drive_pdf_url = None
+    new_drive_excel_url = None
+    new_drive_file_id = None
+    filename_base = doc_result.get("filename_base")
+    subfolder = doc_data.get("client_name") or "Sin cliente"
+    if filename_base:
+        _quote_dir = _OUT_DIR / quote_id
+        _pdf_path = _quote_dir / f"{filename_base}.pdf"
+        _xlsx_path = _quote_dir / f"{filename_base}.xlsx"
+        try:
+            if _pdf_path.exists():
+                _r_pdf = await upload_single_file_to_drive(str(_pdf_path), subfolder)
+                if _r_pdf.get("ok"):
+                    new_drive_pdf_url = _r_pdf.get("drive_url")
+                    new_drive_file_id = _r_pdf.get("file_id")
+        except Exception as e:
+            logging.warning(f"[regenerate] PDF Drive upload failed: {e}")
+        try:
+            if _xlsx_path.exists():
+                _r_xls = await upload_single_file_to_drive(str(_xlsx_path), subfolder)
+                if _r_xls.get("ok"):
+                    new_drive_excel_url = _r_xls.get("drive_url")
+        except Exception as e:
+            logging.warning(f"[regenerate] Excel Drive upload failed: {e}")
+
+    # Backcompat fields used elsewhere.
+    existing_drive_url = quote.drive_url
+    new_drive_url = new_drive_pdf_url or new_drive_excel_url
+    existing_drive_file_id = quote.drive_file_id
     final_drive_url = new_drive_url or existing_drive_url
     final_drive_file_id = new_drive_file_id or existing_drive_file_id
 
@@ -534,6 +562,12 @@ async def regenerate_quote_docs(
     if new_drive_url:
         update_values["drive_url"] = new_drive_url
         update_values["drive_file_id"] = new_drive_file_id
+    # PR #38 — también actualizar los links separados que usa el UI
+    # (botones 'PDF Drive' / 'Excel Drive').
+    if new_drive_pdf_url:
+        update_values["drive_pdf_url"] = new_drive_pdf_url
+    if new_drive_excel_url:
+        update_values["drive_excel_url"] = new_drive_excel_url
 
     await db.execute(
         update(Quote).where(Quote.id == quote_id).values(**update_values)
