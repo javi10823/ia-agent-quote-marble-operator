@@ -208,9 +208,46 @@ def _normalize_delivery(raw: str) -> str:
     return raw
 
 
+def _strip_duplicate_dims_in_labels(quote_data: dict) -> None:
+    """PR #48 — limpia dimensiones duplicadas en piece labels al vuelo.
+
+    El builder de labels en calculator.py antepone "<largo> × <prof>" al
+    description de cada pieza. Si Valentina (o un breakdown legacy guardado
+    pre-fix) ya metió las dimensiones dentro del description (ej:
+    "ME01-B Mesada recta - 2.15m × 0.60m c/zócalo h:10cm"), quedan dobles
+    en el PDF.
+
+    Este strip corre en el renderer para que /regenerate también limpie
+    presupuestos legacy sin re-ejecutar calculate_quote.
+
+    Muta `quote_data["sectors"][*]["pieces"]` en su lugar.
+    """
+    import re as _re_strip
+    _pat = _re_strip.compile(
+        r'\s*[-–—]\s*\d+[.,]?\d*\s*m\s*[×xX]\s*\d+[.,]?\d*\s*m\s*',
+        _re_strip.IGNORECASE,
+    )
+    for sector in quote_data.get("sectors") or []:
+        pieces = sector.get("pieces") or []
+        cleaned = []
+        for p in pieces:
+            if isinstance(p, str):
+                _c = _pat.sub(' ', p)
+                _c = _re_strip.sub(r'\s{2,}', ' ', _c).strip()
+                cleaned.append(_c)
+            else:
+                cleaned.append(p)
+        sector["pieces"] = cleaned
+
+
 async def generate_documents(quote_id: str, quote_data: dict) -> dict:
     """Generate PDF and Excel for a quote."""
     try:
+        # PR #48 — strip defensivo de dimensiones duplicadas en piece labels.
+        # Aplica acá (entry point de render) para que /regenerate también
+        # limpie breakdowns legacy que tienen labels duplicados guardados.
+        _strip_duplicate_dims_in_labels(quote_data)
+
         # PR #40 — reemplazar delivery_days vago (A confirmar, A convenir,
         # N/A, vacío, -) con el default del config.json. Se aplica acá en
         # vez de solo en _validate_quote_data para que el flujo /regenerate
