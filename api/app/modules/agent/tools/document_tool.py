@@ -382,7 +382,8 @@ def _generate_resumen_obra_pdf(pdf_path: Path, data: dict) -> None:
     pdf.cell(col_w, 5, "Fecha de entrega", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 10)
     pdf.cell(col_w, 5, "")
-    pdf.cell(col_w, 5, "Segun cronograma de obra", new_x="LMARGIN", new_y="NEXT")
+    _plazo = data.get("plazo") or "Segun cronograma de obra"
+    pdf.cell(col_w, 5, _plazo, new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 9)
     pdf.cell(col_w, 5, f"Fecha: {datetime.now().strftime('%d/%m/%Y')}")
     pdf.ln(5)

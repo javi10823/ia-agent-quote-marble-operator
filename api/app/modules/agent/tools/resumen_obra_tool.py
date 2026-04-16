@@ -188,11 +188,16 @@ def _build_resumen_data(
     material_rows: list[dict] = []
     material_names: list[str] = []
     mo_items_all: list[dict] = []
+    # Bug 1 fix: track seen MO keys to deduplicate identical items across quotes.
+    # MO represents physical work (material-independent), so when 3 quotes share
+    # the same labor it should appear once, not 3x.
+    mo_seen: set[tuple] = set()
     total_mat_ars = 0
     total_mat_usd = 0
-    mo_total = 0
     grand_total_ars = 0
     grand_total_usd = 0
+    # Bug 4 fix: collect plazo from all quotes, pick most specific.
+    plazo_candidates: list[str] = []
 
     for q in quotes:
         info = _collect_material_row(q) or {}
@@ -207,16 +212,39 @@ def _build_resumen_data(
         bd = q.quote_breakdown or {}
         if isinstance(bd, dict):
             for mo in bd.get("mo_items") or []:
-                mo_items_all.append({
-                    "desc": mo.get("description") or mo.get("desc", ""),
-                    "qty": mo.get("quantity") or mo.get("qty", 1),
-                    "price": mo.get("unit_price") or mo.get("price", 0),
-                    "total": mo.get("total", 0),
-                })
-            mo_total += bd.get("mo_total", 0) or 0
+                desc = mo.get("description") or mo.get("desc", "")
+                qty = mo.get("quantity") or mo.get("qty", 1)
+                price = mo.get("unit_price") or mo.get("price", 0)
+                # Bug 3 fix: use persisted total from the individual quote's
+                # mo_items instead of recalculating price * qty, which can
+                # produce rounding differences (e.g. $62,119 vs $61,939).
+                total = mo.get("total", 0)
+                key = (desc, qty, price)
+                if key not in mo_seen:
+                    mo_seen.add(key)
+                    mo_items_all.append({
+                        "desc": desc,
+                        "qty": qty,
+                        "price": price,
+                        "total": total,
+                    })
+            # Bug 4: collect plazo
+            _plazo = bd.get("delivery_days") or bd.get("plazo") or ""
+            if isinstance(_plazo, str) and _plazo.strip():
+                plazo_candidates.append(_plazo.strip())
 
         grand_total_ars += q.total_ars or 0
         grand_total_usd += q.total_usd or 0
+
+    # Bug 2 fix: compute mo_total from the deduplicated items, not from
+    # summing each quote's mo_total (which would triple-count).
+    mo_total = sum(item["total"] for item in mo_items_all)
+
+    # Bug 4 fix: prefer the most specific plazo — skip "A confirmar" if
+    # there's a concrete value like "40 dias".
+    _VAGUE_PLAZOS = {"a confirmar", ""}
+    specific = [p for p in plazo_candidates if p.lower() not in _VAGUE_PLAZOS]
+    plazo = specific[0] if specific else (plazo_candidates[0] if plazo_candidates else "")
 
     return {
         "client_name": client_name,
@@ -225,6 +253,7 @@ def _build_resumen_data(
         "material_names": sorted(set(material_names)),
         "mo_items": mo_items_all,
         "mo_total": mo_total,
+        "plazo": plazo,
         "total_mat_ars": total_mat_ars,
         "total_mat_usd": total_mat_usd,
         "grand_total_ars": grand_total_ars,
