@@ -1101,8 +1101,11 @@ def build_deterministic_paso2(calc: dict) -> str:
     _mat_m2_disp = _round_half_up(mat_m2, 2)
     lines.append(f"**MATERIAL — {mat_name} — {_mat_m2_disp:.2f} m²**".replace(".", ","))
     lines.append("")
-    lines.append("| Pieza | Medida | m² |")
-    lines.append("|---|---|---|")
+    # PR #43 — tabla con columna Cant y m² total (×cant). Antes solo
+    # mostraba m² per-unit y el TOTAL sumaba per-unit (wrong: 9.85 vs
+    # 20.16 real para EGEA con ME04×4 + ME04b×2).
+    lines.append("| Pieza | Medida | Cant | m² |")
+    lines.append("|---|---|---|---|")
     _sum_disp = 0.0
     for p in pieces:
         if p.get("_is_frentin"):
@@ -1110,14 +1113,19 @@ def build_deterministic_paso2(calc: dict) -> str:
         desc = p.get("description", "")
         largo = p.get("largo", 0)
         dim2 = p.get("dim2", p.get("prof", 0))
-        m2_disp = _round_half_up(p.get("m2", 0), 2)
-        _sum_disp = _round_half_up(_sum_disp + m2_disp, 2)
-        lines.append(f"| {desc} | {largo} x {dim2} | {m2_disp:.2f} |".replace(".", ","))
-    # Total visible = suma de los m² ya redondeados (lo que el operador suma
-    # a ojo en la columna). Si difiere de mat_m2 (raw), es el redondeo half-up
-    # de cada pieza acumulado — esperable y consistente.
+        qty = p.get("quantity", 1) or 1
+        # m² total = per-unit × qty. Antes solo mostraba per-unit.
+        m2_unit = p.get("m2", 0)
+        m2_total = _round_half_up(m2_unit * qty, 2)
+        _sum_disp = _round_half_up(_sum_disp + m2_total, 2)
+        _qty_cell = f"×{qty}" if qty > 1 else "—"
+        lines.append(
+            f"| {desc} | {largo} x {dim2} | {_qty_cell} | {m2_total:.2f} |"
+            .replace(".", ",")
+        )
+    # Total = suma de m² totales por pieza (ya × cant). Coincide con mat_m2.
     _total_show = _sum_disp if _sum_disp > 0 else _mat_m2_disp
-    lines.append(f"| **TOTAL** | | **{_total_show:.2f} m²** |".replace(".", ","))
+    lines.append(f"| **TOTAL** | | | **{_total_show:.2f} m²** |".replace(".", ","))
     lines.append("")
 
     # Precio
@@ -1235,9 +1243,15 @@ def build_deterministic_paso2(calc: dict) -> str:
     lines.append("---")
     lines.append("")
 
-    # Warnings
+    # Warnings — evitar '⚠️ ⚠️' duplicado cuando el mensaje ya empieza con
+    # el emoji (PR #43). Algunas warnings del agente (ej: variant_negated)
+    # se agregan con el prefijo; otras no. Uniformar aca.
     for w in warnings:
-        lines.append(f"⚠️ {w}")
+        _wtext = w.lstrip()
+        if _wtext.startswith("⚠️"):
+            lines.append(_wtext)
+        else:
+            lines.append(f"⚠️ {_wtext}")
 
     lines.append("")
     lines.append("¿Confirmás para generar PDF y Excel?")
