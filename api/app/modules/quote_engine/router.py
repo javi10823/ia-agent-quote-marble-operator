@@ -43,7 +43,7 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
             _cfg = json.loads((_P(__file__).parent.parent.parent / "catalog" / "config.json").read_text())
             body.plazo = _cfg.get("delivery_days", {}).get("display", "40 dias")
         except Exception:
-            body.plazo = "40 dias"
+            body.plazo = _cfg.get("delivery_days", {}).get("display", "30 dias desde la toma de medidas")
 
     # If no pieces provided, try to parse from notes using Claude
     if not body.pieces:
@@ -295,7 +295,7 @@ async def upload_source_files(
             _cfg = _json.loads((Path(__file__).parent.parent.parent / "catalog" / "config.json").read_text())
             _default_plazo = _cfg.get("delivery_days", {}).get("display", "40 dias")
         except Exception:
-            _default_plazo = "40 dias"
+            _default_plazo = "30 dias desde la toma de medidas"
 
         async def _process_plan_background(qid: str, q: Quote, first_file: dict):
             """Run Valentina in background to read plan, extract pieces, calculate quote."""
