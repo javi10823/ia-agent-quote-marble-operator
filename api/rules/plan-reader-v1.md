@@ -256,6 +256,29 @@ NO confundir con:
 Si ves un rectángulo fino, hachurado, con cota en ml y altura 5–15 cm → **ZÓCALO**. Punto.
 No es pieza de material, no es vista de elevación de la mesada.
 
+### Señal alternativa: cota suelta en borde sin hachurado
+
+Algunos planos de planta NO dibujan el zócalo como rectángulo hachurado
+separado — sólo marcan su **alto** como una cota suelta en el borde (vertical
+en los laterales y/o arriba del rectángulo de mesada).
+
+Patrón típico:
+```
+     0.10 m  ← alto zócalo trasero
+   ┌────────────────────────┐
+0.10 m │                        │ 0.10 m   ← altos zócalos laterales
+   │      MESADA 0.60 m     │
+   └────────────────────────┘
+```
+
+Regla de lectura: **cualquier cota numérica suelta entre 0.05 y 0.50 m**
+ubicada en el borde del rectángulo de mesada (y que NO coincida con la
+profundidad de la misma) se interpreta como **alto de zócalo** para el lado
+donde aparece. Usarla en vez del default de 5 cm.
+
+Si el plano tiene además la leyenda explícita `ZÓCALOS H=10cm`, esa leyenda
+manda y aplica a todos los lados con zócalo.
+
 ---
 
 ## REGLA — TRATAR TRAMOS COMO INDEPENDIENTES POR DEFAULT
