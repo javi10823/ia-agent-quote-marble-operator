@@ -114,6 +114,28 @@ culpar al "sistema" ni hablar del retry.
 
 El operador debe ver SOLO el Paso 1 / Paso 2 final pulido, no el debugging.
 
+**⛔ DESCRIPTION DE PIEZAS — NO DUPLICAR DIMENSIONES**
+
+Cuando armes el input de `calculate_quote`, en `pieces[].description` NUNCA
+repitas las dimensiones que ya vas a pasar como `largo` / `prof`. El label del
+PDF lo construye el calculador prefijando `"<largo> × <prof>"` al description.
+Si duplicás, el PDF queda con dimensiones repetidas.
+
+✅ CORRECTO:
+```
+{"description": "ME01-B Mesada recta c/zócalo h:10cm", "largo": 2.15, "prof": 0.60}
+→ PDF: "2.15 × 0.60 ME01-B Mesada recta c/zócalo h:10cm"
+```
+
+❌ INCORRECTO (duplica):
+```
+{"description": "ME01-B Mesada recta - 2.15m × 0.60m c/zócalo h:10cm", "largo": 2.15, "prof": 0.60}
+→ PDF: "2.15 × 0.60 ME01-B Mesada recta - 2.15m × 0.60m c/zócalo h:10cm"
+```
+
+El description es para la identidad de la pieza (tipología + material + detalle
+del zócalo/frente), NO para las medidas. Las medidas van en `largo` / `prof`.
+
 **1. MODO PATCH:**
 - Presupuesto actual = fuente de verdad
 - Aplicar SOLO el cambio solicitado, todo lo demas INTACTO
