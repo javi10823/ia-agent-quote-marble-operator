@@ -959,7 +959,19 @@ def calculate_quote(input_data: dict) -> dict:
                 label = f'{pd["largo"]:.2f}ML X {pd["dim2"]:.2f} ZOC'
             else:
                 dim2_label = f'{pd["largo"]:.2f} × {pd["dim2"]:.2f}'
-                label = f'{dim2_label} {pd["description"]}'
+                # PR #48 — strip defensivo: si Valentina metió las dimensiones
+                # dentro del description (ej: "ME01-B Mesada recta - 2.15m ×
+                # 0.60m c/zócalo h:10cm"), se duplican cuando el builder
+                # antepone dim2_label. Limpiamos patrones "- N.Nm × N.Nm" /
+                # "- N.N m x N.N m" ubicados dentro del description.
+                import re as _re_dim
+                _clean_desc = _re_dim.sub(
+                    r'\s*[-–—]\s*\d+[.,]?\d*\s*m\s*[×xX]\s*\d+[.,]?\d*\s*m\s*',
+                    ' ',
+                    pd["description"] or "",
+                )
+                _clean_desc = _re_dim.sub(r'\s{2,}', ' ', _clean_desc).strip()
+                label = f'{dim2_label} {_clean_desc}'
                 # "SE REALIZA EN 2 TRAMOS" only for residential — edificios
                 # already list many pieces by tipología, legend adds noise.
                 if pd["largo"] >= 3.0 and not is_edificio:
