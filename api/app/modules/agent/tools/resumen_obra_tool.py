@@ -233,12 +233,17 @@ def _build_resumen_data(
             if isinstance(_plazo, str) and _plazo.strip():
                 plazo_candidates.append(_plazo.strip())
 
-        grand_total_ars += q.total_ars or 0
-        grand_total_usd += q.total_usd or 0
-
     # Bug 2 fix: compute mo_total from the deduplicated items, not from
     # summing each quote's mo_total (which would triple-count).
     mo_total = sum(item["total"] for item in mo_items_all)
+
+    # PR #30 — grand_total = material + MO deduplicada. Antes sumaba
+    # q.total_ars de cada quote, triplicando la MO cuando son 3 opciones
+    # de material sobre la misma obra. Ahora:
+    # grand_total_ars = total_mat_ars + mo_total (deduplicado)
+    # grand_total_usd = total_mat_usd (USD solo material, MO siempre ARS)
+    grand_total_ars = total_mat_ars + mo_total
+    grand_total_usd = total_mat_usd
 
     # Bug 4 fix: prefer the most specific plazo — skip "A confirmar" if
     # there's a concrete value like "40 dias".
