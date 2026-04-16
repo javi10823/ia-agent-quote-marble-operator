@@ -184,14 +184,27 @@ def _fmt_qty(value: float) -> str:
 
 
 def _normalize_delivery(raw: str) -> str:
-    """Ensure delivery text is complete, not just a number."""
+    """Ensure delivery text is complete, not just a number or short phrase.
+
+    Cases handled:
+    - "20"          → "20 días desde la toma de medidas"
+    - "20 dias"     → "20 días desde la toma de medidas"   (PR #33 fix)
+    - "20 días"     → "20 días desde la toma de medidas"
+    - "A confirmar" → left as-is
+    - "30 dias desde la toma de medidas en obra" → left as-is (already full)
+    """
     if not raw:
         return ""
     raw = raw.strip()
     # If it's just a number like "30", add the full text
     if raw.isdigit():
         return f"{raw} {DELIVERY_SUFFIX}"
-    # If it has "dias" or "días" but not the full phrase, leave as is
+    # If it's "N dias" or "N días" (short form), complete it.
+    import re as _re_deliv
+    _short = _re_deliv.match(r'^\s*(\d{1,3})\s*d[ií]as\s*$', raw, _re_deliv.IGNORECASE)
+    if _short:
+        return f"{_short.group(1)} {DELIVERY_SUFFIX}"
+    # Already contains "toma de medidas" or similar → leave as is.
     return raw
 
 
