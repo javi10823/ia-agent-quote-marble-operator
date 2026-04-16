@@ -899,9 +899,15 @@ def calculate_quote(input_data: dict) -> dict:
     if is_edificio:
         for item in mo_items:
             if "flete" not in item["description"].lower():
-                original_total = item["total"]
-                item["total"] = round(original_total / 1.05)
+                # Redondear unit_price primero, luego recomputar total =
+                # round(unit × qty). Antes se redondeaban unit y total por
+                # separado (round(unit/1.05) vs round(total/1.05)), y con
+                # edificio + mo_discount_pct esto generaba una deriva de
+                # 1-3 pesos entre el "unit × qty" que muestra el PDF y el
+                # total_ars que suma el grand total. Esta versión garantiza
+                # que unit × qty == total siempre.
                 item["unit_price"] = round(item["unit_price"] / 1.05)
+                item["total"] = round(item["unit_price"] * item["quantity"])
                 item["edificio_discount"] = True
         logging.info(f"Edificio MO ÷1.05 applied (except flete)")
 
