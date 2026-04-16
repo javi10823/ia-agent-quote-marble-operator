@@ -379,6 +379,27 @@ export async function validateQuote(id: string): Promise<{ ok: boolean; pdf_url?
   return res.json();
 }
 
+/**
+ * Regenera PDF y Excel del presupuesto usando los datos ya guardados en DB.
+ * NO re-corre Valentina, NO recalcula precios ni m², NO cambia el status.
+ * Solo aplica el template actual sobre el breakdown persistido.
+ */
+export async function regenerateQuoteDocs(id: string): Promise<{
+  ok: boolean;
+  pdf_url: string;
+  excel_url: string;
+  drive_url: string | null;
+  regenerated_at: string;
+}> {
+  const res = await fetch(`${API_BASE}/api/quotes/${id}/regenerate`, { method: "POST", credentials: "include" });
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al regenerar archivos");
+  }
+  return res.json();
+}
+
 // ── Usage ────────────────────────────────────────────────────────────────────
 
 export async function fetchUsageDashboard() {
