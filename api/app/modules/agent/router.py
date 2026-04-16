@@ -460,6 +460,7 @@ async def regenerate_quote_docs(
             detail="El presupuesto no tiene desglose calculado — no hay datos para regenerar",
         )
 
+    from datetime import datetime
     from app.modules.agent.tools.document_tool import generate_documents
     from app.modules.agent.tools.drive_tool import upload_to_drive, delete_drive_file
 
