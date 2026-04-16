@@ -36,8 +36,13 @@ def _validate_quote_data(qdata: dict) -> tuple[list[str], list[str]]:
         errors.append("Falta nombre del cliente")
     if not qdata.get("material_name"):
         errors.append("Falta material")
-    if not qdata.get("delivery_days"):
-        # Read default from config.json (editable from the catalog panel)
+    # PR #36 — también reemplazar valores "vagos" como 'A confirmar',
+    # 'A CONVENIR', 'N/A', '-' con el plazo del config. Antes solo se
+    # reemplazaba cuando estaba vacío, pero el LLM a veces pasaba
+    # 'A confirmar' cuando no estaba seguro → terminaba en el PDF.
+    _VAGUE_DELIVERY = {"", "a confirmar", "a convenir", "n/a", "n/d", "-", "—", "."}
+    _current_delivery = (qdata.get("delivery_days") or "").strip()
+    if _current_delivery.lower() in _VAGUE_DELIVERY:
         try:
             _cfg_raw = json.loads((BASE_DIR / "catalog" / "config.json").read_text(encoding="utf-8"))
             qdata["delivery_days"] = _cfg_raw.get("delivery_days", {}).get("display", "30 dias desde la toma de medidas")
