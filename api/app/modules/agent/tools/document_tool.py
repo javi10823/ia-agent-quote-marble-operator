@@ -1293,7 +1293,20 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
     pdf.cell(col_w, 5, "Proyecto")
     pdf.cell(col_w, 5, "Fecha de entrega", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 9)
-    pdf.cell(col_w, 5, project)
+    # PR #43 — si el proyecto es muy largo (ej: EGEA
+    # 'Licitación - Ampliación Unidad Penitenciaria N°12 - Rosario - Edificio B'),
+    # la cell desborda y pisa la columna 'Fecha de entrega'. Truncar con
+    # ellipsis si no cabe en col_w con un margen de 2mm.
+    _proj_disp = project or ""
+    try:
+        _max_w = col_w - 2
+        while _proj_disp and pdf.get_string_width(_proj_disp) > _max_w:
+            _proj_disp = _proj_disp[:-1]
+        if _proj_disp != (project or ""):
+            _proj_disp = _proj_disp[:-1] + "…" if _proj_disp else "…"
+    except Exception:
+        pass
+    pdf.cell(col_w, 5, _proj_disp)
     pdf.cell(col_w, 5, str(delivery), new_x="LMARGIN", new_y="NEXT")
 
     # Separator
