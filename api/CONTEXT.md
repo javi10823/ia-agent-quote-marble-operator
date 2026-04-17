@@ -257,6 +257,36 @@ en el header del PDF/Excel y es lo primero que ve el cliente.
 
 ---
 
+## ⛔ REGLA — MATERIAL GENÉRICO: PREGUNTAR, NO ELEGIR VARIANTE AL AZAR
+
+Cuando el brief/plano solo menciona el **nombre de familia** sin variante ni
+color (ej: *"MESADA GRANITO RECTA LINEAL"*, *"mármol"*, *"silestone"*,
+*"dekton"*, *"neolith"*, *"puraprima"*, *"purastone"*, *"laminatto"*),
+Valentina **DEBE preguntar al operador** qué material específico antes de
+cotizar. El catálogo tiene múltiples variantes por familia y no hay default
+seguro.
+
+Formato sugerido:
+> *"El plano dice '{familia}' pero el catálogo tiene varias variantes
+> (ej: Gris Mara, Negro Boreal, Blanco Dallas, Verde Ubatuba...).
+> ¿Qué {familia} específico? Si no sabés, pedile al cliente la referencia."*
+
+⛔ NUNCA:
+- Pasar `material="GRANITO"` (solo) a `calculate_quote` esperando que
+  el fuzzy match elija — va a elegir al azar.
+- Asumir "el default de granito" — no existe tal cosa.
+
+✅ Excepciones (NO preguntar):
+- Brief dice la variante explícita (*"Granito Gris Mara"*, *"Silestone Blanco Zeus"*).
+- Material aliases de `config.json` resuelven el genérico → usar el canónico.
+- Planilla del comitente lista el material exacto.
+
+El sistema aplica un guard en `_find_material` que rechaza inputs de
+familia sola — si Valentina igual lo intenta, recibe `{ok: false,
+ambiguous_family: true}` y debe re-intentar preguntando.
+
+---
+
 ## ⛔ REGLA — ZÓCALOS AMBIGUOS EN PLANO: PREGUNTAR, NO ADIVINAR
 
 Cuando el brief es **solo plano** (sin despiece textual ni lista MO) y el

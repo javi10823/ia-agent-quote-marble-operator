@@ -91,6 +91,43 @@ class TestFindMaterial:
         result = _find_material("Material Inexistente XYZ")
         assert result["found"] is False
 
+    # ── PR #59 — guard contra familia genérica ──
+
+    def test_bare_granito_rejected_as_ambiguous_family(self):
+        """Input 'GRANITO' solo → NO default silencioso. Devolver
+        ambiguous_family=True para forzar pregunta al operador."""
+        result = _find_material("GRANITO")
+        assert result["found"] is False
+        assert result.get("ambiguous_family") is True
+        assert result.get("family") == "granito"
+
+    def test_bare_silestone_rejected_as_ambiguous_family(self):
+        result = _find_material("Silestone")
+        assert result["found"] is False
+        assert result.get("ambiguous_family") is True
+
+    def test_bare_marmol_rejected_as_ambiguous_family(self):
+        result = _find_material("mármol")
+        assert result["found"] is False
+        assert result.get("ambiguous_family") is True
+
+    def test_bare_dekton_rejected_as_ambiguous_family(self):
+        result = _find_material("Dekton")
+        assert result["found"] is False
+        assert result.get("ambiguous_family") is True
+
+    def test_specific_variant_not_rejected(self):
+        """Familia + variante → sí resuelve (no es genérico)."""
+        result = _find_material("Silestone Blanco Norte")
+        assert result["found"] is True
+
+    def test_case_insensitive_family_detection(self):
+        """'granito', 'GRANITO', 'Granito' → todos genéricos."""
+        for inp in ("granito", "GRANITO", "Granito", "  granito  "):
+            r = _find_material(inp)
+            assert r["found"] is False, f"{inp!r} debe rechazarse"
+            assert r.get("ambiguous_family") is True
+
     def test_calculate_quote_requires_project(self):
         """PR #15 — project es obligatorio. Vacío o placeholder devuelve error."""
         from app.modules.quote_engine.calculator import calculate_quote
