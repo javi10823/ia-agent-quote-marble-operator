@@ -193,10 +193,34 @@ Hatching/rayado = pared → NO canto expuesto → NO frentin. Lados sin tachar =
 Simbolo hornallas/tomas en planta → ANAFE/TOMAS. Anotar cantidad.
 
 **Brief solo-plano (sin lista MO explícita del operador):** si el plano muestra
-anafe/hornallas empotradas → MO obligatoria `anafe=True` + `anafe_qty=N`. Si
-muestra pileta empotrada → `pileta="empotrada_cliente"` (o `empotrada_johnson`
-si es Johnson). No olvidar ninguno de los dos aunque el brief no los repita en
-texto — el plano ES el brief.
+anafe/hornallas **empotradas en mesada** → MO obligatoria `anafe=True` +
+`anafe_qty=N`. Si muestra pileta empotrada → `pileta="empotrada_cliente"`
+(o `empotrada_johnson` si es Johnson). No olvidar ninguno de los dos aunque
+el brief no los repita en texto — el plano ES el brief.
+
+### ⛔ EXCEPCIÓN — Cocina entera (horno + anafe free-standing)
+
+Si el plano muestra una **cocina entera free-standing** (horno con puerta
+visible + hornallas integradas en la parte de arriba, va del piso al tope
+de la mesada como un appliance independiente) → **NO lleva agujero anafe**.
+
+Por qué: no es un anafe empotrado en la mesada — es un electrodoméstico
+separado que se apoya en el piso al lado del mueble. La mesada no se
+perfora para ponerlo.
+
+Consecuencias:
+- `anafe = False` en los inputs de `calculate_quote`.
+- NO aparece "Agujero anafe" en la MO.
+- La cocina entera sí interrumpe mesada y zócalo en su footprint (ver
+  §REGLA SIMPLE — Zócalos).
+
+**Cómo distinguir:**
+- **Anafe empotrado:** solo hornallas (4-5 círculos en un cuadrado), dibujado
+  DENTRO del contorno de la mesada, sin puerta de horno visible por abajo
+  → lleva agujero anafe.
+- **Cocina entera:** hornallas arriba + puerta rectangular (horno) visible
+  por abajo, forma un cubo independiente junto a la mesada → NO lleva
+  agujero anafe.
 
 ⚠️ Esto aplica **solo cuando no hay MO exhaustiva listada** (ver CONTEXT.md
 §"MANO DE OBRA LISTADA ES EXHAUSTIVA"). Si el operador listó la MO ítem por
