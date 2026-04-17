@@ -39,6 +39,72 @@ const fmtQty = (n: number | null | undefined) => {
   return n.toFixed(2).replace(".", ",");
 };
 
+// Snapshot completo para "📋 Copiar todo": junta datos del quote +
+// despiece del Dual Read (si está) + todos los mensajes de Valentina que
+// contienen tablas markdown (Paso 1, Paso 2, resumen, etc).
+function buildFullSnapshot(quote: QuoteDetail | null, messages: UIMessage[]): string {
+  const parts: string[] = [];
+  parts.push(`## SNAPSHOT — ${quote?.client_name || "Cliente"} / ${quote?.project || "Proyecto"}`);
+  parts.push("");
+
+  const datos: string[] = [];
+  if (quote?.client_name) datos.push(`- Cliente: ${quote.client_name}`);
+  if (quote?.project) datos.push(`- Proyecto: ${quote.project}`);
+  if (quote?.material) datos.push(`- Material: ${quote.material}`);
+  if (datos.length) {
+    parts.push("### Datos");
+    parts.push(...datos);
+    parts.push("");
+  }
+
+  messages.forEach((m) => {
+    if (m.role !== "assistant") return;
+    const content = m.content.trim();
+    if (!content) return;
+
+    if (content.startsWith("__DUAL_READ__")) {
+      try {
+        const d = JSON.parse(content.replace("__DUAL_READ__", ""));
+        const table: string[] = ["### Despiece (Dual Read)", "", "| Pieza | Medida | m² |", "|---|---|---|"];
+        let total = 0;
+        d.sectores?.forEach((s: any) => {
+          s.tramos?.forEach((t: any) => {
+            const m2 = t.m2?.valor || 0;
+            total += m2;
+            const largo = (t.largo_m?.valor || 0).toFixed(2);
+            const ancho = (t.ancho_m?.valor || 0).toFixed(2);
+            table.push(`| ${t.descripcion || t.id} | ${largo} × ${ancho} | ${m2.toFixed(2)} |`);
+            t.zocalos?.forEach((z: any) => {
+              if ((z.ml || 0) <= 0) return;
+              const zm2 = z.ml * (z.alto_m || 0);
+              total += zm2;
+              table.push(`| Zóc. ${z.lado} | ${z.ml.toFixed(2)} ml × ${(z.alto_m || 0).toFixed(2)} | ${zm2.toFixed(2)} |`);
+            });
+          });
+        });
+        table.push(`| **Total** | — | **${total.toFixed(2)}** |`);
+        parts.push(...table, "");
+      } catch {
+        /* skip */
+      }
+      return;
+    }
+
+    if (
+      content.startsWith("__ZONE_SELECTOR__")
+      || content.startsWith("[DUAL_READ_CONFIRMED]")
+      || content.startsWith("[SYSTEM_TRIGGER")
+    ) return;
+
+    const hasTable = content.split("\n").filter((l) => l.trim().startsWith("|") && l.trim().endsWith("|")).length >= 2;
+    if (hasTable) {
+      parts.push(content, "");
+    }
+  });
+
+  return parts.join("\n").trim();
+}
+
 const STATUS_CLASS: Record<string, { label: string; cls: string }> = {
   draft:     { label: "Borrador",  cls: "bg-amb-bg text-amb" },
   pending:   { label: "Pendiente", cls: "bg-acc-bg text-acc" },
@@ -514,13 +580,7 @@ export default function QuotePage() {
                     <>
                       <div className="mt-2 ml-[42px]">
                         <CopyButton
-                          text={(() => {
-                            const header = [
-                              `## SNAPSHOT — ${quote?.client_name || "Cliente"} / ${quote?.project || "Proyecto"}`,
-                              "",
-                            ].join("\n");
-                            return header + msg.content;
-                          })()}
+                          text={buildFullSnapshot(quote, messages)}
                           label="📋 Copiar todo"
                           fullWidth
                         />
