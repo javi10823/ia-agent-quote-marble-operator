@@ -588,13 +588,13 @@ export default function QuotePage() {
                       <div className="flex gap-2 mt-2 ml-[42px]">
                         <button
                           onClick={() => send("Confirmo")}
-                          className="px-4 py-2 rounded-lg text-[13px] font-medium bg-grn text-white border-none cursor-pointer hover:brightness-110 transition"
+                          className="flex-1 px-4 py-2.5 rounded-lg text-[13px] font-semibold bg-acc text-white border-none cursor-pointer hover:brightness-110 transition"
                         >
                           Confirmar
                         </button>
                         <button
                           onClick={() => { const ta = document.querySelector("textarea"); if (ta) ta.focus(); }}
-                          className="px-4 py-2 rounded-lg text-[13px] font-medium bg-transparent border border-b2 text-t2 cursor-pointer hover:text-t1 hover:border-b3 transition"
+                          className="px-4 py-2.5 rounded-lg text-[13px] font-medium bg-transparent border border-b2 text-t2 cursor-pointer hover:text-t1 hover:border-b3 transition"
                         >
                           Corregir
                         </button>
