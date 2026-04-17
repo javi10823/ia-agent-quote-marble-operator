@@ -383,6 +383,7 @@ async def _run_dual_read(
             planilla_m2=planilla_m2,
             dual_enabled=_dual_enabled,
             cotas_text=cotas_text,
+            brief_text=user_message,
         )
         if _dual_result.get("error"):
             logging.warning(f"[dual-read] Error: {_dual_result.get('error')}")

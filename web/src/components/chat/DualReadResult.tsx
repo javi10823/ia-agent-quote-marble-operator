@@ -221,6 +221,21 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
     });
   };
 
+  // PR #68 — remover una mesada (tramo) completa del despiece. Útil cuando
+  // el Dual Read duplicó tramos (Opus y Sonnet disagree) o detectó
+  // elementos ajenos (heladera, bajo mesada) como piezas.
+  const removeTramo = (sectorIdx: number, tramoIdx: number) => {
+    setEditedData((prev) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.sectores[sectorIdx].tramos.splice(tramoIdx, 1);
+      // Si el sector queda vacío, removerlo también.
+      if (next.sectores[sectorIdx].tramos.length === 0) {
+        next.sectores.splice(sectorIdx, 1);
+      }
+      return next;
+    });
+  };
+
   // Totals
   let mesadasM2 = 0;
   let zocalosM2 = 0;
@@ -310,8 +325,20 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                       <EditableNumber field={tramo.ancho_m} onEdit={(v) => updateField(si, ti, "ancho_m", v)} />
                       <span className="text-t4 ml-0.5">m</span>
                     </div>
-                    <div className="text-t1 font-medium text-right">
+                    <div className="text-t1 font-medium text-right flex items-center justify-end gap-2">
                       <EditableNumber field={tramo.m2} onEdit={(v) => updateField(si, ti, "m2", v)} />
+                      {/* PR #68 — botón × también en mesadas para remover duplicados
+                          / piezas ajenas (heladera, bajo mesada) que el dual_read
+                          detecta mal. */}
+                      <button
+                        type="button"
+                        onClick={() => removeTramo(si, ti)}
+                        title="Remover esta mesada"
+                        aria-label="Remover esta mesada"
+                        className="w-5 h-5 rounded-md grid place-items-center text-[11px] leading-none text-t4 hover:text-err hover:bg-[rgba(255,69,58,0.12)] border border-transparent hover:border-err/30 transition-colors cursor-pointer"
+                      >
+                        ×
+                      </button>
                     </div>
                   </div>
 
