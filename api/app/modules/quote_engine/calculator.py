@@ -707,7 +707,11 @@ def calculate_quote(input_data: dict) -> dict:
     mo_items = []
 
     # Pileta (supports quantity for edificios)
-    if pileta:
+    # PR #82 — respetar `pileta_qty=0` como "sin pileta", aunque el
+    # operador/LLM haya pasado `pileta=empotrada_cliente`. Antes,
+    # max(1, 0)=1 forzaba el ítem igual → bug de "agujero pileta
+    # fantasma" cuando Valentina intentaba remover pasando qty=0.
+    if pileta and pileta_qty > 0:
         qty = max(1, pileta_qty)
         if pileta in ("empotrada_cliente", "empotrada_johnson"):
             sku = "PILETADEKTON/NEOLITH" if is_sint else "PEGADOPILETA"
