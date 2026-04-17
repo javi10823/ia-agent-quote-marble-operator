@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import CopyButton from "./CopyButton";
 
 interface FieldValue {
   opus?: number | null;
@@ -400,6 +401,34 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
       .replace(/_/g, " ")
       .toLowerCase()
       .replace(/\b\w/g, (c) => c.toUpperCase());
+
+  // Markdown formatter para copy-to-clipboard. Genera una tabla estructurada
+  // con piezas + zócalos + totales, lista para pegar en Claude Code.
+  const despieceMarkdown = (() => {
+    const lines: string[] = ["## Despiece", "", "| Pieza | Medida | m² |", "|---|---|---|"];
+    let total = 0;
+    editedData.sectores.forEach((sector) => {
+      if (editedData.sectores.length > 1) {
+        lines.push(`| **${prettify(sector.id)} — ${prettify(sector.tipo)}** |  |  |`);
+      }
+      sector.tramos.forEach((tramo) => {
+        const desc = tramo.descripcion || tramo.id;
+        const largo = tramo.largo_m.valor.toFixed(2);
+        const ancho = tramo.ancho_m.valor.toFixed(2);
+        const m2 = tramo.m2.valor || 0;
+        total += m2;
+        lines.push(`| ${desc} | ${largo} × ${ancho} | ${m2.toFixed(2)} |`);
+        tramo.zocalos.forEach((z) => {
+          if ((z.ml ?? 0) <= 0) return;
+          const zm2 = z.ml * (z.alto_m || 0);
+          total += zm2;
+          lines.push(`| Zóc. ${z.lado} | ${z.ml.toFixed(2)} ml × ${z.alto_m.toFixed(2)} | ${zm2.toFixed(2)} |`);
+        });
+      });
+    });
+    lines.push(`| **Total** | — | **${total.toFixed(2)}** |`);
+    return lines.join("\n");
+  })();
   const firstSectorHead = editedData.sectores[0]
     ? `${prettify(editedData.sectores[0].id)} — ${prettify(editedData.sectores[0].tipo)}`
     : "";
@@ -428,10 +457,21 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
           );
         })()}
         <h3 className="text-[15px] font-semibold text-t1 tracking-tight">{firstSectorHead || title}</h3>
-        <span className="ml-auto text-[12px] text-t3 font-mono">
+        <span className="ml-auto text-[12px] text-t3 font-mono hidden md:inline">
           {piecesCount} {piecesCount === 1 ? "mesada" : "mesadas"} · {zocalosCount}{" "}
           {zocalosCount === 1 ? "zócalo" : "zócalos"}
         </span>
+        <CopyButton
+          text={despieceMarkdown}
+          label="Copiar despiece"
+          className="md:ml-3 ml-auto hidden sm:inline-flex"
+        />
+        <CopyButton
+          text={despieceMarkdown}
+          label="Copiar despiece"
+          iconOnly
+          className="ml-auto sm:hidden"
+        />
       </div>
 
       {data.m2_warning && (

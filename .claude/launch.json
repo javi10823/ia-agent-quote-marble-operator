@@ -9,8 +9,8 @@
     },
     {
       "name": "web",
-      "runtimeExecutable": "/opt/homebrew/bin/npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": ["-c", "cd web && /opt/homebrew/bin/npm run dev"],
       "port": 3000
     }
   ]

@@ -5,6 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { fetchQuote, streamChat, markQuoteAsRead, validateQuote, type QuoteDetail } from "@/lib/api";
 import { useQuotes } from "@/lib/quotes-context";
 import MessageBubble from "@/components/chat/MessageBubble";
+import CopyButton from "@/components/chat/CopyButton";
 import ZoneSelector from "@/components/chat/ZoneSelector";
 import { selectZone } from "@/lib/api";
 import { ResumenObraCard } from "@/components/quote/ResumenObraCard";
@@ -510,20 +511,35 @@ export default function QuotePage() {
                     <MessageBubble message={msg} actionText={msg.isStreaming ? actionText : undefined} />
                   )}
                   {needsConfirm && (
-                    <div className="flex gap-2 mt-2 ml-[42px]">
-                      <button
-                        onClick={() => send("Confirmo")}
-                        className="px-4 py-2 rounded-lg text-[13px] font-medium bg-grn text-white border-none cursor-pointer hover:brightness-110 transition"
-                      >
-                        Confirmar
-                      </button>
-                      <button
-                        onClick={() => { const ta = document.querySelector("textarea"); if (ta) ta.focus(); }}
-                        className="px-4 py-2 rounded-lg text-[13px] font-medium bg-transparent border border-b2 text-t2 cursor-pointer hover:text-t1 hover:border-b3 transition"
-                      >
-                        Corregir
-                      </button>
-                    </div>
+                    <>
+                      <div className="mt-2 ml-[42px]">
+                        <CopyButton
+                          text={(() => {
+                            const header = [
+                              `## SNAPSHOT — ${quote?.client_name || "Cliente"} / ${quote?.project || "Proyecto"}`,
+                              "",
+                            ].join("\n");
+                            return header + msg.content;
+                          })()}
+                          label="📋 Copiar todo"
+                          fullWidth
+                        />
+                      </div>
+                      <div className="flex gap-2 mt-2 ml-[42px]">
+                        <button
+                          onClick={() => send("Confirmo")}
+                          className="px-4 py-2 rounded-lg text-[13px] font-medium bg-grn text-white border-none cursor-pointer hover:brightness-110 transition"
+                        >
+                          Confirmar
+                        </button>
+                        <button
+                          onClick={() => { const ta = document.querySelector("textarea"); if (ta) ta.focus(); }}
+                          className="px-4 py-2 rounded-lg text-[13px] font-medium bg-transparent border border-b2 text-t2 cursor-pointer hover:text-t1 hover:border-b3 transition"
+                        >
+                          Corregir
+                        </button>
+                      </div>
+                    </>
                   )}
                   {isLastReal && lastFailedMsg && !msg.isStreaming && !sending && msg.content.includes(WARN) && (
                     <div className="flex gap-2 mt-2 ml-[42px]">
