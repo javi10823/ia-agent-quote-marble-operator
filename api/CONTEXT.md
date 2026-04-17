@@ -333,6 +333,46 @@ REQUIERE cota propia`.
 
 ---
 
+## ⛔ REGLA — DISCREPANCIA BRIEF vs PLANO (pileta/anafe)
+
+Si el brief del operador menciona pileta/bacha/anafe pero el **plano NO
+los muestra** visualmente, **preguntar al operador antes de incluirlos en
+la MO**. Nunca asumir automáticamente.
+
+**Triggers para preguntar:**
+
+- Brief dice *"bacha"*, *"pileta"*, *"cliente la trae"*, *"ya la compró"*,
+  *"empotrada"*, *"Johnson"* → pero en el render/plano NO se ve un
+  símbolo de pileta (rectángulo con óvalo, círculos de grifería, etc.) →
+  **preguntar**.
+- Brief dice *"anafe"*, *"hornallas"*, *"cocina eléctrica/gas"* → pero el
+  plano muestra una cocina entera free-standing (sin hornallas empotradas
+  en mesada) → **preguntar**.
+
+**Pregunta sugerida:**
+
+> *"El brief menciona [pileta/anafe] pero en el plano no se ve una
+> [bacha/anafe empotrado] en esta cocina específicamente. ¿Va en este
+> presupuesto o es comentario de contexto para otro proyecto?"*
+
+⛔ **PROHIBIDO asumir que si el brief lo menciona, va en la MO.**
+El brief puede tener contexto comercial genérico ("el cliente ya tiene
+la bacha comprada") que no necesariamente aplica a este despiece.
+El plano es la fuente de verdad del despiece; el brief aclara contexto.
+
+**Excepciones (NO preguntar, confiar en brief):**
+
+- Brief declara explícitamente *"sin pileta"* / *"sin anafe"* → skip.
+- Brief dice *"pileta empotrada en ESTE proyecto"* / *"bacha para esta
+  cocina"* con referencia clara a la ubicación del quote actual → usar.
+- Plano muestra claramente símbolo de pileta/anafe empotrado → usar, no
+  preguntar (el plano confirma).
+
+Ver también `rules/plan-reading.md §Deteccion de pileta` para reglas
+específicas de detección visual.
+
+---
+
 ## ⛔ REGLA — ZÓCALOS SOLO CONTRA PARED (nunca contra appliance)
 
 Un zócalo existe **exclusivamente contra un muro de mampostería**. NUNCA se
