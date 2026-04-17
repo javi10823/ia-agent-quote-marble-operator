@@ -39,9 +39,9 @@ const fmtQty = (n: number | null | undefined) => {
   return n.toFixed(2).replace(".", ",");
 };
 
-// Snapshot completo para "📋 Copiar todo": junta datos del quote +
-// despiece del Dual Read (si está) + todos los mensajes de Valentina que
-// contienen tablas markdown (Paso 1, Paso 2, resumen, etc).
+// Snapshot completo para "📋 Copiar todo": TODO el diálogo —
+// enunciado + cada mensaje del operador y Valentina (texto, tablas, adjuntos),
+// más el despiece del Dual Read convertido a tabla markdown.
 function buildFullSnapshot(quote: QuoteDetail | null, messages: UIMessage[]): string {
   const parts: string[] = [];
   parts.push(`## SNAPSHOT — ${quote?.client_name || "Cliente"} / ${quote?.project || "Proyecto"}`);
@@ -57,15 +57,24 @@ function buildFullSnapshot(quote: QuoteDetail | null, messages: UIMessage[]): st
     parts.push("");
   }
 
+  parts.push("### Conversación");
+  parts.push("");
+
   messages.forEach((m) => {
-    if (m.role !== "assistant") return;
     const content = m.content.trim();
-    if (!content) return;
+    if (!content || content === "." || content === "..") return;
+    if (content.startsWith("__ZONE_SELECTOR__")) return;
+    if (content.startsWith("[SYSTEM_TRIGGER")) return;
+
+    if (content.startsWith("[DUAL_READ_CONFIRMED]")) {
+      parts.push("**Operador:** \u2705 Medidas verificadas", "");
+      return;
+    }
 
     if (content.startsWith("__DUAL_READ__")) {
       try {
         const d = JSON.parse(content.replace("__DUAL_READ__", ""));
-        const table: string[] = ["### Despiece (Dual Read)", "", "| Pieza | Medida | m² |", "|---|---|---|"];
+        const table: string[] = ["**Valentina \u2014 Despiece (Dual Read):**", "", "| Pieza | Medida | m\u00b2 |", "|---|---|---|"];
         let total = 0;
         d.sectores?.forEach((s: any) => {
           s.tramos?.forEach((t: any) => {
@@ -73,16 +82,16 @@ function buildFullSnapshot(quote: QuoteDetail | null, messages: UIMessage[]): st
             total += m2;
             const largo = (t.largo_m?.valor || 0).toFixed(2);
             const ancho = (t.ancho_m?.valor || 0).toFixed(2);
-            table.push(`| ${t.descripcion || t.id} | ${largo} × ${ancho} | ${m2.toFixed(2)} |`);
+            table.push(`| ${t.descripcion || t.id} | ${largo} \u00d7 ${ancho} | ${m2.toFixed(2)} |`);
             t.zocalos?.forEach((z: any) => {
               if ((z.ml || 0) <= 0) return;
               const zm2 = z.ml * (z.alto_m || 0);
               total += zm2;
-              table.push(`| Zóc. ${z.lado} | ${z.ml.toFixed(2)} ml × ${(z.alto_m || 0).toFixed(2)} | ${zm2.toFixed(2)} |`);
+              table.push(`| Z\u00f3c. ${z.lado} | ${z.ml.toFixed(2)} ml \u00d7 ${(z.alto_m || 0).toFixed(2)} | ${zm2.toFixed(2)} |`);
             });
           });
         });
-        table.push(`| **Total** | — | **${total.toFixed(2)}** |`);
+        table.push(`| **Total** | \u2014 | **${total.toFixed(2)}** |`);
         parts.push(...table, "");
       } catch {
         /* skip */
@@ -90,16 +99,11 @@ function buildFullSnapshot(quote: QuoteDetail | null, messages: UIMessage[]): st
       return;
     }
 
-    if (
-      content.startsWith("__ZONE_SELECTOR__")
-      || content.startsWith("[DUAL_READ_CONFIRMED]")
-      || content.startsWith("[SYSTEM_TRIGGER")
-    ) return;
-
-    const hasTable = content.split("\n").filter((l) => l.trim().startsWith("|") && l.trim().endsWith("|")).length >= 2;
-    if (hasTable) {
-      parts.push(content, "");
-    }
+    const label = m.role === "user" ? "**Operador:**" : "**Valentina:**";
+    parts.push(label);
+    if (m.attachmentName) parts.push(`_[Adjunto: ${m.attachmentName}]_`);
+    parts.push(content);
+    parts.push("");
   });
 
   return parts.join("\n").trim();
