@@ -45,8 +45,39 @@ interface DualReadData {
   conflict_fields: string[];
   source: string;
   m2_warning?: string | null;
+  view_type?: string;
+  view_type_reason?: string;
   _retry?: boolean;
 }
+
+// PR #71 — metadata del tipo de vista para el badge
+const VIEW_TYPE_META: Record<string, { label: string; cls: string; emoji: string }> = {
+  planta: {
+    label: "Planta 2D",
+    cls: "bg-emerald-500/10 text-emerald-400 border-emerald-400/30",
+    emoji: "📐",
+  },
+  render_3d: {
+    label: "Render 3D",
+    cls: "bg-amber-500/10 text-amber-400 border-amber-400/30",
+    emoji: "🎨",
+  },
+  elevation: {
+    label: "Elevación",
+    cls: "bg-sky-500/10 text-sky-400 border-sky-400/30",
+    emoji: "↕️",
+  },
+  mixed: {
+    label: "Vistas mixtas",
+    cls: "bg-purple-500/10 text-purple-400 border-purple-400/30",
+    emoji: "🗂️",
+  },
+  unknown: {
+    label: "Tipo indeterminado",
+    cls: "bg-gray-500/10 text-gray-400 border-gray-400/30",
+    emoji: "❓",
+  },
+};
 
 interface Props {
   data: DualReadData;
@@ -265,6 +296,22 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
         <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-acc bg-acc-bg border border-acc/30 px-2 py-1 rounded-md">
           {data.source === "DUAL" ? "Doble lectura" : data.source.replace("SOLO_", "Solo ")}
         </span>
+        {/* PR #71 — badge de tipo de vista (planta / render 3D / etc) */}
+        {(() => {
+          const vt = data.view_type || "unknown";
+          const meta = VIEW_TYPE_META[vt] || VIEW_TYPE_META.unknown;
+          const tooltip = data.view_type_reason
+            ? `${meta.label} — ${data.view_type_reason}`
+            : meta.label;
+          return (
+            <span
+              className={`text-[10px] font-semibold uppercase tracking-[0.1em] px-2 py-1 rounded-md border ${meta.cls}`}
+              title={tooltip}
+            >
+              {meta.emoji} {meta.label}
+            </span>
+          );
+        })()}
         <h3 className="text-[15px] font-semibold text-t1 tracking-tight">{firstSectorHead || title}</h3>
         <span className="ml-auto text-[12px] text-t3 font-mono">
           {piecesCount} {piecesCount === 1 ? "mesada" : "mesadas"} · {zocalosCount}{" "}

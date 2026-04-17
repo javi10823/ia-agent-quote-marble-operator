@@ -612,11 +612,35 @@ def reconcile(opus: dict, sonnet: dict) -> dict:
             ),
         })
 
+    # PR #71 — propagar view_type del modelo con mayor confianza (o del
+    # que lo reportó). Si ambos coinciden → perfecto. Si difieren →
+    # mergeamos hacia la clasificación más restrictiva (render_3d gana
+    # sobre planta porque requiere reglas más conservadoras).
+    _o_vt = opus.get("view_type", "unknown")
+    _s_vt = sonnet.get("view_type", "unknown")
+    if _o_vt == _s_vt:
+        _merged_vt = _o_vt
+        _merged_reason = opus.get("view_type_reason") or sonnet.get("view_type_reason") or ""
+    elif _o_vt in ("unknown", "") and _s_vt not in ("unknown", ""):
+        _merged_vt = _s_vt
+        _merged_reason = sonnet.get("view_type_reason", "")
+    elif _s_vt in ("unknown", "") and _o_vt not in ("unknown", ""):
+        _merged_vt = _o_vt
+        _merged_reason = opus.get("view_type_reason", "")
+    else:
+        # Conflict — prefer render_3d / mixed / elevation over planta
+        _priority = {"render_3d": 3, "mixed": 2, "elevation": 2, "planta": 1, "unknown": 0}
+        _merged_vt = _o_vt if _priority.get(_o_vt, 0) >= _priority.get(_s_vt, 0) else _s_vt
+        _merged_reason = f"Opus: {_o_vt}; Sonnet: {_s_vt}. Se eligió {_merged_vt} por prioridad."
+        logger.info(f"[dual-read] view_type conflict: Opus={_o_vt} vs Sonnet={_s_vt} → merged={_merged_vt}")
+
     return {
         "sectores": reconciled_sectores,
         "requires_human_review": requires_review,
         "conflict_fields": conflict_fields,
         "source": "DUAL",
+        "view_type": _merged_vt,
+        "view_type_reason": _merged_reason,
     }
 
 
@@ -654,6 +678,9 @@ def _build_single_result(data: dict, source: str) -> dict:
         "requires_human_review": False,
         "conflict_fields": [],
         "source": source,
+        # PR #71 — clasificación de tipo de vista propagada del modelo.
+        "view_type": data.get("view_type", "unknown"),
+        "view_type_reason": data.get("view_type_reason", ""),
     }
 
 
