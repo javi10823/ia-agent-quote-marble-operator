@@ -1249,12 +1249,23 @@ class AgentService:
                 _already_confirmed_cm = bool(
                     _cm_bd.get("verified_context") or _cm_bd.get("measurements_confirmed")
                 )
-                if (
-                    _existing_card
-                    and not _existing_card.get("error")
-                    and not _already_confirmed_cm
-                ):
-                    logging.info(f"[card-editor] Detected modification intent for {quote_id}")
+                if _existing_card and not _existing_card.get("error"):
+                    # PR #80 — Cualquier modificación del despiece (pre o
+                    # post-confirmación) aplica el patch. Si el quote ya
+                    # había pasado a Paso 2 (verified_context + material
+                    # guardados), lo REVERTIMOS a Paso 1: limpiamos state
+                    # post-confirmación para que el operador re-confirme
+                    # el nuevo despiece y Valentina regenere Paso 2.
+                    _has_paso2 = bool(
+                        _cm_bd.get("material_name")
+                        or _cm_bd.get("total_ars")
+                        or _cm_bd.get("mo_items")
+                    )
+                    _reverting_from_paso2 = _already_confirmed_cm or _has_paso2
+                    logging.info(
+                        f"[card-editor] Modification intent for {quote_id} "
+                        f"(reverting_from_paso2={_reverting_from_paso2})"
+                    )
                     yield {"type": "action", "content": "✏️ Aplicando cambios al card..."}
                     _ops = await extract_card_patch(user_message, _existing_card)
                     if not _ops:
@@ -1286,13 +1297,31 @@ class AgentService:
                     _patched_card, _applied, _errors = apply_card_patch(
                         dict(_existing_card), _ops
                     )
-                    # Guardar el card patcheado + re-emitir.
+                    # Guardar el card patcheado + limpiar Paso 2 state si
+                    # estamos revirtiendo.
                     try:
                         _cm_bd_new = dict(_cm_bd)
                         _cm_bd_new["dual_read_result"] = _patched_card
+                        if _reverting_from_paso2:
+                            # Limpiar todo el state post-confirmación para
+                            # que el flujo vuelva a Paso 1.
+                            for _stale in (
+                                "verified_context", "verified_measurements",
+                                "measurements_confirmed", "material_name",
+                                "material_m2", "material_price_unit",
+                                "material_currency", "discount_amount",
+                                "discount_pct", "total_ars", "total_usd",
+                                "mo_items", "sectors", "sinks", "piece_details",
+                                "mo_discount_amount", "mo_discount_pct",
+                                "total_mo_ars", "sobrante_m2", "sobrante_total",
+                                "paso1_pieces", "paso1_total_m2",
+                            ):
+                                _cm_bd_new.pop(_stale, None)
                         await db.execute(
                             update(Quote).where(Quote.id == quote_id).values(
-                                quote_breakdown=_cm_bd_new
+                                quote_breakdown=_cm_bd_new,
+                                total_ars=None if _reverting_from_paso2 else _cm_quote.total_ars,
+                                total_usd=None if _reverting_from_paso2 else _cm_quote.total_usd,
                             )
                         )
                         await db.commit()
@@ -1300,6 +1329,14 @@ class AgentService:
                         logging.warning(f"[card-editor] save patched card failed: {_e_s}")
 
                     _summary = format_patch_summary(_applied, _errors)
+                    if _reverting_from_paso2:
+                        _summary = (
+                            "🔄 Volvimos a Paso 1 porque cambiaste el despiece. "
+                            "El Paso 2 anterior fue descartado.\n\n"
+                            + _summary
+                            + "\n\nConfirmá las nuevas medidas en el card para "
+                            "generar el nuevo Paso 2."
+                        )
                     yield {"type": "text", "content": _summary}
                     yield {
                         "type": "dual_read_result",
