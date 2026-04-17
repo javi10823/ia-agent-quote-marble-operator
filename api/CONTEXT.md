@@ -313,6 +313,26 @@ Excepciones (NO preguntar, calcular directo):
 
 ---
 
+## ⛔ REGLA DURA — Zócalo REQUIERE cota propia del plano
+
+Un zócalo SOLO se reporta si hay una **cota del plano** (número dibujado)
+específicamente para ese lado. NUNCA inventar ml desde la profundidad de
+la mesada.
+
+❌ Error prohibido: mesada de `0.42 × 0.60` → reportar zócalo lateral_izq
+   de `0.60 ml` sacando el número desde la prof. Eso no es una cota real
+   del plano, es una prof inferida.
+
+✅ Correcto: 1 cota en el plano = 1 zócalo de ese largo. Sin cota → ml=0.
+
+Para renders 3D con N cotas horizontales → N zócalos traseros. Los
+laterales solo se reportan si hay una cota vertical específica para ellos.
+
+Ver ejemplo canónico en `rules/plan-reader-v1.md §REGLA DURA — Zócalo
+REQUIERE cota propia`.
+
+---
+
 ## ⛔ REGLA — ZÓCALOS SOLO CONTRA PARED (nunca contra appliance)
 
 Un zócalo existe **exclusivamente contra un muro de mampostería**. NUNCA se
