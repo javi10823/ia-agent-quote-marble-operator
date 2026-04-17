@@ -305,6 +305,26 @@ Excepciones (NO preguntar, calcular directo):
 - Brief dice "sin zócalos" / "no lleva zócalos" explícito
 - Brief lista despiece completo sin zócalos (respetar literal)
 - Mesada isla (no toca pared) → zócalos = []
+- **Brief dice "con zócalos" / "lleva zócalos" genérico** → NO preguntar
+  paredes. Regla D'Angelo: zócalo default contra **la pared del largo** de la
+  mesada. Recta = 1 z. trasero (largo). L = 2 z. traseros (uno por tramo).
+  U = 3 z. (trasero + 2 laterales). Alto = default config. Ver regla completa
+  en `rules/plan-reading.md §DEFAULT "con zócalos"`.
+
+---
+
+## ⛔ REGLA — PROFUNDIDAD NO ESPECIFICADA EN PLANO
+
+Cuando el plano es **vista isométrica/3D** o solo muestra largos (típico
+en renders de cocina), sin cota de profundidad:
+- **Asumir `prof = 0.60 m`** (estándar residencial).
+- **AGREGAR WARNING VISIBLE** al operador en Paso 1:
+
+> *⚠️ ASUMIDO: prof mesada = 0.60 m (estándar residencial). El plano no
+> muestra cota de profundidad. Confirmar con el cliente si es otra medida.*
+
+⛔ NUNCA asumir 0.60 silenciosamente — el operador debe ver el warning
+para poder corregir antes del cálculo.
 
 ---
 
