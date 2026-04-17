@@ -315,6 +315,60 @@ class TestAlvaroTorresCase:
         assert "warnings" not in result or len(result.get("warnings", [])) == 0
 
 
+# ── Residential: multiple anafes (gas + eléctrico) in one kitchen ───────────
+
+class TestResidentialMultipleAnafes:
+    """Caso Bernardi: cocina con 2 anafes empotrados (gas + eléctrico) en
+    la misma mesada. Valentina debe pasar `anafe_qty=2` y el calculator
+    debe agregar 1 línea "Agujero anafe" con quantity=2."""
+
+    def test_anafe_qty_2_doubles_mo_quantity(self):
+        result = calculate_quote({
+            "client_name": "Érica Bernardi",
+            "project": "Cocina",
+            "material": "Puraprima Onix White",
+            "pieces": [
+                {"description": "Mesada lateral", "largo": 2.95, "prof": 0.60},
+                {"description": "Mesada bajo",    "largo": 2.05, "prof": 0.60},
+                {"description": "Isla",           "largo": 1.60, "prof": 0.60},
+            ],
+            "localidad": "rosario",
+            "colocacion": True,
+            "anafe": True,
+            "anafe_qty": 2,
+            "pileta": "empotrada_cliente",
+            "plazo": "30 dias desde la toma de medidas",
+        })
+
+        assert result["ok"]
+        anafe_items = [m for m in result["mo_items"]
+                       if "anafe" in m["description"].lower()]
+        # Debe haber exactamente 1 línea de anafe con quantity=2 (no 2 líneas separadas)
+        assert len(anafe_items) == 1, (
+            f"Expected 1 anafe line with quantity=2, got {len(anafe_items)}: {anafe_items}"
+        )
+        assert anafe_items[0]["quantity"] == 2
+        assert anafe_items[0]["total"] == round(anafe_items[0]["unit_price"] * 2)
+
+    def test_anafe_qty_default_1_for_single_anafe(self):
+        """Sin anafe_qty explícito → default 1 (no debe duplicarse)."""
+        result = calculate_quote({
+            "client_name": "Test",
+            "project": "Cocina",
+            "material": "Silestone Blanco Norte",
+            "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.60}],
+            "localidad": "rosario",
+            "colocacion": True,
+            "anafe": True,
+            "pileta": "empotrada_cliente",
+            "plazo": "30 dias desde la toma de medidas",
+        })
+        anafe_items = [m for m in result["mo_items"]
+                       if "anafe" in m["description"].lower()]
+        assert len(anafe_items) == 1
+        assert anafe_items[0]["quantity"] == 1
+
+
 # ── Warnings visibility ─────────────────────────────────────────────────────
 
 class TestFleteWarnings:

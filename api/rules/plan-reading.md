@@ -198,6 +198,18 @@ anafe/hornallas **empotradas en mesada** → MO obligatoria `anafe=True` +
 (o `empotrada_johnson` si es Johnson). No olvidar ninguno de los dos aunque
 el brief no los repita en texto — el plano ES el brief.
 
+### ⛔ MÚLTIPLES ANAFES EN LA MISMA COCINA
+
+Puede haber >1 anafe empotrado (ej: gas + eléctrico/vitrocerámica) en la
+misma mesada. Cada rectángulo con hornallas separado = 1 anafe (no un único
+anafe más ancho). Etiquetas típicas: "anafe a gas", "anafe eléctrico",
+"vitrocerámica", "inducción".
+
+Cotizar con `anafe=True` + `anafe_qty=N` (el calculator agrega N líneas).
+
+Preguntar si: detectás 2+ símbolos y brief dice "anafe" singular o no lo
+aclara. NO preguntar si brief ya confirma la cantidad.
+
 ### ⛔ EXCEPCIÓN — Cocina entera (horno + anafe free-standing)
 
 Si el plano muestra una **cocina entera free-standing** (horno con puerta
