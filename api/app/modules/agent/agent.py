@@ -242,33 +242,58 @@ async def _run_dual_read(
     import json as _json
     chunks: list[dict] = []
 
+    # PR #60 — FIX crítico: cuando el operador sube un plano NUEVO al mismo
+    # quote (aunque el quote ya haya pasado Paso 2 o el operador haya
+    # confirmado medidas anteriores), debemos SIEMPRE correr dual_read
+    # para verificar visualmente el nuevo plano. Los short-circuits
+    # anteriores (past_paso2 / already_confirmed) bloqueaban esto y
+    # Valentina leía la imagen cruda sin QA, saltándose la card.
+    #
+    # Racional: esta función solo se llama dentro de `if plan_bytes and
+    # plan_filename`, por lo que cada invocación implica un upload nuevo
+    # en este turno. No re-corre en follow-ups de texto puro (que no
+    # traen plan_bytes). Por lo tanto no hay riesgo de re-correr
+    # innecesariamente en turnos de conversación.
+    #
+    # Cuando subís un plano nuevo, limpiamos los campos post-confirmación
+    # del breakdown para que el flujo quede fresco.
     try:
         _dr_check_q = await db.execute(select(Quote).where(Quote.id == quote_id))
         _dr_check_quote = _dr_check_q.scalar_one_or_none()
         _dr_bd = (_dr_check_quote.quote_breakdown or {}) if _dr_check_quote else {}
-        _existing_dr = _dr_bd.get("dual_read_result")
-        _already_confirmed = bool(
-            _dr_bd.get("verified_context") or _dr_bd.get("measurements_confirmed")
-        )
-        _past_paso2 = bool(
-            _dr_bd.get("material_name")
+        _had_prior_state = bool(
+            _dr_bd.get("verified_context")
+            or _dr_bd.get("measurements_confirmed")
+            or _dr_bd.get("material_name")
             or _dr_bd.get("total_ars")
             or _dr_bd.get("mo_items")
         )
+        if _had_prior_state and _dr_check_quote:
+            logging.info(
+                f"[dual-read] New plan upload on quote {quote_id} with prior "
+                "paso 2 / verified state — resetting stale fields before dual_read."
+            )
+            _bd_cleaned = dict(_dr_bd)
+            for _stale in (
+                "verified_context", "verified_measurements", "measurements_confirmed",
+                "dual_read_result", "material_name", "material_m2",
+                "material_price_unit", "material_currency", "discount_amount",
+                "discount_pct", "total_ars", "total_usd", "mo_items", "sectors",
+                "sinks", "piece_details", "mo_discount_amount", "mo_discount_pct",
+                "total_mo_ars", "sobrante_m2", "sobrante_total", "paso1_pieces",
+                "paso1_total_m2",
+            ):
+                _bd_cleaned.pop(_stale, None)
+            await db.execute(
+                update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd_cleaned)
+            )
+            await db.commit()
+            _dr_bd = _bd_cleaned
+        _existing_dr = None  # forced reset arriba
     except Exception:
         _existing_dr = None
-        _already_confirmed = False
-        _past_paso2 = False
 
     _has_valid_existing = bool(_existing_dr) and not _existing_dr.get("error")
-
-    if _past_paso2:
-        logging.info(f"[dual-read] skip (past paso 2) for quote {quote_id}")
-        return (False, chunks)
-
-    if _has_valid_existing and _already_confirmed:
-        logging.info(f"[dual-read] skip (confirmed) for quote {quote_id}")
-        return (False, chunks)
 
     if _has_valid_existing:
         # Re-emit saved card + persist turn
