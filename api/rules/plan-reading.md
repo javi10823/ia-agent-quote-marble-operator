@@ -179,16 +179,10 @@ Hatching/rayado = pared → NO canto expuesto → NO frentin. Lados sin tachar =
 
 ### ⛔ PILETA SIMPLE vs DOBLE
 
-Una bacha con 2 cavidades/óvalos dentro del mismo rectángulo/contorno =
-**pileta doble**. Una sola cavidad = **simple**. Pasar `sink_type.basin_count`
-("simple" / "doble") al calculator — afecta SKU y MO.
-
-Señales de doble en el plano: 2 óvalos contiguos, rectángulo con línea
-divisoria central, etiquetas "pileta doble", "doble bacha".
-
-Si el brief dice "doble" pero el plano muestra 1 cavidad (o viceversa) →
-PREGUNTAR qué cotizar. Si el plano no deja claro (dibujo genérico sin
-divisiones), PREGUNTAR "¿bacha simple o doble?".
+2 cavidades/óvalos dentro del mismo rectángulo = **doble**. 1 cavidad =
+**simple**. Pasar `sink_type.basin_count`. Señales de doble: 2 óvalos
+contiguos, línea divisoria central, texto "doble bacha". Si brief y plano
+no coinciden o el plano es ambiguo → PREGUNTAR "¿bacha simple o doble?".
 
 ### ⛔ Modelo de pileta — NUNCA inventar
 - **SIEMPRE** buscar el modelo exacto en `sinks.json` con `catalog_lookup("sinks", sku)`
