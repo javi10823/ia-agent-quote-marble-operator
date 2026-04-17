@@ -15,6 +15,7 @@ interface Zocalo {
   ml: number;
   alto_m: number;
   status: string;
+  _manual?: boolean;
 }
 
 interface Tramo {
@@ -26,6 +27,7 @@ interface Tramo {
   zocalos: Zocalo[];
   frentin: unknown[];
   regrueso: unknown[];
+  _manual?: boolean;
 }
 
 type AmbiguedadTipo = "DEFAULT" | "INFO" | "REVISION";
@@ -35,8 +37,9 @@ interface Sector {
   id: string;
   tipo: string;
   tramos: Tramo[];
-  m2_total: FieldValue;
+  m2_total?: FieldValue;
   ambiguedades: Ambiguedad[];
+  _manual?: boolean;
 }
 
 interface DualReadData {
@@ -144,11 +147,13 @@ function StatusIcon({
 function EditableNumber({
   field,
   onEdit,
+  forceEditable = false,
 }: {
   field: FieldValue;
   onEdit: (v: number) => void;
+  forceEditable?: boolean;
 }) {
-  const editable = field.status === "CONFLICTO" || field.status === "DUDOSO";
+  const editable = forceEditable || field.status === "CONFLICTO" || field.status === "DUDOSO";
   if (!editable) return <>{field.valor.toFixed(2)}</>;
   // PR #69 — UX simplificado: una sola celda editable con el valor
   // reconciliado. Tooltip revela Opus/Sonnet originales si el operador
@@ -175,11 +180,13 @@ function EditableNumber({
 function EditableZocalo({
   z,
   onEdit,
+  forceEditable = false,
 }: {
   z: Zocalo;
   onEdit: (v: number) => void;
+  forceEditable?: boolean;
 }) {
-  const editable = z.status === "CONFLICTO" || z.status === "DUDOSO";
+  const editable = forceEditable || z.status === "CONFLICTO" || z.status === "DUDOSO";
   if (!editable) return <>{z.ml.toFixed(2)}</>;
   return (
     <input
@@ -254,6 +261,114 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
       if (next.sectores[sectorIdx].tramos.length === 0) {
         next.sectores.splice(sectorIdx, 1);
       }
+      return next;
+    });
+  };
+
+  // ─────────────────────────────────────────────────────────────────
+  // PR #78 — Agregar piezas faltantes desde el card
+  // Caso: el Dual Read olvidó un zócalo / tramo / sector. El operador
+  // lo agrega inline sin tener que rebootear ni editar JSON crudo.
+  // ─────────────────────────────────────────────────────────────────
+
+  // Alto default para zócalos nuevos. Usa el alto de otro zócalo del
+  // mismo card si existe, sino hardcode 0.05m (operador lo edita después).
+  const defaultZocaloAlto = (): number => {
+    for (const s of editedData.sectores) {
+      for (const t of s.tramos) {
+        for (const z of t.zocalos) {
+          if (z.alto_m && z.alto_m > 0) return z.alto_m;
+        }
+      }
+    }
+    return 0.05;
+  };
+
+  const addZocalo = (sectorIdx: number, tramoIdx: number) => {
+    setEditedData((prev) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.sectores[sectorIdx].tramos[tramoIdx].zocalos.push({
+        lado: "trasero",
+        ml: 0,
+        alto_m: defaultZocaloAlto(),
+        status: "CONFIRMADO",
+        opus_ml: null,
+        sonnet_ml: null,
+        _manual: true,
+      });
+      return next;
+    });
+  };
+
+  const addTramo = (sectorIdx: number) => {
+    setEditedData((prev) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const tramosLen = next.sectores[sectorIdx].tramos.length;
+      const newId = `manual_${tramosLen + 1}`;
+      next.sectores[sectorIdx].tramos.push({
+        id: newId,
+        descripcion: `Tramo adicional ${tramosLen + 1}`,
+        largo_m: { valor: 0, status: "CONFIRMADO", opus: null, sonnet: null },
+        ancho_m: { valor: 0.6, status: "CONFIRMADO", opus: null, sonnet: null },
+        m2: { valor: 0, status: "CONFIRMADO", opus: null, sonnet: null },
+        zocalos: [],
+        frentin: [],
+        regrueso: [],
+        _manual: true,
+      });
+      return next;
+    });
+  };
+
+  const addSector = () => {
+    setEditedData((prev) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const sectorsLen = next.sectores.length;
+      const newId = `sector_manual_${sectorsLen + 1}`;
+      next.sectores.push({
+        id: newId,
+        tipo: "cocina",
+        tramos: [
+          {
+            id: `manual_1`,
+            descripcion: "Mesada nueva",
+            largo_m: { valor: 0, status: "CONFIRMADO", opus: null, sonnet: null },
+            ancho_m: { valor: 0.6, status: "CONFIRMADO", opus: null, sonnet: null },
+            m2: { valor: 0, status: "CONFIRMADO", opus: null, sonnet: null },
+            zocalos: [],
+            frentin: [],
+            regrueso: [],
+            _manual: true,
+          },
+        ],
+        ambiguedades: [],
+        _manual: true,
+      });
+      return next;
+    });
+  };
+
+  // Edit descripcion inline (tramo y zócalo lado)
+  const updateTramoDesc = (sectorIdx: number, tramoIdx: number, desc: string) => {
+    setEditedData((prev) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.sectores[sectorIdx].tramos[tramoIdx].descripcion = desc;
+      return next;
+    });
+  };
+
+  const updateZocaloLado = (sectorIdx: number, tramoIdx: number, zIdx: number, lado: string) => {
+    setEditedData((prev) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.sectores[sectorIdx].tramos[tramoIdx].zocalos[zIdx].lado = lado;
+      return next;
+    });
+  };
+
+  const updateZocaloAlto = (sectorIdx: number, tramoIdx: number, zIdx: number, alto: number) => {
+    setEditedData((prev) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.sectores[sectorIdx].tramos[tramoIdx].zocalos[zIdx].alto_m = alto;
       return next;
     });
   };
@@ -352,19 +467,41 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                   <div className="grid grid-cols-[22px_1fr_80px_80px_80px] items-center gap-3 px-5 py-2.5 text-[13px] font-mono tabular-nums border-t border-b1">
                     <StatusIcon status={tramo.largo_m.status} />
                     <div className="font-sans">
-                      <div className="text-t1">{tramo.descripcion || tramo.id}</div>
+                      {tramo._manual ? (
+                        <input
+                          type="text"
+                          defaultValue={tramo.descripcion}
+                          placeholder="Descripción (ej: Cajonera izq)"
+                          className="w-full text-t1 bg-s1 border border-b2 rounded px-1.5 py-0.5 text-[13px] hover:border-b1/60 focus:border-acc/50 outline-none"
+                          onChange={(e) => updateTramoDesc(si, ti, e.target.value)}
+                        />
+                      ) : (
+                        <div className="text-t1">{tramo.descripcion || tramo.id}</div>
+                      )}
                       <div className="text-[11px] text-t3 mt-0.5">mesada rectangular</div>
                     </div>
                     <div className="text-t2 text-right">
-                      <EditableNumber field={tramo.largo_m} onEdit={(v) => updateField(si, ti, "largo_m", v)} />
+                      <EditableNumber
+                        field={tramo.largo_m}
+                        onEdit={(v) => updateField(si, ti, "largo_m", v)}
+                        forceEditable={tramo._manual}
+                      />
                       <span className="text-t4 ml-0.5">m</span>
                     </div>
                     <div className="text-t2 text-right">
-                      <EditableNumber field={tramo.ancho_m} onEdit={(v) => updateField(si, ti, "ancho_m", v)} />
+                      <EditableNumber
+                        field={tramo.ancho_m}
+                        onEdit={(v) => updateField(si, ti, "ancho_m", v)}
+                        forceEditable={tramo._manual}
+                      />
                       <span className="text-t4 ml-0.5">m</span>
                     </div>
                     <div className="text-t1 font-medium text-right flex items-center justify-end gap-2">
-                      <EditableNumber field={tramo.m2} onEdit={(v) => updateField(si, ti, "m2", v)} />
+                      <EditableNumber
+                        field={tramo.m2}
+                        onEdit={(v) => updateField(si, ti, "m2", v)}
+                        forceEditable={tramo._manual}
+                      />
                       {/* PR #68 — botón × también en mesadas para remover duplicados
                           / piezas ajenas (heladera, bajo mesada) que el dual_read
                           detecta mal. */}
@@ -386,7 +523,10 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                       ml por input funcional y ml=0 no suma al cálculo). */}
                   {tramo.zocalos.map((z, zi) => {
                     const hasMl = (z.ml ?? 0) > 0;
-                    if (!hasMl) return null;
+                    // PR #78 — mostrar zócalos manuales recién agregados
+                    // aunque ml=0 (el operador todavía no lo llenó).
+                    const isManual = z._manual === true;
+                    if (!hasMl && !isManual) return null;
                     return (
                       <div
                         key={zi}
@@ -395,14 +535,42 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                         <StatusIcon status={z.status} />
                         <div className="font-sans text-t2 pl-4 relative">
                           <span className="absolute left-0 top-1/2 w-2.5 h-px bg-b2" />
-                          Zóc. {z.lado}
+                          {isManual ? (
+                            <input
+                              type="text"
+                              defaultValue={`Zóc. ${z.lado}`}
+                              placeholder="Zóc. descripción"
+                              className="w-full bg-s1 border border-b2 rounded px-1.5 py-0.5 text-[13px] hover:border-b1/60 focus:border-acc/50 outline-none"
+                              onChange={(e) => {
+                                // Si escribió algo distinto a "Zóc. ", lo guardamos como lado (custom).
+                                const v = e.target.value.replace(/^Z[óo]c\.\s*/i, "").trim();
+                                updateZocaloLado(si, ti, zi, v || "trasero");
+                              }}
+                            />
+                          ) : (
+                            <>Zóc. {z.lado}</>
+                          )}
                         </div>
                         <div className="text-t2 text-right">
-                          <EditableZocalo z={z} onEdit={(v) => updateField(si, ti, `zocalo_${zi}`, v)} />
+                          <EditableZocalo
+                            z={z}
+                            onEdit={(v) => updateField(si, ti, `zocalo_${zi}`, v)}
+                            forceEditable={isManual}
+                          />
                           <span className="text-t4 ml-0.5">ml</span>
                         </div>
                         <div className="text-t2 text-right">
-                          {z.alto_m.toFixed(2)}
+                          {isManual ? (
+                            <input
+                              type="number"
+                              step="0.01"
+                              defaultValue={z.alto_m}
+                              className="w-16 px-1.5 py-0.5 bg-s1 border border-b2 rounded text-[11px] text-t1 text-right font-mono"
+                              onChange={(e) => updateZocaloAlto(si, ti, zi, parseFloat(e.target.value) || 0)}
+                            />
+                          ) : (
+                            <>{z.alto_m.toFixed(2)}</>
+                          )}
                           <span className="text-t4 ml-0.5">m</span>
                         </div>
                         <div className="text-t1 font-medium text-right flex items-center justify-end gap-2">
@@ -424,10 +592,43 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                       </div>
                     );
                   })}
+
+                  {/* PR #78 — botón "+ Zócalo" al final de cada tramo */}
+                  <div className="px-5 py-1.5 border-t border-b1/50">
+                    <button
+                      type="button"
+                      onClick={() => addZocalo(si, ti)}
+                      className="text-[11px] text-t3 hover:text-acc pl-7 transition-colors cursor-pointer"
+                    >
+                      + Agregar zócalo
+                    </button>
+                  </div>
                 </React.Fragment>
               ))}
+
+              {/* PR #78 — botón "+ Mesada" al final de cada sector */}
+              <div className="px-5 py-2 border-t border-b1/50">
+                <button
+                  type="button"
+                  onClick={() => addTramo(si)}
+                  className="text-[12px] text-t3 hover:text-acc transition-colors cursor-pointer"
+                >
+                  + Agregar mesada
+                </button>
+              </div>
             </div>
           ))}
+
+          {/* PR #78 — botón "+ Sector" al final del card */}
+          <div className="px-5 py-2 border-t border-b1">
+            <button
+              type="button"
+              onClick={addSector}
+              className="text-[12px] text-t3 hover:text-acc transition-colors cursor-pointer"
+            >
+              + Agregar sector (isla, baño, lavadero)
+            </button>
+          </div>
         </div>
 
         {/* Totals */}
