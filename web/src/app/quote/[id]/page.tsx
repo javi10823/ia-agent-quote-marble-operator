@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { fetchQuote, streamChat, markQuoteAsRead, validateQuote, type QuoteDetail } from "@/lib/api";
+import { fetchQuote, streamChat, markQuoteAsRead, validateQuote, updateQuote, type QuoteDetail, type QuoteEditablePatch } from "@/lib/api";
 import { useQuotes } from "@/lib/quotes-context";
 import MessageBubble from "@/components/chat/MessageBubble";
 import CopyButton from "@/components/chat/CopyButton";
@@ -12,6 +12,7 @@ import { ResumenObraCard } from "@/components/quote/ResumenObraCard";
 import { EmailDraftCard } from "@/components/quote/EmailDraftCard";
 import { CondicionesCard } from "@/components/quote/CondicionesCard";
 import RegenerateButton from "@/components/quote/RegenerateButton";
+import EditableField from "@/components/quote/EditableField";
 import clsx from "clsx";
 import { A, I, O, N, DOT, SUP2, DASH, ITEM, WARN, CIRCLE, ARROW, XMARK, CLOUD, WAVE, PAGE, PICTURE, CLIP, RULER, TAG, FOLDER, CHART } from "@/lib/chars";
 
@@ -385,6 +386,12 @@ export default function QuotePage() {
     }
   }, [quoteId, generating]);
 
+  const handleFieldUpdate = useCallback(async (patch: QuoteEditablePatch) => {
+    await updateQuote(quoteId, patch);
+    setQuote((prev) => (prev ? ({ ...prev, ...patch } as QuoteDetail) : prev));
+    refreshQuotes();
+  }, [quoteId, refreshQuotes]);
+
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   };
@@ -444,7 +451,7 @@ export default function QuotePage() {
       {/* Content */}
       {tab === "detail" ? (
         <div className="flex-1 overflow-y-auto px-4 md:px-7 py-4 md:py-6">
-          <DetailView quote={quote} breakdown={bd} onSwitchToChat={() => setTab("chat")} onGenerate={quote?.status === "pending" || quote?.status === "draft" ? handleGenerate : undefined} generating={generating} />
+          <DetailView quote={quote} breakdown={bd} onSwitchToChat={() => setTab("chat")} onGenerate={quote?.status === "pending" || quote?.status === "draft" ? handleGenerate : undefined} generating={generating} onFieldUpdate={handleFieldUpdate} />
           {/* Show modifications section only when quote has breakdown and is not sent */}
           {bd && quote?.status !== "sent" && (
             <Section title="Modificaciones" className="mt-5">
@@ -638,7 +645,14 @@ export default function QuotePage() {
 
 // ── DETAIL VIEW ─────────────────────────────────────────────────────────────
 
-function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }: { quote: QuoteDetail | null; breakdown: Record<string, any> | null; onSwitchToChat: () => void; onGenerate?: () => void; generating?: boolean }) {
+const PILETA_OPTIONS = [
+  { value: "",                  label: "(no especificado)" },
+  { value: "empotrada_cliente", label: "Empotrada (la trae el cliente)" },
+  { value: "empotrada_johnson", label: "Empotrada Johnson" },
+  { value: "apoyo",             label: "De apoyo" },
+];
+
+function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating, onFieldUpdate }: { quote: QuoteDetail | null; breakdown: Record<string, any> | null; onSwitchToChat: () => void; onGenerate?: () => void; generating?: boolean; onFieldUpdate?: (patch: QuoteEditablePatch) => Promise<void> }) {
   if (!quote) return null;
 
   const pieces = breakdown?.sectors?.flatMap((s: any) => s.pieces || []) || [];
@@ -652,9 +666,21 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
     <div className="flex flex-col gap-5">
       <Section title="Resumen">
         <div className="grid grid-cols-4 gap-4">
-          <MetaItem label="Cliente" value={quote.client_name || DASH} />
-          <MetaItem label="Proyecto" value={quote.project || DASH} />
-          <MetaItem label="Material" value={quote.material || DASH} />
+          {onFieldUpdate ? (
+            <EditableField label="Cliente" type="text" value={quote.client_name} placeholder="Nombre del cliente" onSave={(v) => onFieldUpdate({ client_name: v })} />
+          ) : (
+            <MetaItem label="Cliente" value={quote.client_name || DASH} />
+          )}
+          {onFieldUpdate ? (
+            <EditableField label="Proyecto" type="text" value={quote.project} placeholder="Nombre del proyecto/obra" onSave={(v) => onFieldUpdate({ project: v })} />
+          ) : (
+            <MetaItem label="Proyecto" value={quote.project || DASH} />
+          )}
+          {onFieldUpdate ? (
+            <EditableField label="Material" type="text" value={quote.material} placeholder="Material principal" onSave={(v) => onFieldUpdate({ material: v })} />
+          ) : (
+            <MetaItem label="Material" value={quote.material || DASH} />
+          )}
           <MetaItem label="Fecha" value={new Date(quote.created_at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })} />
           <MetaItem label="Demora" value={breakdown?.delivery_days || DASH} />
           <MetaItem label="Origen" value={quote.source === "web" ? "Web (chatbot)" : "Operador"} />
@@ -666,7 +692,23 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating }
         </div>
       </Section>
 
-      {quote.notes && (
+      {onFieldUpdate && (
+        <Section title="Datos del cliente y obra">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <EditableField label="Tel\u00e9fono" type="text" value={quote.client_phone} placeholder="Ej: 341-1234567" onSave={(v) => onFieldUpdate({ client_phone: v })} />
+            <EditableField label="Email" type="text" value={quote.client_email} placeholder="nombre@dominio.com" onSave={(v) => onFieldUpdate({ client_email: v })} />
+            <EditableField label="Localidad" type="text" value={quote.localidad} placeholder="Ej: Rosario" onSave={(v) => onFieldUpdate({ localidad: v })} />
+            <EditableField label="Pileta" type="select" value={quote.pileta || ""} options={PILETA_OPTIONS} onSave={(v) => onFieldUpdate({ pileta: v })} />
+            <EditableField label="Colocaci\u00f3n" type="toggle" value={quote.colocacion} onSave={(v) => onFieldUpdate({ colocacion: v })} />
+            <EditableField label="Anafe" type="toggle" value={quote.anafe} onSave={(v) => onFieldUpdate({ anafe: v })} />
+            <div className="md:col-span-2">
+              <EditableField label="Notas" type="textarea" value={quote.notes} placeholder="Notas internas del presupuesto" onSave={(v) => onFieldUpdate({ notes: v })} />
+            </div>
+          </div>
+        </Section>
+      )}
+
+      {!onFieldUpdate && quote.notes && (
         <Section title="Notas del cliente">
           <p className="text-[13px] text-t2 leading-[1.65] whitespace-pre-wrap">{quote.notes}</p>
         </Section>
