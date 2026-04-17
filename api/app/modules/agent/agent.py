@@ -215,6 +215,7 @@ async def _run_dual_read(
     cotas_text: str | None = None,
     user_message: str = "",
     plan_filename: str = "",
+    plan_hash: str | None = None,
 ) -> tuple[bool, list[dict]]:
     """PR #55 — Corre dual_read sobre cualquier plano y devuelve chunks SSE.
 
@@ -243,22 +244,30 @@ async def _run_dual_read(
     import hashlib as _hashlib
     chunks: list[dict] = []
 
-    # PR #63 — dedup hash-based. El plan_bytes persiste entre turnos (frontend
-    # lo re-envía con cada mensaje mientras la conversación tenga un plano
-    # adjunto). Sin dedup, cada turno que el operador responda en chat re-
-    # corre dual_read → card aparece N veces.
+    # PR #63 + #64 — dedup hash-based. El plan_bytes persiste entre turnos
+    # (frontend lo re-envía con cada mensaje mientras la conversación tenga
+    # un plano adjunto). Sin dedup, cada turno que el operador responda en
+    # chat re-corre dual_read → card aparece N veces.
+    #
+    # PR #64: el hash debe computarse sobre los BYTES CRUDOS del plano
+    # (plan_bytes que subió el operador), NO sobre draw_bytes (rasterizado
+    # + re-encoded JPEG). Estas transformaciones pueden ser NO
+    # deterministas (PIL quality, pdf2image, crop offset), y el hash
+    # cambiaba turno a turno → cache miss → card re-aparece.
+    #
+    # Los callers pasan plan_hash computado sobre plan_bytes crudo. Si no
+    # lo pasan, fallback a hashear draw_bytes (comportamiento PR #63).
     #
     # Lógica:
-    #   1. Hash del draw_bytes actual.
-    #   2. Si existe dual_read_plan_hash en breakdown y coincide → SAME PLAN:
-    #        - Si hay verified_context → operador ya confirmó, skip (seguir a Claude).
-    #        - Si hay dual_read_result → re-emit (SSE retry o reload).
+    #   1. Si existe dual_read_plan_hash en breakdown y coincide → SAME PLAN:
+    #        - Si hay verified_context → operador ya confirmó, skip.
+    #        - Si hay dual_read_result → re-emit (SSE retry / reload).
     #        - Sino → skip (dual_read corrió antes, estamos en follow-up).
-    #   3. Si el hash cambió (o no existe) → NEW PLAN:
+    #   2. Si el hash cambió (o no existe) → NEW PLAN:
     #        - Limpiar state stale.
     #        - Correr dual_read fresh.
     #        - Guardar hash nuevo.
-    _plan_hash = _hashlib.sha256(draw_bytes).hexdigest()[:16]
+    _plan_hash = plan_hash or _hashlib.sha256(draw_bytes).hexdigest()[:16]
     try:
         _dr_check_q = await db.execute(select(Quote).where(Quote.id == quote_id))
         _dr_check_quote = _dr_check_q.scalar_one_or_none()
@@ -1925,6 +1934,11 @@ class AgentService:
         if plan_bytes and plan_filename:
             # Persist plan file to temp so read_plan tool can access it later
             save_plan_to_temp(plan_filename, plan_bytes)
+            # PR #64 — hash estable del plano crudo (antes de cualquier
+            # rasterización / JPEG re-encoding). Se pasa a _run_dual_read
+            # para dedup entre turnos. Se computa una sola vez acá.
+            import hashlib as _hashlib_main
+            _raw_plan_hash = _hashlib_main.sha256(plan_bytes).hexdigest()[:16]
             ext = Path(plan_filename).suffix.lower()
             if ext == ".pdf":
                 # Pasada 1: Extract text/tables from PDF with pdfplumber (exact, no hallucination)
@@ -2278,6 +2292,7 @@ class AgentService:
                                         cotas_text=_cotas_text,
                                         user_message=user_message,
                                         plan_filename=plan_filename,
+                                        plan_hash=_raw_plan_hash,
                                     )
                                 for _c in _dr_chunks:
                                     yield _c
@@ -2342,6 +2357,7 @@ class AgentService:
                                     cotas_text=None,
                                     user_message=user_message,
                                     plan_filename=plan_filename,
+                                    plan_hash=_raw_plan_hash,
                                 )
                                 for _cc in _chunks_nopl:
                                     yield _cc
@@ -2386,6 +2402,7 @@ class AgentService:
                             cotas_text=None,
                             user_message=user_message,
                             plan_filename=plan_filename,
+                            plan_hash=_raw_plan_hash,
                         )
                         for _cc in _chunks_img:
                             yield _cc
