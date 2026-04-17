@@ -293,6 +293,27 @@ async def _run_dual_read(
         )
         return (False, chunks)
 
+    # Case 1b (PR #66) — compat retroactivo: quotes viejos que confirmaron
+    # medidas ANTES de que existiera el hash no tienen `dual_read_plan_hash`
+    # en breakdown. En esos casos, si ya hay verified_context, tratamos como
+    # "mismo plano" porque esa es la intención — el operador ya verificó.
+    # Guardamos el hash ahora para convertir el quote legacy a nuevo esquema.
+    if _stored_hash is None and _already_confirmed:
+        logging.info(
+            f"[dual-read] legacy quote {quote_id} without hash + already "
+            "confirmed → skip + backfill hash."
+        )
+        try:
+            _bd_backfill = dict(_dr_bd)
+            _bd_backfill["dual_read_plan_hash"] = _plan_hash
+            await db.execute(
+                update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd_backfill)
+            )
+            await db.commit()
+        except Exception as _e_bf:
+            logging.warning(f"[dual-read] Failed to backfill hash: {_e_bf}")
+        return (False, chunks)
+
     # Case 2: same plan + we have a dual_read_result → SSE retry or reload.
     # Re-emit from DB instead of calling the API again.
     _has_valid_existing = (
@@ -3735,37 +3756,61 @@ class AgentService:
                         logging.info(f"Using DB breakdown for {target_qid} (material: {db_material})")
                         qdata = db_bd
 
-                # PR #65 — first-wins para client_name y project. Caso
-                # observado: Valentina llama generate_documents al final del
-                # flujo con client_name="O Proyecto" y project="" (drift del
-                # modelo), pisando los valores correctos ("Javier Test" /
-                # "Cocina") que se guardaron al inicio por _extract_quote_info.
-                #
-                # Política: si el DB ya tiene un valor válido para
-                # client_name/project, NO lo sobreescribimos — el operador
-                # debe usar `update_quote` tool explícito para cambiar.
+                # PR #65 + #66 — first-wins para client_name y project CON
+                # excepción retroactiva: si el valor existente parece
+                # placeholder/junk ("O Proyecto", "Proyecto", "Cliente",
+                # "Sin nombre", etc.), lo sobreescribimos con el nuevo.
+                # Eso rescata quotes viejos contaminados por drift previo.
                 save_vals = {
                     "material": qdata.get("material_name"),
                     "total_ars": qdata.get("total_ars"),
                     "total_usd": qdata.get("total_usd"),
                     "quote_breakdown": qdata,
                 }
+
+                def _looks_placeholder(s: str) -> bool:
+                    """¿El valor parece placeholder/junk en vez de nombre real?"""
+                    if not s or not s.strip():
+                        return True
+                    _low = s.strip().lower()
+                    _junk = {
+                        "o proyecto", "proyecto", "el proyecto", "un proyecto",
+                        "cliente", "el cliente", "la cliente", "sin nombre",
+                        "nuevo", "nuevo presupuesto", "presupuesto", "borrador",
+                        "tbd", "pendiente", "n/a", "na", "—", "-", "?", ".",
+                    }
+                    if _low in _junk:
+                        return True
+                    # Una sola letra también es placeholder (ej: "O", "X").
+                    if len(_low) <= 2:
+                        return True
+                    return False
+
                 _existing_cn = (existing_bd_quote.client_name if existing_bd_quote else "") or ""
                 _existing_pj = (existing_bd_quote.project if existing_bd_quote else "") or ""
                 _new_cn = (qdata.get("client_name") or "").strip()
                 _new_pj = (qdata.get("project") or "").strip()
-                # Solo setear client_name si el DB está vacío.
-                if not _existing_cn.strip() and _new_cn:
+                # client_name: overwrite si DB vacío O si DB parece placeholder.
+                if (_looks_placeholder(_existing_cn) or not _existing_cn.strip()) and _new_cn:
                     save_vals["client_name"] = _new_cn
+                    if _existing_cn.strip():
+                        logging.info(
+                            f"[save] overwriting placeholder client_name "
+                            f"'{_existing_cn}' → '{_new_cn}'"
+                        )
                 elif _existing_cn.strip() and _new_cn and _new_cn != _existing_cn:
-                    # LLM intentó cambiar — log para debug pero preserva DB.
                     logging.warning(
                         f"[save] generate_documents intentó cambiar client_name "
                         f"'{_existing_cn}' → '{_new_cn}' — preservando valor DB."
                     )
-                # Idem para project.
-                if not _existing_pj.strip() and _new_pj:
+                # project: idem.
+                if (_looks_placeholder(_existing_pj) or not _existing_pj.strip()) and _new_pj:
                     save_vals["project"] = _new_pj
+                    if _existing_pj.strip():
+                        logging.info(
+                            f"[save] overwriting placeholder project "
+                            f"'{_existing_pj}' → '{_new_pj}'"
+                        )
                 elif _existing_pj.strip() and _new_pj and _new_pj != _existing_pj:
                     logging.warning(
                         f"[save] generate_documents intentó cambiar project "
