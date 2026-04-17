@@ -127,6 +127,34 @@ def _find_material(material_name: str) -> dict:
     """Search for material across all catalogs with fuzzy fallback."""
     from app.modules.agent.tools.catalog_tool import _load_catalog
 
+    # PR #59 — guard contra material genérico (familia sola sin variante).
+    # Caso observado: brief/plano dice "MESADA GRANITO RECTA LINEAL" →
+    # Valentina pasa material="GRANITO" solo → fuzzy lo matchea con
+    # "GRANITO GRIS MARA EXTRA 2 ESP" al azar y cotiza. Debe PREGUNTAR.
+    _FAMILY_NAMES = {
+        "granito", "granitos",
+        "mármol", "marmol", "mármoles", "marmoles",
+        "silestone",
+        "dekton",
+        "neolith",
+        "puraprima", "pura prima",
+        "purastone", "pura stone",
+        "laminatto", "laminato",
+    }
+    _stripped = (material_name or "").strip().lower()
+    if _stripped in _FAMILY_NAMES:
+        return {
+            "found": False,
+            "ambiguous_family": True,
+            "family": _stripped,
+            "error": (
+                f"Material '{material_name}' es un nombre de familia genérico. "
+                "El catálogo tiene múltiples variantes. NO elegir por default — "
+                "preguntar al operador qué material específico (color + acabado) "
+                "antes de cotizar."
+            ),
+        }
+
     # 1. Exact match (case-insensitive via catalog_lookup)
     for cat in MATERIAL_CATALOGS:
         result = catalog_lookup(cat, material_name)

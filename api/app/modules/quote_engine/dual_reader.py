@@ -733,12 +733,21 @@ def _check_m2(result: dict, planilla_m2: Optional[float]) -> Optional[str]:
 # ═══════════════════════════════════════════════════════
 
 def build_verified_context(confirmed_data: dict) -> str:
-    """Build injection text from operator-confirmed measurements."""
+    """Build injection text from operator-confirmed measurements.
+
+    PR #59: detecta items "confirmados" que siguen en estado ambiguo
+    (zócalos con status CONFLICTO/DUDOSO y ml=0, ambiguedades sin resolver,
+    falta de datos como modelo de pileta). Los flagea al final del contexto
+    para que Valentina NO siga a Paso 2 sin preguntar al operador.
+    """
     lines = [
         "[MEDIDAS VERIFICADAS POR DOBLE LECTURA + OPERADOR — FUENTE DE VERDAD]",
         "⛔ Estos valores son definitivos. NO leas la imagen. Usá estos valores exactos.",
         "",
     ]
+
+    # Items pendientes detectados durante el parse
+    pending_questions: list[str] = []
 
     for sector in confirmed_data.get("sectores", []):
         sid = sector.get("id", "sector")
@@ -753,11 +762,45 @@ def build_verified_context(confirmed_data: dict) -> str:
             ancho_v = ancho.get("valor", 0) if isinstance(ancho, dict) else ancho
             m2_v = m2.get("valor", 0) if isinstance(m2, dict) else m2
             lines.append(f"  {desc}: {largo_v}m × {ancho_v}m = {m2_v} m²")
+            zocalos_written = 0
+            zocalos_unresolved: list[str] = []
             for z in tramo.get("zocalos", []):
-                ml = z.get("ml", 0)
+                ml = z.get("ml", 0) or 0
                 alto = z.get("alto_m", _default_zocalo_alto())
                 lado = z.get("lado", "?")
-                lines.append(f"  Zócalo {lado}: {ml}ml × {alto}m")
+                z_status = (z.get("status") or "").upper()
+                if ml > 0:
+                    lines.append(f"  Zócalo {lado}: {ml}ml × {alto}m")
+                    zocalos_written += 1
+                elif z_status in ("CONFLICTO", "DUDOSO"):
+                    # Estaba marcado ambiguo y el operador lo dejó en ml=0.
+                    # NO asumir "cero zócalos" — preguntar.
+                    zocalos_unresolved.append(f"{lado} (status={z_status})")
+            if zocalos_unresolved:
+                pending_questions.append(
+                    f"Zócalos en '{desc}': el dual_read propuso "
+                    f"{len(zocalos_unresolved)} zócalos sin confirmar "
+                    f"({', '.join(zocalos_unresolved)}) y el operador los "
+                    "confirmó con ml=0. ¿Quiso decir que NO lleva zócalos, "
+                    "o los olvidó? — PREGUNTAR antes de Paso 2."
+                )
+        # Ambigüedades del sector que no son solo "DEFAULT" — las de
+        # tipo REVISION siguen vivas aunque el operador haya confirmado
+        # las medidas.
+        for amb in sector.get("ambiguedades", []):
+            amb_text = amb if isinstance(amb, str) else amb.get("texto", "")
+            amb_tipo = "" if isinstance(amb, str) else (amb.get("tipo") or "").upper()
+            if amb_tipo == "REVISION" and amb_text:
+                pending_questions.append(f"Revisar: {amb_text}")
+        lines.append("")
+
+    if pending_questions:
+        lines.append("")
+        lines.append("⛔ PREGUNTAS PENDIENTES AL OPERADOR — NO IR A PASO 2")
+        lines.append("Items que el dual_read flageó como ambiguos y el operador")
+        lines.append("no aclaró en el card. PREGUNTALE explícito antes de calcular:")
+        for q in pending_questions:
+            lines.append(f"- {q}")
         lines.append("")
 
     return "\n".join(lines)
