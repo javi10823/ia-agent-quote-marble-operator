@@ -9,7 +9,48 @@ Nunca confíes en la vista general del plano. Sin excepción.
 
 ---
 
-## PROTOCOLO DE LECTURA — 4 PASADAS OBLIGATORIAS
+## PROTOCOLO DE LECTURA — PASADAS OBLIGATORIAS
+
+**Pasada 0 — Clasificar el tipo de vista (OBLIGATORIA PRIMERA)**
+
+Antes de cualquier otra lectura, determiná qué TIPO de plano es esto:
+
+- `"planta"` → Vista cenital 2D (arquitectónica). Señales:
+  * Contornos nítidos, sin perspectiva
+  * Hatching de paredes (`//` o puntos)
+  * Cotas ortogonales con flechas/barras diagonales
+  * Símbolos esquematizados (pileta como rectángulo con círculos,
+    anafe como 4 círculos en cuadrado)
+  * Carátula/rótulo técnico con escala
+
+- `"render_3d"` → Vista isométrica / perspectiva (SketchUp, Blender, etc).
+  Señales:
+  * Electrodomésticos dibujados como objetos 3D (heladera tridimensional)
+  * Líneas oblicuas (isometría o perspectiva)
+  * Superficies con sombreado/gradientes
+  * Sin hatching de paredes
+  * Cotas típicamente solo horizontales arriba
+
+- `"elevation"` → Vista frontal/lateral (corte). Señales:
+  * Muestra alturas (zócalo, frentín, alacenas)
+  * No muestra profundidad
+  * Proyección ortogonal pero NO cenital
+
+- `"mixed"` → Plano con múltiples vistas (planta + elevación + detalle).
+  Tratar cada vista según su tipo.
+
+- `"unknown"` → Si realmente no es claro. Usar reglas conservadoras de
+  planta y flaguear alta `requires_human_review`.
+
+⛔ **Anotá el `view_type` en el JSON output como campo top-level.**
+
+El `view_type` condiciona las pasadas siguientes:
+- `planta`: reglas originales (hatching, L/U por geometría, 4-lados zócalos)
+- `render_3d`: ver §REGLA — RENDER 3D más abajo (1 sector, tramos
+  continuos, zócalos solo contra pared)
+- `elevation`: medidas verticales = alturas (zócalo, frentín), NO
+  profundidades. Los largos son proyecciones, no dimensiones reales.
+- `mixed` / `unknown`: ser conservador, flaguear ambigüedades.
 
 **Pasada 1 — Inventario**
 Identificá todos los sectores presentes (cocina, baño, lavadero, etc.)
@@ -266,6 +307,8 @@ Si el OCR extrae medidas, validalas contra la proporción del dibujo:
 
 ```json
 {
+  "view_type": "planta | render_3d | elevation | mixed | unknown",
+  "view_type_reason": "Breve explicación de por qué clasificaste así (ej: 'objetos 3D isométricos, sin hatching')",
   "sectores": [
     {
       "id": "cocina",
