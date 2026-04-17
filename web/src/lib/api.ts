@@ -38,12 +38,6 @@ export interface Quote {
   source: string | null;
   is_read: boolean;
   notes: string | null;
-  client_phone: string | null;
-  client_email: string | null;
-  localidad: string | null;
-  colocacion: boolean | null;
-  pileta: string | null;
-  anafe: boolean | null;
   sink_type: { basin_count: "simple" | "doble"; mount_type: "arriba" | "abajo" } | null;
   resumen_obra?: ResumenObraRecord | null;
   condiciones_pdf?: {
@@ -189,14 +183,7 @@ export async function markQuoteAsRead(id: string): Promise<void> {
 export type QuoteEditablePatch = Partial<{
   client_name: string;
   project: string;
-  material: string;
-  client_phone: string;
-  client_email: string;
-  localidad: string;
   notes: string;
-  pileta: string;
-  colocacion: boolean;
-  anafe: boolean;
 }>;
 
 export async function updateQuote(id: string, patch: QuoteEditablePatch): Promise<void> {
