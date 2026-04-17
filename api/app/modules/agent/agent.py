@@ -1205,11 +1205,17 @@ class AgentService:
                 logging.info(f"[dual-read] Verified measurements saved for {quote_id} (early handler)")
                 # Reemplazar el mensaje por un prompt que Claude entienda.
                 # El verified_context entra al system prompt via build_system_prompt.
+                # PR #75 — evitar que el regex de _extract_quote_info matchee
+                # accidentalmente palabras en este texto. No usar "cliente"
+                # ni "proyecto" literal (la regex matchea "cliente[:\s]+…"
+                # y "proyecto[:\s]+…"). Fix A adicional: en este turno se
+                # salta la extracción de todos modos (defensa en profundidad).
                 user_message = (
                     "El operador acaba de confirmar las medidas del plano. "
                     "Tenés las medidas verificadas en tu system prompt. "
-                    "Seguí con el flujo: si falta cliente o proyecto, pedilos; "
-                    "si ya están, avanzá al Paso 2 (búsqueda de precios y cálculo)."
+                    "Seguí con el flujo: si falta algún dato comercial, "
+                    "pedilo; si ya están todos, avanzá al Paso 2 "
+                    "(búsqueda de precios y cálculo)."
                 )
                 # NOTA: NO limpiamos plan_bytes — Claude necesita el plano +
                 # planilla (material, pileta, ubicación) para el Paso 2. Sin
@@ -3505,7 +3511,18 @@ class AgentService:
             result = await db.execute(select(Quote).where(Quote.id == quote_id))
             current_quote = result.scalar_one_or_none()
             if current_quote:
-                extracted = _extract_quote_info(user_message)
+                # PR #75 — skip extraction on DUAL_READ_CONFIRMED turn.
+                # El early handler reemplaza user_message con un texto interno
+                # ("si falta cliente o proyecto, pedilos; si ya están..."). El
+                # regex de cliente matchea "cliente o proyecto" y .title() lo
+                # transforma en client_name="O Proyecto", contaminando el
+                # quote. En ese turno el operador NO ingresó nuevo texto;
+                # client_name / project ya fueron extraídos en turnos previos.
+                if _just_confirmed_dual_read:
+                    extracted = {}
+                    logging.info("[save] skip _extract_quote_info on DUAL_READ_CONFIRMED turn")
+                else:
+                    extracted = _extract_quote_info(user_message)
                 # DB columns are VARCHAR(500). Truncate defensively to prevent
                 # StringDataRightTruncationError when regex over-extracts a long span
                 # (e.g. operator paste with no comma delimiter hitting end-of-message).
