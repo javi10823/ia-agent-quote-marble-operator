@@ -453,6 +453,22 @@ def reconcile(opus: dict, sonnet: dict) -> dict:
     opus_sectores = opus.get("sectores", [])
     sonnet_sectores = sonnet.get("sectores", [])
 
+    # PR #69 — sector dedup: si Opus devuelve 1 sector y Sonnet devuelve 1
+    # sector pero con IDs distintos (caso común: Opus="cocina", Sonnet=
+    # "lavadero" para la misma mesada en L), son EL MISMO sector con
+    # labeling diferente. Mergear al id de Opus (usualmente más conservador)
+    # para que la reconciliación de tramos se haga entre los dos modelos
+    # en vez de mostrarlos como sectores duplicados separados.
+    if len(opus_sectores) == 1 and len(sonnet_sectores) == 1:
+        o_id = opus_sectores[0].get("id", "sector")
+        s_id = sonnet_sectores[0].get("id", "sector")
+        if o_id != s_id:
+            logger.info(
+                f"[dual-read] sector dedup: Opus id='{o_id}' vs Sonnet id='{s_id}' "
+                f"→ unificando ambos como '{o_id}'."
+            )
+            sonnet_sectores = [dict(sonnet_sectores[0], id=o_id)]
+
     # Match sectors by id
     opus_by_id = {s.get("id", f"s{i}"): s for i, s in enumerate(opus_sectores)}
     sonnet_by_id = {s.get("id", f"s{i}"): s for i, s in enumerate(sonnet_sectores)}
@@ -466,9 +482,33 @@ def reconcile(opus: dict, sonnet: dict) -> dict:
         os = opus_by_id.get(sid, {})
         ss = sonnet_by_id.get(sid, {})
 
+        # PR #69 — tramo dedup análogo al de sectores: si ambos modelos
+        # reportan la misma cantidad de tramos pero con IDs distintos
+        # (caso común: Opus="tramo_largo"+"retorno", Sonnet="principal"+
+        # "retorno"), tratarlos como los mismos tramos por posición.
+        _opus_tramos_raw = os.get("tramos", []) or []
+        _sonnet_tramos_raw = ss.get("tramos", []) or []
+        if (
+            len(_opus_tramos_raw) > 0
+            and len(_opus_tramos_raw) == len(_sonnet_tramos_raw)
+        ):
+            _sonnet_tramos_norm = []
+            for _idx, _st_raw in enumerate(_sonnet_tramos_raw):
+                _opus_id = _opus_tramos_raw[_idx].get("id") if _idx < len(_opus_tramos_raw) else None
+                _sonnet_id = _st_raw.get("id")
+                if _opus_id and _sonnet_id and _opus_id != _sonnet_id:
+                    logger.info(
+                        f"[dual-read] tramo dedup [{sid}]: Opus id='{_opus_id}' "
+                        f"vs Sonnet id='{_sonnet_id}' → unificando como '{_opus_id}'."
+                    )
+                    _sonnet_tramos_norm.append(dict(_st_raw, id=_opus_id))
+                else:
+                    _sonnet_tramos_norm.append(_st_raw)
+            _sonnet_tramos_raw = _sonnet_tramos_norm
+
         # Match tramos by id
-        o_tramos = {t.get("id", f"t{i}"): t for i, t in enumerate(os.get("tramos", []))}
-        s_tramos = {t.get("id", f"t{i}"): t for i, t in enumerate(ss.get("tramos", []))}
+        o_tramos = {t.get("id", f"t{i}"): t for i, t in enumerate(_opus_tramos_raw)}
+        s_tramos = {t.get("id", f"t{i}"): t for i, t in enumerate(_sonnet_tramos_raw)}
         all_tramo_ids = list(dict.fromkeys(list(o_tramos.keys()) + list(s_tramos.keys())))
 
         rec_tramos = []
