@@ -1226,6 +1226,106 @@ class AgentService:
                 logging.error(f"[dual-read] Confirmation handler failed: {e}", exc_info=True)
                 # Continuar con el mensaje original — Claude intentará responder
 
+        # ── PR #79 — Handle chat-based modification of the dual_read card ──
+        # Si existe un dual_read_result no confirmado + operador escribe
+        # algo que parece pedir una edición (keywords agregar/sacar/modific +
+        # zócalo/mesada/tramo) → procesar como patch y re-emitir la card.
+        try:
+            from app.modules.agent.card_editor import (
+                is_card_modification_message,
+                extract_card_patch,
+                apply_card_patch,
+                format_patch_summary,
+            )
+            if (
+                not _just_confirmed_dual_read
+                and user_message
+                and is_card_modification_message(user_message)
+            ):
+                _cm_q = await db.execute(select(Quote).where(Quote.id == quote_id))
+                _cm_quote = _cm_q.scalar_one_or_none()
+                _cm_bd = (_cm_quote.quote_breakdown or {}) if _cm_quote else {}
+                _existing_card = _cm_bd.get("dual_read_result")
+                _already_confirmed_cm = bool(
+                    _cm_bd.get("verified_context") or _cm_bd.get("measurements_confirmed")
+                )
+                if (
+                    _existing_card
+                    and not _existing_card.get("error")
+                    and not _already_confirmed_cm
+                ):
+                    logging.info(f"[card-editor] Detected modification intent for {quote_id}")
+                    yield {"type": "action", "content": "✏️ Aplicando cambios al card..."}
+                    _ops = await extract_card_patch(user_message, _existing_card)
+                    if not _ops:
+                        # Parse falló o LLM no identificó ops — preguntar de vuelta.
+                        _fallback = (
+                            "No entendí bien el cambio. ¿Podés detallar qué pieza "
+                            "(zócalo / mesada / sector), dónde (qué tramo) y qué "
+                            "medidas? Ej: 'agregá zócalo lateral_der de 0.60 ml × "
+                            "0.07 m en el tramo L-retorno'."
+                        )
+                        yield {"type": "text", "content": _fallback}
+                        yield {"type": "done", "content": ""}
+                        # Persist user turn + assistant reply en historial
+                        try:
+                            _turn = [
+                                {"role": "user", "content": [{"type": "text", "text": user_message}]},
+                                {"role": "assistant", "content": _fallback},
+                            ]
+                            await db.execute(
+                                update(Quote).where(Quote.id == quote_id).values(
+                                    messages=list(_cm_quote.messages or []) + _turn
+                                )
+                            )
+                            await db.commit()
+                        except Exception as _e_t:
+                            logging.warning(f"[card-editor] persist turn failed: {_e_t}")
+                        return
+
+                    _patched_card, _applied, _errors = apply_card_patch(
+                        dict(_existing_card), _ops
+                    )
+                    # Guardar el card patcheado + re-emitir.
+                    try:
+                        _cm_bd_new = dict(_cm_bd)
+                        _cm_bd_new["dual_read_result"] = _patched_card
+                        await db.execute(
+                            update(Quote).where(Quote.id == quote_id).values(
+                                quote_breakdown=_cm_bd_new
+                            )
+                        )
+                        await db.commit()
+                    except Exception as _e_s:
+                        logging.warning(f"[card-editor] save patched card failed: {_e_s}")
+
+                    _summary = format_patch_summary(_applied, _errors)
+                    yield {"type": "text", "content": _summary}
+                    yield {
+                        "type": "dual_read_result",
+                        "content": json.dumps(_patched_card, ensure_ascii=False),
+                    }
+                    yield {"type": "done", "content": ""}
+
+                    # Persist turn
+                    try:
+                        _turn = [
+                            {"role": "user", "content": [{"type": "text", "text": user_message}]},
+                            {"role": "assistant", "content": _summary},
+                        ]
+                        await db.execute(
+                            update(Quote).where(Quote.id == quote_id).values(
+                                messages=list(_cm_quote.messages or []) + _turn
+                            )
+                        )
+                        await db.commit()
+                    except Exception as _e_t2:
+                        logging.warning(f"[card-editor] persist patched turn failed: {_e_t2}")
+                    return
+        except Exception as e:
+            logging.warning(f"[card-editor] handler exception (non-fatal): {e}", exc_info=True)
+            # Fall through al flujo normal de Claude.
+
         # Build system prompt per request with contextual loading
         has_plan = plan_bytes is not None and plan_filename is not None
 
