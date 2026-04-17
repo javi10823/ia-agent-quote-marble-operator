@@ -39,6 +39,11 @@ Antes de cualquier otra lectura, determiná qué TIPO de plano es esto:
 - `"mixed"` → Plano con múltiples vistas (planta + elevación + detalle).
   Tratar cada vista según su tipo.
 
+- `"render_fotorrealista"` → Imagen fotorrealista (Blender/V-Ray, texturas
+  y luces tipo foto, banquetas/vegetación, **sin cotas ni hatching**). NO
+  extraer medidas. Solo contexto de materiales/electrodomésticos. Si no
+  hay planta técnica aparte → PEDIRLA antes de calcular.
+
 - `"unknown"` → Si realmente no es claro. Usar reglas conservadoras de
   planta y flaguear alta `requires_human_review`.
 
