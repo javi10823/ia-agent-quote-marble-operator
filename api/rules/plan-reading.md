@@ -163,7 +163,9 @@ texto — el plano ES el brief.
 >    entre 0.05 y 0.50 m, que no esté etiquetada como "prof" ni como otra
 >    cosa y no coincida con la profundidad de mesada.
 > 3. Leyenda/rotulado del plano (bloque de notas general).
-> 4. Default = **5 cm (0.05 m)** solo si no hay NINGÚN valor leíble.
+> 4. Default = valor de `catalog/config.json → measurements.default_zocalo_height`
+>    (actualmente **7 cm / 0.07 m**, editable desde el panel de Configuración
+>    del operador) solo si no hay NINGÚN valor leíble.
 >
 > ⛔ Si en el plano hay cotas verticales en los bordes (ej: `0.10 m`
 > arriba y/o abajo del rectángulo de mesada) y NO coinciden con la prof,
