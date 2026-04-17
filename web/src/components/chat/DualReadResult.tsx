@@ -119,34 +119,25 @@ function EditableNumber({
 }) {
   const editable = field.status === "CONFLICTO" || field.status === "DUDOSO";
   if (!editable) return <>{field.valor.toFixed(2)}</>;
+  // PR #69 — UX simplificado: una sola celda editable con el valor
+  // reconciliado. Tooltip revela Opus/Sonnet originales si el operador
+  // quiere transparencia. Antes se mostraban 3 cajitas (O:X, S:Y, input)
+  // por cada medida, generando ruido visual.
+  const tooltipParts: string[] = [];
+  if (field.opus != null) tooltipParts.push(`Opus: ${field.opus}`);
+  if (field.sonnet != null) tooltipParts.push(`Sonnet: ${field.sonnet}`);
+  const tooltip = tooltipParts.length
+    ? `Reconciliado — ${tooltipParts.join(" · ")}`
+    : "Valor reconciliado";
   return (
-    <div className="inline-flex items-center gap-1.5 justify-end flex-wrap">
-      {field.opus != null && (
-        <button
-          className="px-1.5 py-0.5 rounded text-[10px] border border-purple-400/30 text-purple-400 hover:bg-purple-400/10"
-          onClick={() => onEdit(field.opus!)}
-          title="Usar valor Opus"
-        >
-          O:{field.opus}
-        </button>
-      )}
-      {field.sonnet != null && (
-        <button
-          className="px-1.5 py-0.5 rounded text-[10px] border border-blue-400/30 text-blue-400 hover:bg-blue-400/10"
-          onClick={() => onEdit(field.sonnet!)}
-          title="Usar valor Sonnet"
-        >
-          S:{field.sonnet}
-        </button>
-      )}
-      <input
-        type="number"
-        step="0.01"
-        defaultValue={field.valor}
-        className="w-16 px-1.5 py-0.5 bg-s1 border border-b2 rounded text-[11px] text-t1 text-right font-mono"
-        onChange={(e) => onEdit(parseFloat(e.target.value) || 0)}
-      />
-    </div>
+    <input
+      type="number"
+      step="0.01"
+      defaultValue={field.valor}
+      title={tooltip}
+      className="w-16 px-1.5 py-0.5 bg-s1 border border-b2 rounded text-[11px] text-t1 text-right font-mono hover:border-b1/60 focus:border-acc/50 outline-none"
+      onChange={(e) => onEdit(parseFloat(e.target.value) || 0)}
+    />
   );
 }
 
