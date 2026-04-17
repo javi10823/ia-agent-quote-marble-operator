@@ -55,8 +55,12 @@ Un zócalo existe SOLO si el plano muestra:
 Si el plano no muestra cota de zócalo para un lado → ese lado no tiene zócalo.
 No preguntar, no inferir, no completar.
 
-Altura default: 0.07 m si se indica "zócalos 7 cm" en características generales.
-Si no hay altura especificada → anotá en ambiguedades.
+Altura default del sistema: leer desde `catalog/config.json →
+measurements.default_zocalo_height` (valor actual 0.07 m, editable por el
+operador desde el panel de Configuración). Usar ESE valor cuando el plano
+indica "zócalos" en características generales sin especificar alto.
+Si no hay altura especificada y tampoco default configurado → anotá en
+`ambiguedades` y preguntá.
 
 ⚠️ IMPORTANTE — ESPECIFICACIONES EXPLÍCITAS:
 Si el prompt incluye un bloque "ESPECIFICACIONES EXPLÍCITAS DEL PLANO", ese
@@ -274,7 +278,7 @@ Patrón típico:
 Regla de lectura: **cualquier cota numérica suelta entre 0.05 y 0.50 m**
 ubicada en el borde del rectángulo de mesada (y que NO coincida con la
 profundidad de la misma) se interpreta como **alto de zócalo** para el lado
-donde aparece. Usarla en vez del default de 5 cm.
+donde aparece. Usarla en vez del default del sistema.
 
 Si el plano tiene además la leyenda explícita `ZÓCALOS H=10cm`, esa leyenda
 manda y aplica a todos los lados con zócalo.

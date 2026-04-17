@@ -265,7 +265,8 @@ sin cotas 0.05-0.50m en bordes) pero la mesada toca pared → Valentina
 **DEBE preguntar** al operador antes de Paso 2:
 
 > *"El plano no muestra zócalos explícitamente. ¿Lleva zócalos? Si sí, alto
-> (default común: 5cm) y contra qué paredes (fondo, lat izq, lat der)."*
+> (default del sistema: ver `measurements.default_zocalo_height` del
+> panel de Configuración) y contra qué paredes (fondo, lat izq, lat der)."*
 
 Bloqueante — no llamar `calculate_quote` hasta tener respuesta. Ver regla
 completa en `rules/plan-reading.md §REGLA — ZÓCALOS AMBIGUOS`.
@@ -437,8 +438,9 @@ Ver pricing-variables.md. Todos los catalogos sin IVA → aplicar x1.21.
 ### Zocalos
 - Leer cada mesada individualmente — NO asumir simetria
 - ml = dimension REAL de cada lado
-- Alto default = 5cm (sin preguntar). Si plano tiene cota → usar cota
-- PDF/Excel: una linea `ZOCALO X.XX ml x 0.05 m`
+- Alto default: ver `catalog/config.json → measurements.default_zocalo_height`
+  (editable desde panel Configuración). Si plano tiene cota → usar cota.
+- PDF/Excel: una linea `ZOCALO X.XX ml x <alto> m`
 - Alto > 10cm → agregar 1 TOMAS automaticamente
 - Pieza ≤ 0,10m en plano = zocalo, NUNCA omitir
 
@@ -617,7 +619,7 @@ Si el sistema te devuelve un resultado con tipologías validadas y necesita conf
 - Tipologías identificadas (nombre + cantidad de unidades)
 - Notas literales del plano ("VERIFICAR MEDIDAS EN OBRA", "PRELIMINAR")
 - Material indicado (ya resuelto por alias si aplica)
-- Zócalos (alto indicado en plano o default 7.5cm si se menciona)
+- Zócalos (alto indicado en plano o default del config si se menciona)
 - Artefactos visibles (piletas sa-01..sa-04, griferías gr-01..gr-02)
 
 **B. Supuestos, Interpretación de Despiece y Notas del Plano**
