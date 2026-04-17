@@ -1,6 +1,21 @@
 import { memo, useMemo } from "react";
 import clsx from "clsx";
 import type { UIMessage } from "@/app/quote/[id]/page";
+import CopyButton from "./CopyButton";
+
+// Heurística para etiquetar el botón copiar según el contenido: Paso 2 tiene
+// "Grand Total" / múltiples "$", Paso 1 tiene tabla de piezas sin precios.
+function copyLabel(content: string): string {
+  if (/grand total/i.test(content) || /total mo/i.test(content)) return "Copiar Paso 2";
+  if (/\|[^\n]*pieza/i.test(content) || /despiece/i.test(content)) return "Copiar Paso 1";
+  return "Copiar";
+}
+
+function hasCopyableContent(content: string): boolean {
+  // Tabla markdown detectable: al menos 2 líneas con pipes.
+  const pipeLines = content.split("\n").filter((l) => l.trim().startsWith("|") && l.trim().endsWith("|"));
+  return pipeLines.length >= 2;
+}
 
 interface Props { message: UIMessage; actionText?: string; }
 
@@ -87,8 +102,19 @@ const Block = memo(function Block({ block, isLast, isStreaming, actionText }: { 
     );
   }
 
+  const showCopy = !isStreaming && hasCopyableContent(block.content);
   return (
-    <div className={clsx("px-[18px] py-3.5 bg-s2 text-[15px] leading-[1.7] text-t2", !isLast && "border-b border-b1")}>
+    <div className={clsx("relative px-[18px] py-3.5 bg-s2 text-[15px] leading-[1.7] text-t2", !isLast && "border-b border-b1")}>
+      {showCopy && (
+        <>
+          <div className="absolute top-3 right-3 hidden sm:block z-10">
+            <CopyButton text={block.content} label={copyLabel(block.content)} />
+          </div>
+          <div className="absolute top-2 right-2 sm:hidden z-10">
+            <CopyButton text={block.content} label={copyLabel(block.content)} iconOnly />
+          </div>
+        </>
+      )}
       <FormattedText text={block.content} isStreaming={isStreaming} />
     </div>
   );
