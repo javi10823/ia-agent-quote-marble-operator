@@ -279,6 +279,27 @@ class TestCalculateQuote:
         assert result["total_ars"] > 0
         assert len(result["mo_items"]) >= 3  # pileta + anafe + colocación + flete
 
+    def test_pileta_qty_zero_skips_item(self):
+        """PR #82 — Si Valentina pasa pileta=X + pileta_qty=0 (intento de
+        remover), el calculator debe tratarlo como 'sin pileta'. Antes,
+        max(1, 0)=1 forzaba el ítem igual (bug fantasma)."""
+        result = calculate_quote({
+            "client_name": "Test",
+            "project": "Cocina",
+            "material": "Silestone Blanco Norte",
+            "pieces": [{"description": "Mesada", "largo": 2.0, "prof": 0.6}],
+            "localidad": "Rosario",
+            "colocacion": False,
+            "pileta": "empotrada_cliente",
+            "pileta_qty": 0,  # intento de remover
+            "plazo": "30 días",
+        })
+        assert result["ok"] is True
+        descriptions = [mo["description"].lower() for mo in result["mo_items"]]
+        assert not any("pileta" in d for d in descriptions), (
+            f"pileta_qty=0 debe omitir el ítem aunque pileta!=None. MO: {descriptions}"
+        )
+
     def test_quote_without_pileta_anafe(self):
         result = calculate_quote({
             "client_name": "Test",
