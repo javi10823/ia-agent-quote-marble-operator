@@ -177,6 +177,13 @@ Hatching/rayado = pared → NO canto expuesto → NO frentin. Lados sin tachar =
 - "DESAGUE" sin modelo → apoyo (AGUJEROAPOYO) | Con modelo → empotrada (PEGADOPILETA)
 - 3 puntitos junto a ovalo → empotrada (PEGADOPILETA)
 
+### ⛔ PILETA SIMPLE vs DOBLE
+
+2 cavidades/óvalos dentro del mismo rectángulo = **doble**. 1 cavidad =
+**simple**. Pasar `sink_type.basin_count`. Señales de doble: 2 óvalos
+contiguos, línea divisoria central, texto "doble bacha". Si brief y plano
+no coinciden o el plano es ambiguo → PREGUNTAR "¿bacha simple o doble?".
+
 ### ⛔ Modelo de pileta — NUNCA inventar
 - **SIEMPRE** buscar el modelo exacto en `sinks.json` con `catalog_lookup("sinks", sku)`
 - Si el plano/enunciado dice un nombre que no matchea exacto → hacer **fuzzy match**:

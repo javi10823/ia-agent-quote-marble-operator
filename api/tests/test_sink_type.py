@@ -39,6 +39,27 @@ class TestSinkTypePost:
         assert q["sink_type"]["mount_type"] == "abajo"
 
     @pytest.mark.asyncio
+    async def test_create_quote_with_sink_type_doble(self, client):
+        """basin_count=doble (caso Bernardi: pileta con 2 bachas) se persiste."""
+        from unittest.mock import patch
+        with patch("app.modules.quote_engine.router.upload_to_drive", return_value={"ok": True, "drive_url": "https://drive.test"}):
+            resp = await client.post("/api/v1/quote", json={
+                "client_name": "Érica Bernardi",
+                "project": "Cocina",
+                "material": "Silestone Blanco Norte",
+                "pieces": [{"description": "Mesada", "largo": 2.05, "prof": 0.60}],
+                "localidad": "Rosario",
+                "plazo": "30 dias",
+                "pileta": "empotrada_cliente",
+                "sink_type": {"basin_count": "doble", "mount_type": "abajo"},
+            })
+
+        assert resp.status_code == 200
+        qid = resp.json()["quotes"][0]["quote_id"]
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["sink_type"]["basin_count"] == "doble"
+
+    @pytest.mark.asyncio
     async def test_create_quote_without_sink_type(self, client):
         """Omitting sink_type should not break anything."""
         from unittest.mock import patch
