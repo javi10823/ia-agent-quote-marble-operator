@@ -442,6 +442,29 @@ async def validate_quote(
 #   - Solo actualiza las URLs de archivos (pdf_url, excel_url, drive_url,
 #     drive_file_id) y appendea un entry a change_history para auditoría.
 
+def _build_regenerate_doc_data(quote: Quote, bd: dict) -> dict:
+    """Prep doc_data for /regenerate: start from the cached breakdown and
+    override the fields that the operator can edit manually (no recalc).
+
+    `setdefault` for the rest — legacy breakdowns that might be missing keys
+    get filled from the Quote columns; newer breakdowns keep their values.
+    """
+    doc_data = dict(bd)
+    # Editable-from-detail-view fields: the operator may have edited these via
+    # PATCH /quotes/:id after the breakdown was cached. Force-override so the
+    # regenerated PDF/Excel reflects the latest values.
+    doc_data["client_name"] = quote.client_name
+    doc_data["project"] = quote.project
+    doc_data["notes"] = quote.notes
+    doc_data.setdefault("material_name", quote.material)
+    doc_data.setdefault("total_ars", quote.total_ars)
+    doc_data.setdefault("total_usd", quote.total_usd)
+    doc_data.setdefault("discount_pct", 0)
+    doc_data.setdefault("sectors", [])
+    doc_data.setdefault("mo_items", [])
+    return doc_data
+
+
 @router.post("/quotes/{quote_id}/regenerate")
 async def regenerate_quote_docs(
     quote_id: str,
@@ -464,17 +487,7 @@ async def regenerate_quote_docs(
     from app.modules.agent.tools.document_tool import generate_documents
     from app.modules.agent.tools.drive_tool import upload_to_drive, delete_drive_file
 
-    # Same fallback pattern as /validate (line 370+): breakdown is source of
-    # truth, fill only fields that legacy quotes might not have.
-    doc_data = dict(bd)
-    doc_data.setdefault("client_name", quote.client_name)
-    doc_data.setdefault("project", quote.project)
-    doc_data.setdefault("material_name", quote.material)
-    doc_data.setdefault("total_ars", quote.total_ars)
-    doc_data.setdefault("total_usd", quote.total_usd)
-    doc_data.setdefault("discount_pct", 0)
-    doc_data.setdefault("sectors", [])
-    doc_data.setdefault("mo_items", [])
+    doc_data = _build_regenerate_doc_data(quote, bd)
 
     doc_result = await generate_documents(quote_id, doc_data)
     if not doc_result.get("ok"):

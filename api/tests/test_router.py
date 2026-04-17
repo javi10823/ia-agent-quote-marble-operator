@@ -375,6 +375,79 @@ class TestPatchQuote:
             assert detail[k] == v
 
 
+# ── /regenerate helper: ediciones manuales pisan breakdown cacheado ─────────
+
+class TestRegenerateDocDataBuild:
+    """_build_regenerate_doc_data should override client_name/project/notes
+    from the Quote column (manual edits via detail view) rather than trust
+    the stale copies inside the cached breakdown."""
+
+    def test_overrides_client_name_project_notes_from_quote(self):
+        from app.modules.agent.router import _build_regenerate_doc_data
+        from app.models.quote import Quote
+
+        quote = Quote(
+            id="q1",
+            client_name="Natalia (editada)",
+            project="Echesortu (editado)",
+            material="Granito Negro Boreal",
+            notes="Nota editada manualmente",
+            total_ars=100000,
+            total_usd=100,
+        )
+        stale_bd = {
+            "client_name": "Nombre viejo",
+            "project": "Proyecto viejo",
+            "notes": "Nota vieja",
+            "material_name": "Granito Negro Boreal",
+            "sectors": [{"label": "cocina", "pieces": ["mesada"]}],
+            "mo_items": [],
+            "total_ars": 100000,
+            "total_usd": 100,
+        }
+
+        data = _build_regenerate_doc_data(quote, stale_bd)
+
+        assert data["client_name"] == "Natalia (editada)"
+        assert data["project"] == "Echesortu (editado)"
+        assert data["notes"] == "Nota editada manualmente"
+        # El resto del breakdown queda intacto
+        assert data["sectors"] == stale_bd["sectors"]
+        assert data["material_name"] == "Granito Negro Boreal"
+        assert data["total_ars"] == 100000
+
+    def test_empty_notes_on_quote_clears_stale_notes(self):
+        """Si el operador borra notas manualmente (notes=None o ''),
+        no deben quedar las viejas del breakdown."""
+        from app.modules.agent.router import _build_regenerate_doc_data
+        from app.models.quote import Quote
+
+        quote = Quote(id="q1", client_name="X", project="Y", notes=None)
+        stale_bd = {"client_name": "A", "project": "B", "notes": "vieja"}
+
+        data = _build_regenerate_doc_data(quote, stale_bd)
+        assert data["notes"] is None
+
+    def test_setdefault_fills_legacy_breakdowns_missing_keys(self):
+        """Breakdowns viejos pueden no tener sectors/mo_items/totals — fallback."""
+        from app.modules.agent.router import _build_regenerate_doc_data
+        from app.models.quote import Quote
+
+        quote = Quote(
+            id="q1", client_name="X", project="Y",
+            material="Silestone", total_ars=50000, total_usd=50, notes=None,
+        )
+        legacy_bd = {}
+
+        data = _build_regenerate_doc_data(quote, legacy_bd)
+        assert data["material_name"] == "Silestone"
+        assert data["total_ars"] == 50000
+        assert data["total_usd"] == 50
+        assert data["discount_pct"] == 0
+        assert data["sectors"] == []
+        assert data["mo_items"] == []
+
+
 # ── X-API-Key auth fallback ─────────────────────────────────────────────────
 
 class TestApiKeyAuth:
