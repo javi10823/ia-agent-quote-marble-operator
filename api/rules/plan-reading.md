@@ -198,6 +198,36 @@ anafe/hornallas **empotradas en mesada** → MO obligatoria `anafe=True` +
 (o `empotrada_johnson` si es Johnson). No olvidar ninguno de los dos aunque
 el brief no los repita en texto — el plano ES el brief.
 
+### ⛔ REGLA — MÚLTIPLES ANAFES EN LA MISMA COCINA
+
+En una cocina puede haber **más de un anafe empotrado** — típicamente uno a
+gas y otro eléctrico (o vitrocerámica), dibujados separados pero en la misma
+mesada. **Contarlos como unidades independientes.**
+
+**Cómo detectarlos:**
+- Cada anafe = 1 grupo de hornallas dibujado en un rectángulo/cuadrado propio
+  dentro de la mesada (típicamente 4-6 círculos en grilla).
+- Etiquetas visibles: `"anafe a gas"`, `"anafe eléctrico"`, `"vitrocerámica"`,
+  `"inducción"`, o figuras separadas una al lado de la otra / una arriba
+  de la otra sin contigüidad.
+- Si en el plano hay **2 rectángulos con hornallas separados por un gap o
+  por una línea → son 2 anafes, no uno más ancho**.
+
+**Regla de cotización:**
+- `anafe = True`
+- `anafe_qty = N` (cantidad total de anafes detectados en esta cocina)
+- El calculator ya agrega `N` agujeros en la MO (línea "Agujero anafe" × N).
+
+**Cuándo preguntar:**
+- Si detectás 2+ símbolos de anafe en el plano **y el brief no los menciona
+  explícitamente** → PREGUNTAR confirmando:
+  > "Veo 2 anafes en el plano (gas + eléctrico / vitrocerámica). ¿Los cotizo
+  > ambos como anafes empotrados en esta mesada?"
+- Si el brief dice "anafe" (singular) pero el plano muestra 2 → PREGUNTAR
+  igual, es discrepancia.
+- Si el brief dice "2 anafes" / "anafe gas + eléctrico" y el plano lo
+  confirma → **NO preguntar**, cotizar directo con `anafe_qty=2`.
+
 ### ⛔ EXCEPCIÓN — Cocina entera (horno + anafe free-standing)
 
 Si el plano muestra una **cocina entera free-standing** (horno con puerta
