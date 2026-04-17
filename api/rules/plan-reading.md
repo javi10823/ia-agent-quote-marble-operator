@@ -30,6 +30,33 @@ Cuando el brief dice **"con zócalos"** / **"lleva zócalos"** sin aclarar pared
 
 Si el brief es ambiguo en OTRA dirección (ej: "sin zócalos" / "lleva zócalos
 laterales" / cotas de zócalo en el plano) → seguir esa instrucción específica.
+
+### ⛔ REGLA DURA — Zócalos SOLO contra PARED
+
+Los zócalos existen **exclusivamente contra muros de mampostería**. NUNCA
+agregar un zócalo en un lado donde:
+
+- Hay un **electrodoméstico** (heladera, lavavajillas, lavarropa, anafe free-
+  standing) que ocupa ese lado. El zócalo no puede apoyarse contra un
+  appliance porque éste se retira/reemplaza.
+- El lado es un **borde libre** (la mesada termina sin pared atrás — ej:
+  borde frontal hacia el usuario, o extremo de una isla).
+- El lado es una **unión entre tramos** (donde dos mesadas se conectan —
+  ver regla de L/U: el lado de unión NO lleva zócalo).
+
+Cuando el plano muestra un appliance (heladera grande, lavarropa, estufa)
+contiguo a un extremo de la mesada → ese extremo NO lleva zócalo, aunque
+el operador haya dicho "con zócalos" genérico.
+
+Ejemplo plano 2 (render 3D cocina Natalia):
+- Tramo 1: mesada sobre cajonero + horno + lavarropa (1.703m total).
+- Tramo 2: L-retorno sobre lavadero (1.61m).
+- Heladera al extremo IZQUIERDO del tramo 1 (free-standing).
+- ✅ Zócalo trasero tramo 1 (1.703m) — contra pared.
+- ✅ Zócalo trasero tramo 2 (1.61m) — contra pared lateral.
+- ❌ NO zócalo lateral_izq del tramo 1 (ahí está la heladera, no pared).
+- ❌ NO zócalo lateral_der del tramo 2 (borde libre).
+- ❌ NO zócalo en el lado de unión L.
 - ⛔ Ejemplo cocina en L: tramo 1 (1.72×0.75) + tramo 2 (0.60×1.55):
   - Zocalo fondo tramo 1 (inferior): **1.74ml** (cota del plano)
   - Zocalo fondo tramo 2: **1.55ml** (va por la pared del fondo del tramo 2)

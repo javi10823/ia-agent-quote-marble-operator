@@ -313,6 +313,37 @@ Excepciones (NO preguntar, calcular directo):
 
 ---
 
+## ⛔ REGLA — ZÓCALOS SOLO CONTRA PARED (nunca contra appliance)
+
+Un zócalo existe **exclusivamente contra un muro de mampostería**. NUNCA se
+coloca del lado donde hay:
+- Heladera, lavavajillas, lavarropa, anafe free-standing
+- Borde libre (la mesada termina sin pared atrás)
+- Unión entre tramos de una L/U (la unión no toca pared)
+
+Incluso cuando el operador dice "con zócalos" genérico, si el plano muestra
+un electrodoméstico contiguo a un extremo → ese extremo queda **sin zócalo**.
+
+Ver regla completa en `rules/plan-reading.md §REGLA DURA — Zócalos SOLO contra PARED`.
+
+---
+
+## ⛔ REGLA — RENDER 3D / ISOMÉTRICO
+
+Si el plano es un **render 3D / SketchUp-style** (no planta arquitectónica):
+- **1 solo sector** por cocina. NO dividir en "cocina" + "lavadero" / "cocina"
+  + "isla" aunque visualmente cambien los electrodomésticos. Es UNA mesada
+  continua con N tramos.
+- **Cotas consecutivas = tramos continuos** mientras no haya corner físico
+  visible. Ej: "423mm + 1280mm" sin corner = UN tramo de 1.703m, no dos.
+- **Tramos = segmentos separados por corners (L/U)**, no por cada appliance.
+- Ignorar electrodomésticos para el cálculo de mesada; lo que importa es el
+  largo total de cada tramo.
+
+Ver ejemplo canónico en `rules/plan-reader-v1.md §REGLA — RENDER 3D`.
+
+---
+
 ## ⛔ REGLA — PROFUNDIDAD NO ESPECIFICADA EN PLANO
 
 Cuando el plano es **vista isométrica/3D** o solo muestra largos (típico

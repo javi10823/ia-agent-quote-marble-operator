@@ -40,6 +40,78 @@ NUNCA asumir prof silenciosamente sin ambigüedad explícita.
 
 ---
 
+## ⛔ REGLA — RENDER 3D / ISOMÉTRICO vs. PLANTA
+
+Si el plano es un **render 3D / vista isométrica / SketchUp-style** (no es
+una planta arquitectónica cenital), aplicar estas reglas:
+
+**Señales de render 3D:**
+- Se ven electrodomésticos como objetos 3D (no símbolos 2D)
+- Perspectiva/proyección isométrica visible (líneas oblicuas)
+- Falta hatching de paredes
+- Cotas solo horizontales en el borde superior (largos), sin cotas de prof
+- No hay carátula técnica ni cuadro de rotulación
+
+**Reglas específicas:**
+
+1. **UN SOLO SECTOR por cocina.** El render muestra LA cocina entera. NO
+   dividir en "cocina" + "lavadero" por más que visualmente cambien los
+   electrodomésticos. Es UNA mesada continua con N tramos (típicamente
+   recta, L o U por el corner visible).
+
+2. **Tramos = segmentos entre cotas consecutivas**. Si hay cotas
+   "423mm + 1280mm + 1610mm" en el borde superior y hay UN corner
+   visible (mesada que dobla 90°):
+   - Los 2 primeros (423 + 1280 = 1.703m) son UN tramo continuo
+   - El último (1.610m) es el L-retorno después del corner
+   - **NO dividir por cada cota** — las cotas son mediciones parciales
+     de un tramo continuo, salvo que haya un quiebre físico entre ellas.
+
+3. **Ignorar electrodomésticos para el cálculo de mesada.** Lo que importa
+   es el LARGO TOTAL del tramo (suma de cotas parciales sobre ese tramo),
+   NO cuántos appliances ocupa. La stove + lavarropa no son "2 mesadas",
+   son UN tramo donde van apoyados.
+
+4. **Zócalos:** ver `plan-reading.md §REGLA DURA — Zócalos SOLO contra
+   PARED`. En renders 3D:
+   - Default "con zócalos" → zócalo trasero por tramo (contra la pared
+     del largo), con largo = suma de cotas del tramo.
+   - NO poner zócalo del lado donde hay una heladera/electrodoméstico
+     free-standing.
+   - NO poner zócalo en el lado de unión L/U.
+   - NO poner zócalo en bordes libres.
+
+5. **Frentín/faldón:** en render 3D no se ve la elevación. Si el operador
+   no lo menciona → no agregar. Si lo menciona → preguntar altura.
+
+**Ejemplo canónico — render 3D cocina en L (Natalia):**
+```
+Cotas superiores: 423mm + 1280mm + 1610mm
+Corner visible entre el 1280mm y el 1610mm (en el lavarropa).
+Heladera al extremo izquierdo (free-standing, fuera de mesada a su
+derecha). Lavadero al extremo derecho del L-retorno.
+```
+
+Lectura correcta:
+- 1 sector "cocina" (NO "cocina + lavadero").
+- 1 mesada en L con 2 tramos:
+  - Tramo 1 (horizontal, FULL con esquina): 1.703 × 0.60 m = 1.022 m²
+    (cajonero + horno + lavarropa).
+  - Tramo 2 (retorno vertical, NETO sin esquina): (1.610 - 0.60) × 0.60
+    = 1.010 × 0.60 = 0.606 m².
+- Zócalos: 2 traseros (contra la pared del fondo):
+  - Trasero tramo 1: 1.703 ml × 0.07 m.
+  - Trasero tramo 2: 1.610 ml × 0.07 m.
+- NO zócalo lateral contra heladera.
+- NO zócalo en la unión L.
+- NO zócalo en el borde libre derecho del retorno.
+
+⛔ **Error típico a evitar:** tratar "cocina" y "lavadero" como dos sectores
+separados. Son la misma mesada continua en L. El lavadero es parte de la
+cocina.
+
+---
+
 ## REGLA CRÍTICA — DIMENSIÓN DE PLACA vs. ML DE ZÓCALO
 
 Son dos medidas DISTINTAS. NUNCA las confundas.
