@@ -29,6 +29,15 @@ Determiná el tipo de mesada:
 **Pasada 4 — Validación**
 Verificá consistencia entre vistas. Si hay contradicción → anotá en ambiguedades.
 
+**Pasada 5 — Profundidad no leíble**
+Si el plano es vista isométrica/3D o no muestra cota de profundidad (típico
+en renders de cocina que solo marcan largos como "1280 mm", "1610 mm"):
+- **Asumir prof = 0.60 m** (estándar residencial).
+- Agregar a `ambiguedades` con tipo `DEFAULT`:
+  *"ASUMIDO: prof mesada = 0.60 m (estándar residencial). El plano no muestra
+  cota de profundidad. Confirmar con cliente."*
+NUNCA asumir prof silenciosamente sin ambigüedad explícita.
+
 ---
 
 ## REGLA CRÍTICA — DIMENSIÓN DE PLACA vs. ML DE ZÓCALO

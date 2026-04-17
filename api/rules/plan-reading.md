@@ -12,6 +12,24 @@
 - Rasterizar y revisar mesada por mesada antes de asignar lados
 - **CADA lado que toca pared lleva zocalo** — verificar cada lado individualmente
 - En mesadas en L: el lado donde los dos tramos se unen **NUNCA lleva zocalo** (es la union, no toca pared)
+
+### ⛔ DEFAULT cuando el operador dice "con zócalos" genérico (sin especificar paredes)
+
+Cuando el brief dice **"con zócalos"** / **"lleva zócalos"** sin aclarar paredes:
+- **Regla de negocio (D'Angelo):** zócalo va **contra la pared del LARGO de
+  la mesada** (el lado más largo, típicamente el trasero contra la pared del
+  fondo). NO preguntar — asumir esa pared.
+- Para **mesada recta**: 1 zócalo trasero de largo igual al largo de la mesada.
+- Para **mesada en L**: 1 zócalo trasero por tramo (2 en total), cada uno
+  del largo de su tramo.
+- Para **mesada en U**: 3 zócalos (trasero fondo + laterales izq/der), del
+  largo respectivo de cada tramo.
+- Alto: default del config (`measurements.default_zocalo_height`, actualmente 0.07m).
+- **NO agregar zócalos laterales** (contra paredes perpendiculares al largo)
+  salvo que el plano los muestre explícito o el operador los pida.
+
+Si el brief es ambiguo en OTRA dirección (ej: "sin zócalos" / "lleva zócalos
+laterales" / cotas de zócalo en el plano) → seguir esa instrucción específica.
 - ⛔ Ejemplo cocina en L: tramo 1 (1.72×0.75) + tramo 2 (0.60×1.55):
   - Zocalo fondo tramo 1 (inferior): **1.74ml** (cota del plano)
   - Zocalo fondo tramo 2: **1.55ml** (va por la pared del fondo del tramo 2)
@@ -255,6 +273,17 @@ Multiplicar m2 x cantidad. Numero suelto en PDF puede ser ruido — verificar co
 
 ### Profundidad edificio
 Sin cota explicita → 0.60m. Dos cotas horizontales = 2 largos de tramo, NO profundidad.
+
+### Profundidad no especificada en plano (residencial)
+Sin cota de profundidad en el plano (común en vistas isométricas/3D o cuando
+solo se ven los largos) → **asumir 0.60 m** Y **AGREGAR WARNING VISIBLE** al
+operador en Paso 1 del tipo:
+
+> *⚠️ ASUMIDO: prof mesada = 0.60 m (estándar residencial). El plano no
+> muestra cota de profundidad. Confirmar con el cliente si es otra medida.*
+
+⛔ NUNCA asumir 0.60 silenciosamente — el operador debe ver el warning
+explícito para poder corregir antes del cálculo.
 
 ### Agrupacion piezas iguales
 Mismas medidas → agrupar: `LARGO X PROF X CANT UNID`. Diferencia 1cm → lineas separadas.
