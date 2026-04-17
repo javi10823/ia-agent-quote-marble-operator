@@ -306,6 +306,74 @@ class TestPatchQuote:
         resp = await client.patch(f"/api/quotes/{qid}", json={})
         assert resp.status_code == 400
 
+    @pytest.mark.asyncio
+    async def test_patch_notes(self, client):
+        qid = (await client.post("/api/quotes")).json()["id"]
+        notes = "Medir in situ antes del corte.\nCliente prefiere filo recto."
+        resp = await client.patch(f"/api/quotes/{qid}", json={"notes": notes})
+        assert resp.status_code == 200
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["notes"] == notes
+
+    @pytest.mark.asyncio
+    async def test_patch_project(self, client):
+        qid = (await client.post("/api/quotes")).json()["id"]
+        resp = await client.patch(f"/api/quotes/{qid}", json={"project": "Cocina 1er piso"})
+        assert resp.status_code == 200
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["project"] == "Cocina 1er piso"
+
+    @pytest.mark.asyncio
+    async def test_patch_client_name_max_length_exceeded(self, client):
+        qid = (await client.post("/api/quotes")).json()["id"]
+        resp = await client.patch(
+            f"/api/quotes/{qid}",
+            json={"client_name": "x" * 501},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_patch_empty_string_replaces_value(self, client):
+        """Empty string is a valid write — operator can blank a field."""
+        qid = (await client.post("/api/quotes")).json()["id"]
+        await client.patch(f"/api/quotes/{qid}", json={"client_name": "Juan"})
+        await client.patch(f"/api/quotes/{qid}", json={"client_name": ""})
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["client_name"] == ""
+
+    @pytest.mark.asyncio
+    async def test_patch_bool_false_writes(self, client):
+        """Booleans set to False must persist (exclude_none=True must still include False)."""
+        qid = (await client.post("/api/quotes")).json()["id"]
+        await client.patch(f"/api/quotes/{qid}", json={"colocacion": True, "anafe": True})
+        await client.patch(f"/api/quotes/{qid}", json={"colocacion": False, "anafe": False})
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["colocacion"] is False
+        assert detail["anafe"] is False
+
+    @pytest.mark.asyncio
+    async def test_patch_all_editable_fields_together(self, client):
+        """Operator can PATCH the full editable set in one request."""
+        qid = (await client.post("/api/quotes")).json()["id"]
+        payload = {
+            "client_name": "Natalia",
+            "project": "Echesortu",
+            "material": "Granito Negro Boreal",
+            "client_phone": "341-5555555",
+            "client_email": "natalia@test.com",
+            "localidad": "Rosario",
+            "pileta": "empotrada_cliente",
+            "colocacion": True,
+            "anafe": False,
+            "notes": "Edificio de 2 plantas",
+        }
+        resp = await client.patch(f"/api/quotes/{qid}", json=payload)
+        assert resp.status_code == 200
+        assert set(resp.json()["updated"]) == set(payload.keys())
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        for k, v in payload.items():
+            assert detail[k] == v
+
 
 # ── X-API-Key auth fallback ─────────────────────────────────────────────────
 

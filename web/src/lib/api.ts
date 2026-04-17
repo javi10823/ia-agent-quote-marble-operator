@@ -38,6 +38,12 @@ export interface Quote {
   source: string | null;
   is_read: boolean;
   notes: string | null;
+  client_phone: string | null;
+  client_email: string | null;
+  localidad: string | null;
+  colocacion: boolean | null;
+  pileta: string | null;
+  anafe: boolean | null;
   sink_type: { basin_count: "simple" | "doble"; mount_type: "arriba" | "abajo" } | null;
   resumen_obra?: ResumenObraRecord | null;
   condiciones_pdf?: {
@@ -178,6 +184,33 @@ export async function deleteQuote(id: string): Promise<void> {
 export async function markQuoteAsRead(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/api/quotes/${id}/read`, { method: "PATCH", credentials: "include" });
   if (!res.ok) throw new Error("Error al marcar como leído");
+}
+
+export type QuoteEditablePatch = Partial<{
+  client_name: string;
+  project: string;
+  material: string;
+  client_phone: string;
+  client_email: string;
+  localidad: string;
+  notes: string;
+  pileta: string;
+  colocacion: boolean;
+  anafe: boolean;
+}>;
+
+export async function updateQuote(id: string, patch: QuoteEditablePatch): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/quotes/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+    credentials: "include",
+  });
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al actualizar presupuesto");
+  }
 }
 
 // ── Derive Material ─────────────────────────────────────────────────────────
