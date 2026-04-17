@@ -74,11 +74,34 @@ const STATUS_TITLE: Record<string, string> = {
   SOLO_OPUS: "Solo Opus detectó este valor",
 };
 
-function StatusIcon({ status }: { status: string }) {
+function StatusIcon({
+  status,
+  onRemove,
+}: {
+  status: string;
+  onRemove?: () => void;
+}) {
   const s = STATUS_STYLE[status] || STATUS_STYLE.CONFIRMADO;
+  const baseCls = `inline-grid place-items-center w-[18px] h-[18px] rounded-[5px] text-[10px] font-bold ${s.cls}`;
+  if (onRemove) {
+    // PR #56 — la X de zócalos no confirmados ahora es clickeable para
+    // remover el zócalo del despiece (caso típico: Dual Read sugirió un
+    // zócalo por nicho visible, pero en realidad ese lado no lleva).
+    return (
+      <button
+        type="button"
+        onClick={onRemove}
+        className={`${baseCls} cursor-pointer hover:opacity-80 hover:scale-110 transition-transform`}
+        title="Remover este zócalo"
+        aria-label="Remover este zócalo"
+      >
+        {s.char}
+      </button>
+    );
+  }
   return (
     <span
-      className={`inline-grid place-items-center w-[18px] h-[18px] rounded-[5px] text-[10px] font-bold ${s.cls}`}
+      className={baseCls}
       title={STATUS_TITLE[status] || status}
       aria-label={STATUS_TITLE[status] || status}
     >
@@ -187,6 +210,17 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
     });
   };
 
+  // PR #56 — remover un zócalo del despiece (click en la X del StatusIcon).
+  // Útil cuando Dual Read sugiere 3 zócalos por nicho visible pero en realidad
+  // uno de los lados no lleva (ej: lateral abierto).
+  const removeZocalo = (sectorIdx: number, tramoIdx: number, zIdx: number) => {
+    setEditedData((prev) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.sectores[sectorIdx].tramos[tramoIdx].zocalos.splice(zIdx, 1);
+      return next;
+    });
+  };
+
   // Totals
   let mesadasM2 = 0;
   let zocalosM2 = 0;
@@ -286,12 +320,18 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                     const hasMl = (z.ml ?? 0) > 0;
                     const needsReview = z.status === "CONFLICTO" || z.status === "DUDOSO";
                     if (!hasMl && !needsReview) return null;
+                    // PR #56 — habilitar X clickeable solo en zócalos no confirmados
+                    // (CONFLICTO/DUDOSO). Los confirmados mantienen el icono pasivo.
+                    const canRemove = z.status === "CONFLICTO" || z.status === "DUDOSO";
                     return (
                       <div
                         key={zi}
                         className="grid grid-cols-[22px_1fr_80px_80px_80px] items-center gap-3 px-5 py-2 text-[13px] font-mono tabular-nums border-t border-b1"
                       >
-                        <StatusIcon status={z.status} />
+                        <StatusIcon
+                          status={z.status}
+                          onRemove={canRemove ? () => removeZocalo(si, ti, zi) : undefined}
+                        />
                         <div className="font-sans text-t2 pl-4 relative">
                           <span className="absolute left-0 top-1/2 w-2.5 h-px bg-b2" />
                           Zóc. {z.lado}
