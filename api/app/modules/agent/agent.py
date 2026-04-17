@@ -3735,15 +3735,42 @@ class AgentService:
                         logging.info(f"Using DB breakdown for {target_qid} (material: {db_material})")
                         qdata = db_bd
 
-                # Save quote data + breakdown to DB
+                # PR #65 — first-wins para client_name y project. Caso
+                # observado: Valentina llama generate_documents al final del
+                # flujo con client_name="O Proyecto" y project="" (drift del
+                # modelo), pisando los valores correctos ("Javier Test" /
+                # "Cocina") que se guardaron al inicio por _extract_quote_info.
+                #
+                # Política: si el DB ya tiene un valor válido para
+                # client_name/project, NO lo sobreescribimos — el operador
+                # debe usar `update_quote` tool explícito para cambiar.
                 save_vals = {
-                    "client_name": qdata.get("client_name", ""),
-                    "project": qdata.get("project", ""),
                     "material": qdata.get("material_name"),
                     "total_ars": qdata.get("total_ars"),
                     "total_usd": qdata.get("total_usd"),
                     "quote_breakdown": qdata,
                 }
+                _existing_cn = (existing_bd_quote.client_name if existing_bd_quote else "") or ""
+                _existing_pj = (existing_bd_quote.project if existing_bd_quote else "") or ""
+                _new_cn = (qdata.get("client_name") or "").strip()
+                _new_pj = (qdata.get("project") or "").strip()
+                # Solo setear client_name si el DB está vacío.
+                if not _existing_cn.strip() and _new_cn:
+                    save_vals["client_name"] = _new_cn
+                elif _existing_cn.strip() and _new_cn and _new_cn != _existing_cn:
+                    # LLM intentó cambiar — log para debug pero preserva DB.
+                    logging.warning(
+                        f"[save] generate_documents intentó cambiar client_name "
+                        f"'{_existing_cn}' → '{_new_cn}' — preservando valor DB."
+                    )
+                # Idem para project.
+                if not _existing_pj.strip() and _new_pj:
+                    save_vals["project"] = _new_pj
+                elif _existing_pj.strip() and _new_pj and _new_pj != _existing_pj:
+                    logging.warning(
+                        f"[save] generate_documents intentó cambiar project "
+                        f"'{_existing_pj}' → '{_new_pj}' — preservando valor DB."
+                    )
                 logging.info(f"Saving quote data {target_qid}: {save_vals}")
                 await db.execute(update(Quote).where(Quote.id == target_qid).values(**save_vals))
 
