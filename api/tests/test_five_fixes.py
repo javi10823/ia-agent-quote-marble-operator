@@ -337,6 +337,7 @@ class TestResidentialMultipleAnafes:
             "anafe": True,
             "anafe_qty": 2,
             "pileta": "empotrada_cliente",
+            "plazo": "30 dias desde la toma de medidas",
         })
 
         assert result["ok"]
@@ -360,6 +361,7 @@ class TestResidentialMultipleAnafes:
             "colocacion": True,
             "anafe": True,
             "pileta": "empotrada_cliente",
+            "plazo": "30 dias desde la toma de medidas",
         })
         anafe_items = [m for m in result["mo_items"]
                        if "anafe" in m["description"].lower()]
