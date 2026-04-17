@@ -380,11 +380,13 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                     </div>
                   </div>
 
-                  {/* Zócalos rows — ocultar ml=0 salvo que requieran revisión */}
+                  {/* Zócalos rows — ocultar siempre los que tienen ml=0.
+                      PR #77: antes se mostraban los CONFLICTO/DUDOSO con ml=0
+                      (ruido visual sin valor — el operador no puede agregar
+                      ml por input funcional y ml=0 no suma al cálculo). */}
                   {tramo.zocalos.map((z, zi) => {
                     const hasMl = (z.ml ?? 0) > 0;
-                    const needsReview = z.status === "CONFLICTO" || z.status === "DUDOSO";
-                    if (!hasMl && !needsReview) return null;
+                    if (!hasMl) return null;
                     return (
                       <div
                         key={zi}
