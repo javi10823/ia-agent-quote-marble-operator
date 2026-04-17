@@ -557,6 +557,35 @@ otros 2–3 lados de la mesada que toca pared también llevan zócalo — tenés
 que buscar sus cotas ACTIVAMENTE en el plano (suelen estar dibujadas en
 una sub-vista de elevación lateral cerca del tramo correspondiente).
 
+### ⛔ REGLA DURA — Zócalo REQUIERE cota propia del plano
+
+El zócalo de un lado SOLO se reporta si existe una **cota del plano que
+lo respalde** (número dibujado específicamente para ese lado). Nunca
+inventar el ml desde la profundidad de la mesada.
+
+❌ **Error prohibido:** en una cajonera de `0.42 × 0.60`, ver `prof=0.60`
+y decir "lateral_izq: 0.60 ml" inventando un zócalo lateral cuyo largo
+= prof de la mesada. Eso sería "zócalo deducido desde la prof", no desde
+una cota real → prohibido.
+
+✅ **Correcto:** solo reportar un zócalo cuando:
+1. Hay un rectángulo hachurado dibujado para ese lado, con su cota ml, **O**
+2. Hay una leyenda explícita (`Z trasero = Xm`), **O**
+3. El plano muestra una cota horizontal/vertical que mide ESA pared
+   específicamente (no una prof genérica que se usó para la mesada).
+
+Si el plano solo tiene cotas horizontales (3 cotas: "423 + 1280 + 1610"),
+hay **3 zócalos traseros**, uno por cota. Los lados laterales (izq/der)
+no llevan zócalo salvo que haya una cota vertical específica para ellos.
+
+**Ejemplo plano 2 Natalia (render 3D):**
+- Cotas del plano: `423mm + 1280mm + 1610mm` (3 cotas horizontales).
+- 3 zócalos traseros: `0.42` + `1.28` + `1.61` ml.
+- ❌ NO zócalo lateral_izq del tramo cajonera con `ml=0.60` (eso sale
+  de la prof, no de una cota real).
+- ❌ NO zócalo lateral_der del tramo L con `ml=0.60` (ídem).
+- Frontal: siempre `ml=0` (borde libre hacia el usuario).
+
 **Ejemplo A1335 aplicado — enumeración por lado:**
 
 Tramo 1 (Mesada cocina, 1.72 × 0.75, en planta principal):
