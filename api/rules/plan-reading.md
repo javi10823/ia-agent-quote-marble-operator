@@ -31,32 +31,45 @@ Cuando el brief dice **"con zócalos"** / **"lleva zócalos"** sin aclarar pared
 Si el brief es ambiguo en OTRA dirección (ej: "sin zócalos" / "lleva zócalos
 laterales" / cotas de zócalo en el plano) → seguir esa instrucción específica.
 
-### ⛔ REGLA DURA — Zócalos SOLO contra PARED
+### ⛔ REGLA SIMPLE — Zócalos desde las COTAS del plano
 
-Los zócalos existen **exclusivamente contra muros de mampostería**. NUNCA
-agregar un zócalo en un lado donde:
+Cuando el brief dice "con zócalos" / "lleva zócalos":
 
-- Hay un **electrodoméstico** (heladera, lavavajillas, lavarropa, anafe free-
-  standing) que ocupa ese lado. El zócalo no puede apoyarse contra un
-  appliance porque éste se retira/reemplaza.
-- El lado es un **borde libre** (la mesada termina sin pared atrás — ej:
-  borde frontal hacia el usuario, o extremo de una isla).
-- El lado es una **unión entre tramos** (donde dos mesadas se conectan —
-  ver regla de L/U: el lado de unión NO lleva zócalo).
+1. **TODO tramo de mesada que va contra pared lleva zócalo.** No repreguntar.
+2. **ml de zócalo = cota directa del plano** para ese tramo. No subtraer
+   segmentos de appliances, no restar esquinas, no hacer aritmética.
+3. Un zócalo por cada cota del plano que mide una pared con mesada contra.
+4. El alto: default config (`measurements.default_zocalo_height`).
 
-Cuando el plano muestra un appliance (heladera grande, lavarropa, estufa)
-contiguo a un extremo de la mesada → ese extremo NO lleva zócalo, aunque
-el operador haya dicho "con zócalos" genérico.
+**Exclusiones (NO llevar zócalo):**
+- **Cocina entera / estufa-horno free-standing**: donde hay una cocina
+  entera (horno + anafe, full-height floor-to-counter visible por la
+  puerta del horno), la mesada está interrumpida y no hay zócalo ahí.
+  El operador ya marcó en las cotas qué es mesada y qué no — confiar.
+- **Heladera free-standing**: si está standalone (sin mesada encima),
+  no toca mesada — no genera zócalo.
+- **Borde libre**: lado donde la mesada termina sin pared.
+- **Unión L/U**: el lado donde 2 tramos se juntan no toca pared, no
+  lleva zócalo.
 
-Ejemplo plano 2 (render 3D cocina Natalia):
-- Tramo 1: mesada sobre cajonero + horno + lavarropa (1.703m total).
-- Tramo 2: L-retorno sobre lavadero (1.61m).
-- Heladera al extremo IZQUIERDO del tramo 1 (free-standing).
-- ✅ Zócalo trasero tramo 1 (1.703m) — contra pared.
-- ✅ Zócalo trasero tramo 2 (1.61m) — contra pared lateral.
-- ❌ NO zócalo lateral_izq del tramo 1 (ahí está la heladera, no pared).
-- ❌ NO zócalo lateral_der del tramo 2 (borde libre).
-- ❌ NO zócalo en el lado de unión L.
+⛔ **No dividir el zócalo en segmentos por cada appliance.** Si el plano
+muestra cota 1.28m para un tramo con lavarropa empotrado, el zócalo es
+1.28 ml (no 0.68 ml después de restar el lavarropa). La cota del plano
+es la verdad.
+
+Ejemplo (render 3D cocina Natalia):
+
+Cotas del plano: 423mm + 1280mm + 1610mm (3 cotas = 3 zócalos).
+
+| # | Cota | Zócalo ml | m² (× 0.07) |
+|---|------|-----------|-------------|
+| Z1 | 0.423m (cajonera) | 0.423 | 0.030 |
+| Z2 | 1.280m (fondo L) | 1.280 | 0.090 |
+| Z3 | 1.610m (lateral L) | 1.610 | 0.113 |
+| **Total** | — | **3.313** | **0.232 m²** |
+
+No hay que preguntar "¿qué paredes llevan?" ni restar el ancho de la estufa.
+Las cotas están; cada cota = un zócalo.
 - ⛔ Ejemplo cocina en L: tramo 1 (1.72×0.75) + tramo 2 (0.60×1.55):
   - Zocalo fondo tramo 1 (inferior): **1.74ml** (cota del plano)
   - Zocalo fondo tramo 2: **1.55ml** (va por la pared del fondo del tramo 2)
