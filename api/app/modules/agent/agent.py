@@ -240,61 +240,55 @@ async def _run_dual_read(
             handled=False → el caller sigue el flujo normal (Claude)
     """
     import json as _json
+    import hashlib as _hashlib
     chunks: list[dict] = []
 
-    # PR #60 — FIX crítico: cuando el operador sube un plano NUEVO al mismo
-    # quote (aunque el quote ya haya pasado Paso 2 o el operador haya
-    # confirmado medidas anteriores), debemos SIEMPRE correr dual_read
-    # para verificar visualmente el nuevo plano. Los short-circuits
-    # anteriores (past_paso2 / already_confirmed) bloqueaban esto y
-    # Valentina leía la imagen cruda sin QA, saltándose la card.
+    # PR #63 — dedup hash-based. El plan_bytes persiste entre turnos (frontend
+    # lo re-envía con cada mensaje mientras la conversación tenga un plano
+    # adjunto). Sin dedup, cada turno que el operador responda en chat re-
+    # corre dual_read → card aparece N veces.
     #
-    # Racional: esta función solo se llama dentro de `if plan_bytes and
-    # plan_filename`, por lo que cada invocación implica un upload nuevo
-    # en este turno. No re-corre en follow-ups de texto puro (que no
-    # traen plan_bytes). Por lo tanto no hay riesgo de re-correr
-    # innecesariamente en turnos de conversación.
-    #
-    # Cuando subís un plano nuevo, limpiamos los campos post-confirmación
-    # del breakdown para que el flujo quede fresco.
+    # Lógica:
+    #   1. Hash del draw_bytes actual.
+    #   2. Si existe dual_read_plan_hash en breakdown y coincide → SAME PLAN:
+    #        - Si hay verified_context → operador ya confirmó, skip (seguir a Claude).
+    #        - Si hay dual_read_result → re-emit (SSE retry o reload).
+    #        - Sino → skip (dual_read corrió antes, estamos en follow-up).
+    #   3. Si el hash cambió (o no existe) → NEW PLAN:
+    #        - Limpiar state stale.
+    #        - Correr dual_read fresh.
+    #        - Guardar hash nuevo.
+    _plan_hash = _hashlib.sha256(draw_bytes).hexdigest()[:16]
     try:
         _dr_check_q = await db.execute(select(Quote).where(Quote.id == quote_id))
         _dr_check_quote = _dr_check_q.scalar_one_or_none()
         _dr_bd = (_dr_check_quote.quote_breakdown or {}) if _dr_check_quote else {}
-        _had_prior_state = bool(
-            _dr_bd.get("verified_context")
-            or _dr_bd.get("measurements_confirmed")
-            or _dr_bd.get("material_name")
-            or _dr_bd.get("total_ars")
-            or _dr_bd.get("mo_items")
+        _stored_hash = _dr_bd.get("dual_read_plan_hash")
+        _same_plan = _stored_hash == _plan_hash
+        _existing_dr = _dr_bd.get("dual_read_result")
+        _already_confirmed = bool(
+            _dr_bd.get("verified_context") or _dr_bd.get("measurements_confirmed")
         )
-        if _had_prior_state and _dr_check_quote:
-            logging.info(
-                f"[dual-read] New plan upload on quote {quote_id} with prior "
-                "paso 2 / verified state — resetting stale fields before dual_read."
-            )
-            _bd_cleaned = dict(_dr_bd)
-            for _stale in (
-                "verified_context", "verified_measurements", "measurements_confirmed",
-                "dual_read_result", "material_name", "material_m2",
-                "material_price_unit", "material_currency", "discount_amount",
-                "discount_pct", "total_ars", "total_usd", "mo_items", "sectors",
-                "sinks", "piece_details", "mo_discount_amount", "mo_discount_pct",
-                "total_mo_ars", "sobrante_m2", "sobrante_total", "paso1_pieces",
-                "paso1_total_m2",
-            ):
-                _bd_cleaned.pop(_stale, None)
-            await db.execute(
-                update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd_cleaned)
-            )
-            await db.commit()
-            _dr_bd = _bd_cleaned
-        _existing_dr = None  # forced reset arriba
     except Exception:
+        _dr_bd = {}
+        _stored_hash = None
+        _same_plan = False
         _existing_dr = None
+        _already_confirmed = False
 
-    _has_valid_existing = bool(_existing_dr) and not _existing_dr.get("error")
+    # Case 1: same plan + already confirmed → follow-up chat, no card.
+    if _same_plan and _already_confirmed:
+        logging.info(
+            f"[dual-read] skip (same plan, already confirmed) for {quote_id} "
+            f"hash={_plan_hash}"
+        )
+        return (False, chunks)
 
+    # Case 2: same plan + we have a dual_read_result → SSE retry or reload.
+    # Re-emit from DB instead of calling the API again.
+    _has_valid_existing = (
+        _same_plan and bool(_existing_dr) and not _existing_dr.get("error")
+    )
     if _has_valid_existing:
         # Re-emit saved card + persist turn
         logging.info(f"[dual-read] re-emit saved result for quote {quote_id}")
@@ -322,7 +316,33 @@ async def _run_dual_read(
         chunks.append({"type": "done", "content": ""})
         return (True, chunks)
 
-    # Fresh run
+    # Case 3: new plan (hash differs or no previous hash) → fresh run.
+    # Si había state stale de un plano previo (Paso 2, verified_context de
+    # un upload anterior), lo limpiamos ANTES del fresh run.
+    if _stored_hash and not _same_plan:
+        logging.info(
+            f"[dual-read] New plan upload on quote {quote_id} "
+            f"(old hash={_stored_hash}, new hash={_plan_hash}) — clearing stale state."
+        )
+        try:
+            _bd_cleaned = dict(_dr_bd)
+            for _stale in (
+                "verified_context", "verified_measurements", "measurements_confirmed",
+                "dual_read_result", "material_name", "material_m2",
+                "material_price_unit", "material_currency", "discount_amount",
+                "discount_pct", "total_ars", "total_usd", "mo_items", "sectors",
+                "sinks", "piece_details", "mo_discount_amount", "mo_discount_pct",
+                "total_mo_ars", "sobrante_m2", "sobrante_total", "paso1_pieces",
+                "paso1_total_m2",
+            ):
+                _bd_cleaned.pop(_stale, None)
+            await db.execute(
+                update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd_cleaned)
+            )
+            await db.commit()
+        except Exception as _e_clean:
+            logging.warning(f"[dual-read] Failed to clean stale state: {_e_clean}")
+
     try:
         from app.modules.quote_engine.dual_reader import dual_read_crop
         _dual_enabled = get_ai_config().get("dual_read_enabled", True)
@@ -351,13 +371,16 @@ async def _run_dual_read(
 
         chunks.append({"type": "dual_read_result", "content": _json.dumps(_dual_result, ensure_ascii=False)})
 
-        # Persist in DB
+        # Persist in DB — SIEMPRE guardar hash + result para dedup en turnos
+        # siguientes. Sin el hash, el próximo turno re-corre dual_read aunque
+        # sea el mismo plano (bug observado: card aparecía N veces).
         try:
             _qr = await db.execute(select(Quote).where(Quote.id == quote_id))
             _q = _qr.scalar_one_or_none()
             if _q:
                 _bd = dict(_q.quote_breakdown or {})
                 _bd["dual_read_result"] = _dual_result
+                _bd["dual_read_plan_hash"] = _plan_hash
                 _bd["dual_read_planilla_m2"] = planilla_m2
                 _bd["dual_read_crop_label"] = crop_label
                 await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd))
