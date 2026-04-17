@@ -1133,7 +1133,9 @@ class AgentService:
         # user_message BEFORE content is built. Si hacemos esto más tarde,
         # `content` ya tiene el JSON crudo y Claude lo ve como mensaje.
         # Además evitamos que el check de dual_read (más abajo) intercepte.
+        _just_confirmed_dual_read = False
         if user_message.startswith("[DUAL_READ_CONFIRMED]"):
+            _just_confirmed_dual_read = True
             try:
                 _confirmed_json = json.loads(user_message[len("[DUAL_READ_CONFIRMED]"):])
                 from app.modules.quote_engine.dual_reader import build_verified_context
@@ -2235,16 +2237,25 @@ class AgentService:
                                     logging.warning(f"[cotas+specs] Extraction failed, falling back to vision-only: {e}")
 
                                 # ── DUAL READ (planilla path) — via helper ──
-                                _handled, _dr_chunks = await _run_dual_read(
-                                    db,
-                                    quote_id,
-                                    _draw_bytes,
-                                    crop_label=_planilla_data.ubicacion or "cocina",
-                                    planilla_m2=_planilla_data.m2,
-                                    cotas_text=_cotas_text,
-                                    user_message=user_message,
-                                    plan_filename=plan_filename,
-                                )
+                                # PR #62 — skip si este turno es la confirmación del
+                                # card previo. Sin esto, el re-envío del plano en el
+                                # turno de confirmación disparaba un segundo dual_read
+                                # que pisaba el verified_context recién guardado.
+                                if _just_confirmed_dual_read:
+                                    logging.info(f"[dual-read] skip (confirmation turn) for {quote_id}")
+                                    _handled = False
+                                    _dr_chunks = []
+                                else:
+                                    _handled, _dr_chunks = await _run_dual_read(
+                                        db,
+                                        quote_id,
+                                        _draw_bytes,
+                                        crop_label=_planilla_data.ubicacion or "cocina",
+                                        planilla_m2=_planilla_data.m2,
+                                        cotas_text=_cotas_text,
+                                        user_message=user_message,
+                                        plan_filename=plan_filename,
+                                    )
                                 for _c in _dr_chunks:
                                     yield _c
                                 if _handled:
@@ -2289,7 +2300,7 @@ class AgentService:
                     # PR #55 — DUAL READ para PDF sin planilla (single-cocina flow).
                     # Rasteriza página 1 a JPEG y corre dual_read. Skipea visual
                     # buildings (usan pipeline propio).
-                    if pdf_has_images and not is_visual_building:
+                    if pdf_has_images and not is_visual_building and not _just_confirmed_dual_read:
                         try:
                             from pdf2image import convert_from_bytes as _cfb_nopl
                             import io as _io_nopl
@@ -2330,31 +2341,35 @@ class AgentService:
 
                 # PR #55 — DUAL READ para imagen suelta (PNG/JPG/WebP).
                 # Convierte a JPEG si hace falta y corre dual_read.
-                try:
-                    from PIL import Image as _PILImg
-                    import io as _io_img
-                    _img = _PILImg.open(_io_img.BytesIO(plan_bytes))
-                    if _img.mode != "RGB":
-                        _img = _img.convert("RGB")
-                    _buf_img = _io_img.BytesIO()
-                    _img.save(_buf_img, format="JPEG", quality=85)
-                    _draw_bytes_img = _buf_img.getvalue()
-                    _handled_img, _chunks_img = await _run_dual_read(
-                        db,
-                        quote_id,
-                        _draw_bytes_img,
-                        crop_label="plano",
-                        planilla_m2=None,
-                        cotas_text=None,
-                        user_message=user_message,
-                        plan_filename=plan_filename,
-                    )
-                    for _cc in _chunks_img:
-                        yield _cc
-                    if _handled_img:
-                        return
-                except Exception as _e_img:
-                    logging.warning(f"[dual-read] Imagen: conversión fallback failed: {_e_img}")
+                # PR #62 — skip si este turno es la confirmación del card previo.
+                if _just_confirmed_dual_read:
+                    logging.info(f"[dual-read] skip imagen (confirmation turn) for {quote_id}")
+                else:
+                    try:
+                        from PIL import Image as _PILImg
+                        import io as _io_img
+                        _img = _PILImg.open(_io_img.BytesIO(plan_bytes))
+                        if _img.mode != "RGB":
+                            _img = _img.convert("RGB")
+                        _buf_img = _io_img.BytesIO()
+                        _img.save(_buf_img, format="JPEG", quality=85)
+                        _draw_bytes_img = _buf_img.getvalue()
+                        _handled_img, _chunks_img = await _run_dual_read(
+                            db,
+                            quote_id,
+                            _draw_bytes_img,
+                            crop_label="plano",
+                            planilla_m2=None,
+                            cotas_text=None,
+                            user_message=user_message,
+                            plan_filename=plan_filename,
+                        )
+                        for _cc in _chunks_img:
+                            yield _cc
+                        if _handled_img:
+                            return
+                    except Exception as _e_img:
+                        logging.warning(f"[dual-read] Imagen: conversión fallback failed: {_e_img}")
                 # Also send a 90° rotated version to catch margin text (configurable)
                 if get_ai_config().get("rotate_plan_images", True):
                     try:
