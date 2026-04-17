@@ -320,18 +320,12 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                     const hasMl = (z.ml ?? 0) > 0;
                     const needsReview = z.status === "CONFLICTO" || z.status === "DUDOSO";
                     if (!hasMl && !needsReview) return null;
-                    // PR #56 — habilitar X clickeable solo en zócalos no confirmados
-                    // (CONFLICTO/DUDOSO). Los confirmados mantienen el icono pasivo.
-                    const canRemove = z.status === "CONFLICTO" || z.status === "DUDOSO";
                     return (
                       <div
                         key={zi}
-                        className="grid grid-cols-[22px_1fr_80px_80px_80px] items-center gap-3 px-5 py-2 text-[13px] font-mono tabular-nums border-t border-b1"
+                        className="group grid grid-cols-[22px_1fr_80px_80px_80px] items-center gap-3 px-5 py-2 text-[13px] font-mono tabular-nums border-t border-b1 relative"
                       >
-                        <StatusIcon
-                          status={z.status}
-                          onRemove={canRemove ? () => removeZocalo(si, ti, zi) : undefined}
-                        />
+                        <StatusIcon status={z.status} />
                         <div className="font-sans text-t2 pl-4 relative">
                           <span className="absolute left-0 top-1/2 w-2.5 h-px bg-b2" />
                           Zóc. {z.lado}
@@ -344,8 +338,21 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                           {z.alto_m.toFixed(2)}
                           <span className="text-t4 ml-0.5">m</span>
                         </div>
-                        <div className="text-t1 font-medium text-right">
-                          {(z.ml * z.alto_m).toFixed(2)}
+                        <div className="text-t1 font-medium text-right flex items-center justify-end gap-2">
+                          <span>{(z.ml * z.alto_m).toFixed(2)}</span>
+                          {/* PR #61 — botón remover siempre disponible, independiente
+                              del status (el operador confirma con el cliente si lleva
+                              zócalos o no; Dual Read solo sugiere). Hover aumenta
+                              contraste para descubribilidad. */}
+                          <button
+                            type="button"
+                            onClick={() => removeZocalo(si, ti, zi)}
+                            title="Remover este zócalo"
+                            aria-label="Remover este zócalo"
+                            className="w-5 h-5 rounded-md grid place-items-center text-[11px] leading-none text-t4 hover:text-err hover:bg-[rgba(255,69,58,0.12)] border border-transparent hover:border-err/30 transition-colors cursor-pointer"
+                          >
+                            ×
+                          </button>
                         </div>
                       </div>
                     );
