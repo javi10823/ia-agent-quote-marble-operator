@@ -125,31 +125,43 @@ una planta arquitectónica cenital), aplicar estas reglas:
 5. **Frentín/faldón:** en render 3D no se ve la elevación. Si el operador
    no lo menciona → no agregar. Si lo menciona → preguntar altura.
 
-**Ejemplo canónico — render 3D cocina en L (Natalia):**
+**Ejemplo canónico — render 3D cocina Natalia (3 cotas + cocina entera):**
 ```
-Cotas superiores: 423mm + 1280mm + 1610mm
-Corner visible entre el 1280mm y el 1610mm (en el lavarropa).
-Heladera al extremo izquierdo (free-standing, fuera de mesada a su
-derecha). Lavadero al extremo derecho del L-retorno.
+Cotas superiores: 423mm (cajonera) + 1280mm (lavarropa + L horizontal)
+                  + 1610mm (L retorno lavadero)
+Heladera free-standing al extremo izquierdo (fuera, sin mesada encima).
+Cocina entera (horno + anafe free-standing) entre cajonera y lavarropa
+  — visible por la puerta del horno; interrumpe mesada Y zócalo ahí.
+Bacha empotrada en el L retorno.
 ```
 
-Lectura correcta:
-- 1 sector "cocina" (NO "cocina + lavadero").
-- 1 mesada en L con 2 tramos:
-  - Tramo 1 (horizontal, FULL con esquina): 1.703 × 0.60 m = 1.022 m²
-    (cajonero + horno + lavarropa).
-  - Tramo 2 (retorno vertical, NETO sin esquina): (1.610 - 0.60) × 0.60
-    = 1.010 × 0.60 = 0.606 m².
-- Zócalos: 2 traseros (contra la pared del fondo):
-  - Trasero tramo 1: 1.703 ml × 0.07 m.
-  - Trasero tramo 2: 1.610 ml × 0.07 m.
-- NO zócalo lateral contra heladera.
-- NO zócalo en la unión L.
-- NO zócalo en el borde libre derecho del retorno.
+Lectura correcta (regla simple: cada cota = un pedazo):
 
-⛔ **Error típico a evitar:** tratar "cocina" y "lavadero" como dos sectores
-separados. Son la misma mesada continua en L. El lavadero es parte de la
-cocina.
+**Mesadas — 3 tramos:**
+| # | Descripción | Cálculo | m² |
+|---|-------------|---------|------|
+| 1 | Cajonera (tramo chico izq) | 0.423 × 0.60 | 0.254 |
+| 2 | L-retorno lavadero (FULL con esquina) | 1.61 × 0.60 | 0.966 |
+| 3 | L-horizontal centro (NETO sin esquina) | (1.28 − 0.60) × 0.60 = 0.68 × 0.60 | 0.408 |
+| **Total** | — | — | **1.628** |
+
+**Zócalos — 3 cotas = 3 zócalos** (regla: cota del plano = ml directo):
+| # | Pared | ml | m² (× 0.07) |
+|---|-------|----|----|
+| Z1 | Fondo cajonera | 0.423 | 0.030 |
+| Z2 | Fondo L horizontal | 1.280 | 0.090 |
+| Z3 | Lateral L retorno | 1.610 | 0.113 |
+| **Total** | — | **3.313** | **0.232** |
+
+**Total a cortar: 1.628 + 0.232 = 1.860 m²**
+
+⛔ **Errores típicos a evitar:**
+- Tratar "cocina" y "lavadero" como dos sectores separados. Es UN sector.
+- Subtraer ancho de estufa para calcular ml de zócalo. La cota del plano
+  manda; el operador ya decidió qué es pared y qué no al dibujar.
+- Dar ml = suma horizontal (ej: 423+1280 = 1703). Son cotas separadas,
+  cada una un zócalo distinto.
+- Poner zócalo contra heladera / borde libre / unión L.
 
 ---
 
