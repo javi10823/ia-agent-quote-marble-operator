@@ -21,6 +21,14 @@ from typing import Optional
 import anthropic
 
 from app.core.config import settings
+from app.core.company_config import get as _cfg
+
+
+def _default_zocalo_alto() -> float:
+    """PR #57 — leer alto zócalo default desde catalog/config.json en vez
+    de hardcodear. Permite que el operador lo edite desde el panel de
+    Configuración web sin redeploy."""
+    return _cfg("measurements.default_zocalo_height", 0.07)
 
 logger = logging.getLogger(__name__)
 
@@ -388,6 +396,7 @@ def _compare_zocalos(a_list: list, b_list: list) -> list[dict]:
     for lado in sorted(all_lados):
         za = a_by_lado.get(lado)
         zb = b_by_lado.get(lado)
+        _alto_default = _default_zocalo_alto()
         if za and zb:
             status, ml = _compare_float(za.get("ml", 0), zb.get("ml", 0))
             result.append({
@@ -395,19 +404,19 @@ def _compare_zocalos(a_list: list, b_list: list) -> list[dict]:
                 "opus_ml": za.get("ml", 0),
                 "sonnet_ml": zb.get("ml", 0),
                 "ml": ml if ml is not None else za.get("ml", 0),
-                "alto_m": za.get("alto_m", 0.07),
+                "alto_m": za.get("alto_m", _alto_default),
                 "status": status,
             })
         elif za:
             result.append({
                 "lado": lado, "opus_ml": za.get("ml", 0), "sonnet_ml": None,
-                "ml": za.get("ml", 0), "alto_m": za.get("alto_m", 0.07),
+                "ml": za.get("ml", 0), "alto_m": za.get("alto_m", _alto_default),
                 "status": "SOLO_OPUS",
             })
         elif zb:
             result.append({
                 "lado": lado, "opus_ml": None, "sonnet_ml": zb.get("ml", 0),
-                "ml": zb.get("ml", 0), "alto_m": zb.get("alto_m", 0.07),
+                "ml": zb.get("ml", 0), "alto_m": zb.get("alto_m", _alto_default),
                 "status": "SOLO_SONNET",
             })
     return result
@@ -746,7 +755,7 @@ def build_verified_context(confirmed_data: dict) -> str:
             lines.append(f"  {desc}: {largo_v}m × {ancho_v}m = {m2_v} m²")
             for z in tramo.get("zocalos", []):
                 ml = z.get("ml", 0)
-                alto = z.get("alto_m", 0.07)
+                alto = z.get("alto_m", _default_zocalo_alto())
                 lado = z.get("lado", "?")
                 lines.append(f"  Zócalo {lado}: {ml}ml × {alto}m")
         lines.append("")
