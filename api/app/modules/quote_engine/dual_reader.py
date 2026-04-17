@@ -82,16 +82,42 @@ async def _call_vision(
     model: str,
     timeout: float = OPUS_TIMEOUT_SECONDS,
     cotas_text: str | None = None,
+    brief_text: str | None = None,
 ) -> dict:
     """Call Claude Vision API with plan reader prompt. Returns parsed JSON.
 
     If cotas_text is provided, it's injected BEFORE the extraction instruction
     so the model uses those pre-extracted cotas instead of reading numbers
     from the image. The model still sees the image for geometric interpretation.
+
+    PR #68 — brief_text: texto que mandó el operador junto al plano (ej:
+    "con zócalos", "granito negro boreal", "rosario", "natalia"). Se inyecta
+    como contexto para que los modelos de visión puedan desambiguar
+    decisiones (material, zócalos presentes, localidad, etc.) en vez de
+    flaguear falso positivos como "confirmar con cliente".
     """
     client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
     user_text_blocks = []
+    if brief_text and brief_text.strip():
+        user_text_blocks.append({
+            "type": "text",
+            "text": (
+                "CONTEXTO DEL OPERADOR (texto que acompañó al plano):\n"
+                f"```\n{brief_text.strip()}\n```\n\n"
+                "Usá esta información para desambiguar lectura:\n"
+                "- Si menciona material (granito, silestone, etc.) → no flaguees "
+                "\"material no indicado\".\n"
+                "- Si dice \"con zócalos\" o \"lleva zócalos\" → considerá que sí los "
+                "tiene aunque el render no los dibuje explícito. NO flaguees "
+                "\"zócalos no visibles\" como razón para descartarlos.\n"
+                "- Si menciona localidad, cliente, obra → incluilo en los campos "
+                "`client_name` / `proyecto` / `localidad` del JSON si el schema los tiene.\n"
+                "- Si dice \"bacha comprada\" / \"cliente provee pileta\" → `pileta = "
+                "empotrada_cliente`, sin sku Johnson.\n"
+                "- Aclaraciones del operador MANDAN sobre lo que se vea en la imagen."
+            ),
+        })
     if cotas_text:
         user_text_blocks.append({
             "type": "text",
@@ -601,6 +627,7 @@ async def dual_read_crop(
     planilla_m2: Optional[float] = None,
     dual_enabled: bool = True,
     cotas_text: Optional[str] = None,
+    brief_text: Optional[str] = None,
 ) -> dict:
     """Read a crop with Sonnet first, Opus on demand. Reconcile results.
 
@@ -627,14 +654,14 @@ async def dual_read_crop(
         logger.info(f"[dual-read] Calling Sonnet for '{crop_label}' with {len(cotas_text)} chars of pre-extracted cotas...")
     else:
         logger.info(f"[dual-read] Calling Sonnet for '{crop_label}' (no cotas_text)...")
-    sonnet_result = await _call_vision(crop_bytes, sonnet_model, timeout=30, cotas_text=cotas_text)
+    sonnet_result = await _call_vision(crop_bytes, sonnet_model, timeout=30, cotas_text=cotas_text, brief_text=brief_text)
 
     if sonnet_result.get("error"):
         logger.error(f"[dual-read] Sonnet failed: {sonnet_result['error']}")
         if dual_enabled:
             # Fallback to Opus
             logger.info(f"[dual-read] Falling back to Opus...")
-            opus_result = await _call_vision(crop_bytes, opus_model, timeout=OPUS_TIMEOUT_SECONDS, cotas_text=cotas_text)
+            opus_result = await _call_vision(crop_bytes, opus_model, timeout=OPUS_TIMEOUT_SECONDS, cotas_text=cotas_text, brief_text=brief_text)
             if opus_result.get("error"):
                 return {"error": "Both models failed", "sonnet_error": sonnet_result["error"], "opus_error": opus_result["error"]}
             return _build_single_result(opus_result, "SOLO_OPUS")
@@ -670,7 +697,7 @@ async def dual_read_crop(
 
     # Step 3: Sonnet unsure → call Opus with timeout
     logger.info(f"[dual-read] Sonnet unsure ({min_confidence:.2f}) → calling Opus (timeout={OPUS_TIMEOUT_SECONDS}s)...")
-    opus_result = await _call_vision(crop_bytes, opus_model, timeout=OPUS_TIMEOUT_SECONDS, cotas_text=cotas_text)
+    opus_result = await _call_vision(crop_bytes, opus_model, timeout=OPUS_TIMEOUT_SECONDS, cotas_text=cotas_text, brief_text=brief_text)
 
     if opus_result.get("error"):
         # Opus failed/timed out → use Sonnet alone
