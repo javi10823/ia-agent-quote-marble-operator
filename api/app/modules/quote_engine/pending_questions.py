@@ -138,42 +138,35 @@ def _detect_pileta_type_question(brief: str, dual_result: dict) -> dict | None:
 
 
 def _detect_isla_profundidad_question(brief: str, dual_result: dict) -> dict | None:
-    """Isla sin cota de profundidad → preguntar. Nunca asumir 0.60 silencioso.
+    """Isla → SIEMPRE preguntar profundidad (nunca asumir). Skip solo si el
+    brief lo dice explícito (ej: "isla de 0.80", "profundidad isla X").
 
-    Dispara cuando:
-    - Hay sector isla.
-    - El tramo de isla tiene ancho_m con status DUDOSO/UNANCHORED o valor
-      igual al largo (fallback silencioso del VLM).
+    Regla D'Angelo: el plano rara vez muestra la cota de profundidad de la
+    isla con claridad → mejor preguntar que asumir silencioso.
     """
     if not _has_sector_type(dual_result, "isla"):
         return None
-    for s in dual_result.get("sectores") or []:
-        if (s.get("tipo") or "").lower() != "isla":
-            continue
-        for t in s.get("tramos") or []:
-            ancho = t.get("ancho_m") or {}
-            status = ancho.get("status", "")
-            val = ancho.get("valor")
-            largo = (t.get("largo_m") or {}).get("valor")
-            if status in ("DUDOSO", "UNANCHORED") or (
-                val is not None and largo is not None and abs(float(val) - float(largo)) < 0.01
-            ):
-                return {
-                    "id": "isla_profundidad",
-                    "label": "Profundidad de la isla",
-                    "question": (
-                        "¿Cuál es la profundidad (ancho) de la isla? El plano no la "
-                        "muestra explícita — no queremos asumir."
-                    ),
-                    "type": "radio_with_detail",
-                    "options": [
-                        {"value": "0.60", "label": "0.60 m (estándar residencial)"},
-                        {"value": "0.70", "label": "0.70 m"},
-                        {"value": "custom", "label": "Otra medida (detallar)"},
-                    ],
-                    "detail_placeholder": "Ej: 0.80",
-                }
-    return None
+    if brief:
+        if re.search(r"isla\s+(de\s+)?\d+[,.]\d", brief, re.IGNORECASE):
+            return None
+        if re.search(r"profundidad\s+isla\s*[=:]?\s*\d", brief, re.IGNORECASE):
+            return None
+    return {
+        "id": "isla_profundidad",
+        "label": "Profundidad de la isla",
+        "question": (
+            "¿Cuál es la profundidad (ancho) de la isla? En general el plano "
+            "no la muestra explícitamente — preferimos no asumir."
+        ),
+        "type": "radio_with_detail",
+        "options": [
+            {"value": "0.60", "label": "0.60 m (estándar residencial)"},
+            {"value": "0.70", "label": "0.70 m"},
+            {"value": "0.80", "label": "0.80 m"},
+            {"value": "custom", "label": "Otra medida (detallar)"},
+        ],
+        "detail_placeholder": "Ej: 0.75",
+    }
 
 
 def _detect_isla_patas_question(brief: str, dual_result: dict) -> dict | None:
