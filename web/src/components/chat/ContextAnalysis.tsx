@@ -29,9 +29,26 @@ interface PendingAnswer {
   detail?: string;
 }
 
+interface TechDetectionOption {
+  value: string;
+  label: string;
+}
+
+interface TechDetection {
+  field: string;
+  label: string;
+  value: string | null;
+  display: string;
+  options: TechDetectionOption[];
+  source: string;
+  confidence: number;
+  status: "verified" | "needs_confirmation";
+}
+
 export interface ContextAnalysisData {
   data_known: DataRow[];
   assumptions: DataRow[];
+  tech_detections?: TechDetection[];
   pending_questions: PendingQuestion[];
   sector_summary?: string | null;
 }
@@ -48,6 +65,12 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   "brief+rule": { label: "brief + regla", cls: "bg-amb/10 text-amb border-amb/30" },
   config_default: { label: "default", cls: "bg-white/5 text-t3 border-b1" },
   inferred: { label: "inferido", cls: "bg-white/5 text-t3 border-b1" },
+  dual_read: { label: "del plano", cls: "bg-grn/10 text-grn border-grn/30" },
+};
+
+const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
+  verified: { label: "confirmado", cls: "bg-grn/15 text-grn border-grn/40" },
+  needs_confirmation: { label: "confirmar", cls: "bg-amb/15 text-amb border-amb/40" },
 };
 
 function SourceBadge({ source }: { source: string }) {
@@ -63,6 +86,15 @@ export default function ContextAnalysis({ data, onConfirm }: Props) {
   const [answers, setAnswers] = useState<Record<string, PendingAnswer>>({});
   const [corrections, setCorrections] = useState<Record<string, string>>({});
   const [editingField, setEditingField] = useState<string | null>(null);
+
+  const techDetections = data.tech_detections || [];
+  // Un tech_detection se comporta como answer auto-aplicado: inicialmente
+  // con value detectado, el operador puede cambiarlo inline con radio.
+  const [techAnswers, setTechAnswers] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const d of techDetections) if (d.value) init[d.field] = d.value;
+    return init;
+  });
 
   const questions = data.pending_questions || [];
 
@@ -91,6 +123,15 @@ export default function ContextAnalysis({ data, onConfirm }: Props) {
       data.data_known.forEach(row => {
         const v = corrections[row.field] ?? row.value;
         lines.push(`- **${row.field}**: ${v} _(${row.source})_`);
+      });
+      lines.push("");
+    }
+
+    if (techDetections.length > 0) {
+      lines.push("### Detectado en plano / brief");
+      techDetections.forEach(d => {
+        const picked = d.options.find(o => o.value === techAnswers[d.field]);
+        lines.push(`- **${d.label}**: ${picked?.label || d.display} _(${d.source}, ${Math.round(d.confidence * 100)}%)_`);
       });
       lines.push("");
     }
@@ -125,8 +166,14 @@ export default function ContextAnalysis({ data, onConfirm }: Props) {
       if (islaNotApplicable && hiddenIfNoIsla.has(a.id)) return false;
       return true;
     });
+    // tech_detections con valor definido se envían como answers (mismo id
+    // dispatch en backend). Si el operador corrigió el radio inline, va su
+    // valor; si no, va el detectado por defecto.
+    const techAsAnswers: PendingAnswer[] = techDetections
+      .filter(d => techAnswers[d.field] !== undefined && techAnswers[d.field] !== null)
+      .map(d => ({ id: d.field, value: techAnswers[d.field] }));
     onConfirm({
-      answers: filteredAnswers,
+      answers: [...filteredAnswers, ...techAsAnswers],
       corrections,
     });
   };
@@ -209,6 +256,63 @@ export default function ContextAnalysis({ data, onConfirm }: Props) {
             </h4>
             <div>
               {data.data_known.map(row => renderRow(row))}
+            </div>
+          </div>
+        )}
+
+        {/* Detecciones técnicas del plano/brief */}
+        {techDetections.length > 0 && (
+          <div className="mb-5">
+            <h4 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-grn mb-2">
+              🔎 Detectado en plano / brief
+            </h4>
+            <div className="flex flex-col gap-2">
+              {techDetections.map((d) => {
+                const current = techAnswers[d.field];
+                const statusMeta = STATUS_BADGE[d.status] || STATUS_BADGE.needs_confirmation;
+                const sourceMeta = SOURCE_BADGE[d.source] || SOURCE_BADGE.inferred;
+                return (
+                  <div key={d.field} className="py-2 border-t border-b1/50">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="text-[12px] text-t3 uppercase tracking-[0.06em]">{d.label}</span>
+                      <span className={`text-[10px] uppercase tracking-[0.08em] px-1.5 py-0.5 rounded border ${sourceMeta.cls}`}>
+                        {sourceMeta.label}
+                      </span>
+                      <span className={`text-[10px] uppercase tracking-[0.08em] px-1.5 py-0.5 rounded border ${statusMeta.cls}`}>
+                        {statusMeta.label}
+                      </span>
+                      <span className="text-[10px] text-t3 ml-auto font-mono">
+                        {Math.round(d.confidence * 100)}%
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {d.options.map((opt) => (
+                        <label
+                          key={opt.value}
+                          className={`flex items-center gap-1.5 text-[12px] cursor-pointer px-2.5 py-1 rounded-md border transition ${
+                            current === opt.value
+                              ? "border-acc bg-acc/10 text-t1"
+                              : "border-b1 bg-transparent text-t2 hover:border-b2"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name={`tech-${d.field}`}
+                            checked={current === opt.value}
+                            onChange={() => setTechAnswers(prev => ({ ...prev, [d.field]: opt.value }))}
+                          />
+                          <span>{opt.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {d.status === "needs_confirmation" && (
+                      <div className="text-[11px] text-t3 mt-1 italic">
+                        {d.display}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

@@ -124,7 +124,109 @@ class TestBuildContextAnalysis:
         out = build_context_analysis("", None, {"sectores": []})
         assert "data_known" in out
         assert "assumptions" in out
+        assert "tech_detections" in out
         assert out["pending_questions"] == []
+        assert out["tech_detections"] == []
+
+
+class TestTechDetections:
+    """Separan lo que el plano/brief detectaron (verificable) de los defaults
+    comerciales. Los campos con confidence >=0.60 aparecen aquí y suprimen la
+    pending_question correspondiente."""
+
+    def _dual_with_features(self, features: dict, tipo: str = "cocina", extra_sectores: list | None = None) -> dict:
+        d = {
+            "sectores": [{
+                "id": "s1", "tipo": tipo,
+                "tramos": [{
+                    "id": "t1", "descripcion": "Mesada",
+                    "largo_m": {"valor": 2.0, "status": "CONFIRMADO"},
+                    "ancho_m": {"valor": 0.6, "status": "CONFIRMADO"},
+                    "m2": {"valor": 1.2, "status": "CONFIRMADO"},
+                    "zocalos": [], "frentin": [], "regrueso": [],
+                    "features": features,
+                }],
+                "ambiguedades": [],
+            }],
+            "source": "MULTI_CROP",
+        }
+        if extra_sectores:
+            d["sectores"].extend(extra_sectores)
+        return d
+
+    def test_sink_double_produces_verified_detection_from_brief(self):
+        """Brief dice 'pileta doble' → detection con source=brief y verified."""
+        out = build_context_analysis("cocina con pileta doble", None, self._dual_with_features({}))
+        det = [d for d in out["tech_detections"] if d["field"] == "pileta_simple_doble"]
+        assert len(det) == 1
+        assert det[0]["value"] == "doble"
+        assert det[0]["source"] == "brief"
+        assert det[0]["status"] == "verified"
+
+    def test_sink_double_from_plano_needs_confirmation(self):
+        """Dual_read detecta sink_double → needs_confirmation (no brief)."""
+        out = build_context_analysis("", None, self._dual_with_features({"sink_double": True}))
+        det = [d for d in out["tech_detections"] if d["field"] == "pileta_simple_doble"]
+        assert len(det) == 1
+        assert det[0]["value"] == "doble"
+        assert det[0]["source"] == "dual_read"
+        assert det[0]["status"] == "needs_confirmation"
+
+    def test_detection_suppresses_matching_pending_question(self):
+        """Si hay tech_detection para pileta, no aparece en pending_questions."""
+        dual = self._dual_with_features({"sink_double": True})
+        dual["pending_questions"] = [
+            {"id": "pileta_simple_doble", "label": "P", "question": "?", "type": "radio_with_detail"},
+            {"id": "alzada", "label": "A", "question": "?", "type": "radio_with_detail"},
+        ]
+        out = build_context_analysis("", None, dual)
+        ids = [q["id"] for q in out["pending_questions"]]
+        assert "pileta_simple_doble" not in ids  # suprimida por detection
+        assert "alzada" in ids  # otras preguntas intactas
+
+    def test_isla_detected_when_sector_present(self):
+        dual = self._dual_with_features({}, extra_sectores=[{
+            "id": "s2", "tipo": "isla",
+            "tramos": [{
+                "id": "t_isla", "descripcion": "Isla",
+                "largo_m": {"valor": 1.60, "status": "CONFIRMADO"},
+                "ancho_m": {"valor": 0.60, "status": "DUDOSO"},
+                "m2": {"valor": 0.96, "status": "DUDOSO"},
+                "zocalos": [], "frentin": [], "regrueso": [],
+            }], "ambiguedades": [],
+        }])
+        out = build_context_analysis("", None, dual)
+        det = [d for d in out["tech_detections"] if d["field"] == "isla_presence"]
+        assert len(det) == 1
+        assert det[0]["value"] == "yes"
+        assert det[0]["source"] == "dual_read"
+
+    def test_anafe_count_from_brief_is_verified(self):
+        out = build_context_analysis("cocina con 2 anafes", None, self._dual_with_features({}))
+        det = [d for d in out["tech_detections"] if d["field"] == "anafe_count"]
+        assert len(det) == 1
+        assert det[0]["value"] == "2"
+        assert det[0]["status"] == "verified"
+
+    def test_has_pileta_only_no_detection_still_question(self):
+        """has_pileta sin simple/doble → confidence 0.55 < 0.60, no se emite
+        detection y el campo debería seguir como pending_question."""
+        dual = self._dual_with_features({"has_pileta": True})
+        dual["pending_questions"] = [
+            {"id": "pileta_simple_doble", "label": "P", "question": "?", "type": "radio_with_detail"},
+        ]
+        out = build_context_analysis("", None, dual)
+        assert not any(d["field"] == "pileta_simple_doble" for d in out["tech_detections"])
+        assert any(q["id"] == "pileta_simple_doble" for q in out["pending_questions"])
+
+    def test_detection_shape_has_required_keys(self):
+        """Contrato: cada detection tiene field/label/value/display/options/source/confidence/status."""
+        out = build_context_analysis("cocina con pileta doble", None, self._dual_with_features({}))
+        d = next(x for x in out["tech_detections"] if x["field"] == "pileta_simple_doble")
+        for key in ("field", "label", "value", "display", "options", "source", "confidence", "status"):
+            assert key in d
+        assert isinstance(d["options"], list)
+        assert d["options"][0].keys() >= {"value", "label"}
 
 
 # ── Round-trip: build context → apply answers → verify result ──────────────
