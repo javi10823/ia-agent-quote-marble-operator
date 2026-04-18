@@ -535,6 +535,28 @@ async def _run_dual_read(
                     "type": "context_analysis",
                     "content": _json.dumps(_context, ensure_ascii=False),
                 })
+                chunks.append({"type": "done", "content": ""})
+                # Persistir el turno en messages (igual que Case 2 re-emit).
+                # Sin esto, el fetchQuote post-stream no trae el turno y el
+                # frontend re-renderea sin la card → aparece el retry spurio.
+                try:
+                    _user_entry = {
+                        "role": "user",
+                        "content": [{
+                            "type": "text",
+                            "text": (user_message or "").strip() or f"(adjuntó plano: {plan_filename})",
+                        }],
+                    }
+                    _asst_entry = {"role": "assistant", "content": "__CONTEXT_ANALYSIS_SHOWN__"}
+                    if _ck_quote:
+                        await db.execute(
+                            update(Quote).where(Quote.id == quote_id).values(
+                                messages=list(_ck_quote.messages or []) + [_user_entry, _asst_entry]
+                            )
+                        )
+                        await db.commit()
+                except Exception as _e_pm:
+                    logging.warning(f"[context-analysis] persist turn failed: {_e_pm}")
                 logging.info(
                     f"[context-analysis] emitted for {quote_id}: "
                     f"{len(_context.get('data_known') or [])} known, "
