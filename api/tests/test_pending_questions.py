@@ -155,3 +155,85 @@ class TestApplyZocalosAnswer:
             {"id": "unknown_id", "value": "whatever"},  # ignored
         ])
         assert len(result["sectores"][0]["tramos"][0]["zocalos"]) == 1
+
+
+# ── Pileta simple/doble detector (PR C) ─────────────────────────────────────
+
+def _make_cocina_with_pileta():
+    return {
+        "sectores": [{
+            "id": "s1",
+            "tipo": "cocina",
+            "tramos": [{
+                "id": "t1",
+                "descripcion": "Mesada con pileta",
+                "largo_m": {"valor": 2.05, "status": "CONFIRMADO"},
+                "ancho_m": {"valor": 0.60, "status": "CONFIRMADO"},
+                "m2": {"valor": 1.23, "status": "CONFIRMADO"},
+                "zocalos": [],
+                "frentin": [],
+                "regrueso": [],
+                "features": {"has_pileta": True},
+            }],
+            "ambiguedades": [],
+        }],
+        "source": "MULTI_CROP",
+    }
+
+
+class TestDetectPiletaTypeQuestion:
+    def test_emits_for_cocina_with_pileta_no_mention(self):
+        qs = detect_pending_questions("cliente juan material silestone", _make_cocina_with_pileta())
+        pileta_qs = [q for q in qs if q["id"] == "pileta_simple_doble"]
+        assert len(pileta_qs) == 1
+        # Nunca preguntar apoyo/empotrada en cocina — solo simple vs doble
+        options = pileta_qs[0]["options"]
+        assert len(options) == 2
+        assert {o["value"] for o in options} == {"simple", "doble"}
+        assert not any("apoyo" in o["value"].lower() for o in options)
+
+    def test_skips_when_brief_says_doble(self):
+        qs = detect_pending_questions("cocina con pileta doble", _make_cocina_with_pileta())
+        assert all(q["id"] != "pileta_simple_doble" for q in qs)
+
+    def test_skips_when_brief_says_simple(self):
+        qs = detect_pending_questions("cocina con bacha simple", _make_cocina_with_pileta())
+        assert all(q["id"] != "pileta_simple_doble" for q in qs)
+
+    def test_skips_when_card_has_sink_double_feature(self):
+        result = _make_cocina_with_pileta()
+        result["sectores"][0]["tramos"][0]["features"]["sink_double"] = True
+        qs = detect_pending_questions("", result)
+        assert all(q["id"] != "pileta_simple_doble" for q in qs)
+
+    def test_skips_when_no_cocina_sector(self):
+        result = _make_cocina_with_pileta()
+        result["sectores"][0]["tipo"] = "baño"
+        qs = detect_pending_questions("", result)
+        assert all(q["id"] != "pileta_simple_doble" for q in qs)
+
+    def test_skips_when_no_pileta_detected(self):
+        """Sin pileta en card ni brief → no preguntar."""
+        result = _make_dual_result(has_zocalos=False)  # no pileta
+        qs = detect_pending_questions("cliente juan", result)
+        assert all(q["id"] != "pileta_simple_doble" for q in qs)
+
+
+class TestApplyPiletaTypeAnswer:
+    def test_doble_sets_sink_type_on_cocina_sector(self):
+        result = _make_cocina_with_pileta()
+        apply_answers(result, [{"id": "pileta_simple_doble", "value": "doble"}])
+        sector = result["sectores"][0]
+        assert sector["sink_type"]["basin_count"] == "doble"
+        assert sector["sink_type"]["mount_type"] == "abajo"
+        assert sector["pileta_type_hint"] == "empotrada"
+
+    def test_simple_sets_sink_type_simple(self):
+        result = _make_cocina_with_pileta()
+        apply_answers(result, [{"id": "pileta_simple_doble", "value": "simple"}])
+        assert result["sectores"][0]["sink_type"]["basin_count"] == "simple"
+
+    def test_noop_on_invalid_value(self):
+        result = _make_cocina_with_pileta()
+        apply_answers(result, [{"id": "pileta_simple_doble", "value": "invalid"}])
+        assert "sink_type" not in result["sectores"][0]
