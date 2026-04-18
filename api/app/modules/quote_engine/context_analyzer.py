@@ -254,14 +254,18 @@ async def build_context_analysis(
     sectores = dual_result.get("sectores") or []
     sector_desc = None
     if sectores:
-        tipos = [(s.get("tipo") or "").lower() for s in sectores]
         tramos_count = sum(len(s.get("tramos") or []) for s in sectores)
-        unique = []
-        for t in tipos:
-            if t and t not in unique:
-                unique.append(t)
-        if unique:
-            sector_desc = f"{tramos_count} mesada(s) en {' + '.join(unique)}"
+        # Normalizar el tipo a algo humano: "l"/"u"/"recta" → "cocina".
+        # Respetar "baño", "isla", "lavadero" como nombres propios.
+        human_types: list[str] = []
+        _NON_COCINA = {"baño", "banio", "isla", "lavadero"}
+        for s in sectores:
+            raw = (s.get("tipo") or "").lower().strip()
+            pretty = raw if raw in _NON_COCINA else "cocina"
+            if pretty and pretty not in human_types:
+                human_types.append(pretty)
+        if human_types:
+            sector_desc = f"{tramos_count} mesada(s) en {' + '.join(human_types)}"
 
     return {
         "data_known": data,
