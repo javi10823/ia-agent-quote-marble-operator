@@ -290,9 +290,23 @@ class TestDetectIslaProfundidad:
         qs2 = detect_pending_questions("profundidad isla 0.70", result)
         assert all(q["id"] != "isla_profundidad" for q in qs2)
 
-    def test_skips_when_no_isla_sector(self):
+    def test_emits_alongside_isla_presence_when_no_isla_sector(self):
+        """Nueva conducta: aunque no haya sector isla, si la pregunta
+        isla_presence se emite, profundidad y patas van juntas (cascada).
+        Se ocultan en frontend cuando operador responde 'no' a presence."""
         qs = detect_pending_questions("", _make_cocina_with_pileta())
-        assert all(q["id"] != "isla_profundidad" for q in qs)
+        ids = [q["id"] for q in qs]
+        assert "isla_presence" in ids
+        assert "isla_profundidad" in ids
+        assert "isla_patas" in ids
+
+    def test_skips_when_brief_says_sin_isla(self):
+        """Si brief niega isla, ni presence ni detalles se emiten."""
+        qs = detect_pending_questions("cocina sin isla", _make_cocina_with_pileta())
+        ids = [q["id"] for q in qs]
+        assert "isla_profundidad" not in ids
+        assert "isla_patas" not in ids
+        assert "isla_presence" not in ids
 
 
 class TestApplyIslaProfundidad:

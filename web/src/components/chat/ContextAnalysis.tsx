@@ -65,7 +65,18 @@ export default function ContextAnalysis({ data, onConfirm }: Props) {
   const [editingField, setEditingField] = useState<string | null>(null);
 
   const questions = data.pending_questions || [];
-  const allAnswered = questions.every(q => answers[q.id]?.value);
+
+  // Preguntas dependientes de isla: si el operador dijo "no" a isla_presence,
+  // las preguntas de profundidad + patas quedan no-aplicables. Las marcamos
+  // como auto-respondidas para no bloquear Confirmar, y las ocultamos.
+  const islaPresenceValue = answers["isla_presence"]?.value;
+  const islaNotApplicable = islaPresenceValue === "no";
+  const hiddenIfNoIsla = new Set(["isla_profundidad", "isla_patas"]);
+
+  const allAnswered = questions.every(q => {
+    if (islaNotApplicable && hiddenIfNoIsla.has(q.id)) return true;
+    return answers[q.id]?.value;
+  });
 
   // Markdown para "Copiar" — refleja el contenido de la card estructurado:
   // datos, asunciones, preguntas pendientes. Útil para pegar en otra
@@ -109,8 +120,13 @@ export default function ContextAnalysis({ data, onConfirm }: Props) {
   })();
 
   const handleConfirm = () => {
+    // Filtrar answers dependientes de isla cuando presence=no (no aplica).
+    const filteredAnswers = Object.values(answers).filter(a => {
+      if (islaNotApplicable && hiddenIfNoIsla.has(a.id)) return false;
+      return true;
+    });
     onConfirm({
-      answers: Object.values(answers),
+      answers: filteredAnswers,
       corrections,
     });
   };
@@ -218,6 +234,8 @@ export default function ContextAnalysis({ data, onConfirm }: Props) {
             <div className="flex flex-col gap-4">
               {questions.map((q) => {
                 const current = answers[q.id];
+                // Ocultar preguntas dependientes cuando isla_presence=no
+                if (islaNotApplicable && hiddenIfNoIsla.has(q.id)) return null;
                 return (
                   <div key={q.id} className="flex flex-col gap-2">
                     <div className="text-[13px] text-t1 leading-[1.5]">{q.question}</div>
