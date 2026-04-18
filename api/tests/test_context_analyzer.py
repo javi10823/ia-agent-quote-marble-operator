@@ -1,5 +1,26 @@
-"""Tests de context_analyzer — construye la card de análisis previa al despiece."""
-from app.modules.quote_engine.context_analyzer import build_context_analysis
+"""Tests de context_analyzer — construye la card de análisis previa al despiece.
+
+Patcheamos `analyze_brief` (el LLM call) con el regex fallback determinístico
+para que los tests corran sin pegar a Anthropic y sean reproducibles.
+"""
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from app.modules.quote_engine.brief_analyzer import EMPTY_SCHEMA, _analyze_regex_fallback
+from app.modules.quote_engine.context_analyzer import build_context_analysis_sync as build_context_analysis
+
+
+@pytest.fixture(autouse=True)
+def _mock_analyze_brief():
+    """Reemplaza el LLM call por el regex fallback para tests deterministas."""
+    async def _fake(brief: str) -> dict:
+        return _analyze_regex_fallback(brief or "")
+    with patch(
+        "app.modules.quote_engine.context_analyzer.analyze_brief",
+        new=_fake,
+    ):
+        yield
 
 
 def _dual(has_cocina: bool = True) -> dict:
