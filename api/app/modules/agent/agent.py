@@ -441,6 +441,22 @@ async def _run_dual_read(
             except Exception as _e_av:
                 logging.warning(f"[dual-read] anchor validator failed (non-fatal): {_e_av}")
 
+        # Pending questions — "preguntar antes de asumir". Si el brief no
+        # menciona zócalos (u otros datos) y el plano tampoco los aclara,
+        # emitimos preguntas que bloquean el Confirmar hasta que el operador
+        # responda. Evita que Valentina asuma defaults silenciosos.
+        try:
+            from app.modules.quote_engine.pending_questions import detect_pending_questions
+            _pending = detect_pending_questions(user_message or "", _dual_result)
+            if _pending:
+                _dual_result["pending_questions"] = _pending
+                logging.info(
+                    f"[dual-read] {len(_pending)} pending question(s): "
+                    f"{[q['id'] for q in _pending]}"
+                )
+        except Exception as _e_pq:
+            logging.warning(f"[dual-read] pending_questions detection failed (non-fatal): {_e_pq}")
+
         # Save crop for Opus retry
         try:
             from app.core.static import OUTPUT_DIR as _OUT
@@ -1244,6 +1260,21 @@ class AgentService:
             _just_confirmed_dual_read = True
             try:
                 _confirmed_json = json.loads(user_message[len("[DUAL_READ_CONFIRMED]"):])
+                # Aplicar respuestas de pending_questions (ej: zócalos agregados
+                # determinísticamente cuando el operador eligió la opción default).
+                # El confirmed_json viene con `pending_answers` si el frontend
+                # las incluyó.
+                try:
+                    from app.modules.quote_engine.pending_questions import apply_answers
+                    _answers = _confirmed_json.get("pending_answers") or []
+                    if _answers:
+                        apply_answers(_confirmed_json, _answers)
+                        logging.info(
+                            f"[pending-questions] applied {len(_answers)} answer(s): "
+                            f"{[a.get('id') for a in _answers]}"
+                        )
+                except Exception as _e_ans:
+                    logging.warning(f"[pending-questions] apply_answers failed: {_e_ans}")
                 from app.modules.quote_engine.dual_reader import build_verified_context
                 _verified_ctx = build_verified_context(_confirmed_json)
                 _qr0 = await db.execute(select(Quote).where(Quote.id == quote_id))

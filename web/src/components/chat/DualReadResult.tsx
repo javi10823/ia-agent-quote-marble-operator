@@ -43,6 +43,28 @@ interface Sector {
   _manual?: boolean;
 }
 
+interface PendingQuestionOption {
+  value: string;
+  label: string;
+  apply?: Record<string, unknown>;
+}
+
+interface PendingQuestion {
+  id: string;
+  label: string;
+  question: string;
+  type: "radio_with_detail" | "text" | "select";
+  options?: PendingQuestionOption[];
+  detail_placeholder?: string;
+}
+
+interface PendingAnswer {
+  id: string;
+  value: string;
+  detail?: string;
+  alto_m?: number;
+}
+
 interface DualReadData {
   sectores: Sector[];
   requires_human_review: boolean;
@@ -56,6 +78,10 @@ interface DualReadData {
    *  card previa de Sonnet intacta + este flag. Mostramos un mensaje
    *  amigable pero preservamos las medidas que el operador ya tenía. */
   opus_error?: string;
+  /** Preguntas que el operador tiene que responder antes de confirmar.
+   *  Principio: nunca asumir — si el brief no lo dice y el plano no lo
+   *  muestra, preguntar. Confirmar queda bloqueado hasta responder todas. */
+  pending_questions?: PendingQuestion[];
 }
 
 // PR #71 — metadata del tipo de vista para el badge
@@ -284,6 +310,11 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const [editedData, setEditedData] = useState<DualReadData>(data);
+  // Respuestas a pending_questions — se arman a medida que el operador
+  // selecciona opciones. Confirmar se bloquea hasta que todas tengan valor.
+  const [pendingAnswers, setPendingAnswers] = useState<Record<string, PendingAnswer>>({});
+  const pendingQuestions = data.pending_questions || [];
+  const allQuestionsAnswered = pendingQuestions.every(q => pendingAnswers[q.id]?.value);
 
   const handleRetry = async () => {
     setRetrying(true);
@@ -850,13 +881,80 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
         </div>
       )}
 
+      {/* Pending questions — Valentina no asume: si falta info, pregunta.
+          Confirmar queda bloqueado hasta que el operador elija opción para
+          cada pregunta (o marque "no" explícito). */}
+      {pendingQuestions.length > 0 && (
+        <div className="mx-5 mb-4 p-4 rounded-xl border border-amb/30 bg-amb-bg">
+          <h4 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-amb mb-3">
+            Antes de confirmar — {pendingQuestions.length} pregunta{pendingQuestions.length > 1 ? "s" : ""} pendiente{pendingQuestions.length > 1 ? "s" : ""}
+          </h4>
+          <div className="flex flex-col gap-4">
+            {pendingQuestions.map((q) => {
+              const current = pendingAnswers[q.id];
+              return (
+                <div key={q.id} className="flex flex-col gap-2">
+                  <div className="text-[13px] text-t1 leading-[1.5]">{q.question}</div>
+                  <div className="flex flex-col gap-1.5">
+                    {q.options?.map((opt) => (
+                      <label
+                        key={opt.value}
+                        className={`flex items-start gap-2 text-[12px] cursor-pointer px-2.5 py-1.5 rounded-md border transition ${
+                          current?.value === opt.value
+                            ? "border-acc bg-acc/10 text-t1"
+                            : "border-b1 bg-transparent text-t2 hover:border-b2"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name={`q-${q.id}`}
+                          checked={current?.value === opt.value}
+                          onChange={() => setPendingAnswers(prev => ({
+                            ...prev,
+                            [q.id]: { id: q.id, value: opt.value, detail: current?.detail },
+                          }))}
+                          className="mt-0.5"
+                        />
+                        <span>{opt.label}</span>
+                      </label>
+                    ))}
+                    {current?.value === "custom" && q.detail_placeholder && (
+                      <input
+                        type="text"
+                        placeholder={q.detail_placeholder}
+                        value={current?.detail || ""}
+                        onChange={(e) => setPendingAnswers(prev => ({
+                          ...prev,
+                          [q.id]: { ...(prev[q.id] || { id: q.id, value: "custom" }), detail: e.target.value },
+                        }))}
+                        className="mt-1 w-full px-2.5 py-1.5 bg-s1 border border-b2 rounded-md text-[12px] text-t1 focus:border-acc/50 outline-none"
+                      />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex gap-2 px-5 py-4 border-t border-b1 bg-s2">
         <button
-          className="flex-1 py-2.5 px-4 rounded-xl text-[13px] font-semibold bg-acc hover:bg-acc-hover text-white transition"
-          onClick={() => onConfirm(editedData)}
+          className="flex-1 py-2.5 px-4 rounded-xl text-[13px] font-semibold bg-acc hover:bg-acc-hover text-white transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-acc"
+          onClick={() => {
+            const payload = {
+              ...editedData,
+              pending_answers: Object.values(pendingAnswers),
+            };
+            onConfirm(payload as DualReadData);
+          }}
+          disabled={!allQuestionsAnswered}
+          title={!allQuestionsAnswered ? "Respondé las preguntas pendientes primero" : undefined}
         >
-          Confirmar medidas · {totalM2.toFixed(2)} m²
+          {allQuestionsAnswered
+            ? `Confirmar medidas · ${totalM2.toFixed(2)} m²`
+            : `Respondé ${pendingQuestions.length - Object.values(pendingAnswers).filter(a => a.value).length} pregunta(s) pendiente(s)`}
         </button>
       </div>
     </div>
