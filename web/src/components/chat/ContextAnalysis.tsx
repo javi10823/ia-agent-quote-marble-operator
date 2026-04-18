@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import CopyButton from "./CopyButton";
 
 interface DataRow {
   field: string;
@@ -66,6 +67,47 @@ export default function ContextAnalysis({ data, onConfirm }: Props) {
   const questions = data.pending_questions || [];
   const allAnswered = questions.every(q => answers[q.id]?.value);
 
+  // Markdown para "Copiar" — refleja el contenido de la card estructurado:
+  // datos, asunciones, preguntas pendientes. Útil para pegar en otra
+  // conversación, email, o debug.
+  const contextMarkdown = (() => {
+    const lines: string[] = ["## Análisis de contexto"];
+    if (data.sector_summary) lines.push(`_${data.sector_summary}_`);
+    lines.push("");
+
+    if (data.data_known.length > 0) {
+      lines.push("### Datos que tengo");
+      data.data_known.forEach(row => {
+        const v = corrections[row.field] ?? row.value;
+        lines.push(`- **${row.field}**: ${v} _(${row.source})_`);
+      });
+      lines.push("");
+    }
+
+    if (data.assumptions.length > 0) {
+      lines.push("### Reglas / defaults que aplico");
+      data.assumptions.forEach(row => {
+        lines.push(`- **${row.field}**: ${row.value} _(${row.source})_`);
+        if (row.note) lines.push(`  - _${row.note}_`);
+      });
+      lines.push("");
+    }
+
+    if (questions.length > 0) {
+      lines.push(`### Preguntas bloqueantes (${questions.length})`);
+      questions.forEach(q => {
+        lines.push(`- ${q.question}`);
+        const ans = answers[q.id];
+        if (ans?.value) {
+          const picked = q.options?.find(o => o.value === ans.value);
+          lines.push(`  - Respuesta: ${picked?.label || ans.value}${ans.detail ? ` (${ans.detail})` : ""}`);
+        }
+      });
+    }
+
+    return lines.join("\n");
+  })();
+
   const handleConfirm = () => {
     onConfirm({
       answers: Object.values(answers),
@@ -120,8 +162,21 @@ export default function ContextAnalysis({ data, onConfirm }: Props) {
           Paso previo al despiece
         </h3>
         {data.sector_summary && (
-          <span className="ml-auto text-[12px] text-t3 font-mono">{data.sector_summary}</span>
+          <span className="ml-auto text-[12px] text-t3 font-mono hidden md:inline">
+            {data.sector_summary}
+          </span>
         )}
+        <CopyButton
+          text={contextMarkdown}
+          label="Copiar contexto"
+          className={`${data.sector_summary ? "md:ml-3" : "ml-auto"} hidden sm:inline-flex`}
+        />
+        <CopyButton
+          text={contextMarkdown}
+          label="Copiar contexto"
+          iconOnly
+          className="ml-auto sm:hidden"
+        />
       </div>
 
       <div className="p-5">
