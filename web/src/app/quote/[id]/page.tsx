@@ -13,6 +13,7 @@ import { EmailDraftCard } from "@/components/quote/EmailDraftCard";
 import { CondicionesCard } from "@/components/quote/CondicionesCard";
 import RegenerateButton from "@/components/quote/RegenerateButton";
 import EditableField from "@/components/quote/EditableField";
+import ContextAnalysis from "@/components/chat/ContextAnalysis";
 import clsx from "clsx";
 import { A, I, O, N, DOT, SUP2, DASH, ITEM, WARN, CIRCLE, ARROW, XMARK, CLOUD, WAVE, PAGE, PICTURE, CLIP, RULER, TAG, FOLDER, CHART } from "@/lib/chars";
 
@@ -65,7 +66,9 @@ function buildFullSnapshot(quote: QuoteDetail | null, messages: UIMessage[]): st
     const content = m.content.trim();
     if (!content || content === "." || content === "..") return;
     if (content.startsWith("__ZONE_SELECTOR__")) return;
+    if (content.startsWith("__CONTEXT_ANALYSIS__")) return;
     if (content.startsWith("[SYSTEM_TRIGGER")) return;
+    if (content.startsWith("[CONTEXT_CONFIRMED]")) return;
 
     if (content.startsWith("[DUAL_READ_CONFIRMED]")) {
       parts.push("**Operador:** \u2705 Medidas verificadas", "");
@@ -331,6 +334,12 @@ export default function QuotePage() {
             acc = `__DUAL_READ__${chunk.content}`;
             setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc, isStreaming: false } : m));
           } catch { /* ignore parse errors */ }
+        } else if (chunk.type === "context_analysis") {
+          // PR G — análisis de contexto previo al despiece
+          try {
+            acc = `__CONTEXT_ANALYSIS__${chunk.content}`;
+            setMessages(p => p.map(m => m.id === aid ? { ...m, content: acc, isStreaming: false } : m));
+          } catch { /* ignore parse errors */ }
         } else if (chunk.type === "action") {
           if (fromDetail) setInlineActionText(chunk.content); else setActionText(chunk.content);
         } else if (chunk.type === "done") {
@@ -553,6 +562,24 @@ export default function QuotePage() {
                                   } catch (err) {
                                     console.error("zone-select failed:", err);
                                   }
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      } catch { return null; }
+                    })()
+                  ) : msg.content.startsWith("__CONTEXT_ANALYSIS__") ? (
+                    (() => {
+                      try {
+                        const ctxData = JSON.parse(msg.content.replace("__CONTEXT_ANALYSIS__", ""));
+                        return (
+                          <div className="msg-anim flex gap-3 items-start">
+                            <div className="max-w-full">
+                              <ContextAnalysis
+                                data={ctxData}
+                                onConfirm={(payload) => {
+                                  send(`[CONTEXT_CONFIRMED]${JSON.stringify(payload)}`);
                                 }}
                               />
                             </div>

@@ -483,6 +483,70 @@ async def _run_dual_read(
         except Exception as e:
             logging.warning(f"[dual-read] Failed to save crop: {e}")
 
+        # PR G — gate: antes de emitir el dual_read_result al frontend,
+        # chequeamos si tenemos "context confirmado". Si NO hay
+        # verified_context_analysis guardado en el breakdown, primero
+        # emitimos un chunk `context_analysis` (la card de análisis previa)
+        # y guardamos el dual_read_result en DB para levantarlo cuando el
+        # operador confirme el contexto.
+        _context_already_confirmed = False
+        try:
+            _ck_q = await db.execute(select(Quote).where(Quote.id == quote_id))
+            _ck_quote = _ck_q.scalar_one_or_none()
+            _ck_bd = (_ck_quote.quote_breakdown or {}) if _ck_quote else {}
+            _context_already_confirmed = bool(_ck_bd.get("verified_context_analysis"))
+        except Exception:
+            _ck_bd = {}
+
+        if not _context_already_confirmed:
+            # Construir y emitir context_analysis
+            try:
+                from app.modules.quote_engine.context_analyzer import build_context_analysis
+                from app.modules.agent.tools.catalog_tool import get_ai_config as _get_ai
+                _cfg_defaults = {
+                    "default_zocalo_height": (_get_ai() or {}).get("default_zocalo_height", 0.07),
+                    "default_payment": "Contado",
+                    "default_delivery_days": "30 días",
+                }
+                _ctx_quote = {
+                    "client_name": _ck_quote.client_name if _ck_quote else None,
+                    "project": _ck_quote.project if _ck_quote else None,
+                    "material": _ck_quote.material if _ck_quote else None,
+                    "localidad": _ck_quote.localidad if _ck_quote else None,
+                    "is_building": _ck_quote.is_building if _ck_quote else False,
+                } if _ck_quote else None
+                _context = build_context_analysis(
+                    user_message or "", _ctx_quote, _dual_result, _cfg_defaults
+                )
+                # Persistimos el dual_read_result en DB (para levantarlo al
+                # confirmar contexto) pero NO lo emitimos aún al frontend.
+                try:
+                    _bd2 = dict(_ck_bd)
+                    _bd2["dual_read_result"] = _dual_result
+                    _bd2["dual_read_plan_hash"] = _plan_hash
+                    _bd2["dual_read_planilla_m2"] = planilla_m2
+                    _bd2["dual_read_crop_label"] = crop_label
+                    _bd2["context_analysis_pending"] = _context
+                    await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd2))
+                    await db.commit()
+                except Exception as _e_px:
+                    logging.warning(f"[context-analysis] persist pending failed: {_e_px}")
+                chunks.append({
+                    "type": "context_analysis",
+                    "content": _json.dumps(_context, ensure_ascii=False),
+                })
+                logging.info(
+                    f"[context-analysis] emitted for {quote_id}: "
+                    f"{len(_context.get('data_known') or [])} known, "
+                    f"{len(_context.get('assumptions') or [])} assumptions, "
+                    f"{len(_context.get('pending_questions') or [])} questions"
+                )
+                return (True, chunks)
+            except Exception as _e_ctx:
+                logging.warning(f"[context-analysis] build failed, fallback a dual_read_result: {_e_ctx}")
+                # Fallback: si falla el context analyzer, emitimos dual_read
+                # como antes para no romper el flow.
+
         chunks.append({"type": "dual_read_result", "content": _json.dumps(_dual_result, ensure_ascii=False)})
 
         # Persist in DB — SIEMPRE guardar hash + result para dedup en turnos
@@ -1265,6 +1329,62 @@ class AgentService:
         extra_files: Optional[list] = None,
         db: AsyncSession = None,
     ) -> AsyncGenerator[dict, None]:
+
+        # ── Handle CONTEXT_CONFIRMED EARLY (PR G): el operador confirmó la card
+        # de análisis de contexto (datos + asunciones + preguntas). Aplicamos
+        # las respuestas al dual_read_result guardado, emitimos el chunk de
+        # despiece real, y terminamos turno. El próximo [DUAL_READ_CONFIRMED]
+        # cerrará el flow.
+        if user_message.startswith("[CONTEXT_CONFIRMED]"):
+            try:
+                _ctx_payload = json.loads(user_message[len("[CONTEXT_CONFIRMED]"):])
+                _answers = _ctx_payload.get("answers") or []
+                _qr = await db.execute(select(Quote).where(Quote.id == quote_id))
+                _q_ctx = _qr.scalar_one_or_none()
+                _bd_ctx = (_q_ctx.quote_breakdown or {}) if _q_ctx else {}
+                _saved_dual = _bd_ctx.get("dual_read_result") or {}
+                # Aplicar las respuestas al dual_read_result
+                if _answers and _saved_dual:
+                    from app.modules.quote_engine.pending_questions import apply_answers
+                    apply_answers(_saved_dual, _answers)
+                    # Limpiar pending_questions ya que están respondidas
+                    _saved_dual.pop("pending_questions", None)
+                # Guardar verified_context_analysis (gate para no re-preguntar)
+                _bd_ctx["verified_context_analysis"] = _ctx_payload
+                _bd_ctx["dual_read_result"] = _saved_dual
+                _bd_ctx.pop("context_analysis_pending", None)
+                if _q_ctx:
+                    await db.execute(
+                        update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd_ctx)
+                    )
+                    await db.commit()
+                logging.info(
+                    f"[context-confirmed] {quote_id} applied {len(_answers)} answers, "
+                    "emitting dual_read_result"
+                )
+                yield {"type": "dual_read_result", "content": json.dumps(_saved_dual, ensure_ascii=False)}
+                yield {"type": "done", "content": ""}
+                # Persist assistant entry en historial
+                try:
+                    _turn = [
+                        {"role": "user", "content": [{"type": "text", "text": "(contexto confirmado)"}]},
+                        {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"},
+                    ]
+                    if _q_ctx:
+                        await db.execute(
+                            update(Quote).where(Quote.id == quote_id).values(
+                                messages=list(_q_ctx.messages or []) + _turn
+                            )
+                        )
+                        await db.commit()
+                except Exception:
+                    pass
+                return
+            except Exception as _e_ctx:
+                logging.error(f"[context-confirmed] handler failed: {_e_ctx}", exc_info=True)
+                yield {"type": "text", "content": "No se pudo procesar la confirmación del contexto. Reintentá."}
+                yield {"type": "done", "content": ""}
+                return
 
         # ── Handle DUAL_READ_CONFIRMED EARLY: save verified_context + replace
         # user_message BEFORE content is built. Si hacemos esto más tarde,

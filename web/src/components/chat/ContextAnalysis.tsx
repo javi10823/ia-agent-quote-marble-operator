@@ -1,0 +1,228 @@
+"use client";
+import React, { useState } from "react";
+
+interface DataRow {
+  field: string;
+  value: string;
+  source: string;
+  note?: string;
+}
+
+interface PendingQuestionOption {
+  value: string;
+  label: string;
+}
+
+interface PendingQuestion {
+  id: string;
+  label: string;
+  question: string;
+  type: string;
+  options?: PendingQuestionOption[];
+  detail_placeholder?: string;
+}
+
+interface PendingAnswer {
+  id: string;
+  value: string;
+  detail?: string;
+}
+
+export interface ContextAnalysisData {
+  data_known: DataRow[];
+  assumptions: DataRow[];
+  pending_questions: PendingQuestion[];
+  sector_summary?: string | null;
+}
+
+interface Props {
+  data: ContextAnalysisData;
+  onConfirm: (payload: { answers: PendingAnswer[]; corrections: Record<string, string> }) => void;
+}
+
+const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
+  brief: { label: "del brief", cls: "bg-acc/10 text-acc border-acc/30" },
+  quote: { label: "del quote", cls: "bg-grn/10 text-grn border-grn/30" },
+  rule: { label: "regla D'Angelo", cls: "bg-amb/10 text-amb border-amb/30" },
+  "brief+rule": { label: "brief + regla", cls: "bg-amb/10 text-amb border-amb/30" },
+  config_default: { label: "default", cls: "bg-white/5 text-t3 border-b1" },
+  inferred: { label: "inferido", cls: "bg-white/5 text-t3 border-b1" },
+};
+
+function SourceBadge({ source }: { source: string }) {
+  const meta = SOURCE_BADGE[source] || SOURCE_BADGE.inferred;
+  return (
+    <span className={`text-[10px] uppercase tracking-[0.08em] px-1.5 py-0.5 rounded border ${meta.cls}`}>
+      {meta.label}
+    </span>
+  );
+}
+
+export default function ContextAnalysis({ data, onConfirm }: Props) {
+  const [answers, setAnswers] = useState<Record<string, PendingAnswer>>({});
+  const [corrections, setCorrections] = useState<Record<string, string>>({});
+  const [editingField, setEditingField] = useState<string | null>(null);
+
+  const questions = data.pending_questions || [];
+  const allAnswered = questions.every(q => answers[q.id]?.value);
+
+  const handleConfirm = () => {
+    onConfirm({
+      answers: Object.values(answers),
+      corrections,
+    });
+  };
+
+  const renderRow = (row: DataRow, editable = true) => (
+    <div key={row.field} className="grid grid-cols-[140px_1fr_auto] gap-3 items-start py-2 border-t border-b1/50">
+      <div className="text-[12px] text-t3 uppercase tracking-[0.06em]">{row.field}</div>
+      <div className="text-[13px] text-t1">
+        {editingField === row.field ? (
+          <input
+            autoFocus
+            defaultValue={corrections[row.field] ?? row.value}
+            onBlur={(e) => {
+              const v = e.target.value.trim();
+              if (v && v !== row.value) {
+                setCorrections(prev => ({ ...prev, [row.field]: v }));
+              }
+              setEditingField(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.currentTarget.blur(); }
+              else if (e.key === "Escape") { setEditingField(null); }
+            }}
+            className="w-full bg-s1 border border-acc/60 rounded px-2 py-1 text-[13px] text-t1 outline-none"
+          />
+        ) : (
+          <span
+            className={editable ? "cursor-text hover:text-t1 transition-colors" : ""}
+            onDoubleClick={() => editable && setEditingField(row.field)}
+            title={editable ? "Doble-click para corregir" : undefined}
+          >
+            {corrections[row.field] ?? row.value}
+          </span>
+        )}
+        {row.note && <div className="text-[11px] text-t3 mt-0.5 italic">{row.note}</div>}
+      </div>
+      <SourceBadge source={row.source} />
+    </div>
+  );
+
+  return (
+    <div className="my-2 w-full rounded-2xl border border-b1 bg-s1 overflow-hidden shadow-[0_20px_40px_-20px_rgba(0,0,0,0.5)]">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-5 py-4 bg-gradient-to-b from-s3 to-s2 border-b border-b1">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-acc bg-acc-bg border border-acc/30 px-2 py-1 rounded-md">
+          🔍 Análisis de contexto
+        </span>
+        <h3 className="text-[15px] font-semibold text-t1">
+          Paso previo al despiece
+        </h3>
+        {data.sector_summary && (
+          <span className="ml-auto text-[12px] text-t3 font-mono">{data.sector_summary}</span>
+        )}
+      </div>
+
+      <div className="p-5">
+        <p className="text-[12px] text-t3 mb-4 leading-[1.55]">
+          Antes de medir el plano, validemos lo que sé del trabajo. Corregí lo que esté mal
+          con doble-click y respondé las preguntas bloqueantes.
+        </p>
+
+        {/* Datos leídos */}
+        {data.data_known.length > 0 && (
+          <div className="mb-5">
+            <h4 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-grn mb-2">
+              📋 Datos que tengo
+            </h4>
+            <div>
+              {data.data_known.map(row => renderRow(row))}
+            </div>
+          </div>
+        )}
+
+        {/* Asunciones */}
+        {data.assumptions.length > 0 && (
+          <div className="mb-5">
+            <h4 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-amb mb-2">
+              ✨ Reglas / defaults que aplico
+            </h4>
+            <div>
+              {data.assumptions.map(row => renderRow(row))}
+            </div>
+          </div>
+        )}
+
+        {/* Preguntas bloqueantes */}
+        {questions.length > 0 && (
+          <div className="mb-5 p-4 rounded-xl border border-amb/30 bg-amb-bg">
+            <h4 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-amb mb-3">
+              ⚠ Preguntas bloqueantes ({questions.length})
+            </h4>
+            <div className="flex flex-col gap-4">
+              {questions.map((q) => {
+                const current = answers[q.id];
+                return (
+                  <div key={q.id} className="flex flex-col gap-2">
+                    <div className="text-[13px] text-t1 leading-[1.5]">{q.question}</div>
+                    <div className="flex flex-col gap-1.5">
+                      {q.options?.map((opt) => (
+                        <label
+                          key={opt.value}
+                          className={`flex items-start gap-2 text-[12px] cursor-pointer px-2.5 py-1.5 rounded-md border transition ${
+                            current?.value === opt.value
+                              ? "border-acc bg-acc/10 text-t1"
+                              : "border-b1 bg-transparent text-t2 hover:border-b2"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name={`q-${q.id}`}
+                            checked={current?.value === opt.value}
+                            onChange={() => setAnswers(prev => ({
+                              ...prev,
+                              [q.id]: { id: q.id, value: opt.value, detail: current?.detail },
+                            }))}
+                            className="mt-0.5"
+                          />
+                          <span>{opt.label}</span>
+                        </label>
+                      ))}
+                      {current?.value === "custom" && q.detail_placeholder && (
+                        <input
+                          type="text"
+                          placeholder={q.detail_placeholder}
+                          value={current?.detail || ""}
+                          onChange={(e) => setAnswers(prev => ({
+                            ...prev,
+                            [q.id]: { ...(prev[q.id] || { id: q.id, value: "custom" }), detail: e.target.value },
+                          }))}
+                          className="mt-1 w-full px-2.5 py-1.5 bg-s1 border border-b2 rounded-md text-[12px] text-t1 focus:border-acc/50 outline-none"
+                        />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 px-5 py-4 border-t border-b1 bg-s2">
+        <button
+          className="flex-1 py-2.5 px-4 rounded-xl text-[13px] font-semibold bg-acc hover:bg-acc-hover text-white transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-acc"
+          onClick={handleConfirm}
+          disabled={!allAnswered}
+          title={!allAnswered ? "Respondé las preguntas pendientes primero" : undefined}
+        >
+          {allAnswered
+            ? "Confirmar contexto — seguir al despiece"
+            : `Respondé ${questions.length - Object.values(answers).filter(a => a.value).length} pregunta(s)`}
+        </button>
+      </div>
+    </div>
+  );
+}
