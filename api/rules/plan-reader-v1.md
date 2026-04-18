@@ -40,10 +40,9 @@ Antes de cualquier otra lectura, determiná qué TIPO de plano es esto:
   Tratar cada vista según su tipo.
 
 - `"render_fotorrealista"` → Foto 3D (Blender/V-Ray, texturas y luces,
-  sin cotas). NO extraer medidas. Solo contexto. Si no hay planta técnica
-  → PEDIRLA antes de calcular. Si hay planta + render: usá el render
-  como **cross-check topológico** (contar mesadas/isla/banquetas/anafes
-  visibles) — si discrepa con la planta, flaguear ambigüedad.
+  sin cotas). NO extraer medidas. Si hay planta + render: cross-check
+  topológico (contar mesadas/isla/anafes); discrepancia → ambigüedad.
+  Si solo hay renders, PEDIR planta técnica antes de calcular.
 
 - `"unknown"` → Si realmente no es claro. Usar reglas conservadoras de
   planta y flaguear alta `requires_human_review`.
@@ -60,9 +59,7 @@ El `view_type` condiciona las pasadas siguientes:
 
 **Pasada 1 — Inventario**
 Identificá todos los sectores presentes (cocina, baño, lavadero, etc.)
-Cada **región rellena contigua** (gris/hatch) dentro de un sector =
-1 mesada. Cocina U con isla = 4 regiones (3 lados + isla), no 2 tramos.
-NO colapsar regiones separadas en un tramo continuo largo.
+Cada región rellena contigua = 1 mesada. U+isla = 4 regiones, no 2.
 
 **Pasada 2 — Geometría por sector**
 Determiná el tipo de mesada:
@@ -75,11 +72,8 @@ Determiná el tipo de mesada:
 - VISTA EN PLANTA    : largo (eje horizontal) × ancho (profundidad)
 - VISTA EN ELEVACIÓN : dimensión SOBRE línea de mesada = zócalo | dimensión BAJO = frentin/faldón
 - Z antes de número  = longitud de zócalo en cm
-- ⛔ **Cotas EXTERNAS** (fuera del dibujo, con líneas de extensión que
-  llegan al muro, suelen estar en el perímetro del ambiente: ej 4.15,
-  2.75) = dimensión del **ambiente**, NO de mesadas. Descartar para
-  mesada. Usar SOLO cotas **INTERNAS** anotadas junto a cada región
-  rellena (ej 2.95, 2.05, 1.60).
+- ⛔ Cotas EXTERNAS (fuera del dibujo, al muro) = ambiente, NO mesada.
+  Usar SOLO cotas INTERNAS junto a cada región rellena.
 
 **Pasada 4 — Validación**
 Verificá consistencia entre vistas. Si hay contradicción → anotá en ambiguedades.
