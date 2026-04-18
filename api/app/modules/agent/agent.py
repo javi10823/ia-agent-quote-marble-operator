@@ -214,6 +214,7 @@ async def _run_dual_read(
     planilla_m2: float | None = None,
     cotas_text: str | None = None,
     extracted_cota_values: list[float] | None = None,
+    extracted_cotas: list | None = None,  # list[Cota] — optional full objects for multi-crop
     user_message: str = "",
     plan_filename: str = "",
     plan_hash: str | None = None,
@@ -377,15 +378,43 @@ async def _run_dual_read(
     try:
         from app.modules.quote_engine.dual_reader import dual_read_crop
         _dual_enabled = get_ai_config().get("dual_read_enabled", True)
+        _multi_crop_enabled = get_ai_config().get("multi_crop_enabled", False)
         chunks.append({"type": "action", "content": "📐 Leyendo medidas del plano..."})
-        _dual_result = await dual_read_crop(
-            draw_bytes,
-            crop_label=crop_label,
-            planilla_m2=planilla_m2,
-            dual_enabled=_dual_enabled,
-            cotas_text=cotas_text,
-            brief_text=user_message,
-        )
+
+        _dual_result = None
+        # Multi-crop path (fase 1: topología global + fase 2: medidas por región).
+        # Feature flag apagado por default; cuando se enciende, cae al pipeline
+        # legacy si la fase global falla (sin resultado o timeout).
+        if _multi_crop_enabled:
+            try:
+                from app.modules.quote_engine.multi_crop_reader import read_plan_multi_crop
+                _multi_result = await read_plan_multi_crop(
+                    draw_bytes,
+                    cotas=extracted_cotas or [],
+                    brief_text=user_message,
+                )
+                if not _multi_result.get("error"):
+                    _dual_result = _multi_result
+                    logging.info(f"[multi-crop] used multi_crop pipeline, source={_multi_result.get('source')}")
+                else:
+                    logging.warning(
+                        f"[multi-crop] failed ({_multi_result.get('error')}) — "
+                        "fallback to legacy dual_read pipeline"
+                    )
+            except Exception as _e_mc:
+                logging.warning(f"[multi-crop] exception ({_e_mc}) — fallback to legacy")
+
+        # Legacy dual_read path (Sonnet + Opus fallback), usado cuando
+        # multi-crop está off o devolvió error.
+        if _dual_result is None:
+            _dual_result = await dual_read_crop(
+                draw_bytes,
+                crop_label=crop_label,
+                planilla_m2=planilla_m2,
+                dual_enabled=_dual_enabled,
+                cotas_text=cotas_text,
+                brief_text=user_message,
+            )
         if _dual_result.get("error"):
             logging.warning(f"[dual-read] Error: {_dual_result.get('error')}")
             return (False, chunks)
@@ -2562,6 +2591,7 @@ class AgentService:
                                         planilla_m2=_planilla_data.m2,
                                         cotas_text=_cotas_text,
                                         extracted_cota_values=_extracted_cota_values_pl,
+                                        extracted_cotas=list(_cotas or []),
                                         user_message=user_message,
                                         plan_filename=plan_filename,
                                         plan_hash=_raw_plan_hash,
@@ -2659,6 +2689,7 @@ class AgentService:
                                     planilla_m2=None,
                                     cotas_text=_cotas_nopl_text,
                                     extracted_cota_values=_cotas_nopl_values,
+                                    extracted_cotas=list(_cotas_nopl or []) if '_cotas_nopl' in locals() else [],
                                     user_message=user_message,
                                     plan_filename=plan_filename,
                                     plan_hash=_raw_plan_hash,
