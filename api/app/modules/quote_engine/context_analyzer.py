@@ -66,11 +66,11 @@ def _extract_localidad_from_brief(brief: str) -> str | None:
 
 
 _ZOCALO_YES = re.compile(
-    r"\b(con\s+z[oó]c|lleva(n)?\s+z[oó]c|z[oó]calos?\s*s[ií])\b",
+    r"\b(con\s+z[oó]c|lleva(n)?\s+z[oó]c|z[oó]calos?\s*s[ií])",
     re.IGNORECASE,
 )
-_COLOC_YES = re.compile(r"\b(con\s+colocaci[oó]n|incluye\s+colocaci[oó]n)\b", re.IGNORECASE)
-_COLOC_NO = re.compile(r"\b(sin\s+colocaci[oó]n|no\s+(incluye\s+)?colocaci[oó]n)\b", re.IGNORECASE)
+_COLOC_YES = re.compile(r"\b(con\s+colocaci[oó]n|incluye\s+colocaci[oó]n)", re.IGNORECASE)
+_COLOC_NO = re.compile(r"\b(sin\s+colocaci[oó]n|no\s+(incluye\s+)?colocaci[oó]n)", re.IGNORECASE)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
