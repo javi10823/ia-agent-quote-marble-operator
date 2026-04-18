@@ -490,13 +490,15 @@ async def _run_dual_read(
         # y guardamos el dual_read_result en DB para levantarlo cuando el
         # operador confirme el contexto.
         _context_already_confirmed = False
+        _ck_quote = None
+        _ck_bd: dict = {}
         try:
             _ck_q = await db.execute(select(Quote).where(Quote.id == quote_id))
             _ck_quote = _ck_q.scalar_one_or_none()
             _ck_bd = (_ck_quote.quote_breakdown or {}) if _ck_quote else {}
             _context_already_confirmed = bool(_ck_bd.get("verified_context_analysis"))
-        except Exception:
-            _ck_bd = {}
+        except Exception as _e_ctx_q:
+            logging.warning(f"[context-analysis] quote lookup failed: {_e_ctx_q}")
 
         if not _context_already_confirmed:
             # Construir y emitir context_analysis
