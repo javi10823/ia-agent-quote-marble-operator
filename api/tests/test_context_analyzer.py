@@ -1,5 +1,26 @@
-"""Tests de context_analyzer — construye la card de análisis previa al despiece."""
-from app.modules.quote_engine.context_analyzer import build_context_analysis
+"""Tests de context_analyzer — construye la card de análisis previa al despiece.
+
+Patcheamos `analyze_brief` (el LLM call) con el regex fallback determinístico
+para que los tests corran sin pegar a Anthropic y sean reproducibles.
+"""
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from app.modules.quote_engine.brief_analyzer import EMPTY_SCHEMA, _analyze_regex_fallback
+from app.modules.quote_engine.context_analyzer import build_context_analysis_sync as build_context_analysis
+
+
+@pytest.fixture(autouse=True)
+def _mock_analyze_brief():
+    """Reemplaza el LLM call por el regex fallback para tests deterministas."""
+    async def _fake(brief: str) -> dict:
+        return _analyze_regex_fallback(brief or "")
+    with patch(
+        "app.modules.quote_engine.context_analyzer.analyze_brief",
+        new=_fake,
+    ):
+        yield
 
 
 def _dual(has_cocina: bool = True) -> dict:
@@ -48,11 +69,20 @@ class TestBuildContextAnalysis:
         assert any(r["field"] == "Localidad" for r in out["data_known"])
 
     def test_cocina_triggers_pileta_empotrada_rule(self):
-        out = build_context_analysis("", None, _dual(has_cocina=True))
-        piletas = [a for a in out["assumptions"] if "Pileta" in a["field"]]
+        # La regla aplica cuando hay cocina Y pileta mencionada (evita
+        # agregar la regla cuando el trabajo no tiene pileta).
+        out = build_context_analysis("cocina con pileta", None, _dual(has_cocina=True))
+        piletas = [a for a in out["assumptions"] if a["field"] == "Pileta (tipo de montaje)"]
         assert len(piletas) == 1
         assert "empotrada" in piletas[0]["value"].lower()
         assert piletas[0]["source"] == "rule"
+
+    def test_cocina_without_pileta_mention_no_rule(self):
+        """Sin pileta mencionada en brief ni detectada en card → no aplicamos
+        la regla (el trabajo puede no tener pileta)."""
+        out = build_context_analysis("", None, _dual(has_cocina=True))
+        piletas = [a for a in out["assumptions"] if a["field"] == "Pileta (tipo de montaje)"]
+        assert len(piletas) == 0
 
     def test_no_cocina_no_pileta_rule(self):
         out = build_context_analysis("", None, _dual(has_cocina=False))
@@ -159,10 +189,13 @@ class TestContextConfirmationRoundTrip:
         """
         from app.modules.quote_engine.pending_questions import apply_answers
 
-        brief = "material pura prima onix white cliente erica bernardi con zocalos en rosario con colocacion"
+        brief = "material pura prima onix white cliente erica bernardi con pileta doble con zocalos en rosario con colocacion"
         quote = None  # operador recién lo sube, sin datos previos en quote
 
         dual = _dual()
+        # Agregar feature de pileta a un tramo de cocina para que la regla
+        # pileta-empotrada se dispare (simula lo que detectaría la fase global)
+        dual["sectores"][0]["tramos"][0]["features"] = {"has_pileta": True}
         dual["sectores"].append({
             "id": "s2", "tipo": "isla",
             "tramos": [{

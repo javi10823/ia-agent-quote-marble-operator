@@ -517,7 +517,7 @@ async def _run_dual_read(
                     "localidad": _ck_quote.localidad if _ck_quote else None,
                     "is_building": _ck_quote.is_building if _ck_quote else False,
                 } if _ck_quote else None
-                _context = build_context_analysis(
+                _context = await build_context_analysis(
                     user_message or "", _ctx_quote, _dual_result, _cfg_defaults
                 )
                 # Persistimos el dual_read_result en DB (para levantarlo al
