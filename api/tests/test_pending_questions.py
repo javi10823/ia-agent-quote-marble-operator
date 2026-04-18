@@ -271,21 +271,24 @@ def _make_with_isla(ancho_status: str = "CONFIRMADO", ancho_val: float = 0.60):
 
 
 class TestDetectIslaProfundidad:
+    def test_always_emits_when_isla_present(self):
+        """Regla nueva: siempre preguntar profundidad isla cuando hay isla."""
+        result = _make_with_isla(ancho_status="CONFIRMADO", ancho_val=0.60)
+        qs = detect_pending_questions("", result)
+        assert any(q["id"] == "isla_profundidad" for q in qs)
+
     def test_emits_when_ancho_is_dudoso(self):
         result = _make_with_isla(ancho_status="DUDOSO")
         qs = detect_pending_questions("", result)
         assert any(q["id"] == "isla_profundidad" for q in qs)
 
-    def test_emits_when_ancho_equals_largo(self):
-        """Fallback silencioso del VLM (L==A) → pedir al operador."""
-        result = _make_with_isla(ancho_status="CONFIRMADO", ancho_val=1.60)
-        qs = detect_pending_questions("", result)
-        assert any(q["id"] == "isla_profundidad" for q in qs)
-
-    def test_skips_when_ancho_confirmed_sensible(self):
+    def test_skips_when_brief_gives_profundidad_explicit(self):
+        """Skip solo si brief da la profundidad explícita."""
         result = _make_with_isla(ancho_status="CONFIRMADO", ancho_val=0.60)
-        qs = detect_pending_questions("", result)
+        qs = detect_pending_questions("isla de 0.80", result)
         assert all(q["id"] != "isla_profundidad" for q in qs)
+        qs2 = detect_pending_questions("profundidad isla 0.70", result)
+        assert all(q["id"] != "isla_profundidad" for q in qs2)
 
     def test_skips_when_no_isla_sector(self):
         qs = detect_pending_questions("", _make_cocina_with_pileta())
