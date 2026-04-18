@@ -1,9 +1,11 @@
-"""Tests del multi_crop_reader — aggregator + orquestación.
+"""Tests del multi_crop_reader — aggregator + orquestación + fail-hard.
 
 LLM calls y PIL image ops se mockean. La idea es verificar:
 - aggregator arma el schema dual_read correcto desde topology + results
 - fallback graceful si global topology falla
-- crop + filter de cotas locales por bbox funciona
+- per-region fail-hard: <2 cotas locales → skip LLM, devolver DUDOSO
+- detección de fallback silencioso (largo == ancho, valores no anclados)
+- labels genéricos hasta que PR C defina contrato feature-based
 """
 from unittest.mock import AsyncMock, patch
 
@@ -14,6 +16,7 @@ from PIL import Image
 from app.modules.quote_engine.cotas_extractor import Cota
 from app.modules.quote_engine.multi_crop_reader import (
     _aggregate,
+    _measure_region,
     read_plan_multi_crop,
 )
 
@@ -68,6 +71,49 @@ class TestAggregate:
         tramo = out["sectores"][0]["tramos"][0]
         assert tramo["largo_m"]["status"] == "DUDOSO"
         assert out["requires_human_review"] is True
+
+    def test_suspicious_reasons_become_dudoso(self):
+        """Fallback silencioso detectado (L==A) → DUDOSO, no CONFIRMADO."""
+        topology = {"regions": [{"id": "R1", "sector": "cocina"}]}
+        results = [{
+            "region_id": "R1",
+            "largo_m": 0.60,
+            "ancho_m": 0.60,
+            "suspicious_reasons": ["largo == ancho (0.60m) — probable fallback silencioso"],
+        }]
+        out = _aggregate(topology, results)
+        tramo = out["sectores"][0]["tramos"][0]
+        assert tramo["largo_m"]["status"] == "DUDOSO"
+        assert tramo["ancho_m"]["status"] == "DUDOSO"
+        assert "— revisar" in tramo["descripcion"]
+
+    def test_region_notes_not_propagated_to_description(self):
+        """Hasta PR C, no propagamos artefactos de la fase global (que confunde
+        qué región tiene qué). Label genérico 'Mesada N'."""
+        topology = {
+            "regions": [
+                {"id": "R1", "sector": "cocina", "notes": "isla central con anafe a gas 4 hornallas"},
+            ],
+        }
+        results = [{"region_id": "R1", "largo_m": 2.05, "ancho_m": 0.60}]
+        out = _aggregate(topology, results)
+        desc = out["sectores"][0]["tramos"][0]["descripcion"]
+        assert "anafe" not in desc.lower()
+        assert "isla" not in desc.lower()
+        assert desc.startswith("Mesada")
+
+    def test_ambiguedades_propagated_to_first_sector(self):
+        topology = {"regions": [{"id": "R1", "sector": "cocina"}, {"id": "R2", "sector": "cocina"}]}
+        results = [
+            {"region_id": "R1", "largo_m": 2.05, "ancho_m": 0.60},
+            {"region_id": "R2", "error": "insufficient_local_cotas"},
+        ]
+        out = _aggregate(topology, results)
+        # El sector cocina recibe la ambigüedad
+        ambs = out["sectores"][0]["ambiguedades"]
+        assert len(ambs) >= 1
+        assert ambs[0]["tipo"] == "REVISION"
+        assert "R2" in ambs[0]["texto"]
 
     def test_no_regions_fallback_empty_sector(self):
         out = _aggregate({"regions": []}, [])
@@ -142,6 +188,71 @@ class TestReadPlanMultiCrop:
         assert cocina["tramos"][0]["largo_m"]["valor"] == 2.95
         assert cocina["tramos"][1]["largo_m"]["valor"] == 2.05
         assert isla["tramos"][0]["largo_m"]["valor"] == 1.60
+
+    @pytest.mark.asyncio
+    async def test_measure_region_insufficient_cotas_skips_llm(self):
+        """Fail-hard: <2 cotas locales → error sin llamar al LLM.
+
+        Evita el fallback silencioso 0.60×0.60 que el VLM produce cuando
+        no tiene evidencia suficiente. Mejor DUDOSO que falsa certeza.
+        """
+        image = _make_image_bytes(1000, 800)
+        region = {"id": "R1", "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.3}}
+        # Una sola cota en el bbox — insuficiente
+        cotas = [_make_cota(0.60, x=200, y=200)]
+
+        # Patch el anthropic client para asegurar que NO se llama
+        with patch("app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic") as mock_client:
+            result = await _measure_region(image, (1000, 800), region, cotas, model="test", brief_text="")
+            mock_client.assert_not_called()
+        assert result.get("error") == "insufficient_local_cotas"
+        assert result.get("local_cotas_count") == 1
+
+    @pytest.mark.asyncio
+    async def test_measure_region_detects_unanchored_values(self):
+        """LLM devuelve valor que no está en las cotas locales → suspicious_reasons."""
+        image = _make_image_bytes(1000, 800)
+        region = {"id": "R1", "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.3}}
+        # 3 cotas dentro del bbox
+        cotas = [
+            _make_cota(2.95, x=200, y=200),
+            _make_cota(0.60, x=210, y=220),
+            _make_cota(4.15, x=230, y=240),
+        ]
+        # Mock LLM returns 1.75 (no está en cotas) + 0.60 (sí está)
+        mock_response = type("R", (), {
+            "content": [type("B", (), {"text": '{"largo_m": 1.75, "ancho_m": 0.60, "confidence": 0.9}'})()]
+        })()
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_client_instance = mock_anth.return_value
+            mock_client_instance.messages.create = AsyncMock(return_value=mock_response)
+            result = await _measure_region(image, (1000, 800), region, cotas, model="test")
+        assert "suspicious_reasons" in result
+        assert any("1.75" in s for s in result["suspicious_reasons"])
+
+    @pytest.mark.asyncio
+    async def test_measure_region_detects_silent_fallback(self):
+        """LLM devuelve largo == ancho → fallback silencioso detectado."""
+        image = _make_image_bytes(1000, 800)
+        region = {"id": "R1", "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.3}}
+        cotas = [
+            _make_cota(2.05, x=200, y=200),
+            _make_cota(0.60, x=210, y=220),
+        ]
+        # LLM responde 0.60 x 0.60 (clásico fallback cuando no sabe)
+        mock_response = type("R", (), {
+            "content": [type("B", (), {"text": '{"largo_m": 0.60, "ancho_m": 0.60}'})()]
+        })()
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_client_instance = mock_anth.return_value
+            mock_client_instance.messages.create = AsyncMock(return_value=mock_response)
+            result = await _measure_region(image, (1000, 800), region, cotas, model="test")
+        assert "suspicious_reasons" in result
+        assert any("largo == ancho" in s for s in result["suspicious_reasons"])
 
     @pytest.mark.asyncio
     async def test_partial_region_failure_still_aggregates(self):

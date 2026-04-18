@@ -219,7 +219,17 @@ async def _measure_region(
     model: str,
     brief_text: str = "",
 ) -> dict:
-    """Mide una región usando un crop local + cotas candidatas filtradas."""
+    """Mide una región usando un crop local + cotas candidatas filtradas.
+
+    Fail-hard behavior:
+    - Si el bbox es inválido o el crop sale vacío → error, sin LLM call.
+    - Si la región tiene < 2 cotas locales en el bbox → error, sin LLM call.
+      (el LLM no tiene evidencia suficiente para elegir largo + ancho).
+    - Después del LLM: si los valores no anclan a las cotas locales o
+      largo == ancho (fallback silencioso del LLM cuando no sabe) →
+      flaguea `suspicious_reasons` para que el aggregator lo marque
+      DUDOSO en vez de CONFIRMADO.
+    """
     img_w, img_h = image_size
     bbox = region.get("bbox_rel") or {}
     x = max(0, int((bbox.get("x") or 0) * img_w) - REGION_CROP_PADDING_PX)
@@ -230,6 +240,27 @@ async def _measure_region(
     y2 = min(img_h, y + max(h, 1))
     if x2 - x < 10 or y2 - y < 10:
         return {"error": "region_bbox_too_small", "region_id": region.get("id")}
+
+    # Filtrar cotas candidatas ANTES de croppear: si no hay evidencia
+    # suficiente para elegir largo + ancho, cortamos acá sin gastar la
+    # llamada al LLM. Menos latencia + menos tokens + menos chance de
+    # que el modelo fabrique un 0.60×0.60 silencioso.
+    local_cotas: list[Cota] = []
+    for c in candidate_cotas:
+        if x <= c.x <= x2 and y <= c.y <= y2:
+            local_cotas.append(c)
+
+    MIN_LOCAL_COTAS = 2
+    if candidate_cotas and len(local_cotas) < MIN_LOCAL_COTAS:
+        logger.info(
+            f"[multi-crop] region {region.get('id')} has only {len(local_cotas)} "
+            f"local cotas (<{MIN_LOCAL_COTAS}) — skip LLM, return DUDOSO"
+        )
+        return {
+            "error": "insufficient_local_cotas",
+            "region_id": region.get("id"),
+            "local_cotas_count": len(local_cotas),
+        }
 
     # Crop la imagen con PIL
     try:
@@ -242,14 +273,6 @@ async def _measure_region(
         crop_bytes = buf.getvalue()
     except Exception as e:
         return {"error": f"crop_failed: {e}", "region_id": region.get("id")}
-
-    # Filtrar cotas candidatas: sólo las que caen dentro del bbox (con el
-    # mismo padding). Las cotas ya tienen x/y en crop-pixel space de la
-    # imagen original, así que comparamos contra el bbox absoluto.
-    local_cotas: list[Cota] = []
-    for c in candidate_cotas:
-        if x <= c.x <= x2 and y <= c.y <= y2:
-            local_cotas.append(c)
 
     client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
     cotas_txt = format_cotas_for_prompt(local_cotas) if local_cotas else "(sin cotas extraídas en esta región)"
@@ -329,6 +352,38 @@ async def _measure_region(
 
     parsed["region_id"] = region.get("id")
     parsed["_local_cotas_count"] = len(local_cotas)
+
+    # Sanity checks post-LLM: marcamos suspicious_reasons para que el
+    # aggregator emita DUDOSO en vez de CONFIRMADO. Regla: no aceptar
+    # output del VLM con "cara de confiado" cuando la evidencia no cierra.
+    largo = parsed.get("largo_m")
+    ancho = parsed.get("ancho_m")
+    suspicious: list[str] = []
+    cota_values = [c.value for c in local_cotas]
+
+    def _anchored(v) -> bool:
+        if v is None or not isinstance(v, (int, float)):
+            return False
+        return any(abs(float(v) - cv) <= 0.02 for cv in cota_values)
+
+    if local_cotas:
+        if largo is not None and not _anchored(largo):
+            suspicious.append(f"largo {largo}m no está en las cotas locales de la región")
+        if ancho is not None and not _anchored(ancho):
+            suspicious.append(f"ancho {ancho}m no está en las cotas locales de la región")
+
+    # Fallback silencioso típico: el modelo devuelve L==A cuando no puede
+    # elegir → usualmente agarra 0.60 (el ancho estándar) dos veces.
+    if (
+        isinstance(largo, (int, float))
+        and isinstance(ancho, (int, float))
+        and abs(float(largo) - float(ancho)) < 0.01
+    ):
+        suspicious.append(f"largo == ancho ({largo}m) — probable fallback silencioso del VLM")
+
+    if suspicious:
+        parsed["suspicious_reasons"] = suspicious
+
     return parsed
 
 
@@ -364,11 +419,27 @@ def _aggregate(topology: dict, region_results: list[dict]) -> dict:
             m2 = round(float(largo) * float(ancho), 2) if (
                 isinstance(largo, (int, float)) and isinstance(ancho, (int, float))
             ) else None
-            # status: si hubo error en la medición → DUDOSO, si OK → CONFIRMADO
-            status = "DUDOSO" if r_result.get("error") else "CONFIRMADO"
+
+            # status: DUDOSO si hubo error, medida sospechosa, o faltan valores.
+            # CONFIRMADO solo si la medición se ancló a las cotas locales y no
+            # hay señales de fallback silencioso.
+            error = r_result.get("error")
+            suspicious = r_result.get("suspicious_reasons") or []
+            if error or suspicious or largo is None or ancho is None:
+                status = "DUDOSO"
+            else:
+                status = "CONFIRMADO"
+
+            # Descripción: NO propagamos region.notes porque la fase global
+            # hoy confunde artefactos (puso "anafe en isla" cuando el anafe
+            # estaba en la lateral). Hasta que PR C implemente el contrato
+            # feature-based, usamos label genérico. El operador ve el crop
+            # en la card y asocia visualmente.
+            desc = f"Mesada {len(tramos) + 1}" if status == "CONFIRMADO" else f"Mesada {len(tramos) + 1} — revisar"
+
             tramo = {
                 "id": rid or f"t{len(tramos) + 1}",
-                "descripcion": region.get("notes") or f"Mesada {rid}",
+                "descripcion": desc,
                 "largo_m": _field(largo, status),
                 "ancho_m": _field(ancho, status),
                 "m2": _field(m2, status),
@@ -377,17 +448,25 @@ def _aggregate(topology: dict, region_results: list[dict]) -> dict:
                 "regrueso": [],
             }
             tramos.append(tramo)
-            if r_result.get("error"):
+
+            if error:
                 all_ambiguedades.append({
                     "tipo": "REVISION",
-                    "texto": f"Región {rid} no pudo medirse: {r_result.get('error')}",
+                    "texto": f"Región {rid}: no se pudo medir ({error}) — completá manual",
+                })
+            elif suspicious:
+                all_ambiguedades.append({
+                    "tipo": "REVISION",
+                    "texto": f"Región {rid}: medida dudosa ({'; '.join(suspicious)[:120]})",
                 })
 
         sectores.append({
             "id": f"sector_{sec_name}",
             "tipo": sec_name,
             "tramos": tramos,
-            "ambiguedades": [],
+            # Propagamos las ambigüedades del aggregator al primer sector
+            # (el frontend las rendera como "Revisar en plano" + bullets).
+            "ambiguedades": list(all_ambiguedades) if sec_name == next(iter(by_sector)) else [],
         })
 
     if not sectores:
