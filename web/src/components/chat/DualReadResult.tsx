@@ -107,6 +107,7 @@ const STATUS_STYLE: Record<string, IconStyle> = {
   DUDOSO:       { cls: "bg-[rgba(191,85,236,0.15)] text-[#bf55ec]", char: "?" },
   SOLO_SONNET:  { cls: "bg-grn-bg text-grn",                        char: "✓" },
   SOLO_OPUS:    { cls: "bg-grn-bg text-grn",                        char: "✓" },
+  UNANCHORED:   { cls: "bg-amb-bg text-amb",                        char: "⚠" },
 };
 
 const STATUS_TITLE: Record<string, string> = {
@@ -116,6 +117,7 @@ const STATUS_TITLE: Record<string, string> = {
   DUDOSO: "Valor dudoso — requiere revisión",
   SOLO_SONNET: "Solo Sonnet detectó este valor",
   SOLO_OPUS: "Solo Opus detectó este valor",
+  UNANCHORED: "Este valor no coincide con las cotas del plano — corregí con doble-click",
 };
 
 function StatusIcon({
@@ -167,7 +169,10 @@ function EditableNumber({
    *  edit mode. Enter/blur commit (solo si valor válido), Esc cancela. */
   dblClickEdit?: boolean;
 }) {
-  const alwaysEditable = forceEditable || field.status === "CONFLICTO" || field.status === "DUDOSO";
+  const alwaysEditable = forceEditable
+    || field.status === "CONFLICTO"
+    || field.status === "DUDOSO"
+    || field.status === "UNANCHORED";
   const [editing, setEditing] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
   const originalRef = React.useRef<number>(field.valor);
