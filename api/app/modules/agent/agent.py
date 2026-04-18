@@ -213,6 +213,7 @@ async def _run_dual_read(
     crop_label: str = "plano",
     planilla_m2: float | None = None,
     cotas_text: str | None = None,
+    extracted_cota_values: list[float] | None = None,
     user_message: str = "",
     plan_filename: str = "",
     plan_hash: str | None = None,
@@ -388,6 +389,28 @@ async def _run_dual_read(
         if _dual_result.get("error"):
             logging.warning(f"[dual-read] Error: {_dual_result.get('error')}")
             return (False, chunks)
+
+        # Anchor validator — rechaza medidas que el VLM emitió sin respaldo
+        # en el text layer del PDF. Caso Bernardi: "1.75" y "2.35" inventados
+        # (no existen en las cotas extraídas con pdfplumber). Quedan marcadas
+        # UNANCHORED y el operador las corrige con dbl-click en la card.
+        if extracted_cota_values:
+            try:
+                from app.modules.quote_engine.plan_anchor_validator import annotate_anchoring
+                annotate_anchoring(_dual_result, extracted_cota_values)
+                _un = sum(
+                    1 for s in _dual_result.get("sectores") or []
+                    for t in s.get("tramos") or []
+                    for f in ("largo_m", "ancho_m")
+                    if (t.get(f) or {}).get("status") == "UNANCHORED"
+                )
+                if _un:
+                    logging.info(
+                        f"[dual-read] anchor validator flagged {_un} unanchored "
+                        f"fields ({len(extracted_cota_values)} cotas in text layer)"
+                    )
+            except Exception as _e_av:
+                logging.warning(f"[dual-read] anchor validator failed (non-fatal): {_e_av}")
 
         # Save crop for Opus retry
         try:
@@ -2530,6 +2553,7 @@ class AgentService:
                                     _handled = False
                                     _dr_chunks = []
                                 else:
+                                    _extracted_cota_values_pl = [c.value for c in _cotas] if _cotas else []
                                     _handled, _dr_chunks = await _run_dual_read(
                                         db,
                                         quote_id,
@@ -2537,6 +2561,7 @@ class AgentService:
                                         crop_label=_planilla_data.ubicacion or "cocina",
                                         planilla_m2=_planilla_data.m2,
                                         cotas_text=_cotas_text,
+                                        extracted_cota_values=_extracted_cota_values_pl,
                                         user_message=user_message,
                                         plan_filename=plan_filename,
                                         plan_hash=_raw_plan_hash,
@@ -2595,13 +2620,45 @@ class AgentService:
                                 _buf_nopl = _io_nopl.BytesIO()
                                 _pages_nopl[0].save(_buf_nopl, format="JPEG", quality=85)
                                 _draw_bytes_nopl = _buf_nopl.getvalue()
+                                # Extraer cotas del text layer del PDF (single-cocina sin
+                                # planilla). Antes solo se extraía en el path edificio;
+                                # para una planta residencial simple el cotas_text quedaba
+                                # None y el LLM trabajaba 100% desde la imagen → fuente
+                                # principal de errores tipo "1.75 / 2.35 inventados".
+                                _cotas_nopl_text = None
+                                _cotas_nopl_values: list[float] = []
+                                try:
+                                    import pdfplumber as _pp_nopl
+                                    from app.modules.quote_engine.cotas_extractor import (
+                                        extract_cotas_from_drawing,
+                                        format_cotas_for_prompt,
+                                    )
+                                    with _pp_nopl.open(_io_nopl.BytesIO(plan_bytes)) as _pdf_nopl:
+                                        if _pdf_nopl.pages:
+                                            _page_nopl = _pdf_nopl.pages[0]
+                                            _page_w = float(getattr(_page_nopl, "width", 0) or 1e9)
+                                            _cotas_nopl = extract_cotas_from_drawing(
+                                                _page_nopl,
+                                                table_x0=_page_w,  # full width — no planilla
+                                                dpi=_plan_dpi_nopl,
+                                            )
+                                            if _cotas_nopl:
+                                                _cotas_nopl_text = format_cotas_for_prompt(_cotas_nopl)
+                                                _cotas_nopl_values = [c.value for c in _cotas_nopl]
+                                                logging.info(
+                                                    f"[cotas/single-cocina] extracted {len(_cotas_nopl)} cotas "
+                                                    f"from text layer: {[c.value for c in _cotas_nopl][:20]}"
+                                                )
+                                except Exception as _e_cot:
+                                    logging.warning(f"[cotas/single-cocina] extraction failed (non-fatal): {_e_cot}")
                                 _handled_nopl, _chunks_nopl = await _run_dual_read(
                                     db,
                                     quote_id,
                                     _draw_bytes_nopl,
                                     crop_label="plano",
                                     planilla_m2=None,
-                                    cotas_text=None,
+                                    cotas_text=_cotas_nopl_text,
+                                    extracted_cota_values=_cotas_nopl_values,
                                     user_message=user_message,
                                     plan_filename=plan_filename,
                                     plan_hash=_raw_plan_hash,
