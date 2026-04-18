@@ -39,9 +39,9 @@ Antes de cualquier otra lectura, determiná qué TIPO de plano es esto:
 - `"mixed"` → Plano con múltiples vistas (planta + elevación + detalle).
   Tratar cada vista según su tipo.
 
-- `"render_fotorrealista"` → Foto 3D (Blender/V-Ray, texturas y luces,
-  sin cotas). NO extraer medidas. Solo contexto. Si no hay planta técnica
-  → PEDIRLA antes de calcular.
+- `"render_fotorrealista"` → Foto 3D (Blender/V-Ray, sin cotas). NO
+  leer medidas. Con planta: cross-check topológico (mesadas/isla/anafes);
+  discrepancia → ambigüedad. Sin planta: pedirla.
 
 - `"unknown"` → Si realmente no es claro. Usar reglas conservadoras de
   planta y flaguear alta `requires_human_review`.
@@ -58,6 +58,7 @@ El `view_type` condiciona las pasadas siguientes:
 
 **Pasada 1 — Inventario**
 Identificá todos los sectores presentes (cocina, baño, lavadero, etc.)
+Cada región rellena contigua = 1 mesada. U+isla = 4 regiones, no 2.
 
 **Pasada 2 — Geometría por sector**
 Determiná el tipo de mesada:
@@ -70,6 +71,7 @@ Determiná el tipo de mesada:
 - VISTA EN PLANTA    : largo (eje horizontal) × ancho (profundidad)
 - VISTA EN ELEVACIÓN : dimensión SOBRE línea de mesada = zócalo | dimensión BAJO = frentin/faldón
 - Z antes de número  = longitud de zócalo en cm
+- ⛔ Cotas EXTERNAS (al muro) = ambiente, NO mesada. Usar solo INTERNAS.
 
 **Pasada 4 — Validación**
 Verificá consistencia entre vistas. Si hay contradicción → anotá en ambiguedades.
@@ -90,12 +92,8 @@ NUNCA asumir prof silenciosamente sin ambigüedad explícita.
 Si el plano es un **render 3D / vista isométrica / SketchUp-style** (no es
 una planta arquitectónica cenital), aplicar estas reglas:
 
-**Señales de render 3D:**
-- Se ven electrodomésticos como objetos 3D (no símbolos 2D)
-- Perspectiva/proyección isométrica visible (líneas oblicuas)
-- Falta hatching de paredes
-- Cotas solo horizontales en el borde superior (largos), sin cotas de prof
-- No hay carátula técnica ni cuadro de rotulación
+**Señales de render 3D:** electrodomésticos 3D, proyección isométrica,
+sin hatching, cotas solo horizontales, sin carátula técnica.
 
 **Reglas específicas:**
 
