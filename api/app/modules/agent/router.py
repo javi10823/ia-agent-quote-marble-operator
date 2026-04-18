@@ -123,6 +123,33 @@ async def _find_drive_url_in_files_v2(db: AsyncSession, quote_id: str, filename:
 
 # ── LIST QUOTES ──────────────────────────────────────────────────────────────
 
+def _pick_plan_and_extras(
+    validated_files: list[tuple[bytes, str]],
+) -> tuple[bytes | None, str | None, list[tuple[bytes, str]]]:
+    """Pick the technical plan from uploaded files.
+
+    Si hay al menos un PDF → ese es el plano principal (los PDFs son
+    técnicos por convención en este dominio). El resto pasa como contexto
+    visual. Si no hay PDFs, caemos al primer archivo (orden de upload).
+
+    Antes se usaba ``validated_files[0]`` — frágil cuando el operador
+    sube renders fotorrealistas antes del PDF técnico (caso Bernardi:
+    JPG, JPG, PDF) porque dual_read terminaba corriendo sobre el render.
+    """
+    if not validated_files:
+        return None, None, []
+    pdf_idx = next(
+        (i for i, (_b, name) in enumerate(validated_files)
+         if name.lower().endswith(".pdf")),
+        None,
+    )
+    if pdf_idx is None:
+        return validated_files[0][0], validated_files[0][1], validated_files[1:]
+    plan_bytes, plan_filename = validated_files[pdf_idx]
+    extras = [f for i, f in enumerate(validated_files) if i != pdf_idx]
+    return plan_bytes, plan_filename, extras
+
+
 def _extract_drive_urls(quote) -> dict:
     """Extract drive_pdf_url and drive_excel_url from files_v2 in breakdown."""
     bd = quote.quote_breakdown if quote.quote_breakdown else {}
@@ -1614,9 +1641,7 @@ async def chat(
         )
 
     # Pass ALL files to Claude (not just the first one)
-    plan_bytes = validated_files[0][0] if validated_files else None
-    plan_filename = validated_files[0][1] if validated_files else None
-    extra_files = validated_files[1:] if len(validated_files) > 1 else []
+    plan_bytes, plan_filename, extra_files = _pick_plan_and_extras(validated_files)
 
     async def event_stream():
         full_response = ""
