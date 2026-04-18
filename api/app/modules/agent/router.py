@@ -1684,6 +1684,9 @@ async def chat(
                     yield f"data: {json.dumps(chunk)}\n\n"
                 elif chunk["type"] == "dual_read_result":
                     yield f"data: {json.dumps(chunk)}\n\n"
+                elif chunk["type"] == "context_analysis":
+                    # PR G — card de análisis de contexto ANTES del despiece
+                    yield f"data: {json.dumps(chunk)}\n\n"
                 elif chunk["type"] == "done":
                     logging.info(f"[SSE] Sending done for quote {quote_id}")
                     yield f"data: {json.dumps(chunk)}\n\n"
