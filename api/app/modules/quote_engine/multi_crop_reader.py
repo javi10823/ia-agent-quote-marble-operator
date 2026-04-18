@@ -68,21 +68,24 @@ módulos superiores, electrodomésticos free-standing, paredes) NO es mesada.
 
 **No tenés que medir nada en esta pasada.** Solo identificá regiones.
 
-Devolvé SOLO JSON válido con este schema:
+Devolvé SOLO JSON con features estructuradas (NO etiquetes "isla con anafe"
+directamente — el aggregator deriva labels después a partir de las features):
 
 {
   "view_type": "planta" | "render_3d" | "render_fotorrealista" | "elevation" | "mixed" | "unknown",
   "regions": [
     {
       "id": "R1",
-      "sector": "cocina" | "isla" | "baño" | "lavadero" | "otro",
       "bbox_rel": {"x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0},
-      "touches_walls": true,
-      "has_pileta": false,
-      "pileta_type": "simple" | "doble" | null,
-      "has_anafe": false,
-      "anafe_count": 0,
-      "notes": "string corta, opcional"
+      "features": {
+        "touches_wall": true,
+        "stools_adjacent": false,
+        "cooktop_groups": 0,
+        "sink_double": false,
+        "sink_simple": false,
+        "non_counter_upper": false
+      },
+      "evidence": "string corta — qué símbolos viste en la región"
     }
   ],
   "ambiguedades": []
@@ -90,13 +93,21 @@ Devolvé SOLO JSON válido con este schema:
 
 Reglas:
 - Cada región rellena contigua en gris oscuro = 1 entry en `regions`.
-- Una isla típica NO toca paredes; suele estar aislada en el centro.
-- U + isla = 4 regiones (3 lados + isla).
-- L = 2 regiones.
-- RECTA = 1 región.
-- bbox_rel: (x,y) esquina superior izquierda + (w,h), relativos al tamaño de la imagen.
-- Si no podés determinar un bbox con razonable precisión, igual estimá (se
-  usará con padding para croppear, no para medir).
+- `touches_wall`: true si la región toca al menos un muro. Las islas
+  típicamente NO tocan paredes.
+- `stools_adjacent`: true si ves banquetas/sillas adyacentes (suele indicar
+  isla con desayunador).
+- `cooktop_groups`: cuántos grupos de hornallas visibles (4-6 círculos
+  agrupados). Puede haber 2 (gas + eléctrico/vitrocerámica).
+- `sink_double`: true si ves 2 óvalos/cubetas contiguas.
+- `sink_simple`: true si ves 1 sola cubeta.
+- `non_counter_upper`: true SI esta región es en realidad una alacena
+  superior (heladera/horno/despensa como módulo alto), NO mesada. En ese
+  caso NO debería estar en la lista — pero si hay duda, marcalo true para
+  que el aggregator lo filtre.
+- U + isla = 4 regiones (3 lados + 1 isla). L = 2. Recta = 1.
+- bbox_rel: (x,y) top-left + (w,h) relativos a la imagen.
+- NO etiquetes "isla" ni "cocina" — eso sale de combinar features.
 - NO inventes regiones que no ves.
 """
 
@@ -395,12 +406,61 @@ def _field(valor: Optional[float], status: str = "CONFIRMADO") -> dict:
     return {"opus": None, "sonnet": None, "valor": valor, "status": status}
 
 
+def _classify_region(region: dict) -> str:
+    """Deriva el sector desde las features de la región.
+
+    Reglas de derivación (sin depender del LLM para etiquetar):
+    - `touches_wall=False` + (stools_adjacent=True o aislada del perímetro) → isla.
+    - `touches_wall=True` → cocina (lados de U / L / recta contra pared).
+    - `non_counter_upper=True` → no es mesada, se filtra upstream.
+    - Default (sin info): cocina.
+
+    El schema legacy seguía con field `sector` ("cocina"|"isla"|...) — si
+    viene seteado se respeta para retrocompat; sino se deriva de features.
+    """
+    # Retrocompat con el schema viejo
+    legacy_sector = (region.get("sector") or "").lower()
+    if legacy_sector in ("isla", "cocina", "baño", "lavadero"):
+        return legacy_sector
+    features = region.get("features") or {}
+    if features.get("non_counter_upper"):
+        return "descarte"  # upstream debe filtrar
+    touches = features.get("touches_wall")
+    stools = features.get("stools_adjacent")
+    if touches is False or stools is True:
+        return "isla"
+    return "cocina"
+
+
+def _derive_description(region: dict) -> str:
+    """Construye una descripción humana corta desde las features. Puramente
+    descriptiva (sin inventar artefactos que el LLM no vio)."""
+    features = region.get("features") or {}
+    bits: list[str] = []
+    if features.get("cooktop_groups"):
+        n = int(features["cooktop_groups"])
+        bits.append(f"{n} anafe{'s' if n > 1 else ''}")
+    if features.get("sink_double"):
+        bits.append("pileta doble")
+    elif features.get("sink_simple"):
+        bits.append("pileta")
+    if features.get("stools_adjacent"):
+        bits.append("banquetas")
+    base = "Mesada"
+    if bits:
+        return f"{base} (con {', '.join(bits)})"
+    return base
+
+
 def _aggregate(topology: dict, region_results: list[dict]) -> dict:
     """Combina topología global + medidas por región en el schema dual_read."""
-    # Agrupar regiones por sector ("cocina" junta los 3 lados de una U)
+    # Agrupar regiones por sector derivado de features (o legacy `sector`).
+    # Regiones clasificadas como "descarte" (alacenas superiores) se filtran.
     by_sector: dict[str, list[dict]] = {}
     for region in topology.get("regions") or []:
-        sec = region.get("sector") or "cocina"
+        sec = _classify_region(region)
+        if sec == "descarte":
+            continue
         by_sector.setdefault(sec, []).append(region)
 
     sectores: list[dict] = []
@@ -430,15 +490,17 @@ def _aggregate(topology: dict, region_results: list[dict]) -> dict:
             else:
                 status = "CONFIRMADO"
 
-            # Descripción: NO propagamos region.notes porque la fase global
-            # hoy confunde artefactos (puso "anafe en isla" cuando el anafe
-            # estaba en la lateral). Hasta que PR C implemente el contrato
-            # feature-based, usamos label genérico. El operador ve el crop
-            # en la card y asocia visualmente.
-            desc = f"Mesada {len(tramos) + 1}" if status == "CONFIRMADO" else f"Mesada {len(tramos) + 1} — revisar"
+            # Descripción: deriva de `features` de la región (contrato PR E).
+            # No inventamos artefactos — solo los que están en features.
+            base_desc = _derive_description(region)
+            n = len(tramos) + 1
+            if base_desc == "Mesada":
+                desc = f"Mesada {n}" + (" — revisar" if status != "CONFIRMADO" else "")
+            else:
+                desc = base_desc + (" — revisar" if status != "CONFIRMADO" else "")
 
             tramo = {
-                "id": rid or f"t{len(tramos) + 1}",
+                "id": rid or f"t{n}",
                 "descripcion": desc,
                 "largo_m": _field(largo, status),
                 "ancho_m": _field(ancho, status),
@@ -446,6 +508,7 @@ def _aggregate(topology: dict, region_results: list[dict]) -> dict:
                 "zocalos": [],
                 "frentin": [],
                 "regrueso": [],
+                "features": region.get("features") or {},
             }
             tramos.append(tramo)
 

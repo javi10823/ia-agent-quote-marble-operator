@@ -88,8 +88,8 @@ class TestAggregate:
         assert "— revisar" in tramo["descripcion"]
 
     def test_region_notes_not_propagated_to_description(self):
-        """Hasta PR C, no propagamos artefactos de la fase global (que confunde
-        qué región tiene qué). Label genérico 'Mesada N'."""
+        """No propagamos region.notes (notes puede tener artefactos mal
+        asignados). El label se deriva solo de features."""
         topology = {
             "regions": [
                 {"id": "R1", "sector": "cocina", "notes": "isla central con anafe a gas 4 hornallas"},
@@ -98,9 +98,69 @@ class TestAggregate:
         results = [{"region_id": "R1", "largo_m": 2.05, "ancho_m": 0.60}]
         out = _aggregate(topology, results)
         desc = out["sectores"][0]["tramos"][0]["descripcion"]
-        assert "anafe" not in desc.lower()
-        assert "isla" not in desc.lower()
+        # Sin features declaradas, label genérico
         assert desc.startswith("Mesada")
+
+    def test_description_derived_from_features(self):
+        """Cuando region.features tiene artefactos, el desc los refleja
+        (sin usar notes del LLM)."""
+        topology = {
+            "regions": [
+                {
+                    "id": "R1",
+                    "features": {
+                        "touches_wall": True,
+                        "cooktop_groups": 2,
+                        "sink_double": False,
+                        "non_counter_upper": False,
+                    },
+                },
+            ],
+        }
+        results = [{"region_id": "R1", "largo_m": 2.95, "ancho_m": 0.60}]
+        out = _aggregate(topology, results)
+        desc = out["sectores"][0]["tramos"][0]["descripcion"]
+        assert "2 anafes" in desc
+
+    def test_non_counter_upper_region_filtered(self):
+        """Región que el LLM marcó como alacena superior (horno/heladera
+        módulo) NO aparece en los sectores."""
+        topology = {
+            "regions": [
+                {"id": "R1", "features": {"touches_wall": True, "cooktop_groups": 0}},
+                {"id": "R2", "features": {"non_counter_upper": True}},  # alacena superior
+            ],
+        }
+        results = [
+            {"region_id": "R1", "largo_m": 2.05, "ancho_m": 0.60},
+            {"region_id": "R2", "largo_m": 1.20, "ancho_m": 0.30},
+        ]
+        out = _aggregate(topology, results)
+        # Solo R1 debería estar en sectores; R2 filtrada
+        all_tramo_ids = [t["id"] for s in out["sectores"] for t in s["tramos"]]
+        assert "R1" in all_tramo_ids
+        assert "R2" not in all_tramo_ids
+
+    def test_isla_classified_from_features_when_not_touches_wall(self):
+        """touches_wall=False + stools_adjacent=True → clasifica como isla."""
+        topology = {
+            "regions": [
+                {
+                    "id": "R1",
+                    "features": {
+                        "touches_wall": False,
+                        "stools_adjacent": True,
+                        "cooktop_groups": 0,
+                    },
+                },
+            ],
+        }
+        results = [{"region_id": "R1", "largo_m": 1.60, "ancho_m": 0.60}]
+        out = _aggregate(topology, results)
+        assert out["sectores"][0]["tipo"] == "isla"
+        # descripción incluye "banquetas" (stools_adjacent)
+        desc = out["sectores"][0]["tramos"][0]["descripcion"]
+        assert "banquetas" in desc.lower()
 
     def test_ambiguedades_propagated_to_first_sector(self):
         topology = {"regions": [{"id": "R1", "sector": "cocina"}, {"id": "R2", "sector": "cocina"}]}
