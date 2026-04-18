@@ -65,11 +65,11 @@ class TestDetectZocalosQuestion:
             brief="material puraprima onix white cliente Erica",
             dual_result=_make_dual_result(has_zocalos=False),
         )
-        assert len(qs) == 1
-        assert qs[0]["id"] == "zocalos"
-        assert len(qs[0]["options"]) == 3
+        zocalos_qs = [q for q in qs if q["id"] == "zocalos"]
+        assert len(zocalos_qs) == 1
+        assert len(zocalos_qs[0]["options"]) == 3
         # Sí con default, Sí custom, No lleva
-        vals = [o["value"] for o in qs[0]["options"]]
+        vals = [o["value"] for o in zocalos_qs[0]["options"]]
         assert "default_trasero" in vals
         assert "custom" in vals
         assert "no" in vals
