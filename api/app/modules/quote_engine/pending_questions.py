@@ -46,6 +46,13 @@ _COLOCACION_WITHOUT = re.compile(r"\b(sin\s+colocaci[oó]n|no\s+(incluye\s+)?col
 _ANAFE_COUNT_EXPLICIT = re.compile(r"\b(1|un|uno|2|dos|3|tres)\s+anafes?\b", re.IGNORECASE)
 _ANAFE_DUAL = re.compile(r"\b(anafe\s+(a\s+)?gas.*(anafe\s+)?(el[eé]ctrico|vitro)|2\s+anafes)\b", re.IGNORECASE)
 
+_PILETA_NO = re.compile(r"\bsin\s+(pileta|bacha)|no\s+(lleva|va)\s+(pileta|bacha)", re.IGNORECASE)
+_ANAFE_NO = re.compile(r"\bsin\s+anafe|no\s+(lleva|va)\s+anafe", re.IGNORECASE)
+_ISLA = re.compile(r"\bisla\b", re.IGNORECASE)
+_ISLA_NO = re.compile(r"\bsin\s+isla|no\s+(lleva|va)\s+isla|cocina\s+(recta|en\s+l)\b", re.IGNORECASE)
+_ALZADA = re.compile(r"\b(con|lleva)\s+alzada|alzada\s+(de|=)\s*\d", re.IGNORECASE)
+_ALZADA_NO = re.compile(r"\bsin\s+alzada|no\s+(lleva|va)\s+alzada", re.IGNORECASE)
+
 
 def brief_mentions_zocalos(brief: str) -> str | None:
     """Devuelve 'yes' si el brief pide zócalos, 'no' si los excluye, None si
@@ -83,31 +90,27 @@ def _has_pileta_in_card(dual_result: dict) -> bool:
     return False
 
 
-def _detect_pileta_type_question(brief: str, dual_result: dict) -> dict | None:
-    """En sector COCINA, pileta siempre es empotrada (regla D'Angelo).
-    Lo único que puede variar es simple vs doble.
+def _detect_pileta_question(brief: str, dual_result: dict) -> dict | None:
+    """Pregunta unificada de pileta para cocina: existe + tipo simple/doble.
 
-    Preguntamos SOLO si:
-    - Hay sector cocina
-    - Hay pileta detectada en la card o mencionada en el brief
-    - El brief no dijo explícitamente simple ni doble
-    - La card no tiene sink_double feature concluyente
+    En cocina, si la pileta existe va siempre empotrada (regla D'Angelo,
+    nunca apoyo). Entonces solo variamos: existe + si existe, simple o
+    doble.
 
-    No se pregunta apoyo/empotrada nunca en cocina — es siempre empotrada."""
+    Skip si brief es explícito ("sin pileta" / "pileta doble" / etc.) o si
+    la card tiene sink_double como feature con valor definido.
+    """
     if not _has_sector_type(dual_result, "cocina"):
         return None
-
     brief = brief or ""
-    brief_mentions_pileta = bool(re.search(r"\b(pileta|bacha)\b", brief, re.IGNORECASE))
-    has_pileta_card = _has_pileta_in_card(dual_result)
-    if not (brief_mentions_pileta or has_pileta_card):
-        return None
 
-    # Si el operador ya especificó simple o doble, no preguntamos
+    # Skip si brief niega explícito
+    if _PILETA_NO.search(brief):
+        return None
+    # Skip si brief ya dice simple o doble
     if _PILETA_DOBLE.search(brief) or _PILETA_SIMPLE.search(brief):
         return None
-
-    # Si la card ya tiene sink_double definido con confianza, no preguntamos
+    # Skip si la card ya tiene sink_double con valor concluyente
     for s in dual_result.get("sectores") or []:
         for t in s.get("tramos") or []:
             features = t.get("features") or {}
@@ -116,23 +119,16 @@ def _detect_pileta_type_question(brief: str, dual_result: dict) -> dict | None:
 
     return {
         "id": "pileta_simple_doble",
-        "label": "Tipo de pileta",
+        "label": "Pileta",
         "question": (
-            "¿La pileta es simple o doble? En cocina siempre va empotrada "
-            "(PEGADOPILETA), pero cambia el cálculo según la cantidad de bachas."
+            "¿Lleva pileta? En cocina siempre va empotrada (regla D'Angelo — "
+            "nunca apoyo). Si lleva, ¿es simple o doble?"
         ),
         "type": "radio_with_detail",
         "options": [
-            {
-                "value": "simple",
-                "label": "Simple (1 bacha)",
-                "apply": {"sink_type": {"basin_count": "simple", "mount_type": "abajo"}},
-            },
-            {
-                "value": "doble",
-                "label": "Doble (2 bachas contiguas)",
-                "apply": {"sink_type": {"basin_count": "doble", "mount_type": "abajo"}},
-            },
+            {"value": "simple", "label": "Sí — simple (1 bacha)"},
+            {"value": "doble", "label": "Sí — doble (2 bachas)"},
+            {"value": "no", "label": "No lleva pileta"},
         ],
     }
 
@@ -228,38 +224,87 @@ def _detect_colocacion_question(brief: str, dual_result: dict) -> dict | None:
 
 
 def _detect_anafe_count_question(brief: str, dual_result: dict) -> dict | None:
-    """Si la card detectó múltiples anafes o el brief sugiere >1 pero no está
-    claro, preguntar confirmación."""
-    # Hay sector cocina con features.anafe_count >= 2 o multiple_anafe hint
+    """Pregunta unificada de anafe: existe + cuántos. Siempre en cocina
+    salvo que el brief lo confirme explícito (count o 'sin anafe').
+    """
+    if not _has_sector_type(dual_result, "cocina"):
+        return None
     b = brief or ""
+    # Skip si brief dice count explícito o niega anafe
     if _ANAFE_COUNT_EXPLICIT.search(b):
         return None
-
-    has_multi_hint = _ANAFE_DUAL.search(b) is not None
-    card_count = 0
-    for s in dual_result.get("sectores") or []:
-        for t in s.get("tramos") or []:
-            features = t.get("features") or {}
-            card_count = max(card_count, int(features.get("cooktop_groups") or 0))
-
-    if not (has_multi_hint or card_count >= 2):
+    if _ANAFE_NO.search(b):
         return None
 
     return {
         "id": "anafe_count",
-        "label": "Cantidad de anafes",
+        "label": "Anafe",
         "question": (
-            "¿Cuántos anafes lleva? Detectamos señales de más de uno "
-            "(típicamente gas + eléctrico). Cada anafe empotrado suma MO."
+            "¿Lleva anafe? Si sí, ¿cuántos? Cada anafe empotrado suma MO "
+            "(gas y eléctrico suelen ir separados = 2 agujeros)."
         ),
         "type": "radio_with_detail",
         "options": [
-            {"value": "1", "label": "1 anafe"},
-            {"value": "2", "label": "2 anafes (ej: gas + eléctrico)"},
-            {"value": "3", "label": "3+ anafes (detallar)"},
-            {"value": "0", "label": "No hay anafe empotrado"},
+            {"value": "1", "label": "Sí — 1 anafe"},
+            {"value": "2", "label": "Sí — 2 anafes (ej: gas + eléctrico)"},
+            {"value": "3", "label": "Sí — 3+ anafes (detallar)"},
+            {"value": "0", "label": "No lleva anafe"},
         ],
         "detail_placeholder": "Si son 3+: cuántos",
+    }
+
+
+def _detect_isla_presence_question(brief: str, dual_result: dict) -> dict | None:
+    """Si el dual_read no detectó isla pero el brief no la niega, preguntar
+    explícitamente si va o no. Cubre el caso donde el multi-crop falla al
+    detectar la isla (plano difícil) — evitamos perder la isla.
+    """
+    if _has_sector_type(dual_result, "isla"):
+        return None  # ya detectada, otras preguntas cubren detalles
+    b = brief or ""
+    if _ISLA.search(b) and not _ISLA_NO.search(b):
+        # Brief la menciona → no preguntar existencia, pero sí detalles
+        # (se cubren por _detect_isla_profundidad_question y _isla_patas)
+        return None
+    if _ISLA_NO.search(b):
+        return None  # brief explícito: no hay isla
+    return {
+        "id": "isla_presence",
+        "label": "Isla",
+        "question": (
+            "¿El plano tiene isla central? Detectarla depende del render — "
+            "confirmanos para no omitirla del presupuesto."
+        ),
+        "type": "radio_with_detail",
+        "options": [
+            {"value": "yes", "label": "Sí, hay isla"},
+            {"value": "no", "label": "No hay isla (cocina recta / L / U sin isla)"},
+        ],
+    }
+
+
+def _detect_alzada_question(brief: str, dual_result: dict) -> dict | None:
+    """Alzada: típicamente el operador la olvida o no está en el plano.
+    Preguntar siempre en cocina salvo que brief sea explícito."""
+    if not _has_sector_type(dual_result, "cocina"):
+        return None
+    b = brief or ""
+    if _ALZADA.search(b) or _ALZADA_NO.search(b):
+        return None
+    return {
+        "id": "alzada",
+        "label": "Alzada",
+        "question": (
+            "¿Lleva alzada? (la tira vertical que sube por detrás de la mesada)"
+        ),
+        "type": "radio_with_detail",
+        "options": [
+            {"value": "no", "label": "No lleva"},
+            {"value": "5", "label": "Sí — 5 cm"},
+            {"value": "10", "label": "Sí — 10 cm"},
+            {"value": "custom", "label": "Sí — otro alto (detallar)"},
+        ],
+        "detail_placeholder": "Ej: 15 cm",
     }
 
 
@@ -332,19 +377,21 @@ def detect_pending_questions(
     """
     questions: list[dict] = []
     # Campos obligatorios globales (PR F): material + localidad.
-    # Son bloqueantes para cualquier cálculo — van primero.
     try:
         from app.modules.quote_engine.required_fields import detect_required_field_questions
         questions.extend(detect_required_field_questions(brief, quote, dual_result))
     except Exception:
         pass
-    # Detectores específicos (PR B/C/D).
+    # Presencia de componentes (orden de criticidad).
+    q_pileta = _detect_pileta_question(brief, dual_result)
+    if q_pileta:
+        questions.append(q_pileta)
     q_anafe = _detect_anafe_count_question(brief, dual_result)
     if q_anafe:
         questions.append(q_anafe)
-    q_pileta = _detect_pileta_type_question(brief, dual_result)
-    if q_pileta:
-        questions.append(q_pileta)
+    q_isla_presence = _detect_isla_presence_question(brief, dual_result)
+    if q_isla_presence:
+        questions.append(q_isla_presence)
     q_isla_prof = _detect_isla_profundidad_question(brief, dual_result)
     if q_isla_prof:
         questions.append(q_isla_prof)
@@ -354,6 +401,9 @@ def detect_pending_questions(
     q_zoc = _detect_zocalos_question(brief, dual_result)
     if q_zoc:
         questions.append(q_zoc)
+    q_alz = _detect_alzada_question(brief, dual_result)
+    if q_alz:
+        questions.append(q_alz)
     q_coloc = _detect_colocacion_question(brief, dual_result)
     if q_coloc:
         questions.append(q_coloc)
@@ -423,25 +473,31 @@ def apply_zocalos_answer(dual_result: dict, answer: dict, default_alto_m: float 
 
 
 def apply_pileta_type_answer(dual_result: dict, answer: dict) -> dict:
-    """Aplica la respuesta simple/doble al sector cocina. Siempre empotrada
-    (regla D'Angelo). Si el brief menciona Johnson, usa empotrada_johnson;
-    si no, empotrada_cliente.
+    """Aplica la respuesta del operador sobre pileta de cocina.
+
+    Valores soportados:
+    - "simple" / "doble" → cocina con pileta empotrada (regla D'Angelo,
+      nunca apoyo), seteando basin_count.
+    - "no" → sin pileta; seteamos flag para que el calculator no sume MO.
     """
     if not isinstance(answer, dict):
         return dual_result
     value = answer.get("value")
-    if value not in ("simple", "doble"):
+    if value not in ("simple", "doble", "no"):
         return dual_result
 
-    # Guardamos la decisión en sector.pileta para que el calculator la use.
     for sector in dual_result.get("sectores") or []:
         if (sector.get("tipo") or "").lower() != "cocina":
             continue
-        sector.setdefault("sink_type", {})
-        sector["sink_type"]["basin_count"] = value
-        sector["sink_type"].setdefault("mount_type", "abajo")
-        # Hint para Valentina: pileta empotrada (nunca apoyo en cocina)
-        sector["pileta_type_hint"] = "empotrada"
+        if value == "no":
+            sector["pileta"] = None
+            sector["pileta_type_hint"] = None
+            sector["sink_type"] = None
+        else:
+            sector.setdefault("sink_type", {})
+            sector["sink_type"]["basin_count"] = value
+            sector["sink_type"].setdefault("mount_type", "abajo")
+            sector["pileta_type_hint"] = "empotrada"
     return dual_result
 
 
@@ -541,6 +597,42 @@ def apply_anafe_count_answer(dual_result: dict, answer: dict) -> dict:
     return dual_result
 
 
+def apply_isla_presence_answer(dual_result: dict, answer: dict) -> dict:
+    """Si el operador dijo 'yes' → marcamos que hay isla (el calculator
+    deberá pedir dimensiones en siguiente iteración). Si 'no' → removemos
+    cualquier sector isla si existía."""
+    if not isinstance(answer, dict):
+        return dual_result
+    value = answer.get("value")
+    if value == "no":
+        dual_result["sectores"] = [
+            s for s in (dual_result.get("sectores") or [])
+            if (s.get("tipo") or "").lower() != "isla"
+        ]
+        dual_result["isla_excluded_by_operator"] = True
+    elif value == "yes":
+        dual_result["isla_confirmed_by_operator"] = True
+    return dual_result
+
+
+def apply_alzada_answer(dual_result: dict, answer: dict) -> dict:
+    if not isinstance(answer, dict):
+        return dual_result
+    value = answer.get("value")
+    if value == "no":
+        dual_result["alzada"] = False
+        return dual_result
+    try:
+        alto_cm = int(value) if value in ("5", "10") else int(answer.get("detail") or 0)
+    except (TypeError, ValueError):
+        return dual_result
+    if alto_cm <= 0:
+        return dual_result
+    dual_result["alzada"] = True
+    dual_result["alzada_alto_m"] = alto_cm / 100.0
+    return dual_result
+
+
 def apply_answers(dual_result: dict, answers: list[dict]) -> dict:
     """Aplica todas las respuestas del operador al card. Dispatch por id."""
     # Import lazy para evitar ciclos
@@ -554,6 +646,8 @@ def apply_answers(dual_result: dict, answers: list[dict]) -> dict:
             apply_zocalos_answer(dual_result, ans)
         elif qid == "pileta_simple_doble":
             apply_pileta_type_answer(dual_result, ans)
+        elif qid == "isla_presence":
+            apply_isla_presence_answer(dual_result, ans)
         elif qid == "isla_profundidad":
             apply_isla_profundidad_answer(dual_result, ans)
         elif qid == "isla_patas":
@@ -562,6 +656,8 @@ def apply_answers(dual_result: dict, answers: list[dict]) -> dict:
             apply_colocacion_answer(dual_result, ans)
         elif qid == "anafe_count":
             apply_anafe_count_answer(dual_result, ans)
+        elif qid == "alzada":
+            apply_alzada_answer(dual_result, ans)
         elif qid == "material":
             apply_material_answer(dual_result, ans)
         elif qid == "localidad":
