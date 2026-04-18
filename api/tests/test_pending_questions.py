@@ -182,14 +182,16 @@ def _make_cocina_with_pileta():
 
 
 class TestDetectPiletaTypeQuestion:
-    def test_emits_for_cocina_with_pileta_no_mention(self):
-        qs = detect_pending_questions("cliente juan material silestone", _make_cocina_with_pileta())
+    def test_emits_for_cocina_always(self):
+        """Regla nueva: en cocina siempre preguntar (pileta existe + tipo).
+        Cubre casos donde el dual_read no detectó pileta."""
+        qs = detect_pending_questions("cliente juan", _make_dual_result())
         pileta_qs = [q for q in qs if q["id"] == "pileta_simple_doble"]
         assert len(pileta_qs) == 1
-        # Nunca preguntar apoyo/empotrada en cocina — solo simple vs doble
+        # 3 opciones: simple / doble / no (nunca apoyo en cocina)
         options = pileta_qs[0]["options"]
-        assert len(options) == 2
-        assert {o["value"] for o in options} == {"simple", "doble"}
+        assert len(options) == 3
+        assert {o["value"] for o in options} == {"simple", "doble", "no"}
         assert not any("apoyo" in o["value"].lower() for o in options)
 
     def test_skips_when_brief_says_doble(self):
@@ -198,6 +200,10 @@ class TestDetectPiletaTypeQuestion:
 
     def test_skips_when_brief_says_simple(self):
         qs = detect_pending_questions("cocina con bacha simple", _make_cocina_with_pileta())
+        assert all(q["id"] != "pileta_simple_doble" for q in qs)
+
+    def test_skips_when_brief_says_sin_pileta(self):
+        qs = detect_pending_questions("cocina sin pileta", _make_cocina_with_pileta())
         assert all(q["id"] != "pileta_simple_doble" for q in qs)
 
     def test_skips_when_card_has_sink_double_feature(self):
@@ -210,12 +216,6 @@ class TestDetectPiletaTypeQuestion:
         result = _make_cocina_with_pileta()
         result["sectores"][0]["tipo"] = "baño"
         qs = detect_pending_questions("", result)
-        assert all(q["id"] != "pileta_simple_doble" for q in qs)
-
-    def test_skips_when_no_pileta_detected(self):
-        """Sin pileta en card ni brief → no preguntar."""
-        result = _make_dual_result(has_zocalos=False)  # no pileta
-        qs = detect_pending_questions("cliente juan", result)
         assert all(q["id"] != "pileta_simple_doble" for q in qs)
 
 
@@ -390,20 +390,27 @@ class TestDetectAnafeCount:
             "source": "MULTI_CROP",
         }
 
-    def test_emits_when_card_detects_multiple(self):
-        qs = detect_pending_questions("", self._with_cooktop(2))
+    def test_emits_always_in_cocina(self):
+        """Regla nueva: siempre preguntar anafe en cocina (yes/no + count)."""
+        qs = detect_pending_questions("", self._with_cooktop(0))
         assert any(q["id"] == "anafe_count" for q in qs)
 
-    def test_emits_when_brief_suggests_gas_plus_electrico(self):
-        qs = detect_pending_questions("anafe a gas y anafe eléctrico", self._with_cooktop(0))
+    def test_emits_when_card_detects_multiple(self):
+        qs = detect_pending_questions("", self._with_cooktop(2))
         assert any(q["id"] == "anafe_count" for q in qs)
 
     def test_skips_when_brief_explicit_count(self):
         qs = detect_pending_questions("1 anafe", self._with_cooktop(2))
         assert all(q["id"] != "anafe_count" for q in qs)
 
-    def test_skips_when_card_has_1_and_brief_silent(self):
-        qs = detect_pending_questions("", self._with_cooktop(1))
+    def test_skips_when_brief_says_sin_anafe(self):
+        qs = detect_pending_questions("sin anafe", self._with_cooktop(0))
+        assert all(q["id"] != "anafe_count" for q in qs)
+
+    def test_skips_when_no_cocina_sector(self):
+        r = self._with_cooktop(0)
+        r["sectores"][0]["tipo"] = "baño"
+        qs = detect_pending_questions("", r)
         assert all(q["id"] != "anafe_count" for q in qs)
 
 
@@ -424,3 +431,72 @@ class TestApplyAnafeCount:
         result = _make_dual_result()
         apply_answers(result, [{"id": "anafe_count", "value": "3", "detail": "4"}])
         assert result["anafe_qty"] == 4
+
+
+# ── PR G revision: isla_presence + alzada ───────────────────────────────────
+
+class TestDetectIslaPresence:
+    def test_emits_when_isla_not_detected_and_brief_silent(self):
+        """Cocina sin isla detectada + brief no menciona isla → preguntar."""
+        qs = detect_pending_questions("cliente juan cocina", _make_dual_result())
+        assert any(q["id"] == "isla_presence" for q in qs)
+
+    def test_skips_when_isla_already_detected(self):
+        result = _make_with_isla()
+        qs = detect_pending_questions("", result)
+        assert all(q["id"] != "isla_presence" for q in qs)
+
+    def test_skips_when_brief_says_sin_isla(self):
+        qs = detect_pending_questions("cocina sin isla", _make_dual_result())
+        assert all(q["id"] != "isla_presence" for q in qs)
+
+    def test_skips_when_brief_mentions_isla(self):
+        # Brief la menciona → no preguntar existencia (otras preguntan detalles)
+        qs = detect_pending_questions("cocina con isla central", _make_dual_result())
+        assert all(q["id"] != "isla_presence" for q in qs)
+
+
+class TestApplyIslaPresence:
+    def test_yes_sets_confirmed_flag(self):
+        result = _make_dual_result()
+        apply_answers(result, [{"id": "isla_presence", "value": "yes"}])
+        assert result.get("isla_confirmed_by_operator") is True
+
+    def test_no_removes_isla_sector(self):
+        result = _make_with_isla()
+        apply_answers(result, [{"id": "isla_presence", "value": "no"}])
+        assert not any((s.get("tipo") or "").lower() == "isla" for s in result["sectores"])
+        assert result.get("isla_excluded_by_operator") is True
+
+
+class TestDetectAlzada:
+    def test_emits_in_cocina_when_brief_silent(self):
+        qs = detect_pending_questions("cliente juan", _make_dual_result())
+        assert any(q["id"] == "alzada" for q in qs)
+
+    def test_skips_when_brief_says_con_alzada(self):
+        qs = detect_pending_questions("con alzada de 10", _make_dual_result())
+        assert all(q["id"] != "alzada" for q in qs)
+
+    def test_skips_when_brief_says_sin_alzada(self):
+        qs = detect_pending_questions("sin alzada", _make_dual_result())
+        assert all(q["id"] != "alzada" for q in qs)
+
+
+class TestApplyAlzada:
+    def test_preset_10cm(self):
+        result = _make_dual_result()
+        apply_answers(result, [{"id": "alzada", "value": "10"}])
+        assert result["alzada"] is True
+        assert result["alzada_alto_m"] == 0.10
+
+    def test_no_sets_false(self):
+        result = _make_dual_result()
+        apply_answers(result, [{"id": "alzada", "value": "no"}])
+        assert result["alzada"] is False
+
+    def test_custom_value(self):
+        result = _make_dual_result()
+        apply_answers(result, [{"id": "alzada", "value": "custom", "detail": "15"}])
+        assert result["alzada"] is True
+        assert result["alzada_alto_m"] == 0.15
