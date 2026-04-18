@@ -35,6 +35,11 @@ _ZOCALO_WITHOUT = re.compile(
     re.IGNORECASE,
 )
 
+_JOHNSON = re.compile(r"\bjohnson\b", re.IGNORECASE)
+_PILETA_DOBLE = re.compile(r"\b(doble\s+bacha|bacha\s+doble|pileta\s+doble|doble\s+pileta|2\s+bachas)\b", re.IGNORECASE)
+_PILETA_SIMPLE = re.compile(r"\b(simple\s+bacha|bacha\s+simple|pileta\s+simple|1\s+bacha)\b", re.IGNORECASE)
+_APOYO_EXPLICIT = re.compile(r"\b(pileta|bacha)\s+(de\s+)?apoyo\b", re.IGNORECASE)
+
 
 def brief_mentions_zocalos(brief: str) -> str | None:
     """Devuelve 'yes' si el brief pide zócalos, 'no' si los excluye, None si
@@ -51,6 +56,80 @@ def brief_mentions_zocalos(brief: str) -> str | None:
 # ─────────────────────────────────────────────────────────────────────────────
 # Question detectors
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _has_sector_type(dual_result: dict, tipo: str) -> bool:
+    return any(
+        (s.get("tipo") or "").lower() == tipo
+        for s in (dual_result.get("sectores") or [])
+    )
+
+
+def _has_pileta_in_card(dual_result: dict) -> bool:
+    """True si algún tramo tiene marca de pileta (feature o metadata)."""
+    for s in dual_result.get("sectores") or []:
+        for t in s.get("tramos") or []:
+            features = t.get("features") or {}
+            if features.get("has_pileta") or features.get("sink_double"):
+                return True
+            notes = (t.get("descripcion") or "").lower()
+            if "pileta" in notes or "bacha" in notes:
+                return True
+    return False
+
+
+def _detect_pileta_type_question(brief: str, dual_result: dict) -> dict | None:
+    """En sector COCINA, pileta siempre es empotrada (regla D'Angelo).
+    Lo único que puede variar es simple vs doble.
+
+    Preguntamos SOLO si:
+    - Hay sector cocina
+    - Hay pileta detectada en la card o mencionada en el brief
+    - El brief no dijo explícitamente simple ni doble
+    - La card no tiene sink_double feature concluyente
+
+    No se pregunta apoyo/empotrada nunca en cocina — es siempre empotrada."""
+    if not _has_sector_type(dual_result, "cocina"):
+        return None
+
+    brief = brief or ""
+    brief_mentions_pileta = bool(re.search(r"\b(pileta|bacha)\b", brief, re.IGNORECASE))
+    has_pileta_card = _has_pileta_in_card(dual_result)
+    if not (brief_mentions_pileta or has_pileta_card):
+        return None
+
+    # Si el operador ya especificó simple o doble, no preguntamos
+    if _PILETA_DOBLE.search(brief) or _PILETA_SIMPLE.search(brief):
+        return None
+
+    # Si la card ya tiene sink_double definido con confianza, no preguntamos
+    for s in dual_result.get("sectores") or []:
+        for t in s.get("tramos") or []:
+            features = t.get("features") or {}
+            if features.get("sink_double") is not None:
+                return None
+
+    return {
+        "id": "pileta_simple_doble",
+        "label": "Tipo de pileta",
+        "question": (
+            "¿La pileta es simple o doble? En cocina siempre va empotrada "
+            "(PEGADOPILETA), pero cambia el cálculo según la cantidad de bachas."
+        ),
+        "type": "radio_with_detail",
+        "options": [
+            {
+                "value": "simple",
+                "label": "Simple (1 bacha)",
+                "apply": {"sink_type": {"basin_count": "simple", "mount_type": "abajo"}},
+            },
+            {
+                "value": "doble",
+                "label": "Doble (2 bachas contiguas)",
+                "apply": {"sink_type": {"basin_count": "doble", "mount_type": "abajo"}},
+            },
+        ],
+    }
+
 
 def _detect_zocalos_question(brief: str, dual_result: dict) -> dict | None:
     """Si el brief no menciona zócalos y la card tampoco los detectó, preguntar.
@@ -119,10 +198,12 @@ def detect_pending_questions(brief: str, dual_result: dict) -> list[dict]:
     q_zoc = _detect_zocalos_question(brief, dual_result)
     if q_zoc:
         questions.append(q_zoc)
-    # Futuros detectores (PR C/D):
-    # - pileta simple vs doble si fase global no es conclusiva
+    q_pileta = _detect_pileta_type_question(brief, dual_result)
+    if q_pileta:
+        questions.append(q_pileta)
+    # Futuros detectores (PR D):
     # - profundidad isla si no hay cota
-    # - patas isla
+    # - patas isla (frontal + laterales)
     # - colocación
     # - anafe count
     return questions
@@ -190,10 +271,36 @@ def apply_zocalos_answer(dual_result: dict, answer: dict, default_alto_m: float 
     return dual_result
 
 
+def apply_pileta_type_answer(dual_result: dict, answer: dict) -> dict:
+    """Aplica la respuesta simple/doble al sector cocina. Siempre empotrada
+    (regla D'Angelo). Si el brief menciona Johnson, usa empotrada_johnson;
+    si no, empotrada_cliente.
+    """
+    if not isinstance(answer, dict):
+        return dual_result
+    value = answer.get("value")
+    if value not in ("simple", "doble"):
+        return dual_result
+
+    # Guardamos la decisión en sector.pileta para que el calculator la use.
+    for sector in dual_result.get("sectores") or []:
+        if (sector.get("tipo") or "").lower() != "cocina":
+            continue
+        sector.setdefault("sink_type", {})
+        sector["sink_type"]["basin_count"] = value
+        sector["sink_type"].setdefault("mount_type", "abajo")
+        # Hint para Valentina: pileta empotrada (nunca apoyo en cocina)
+        sector["pileta_type_hint"] = "empotrada"
+    return dual_result
+
+
 def apply_answers(dual_result: dict, answers: list[dict]) -> dict:
     """Aplica todas las respuestas del operador al card. Extensible por
-    question_id. Hoy solo `zocalos`; siguientes PRs agregan más."""
+    question_id. Hoy: `zocalos` + `pileta_simple_doble`."""
     for ans in answers or []:
-        if ans.get("id") == "zocalos":
+        qid = ans.get("id")
+        if qid == "zocalos":
             apply_zocalos_answer(dual_result, ans)
+        elif qid == "pileta_simple_doble":
+            apply_pileta_type_answer(dual_result, ans)
     return dual_result
