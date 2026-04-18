@@ -77,6 +77,35 @@ def _has_sector_type(dual_result: dict, tipo: str) -> bool:
     )
 
 
+# "cocina-like": cualquier sector que NO sea baño/lavadero/isla cuenta como
+# cocina a fines de disparar preguntas (pileta, anafe, alzada). Cubre los
+# casos donde el LLM tipa el sector como "l", "u", "recta", "cocina_l", etc.
+_NON_COCINA_TIPOS = {"baño", "banio", "baño_principal", "toilet", "lavadero", "isla"}
+
+
+def _is_cocina_work(dual_result: dict, brief: str = "") -> bool:
+    """True si el trabajo tiene un sector tipo cocina (amplio) o si el brief
+    menciona cocina explícitamente (aunque el dual_read haya fallado)."""
+    for s in (dual_result.get("sectores") or []):
+        tipo = (s.get("tipo") or "").lower()
+        if tipo and tipo not in _NON_COCINA_TIPOS:
+            # "cocina", "l", "u", "recta", "cocina_isla", etc.
+            return True
+    if brief and re.search(r"\bcocina\b", brief, re.IGNORECASE):
+        return True
+    # Si NO hay baño ni lavadero explícito, asumimos cocina por default
+    has_non_cocina = any(
+        (s.get("tipo") or "").lower() in _NON_COCINA_TIPOS
+        for s in (dual_result.get("sectores") or [])
+    )
+    return not has_non_cocina and bool(dual_result.get("sectores"))
+
+
+def _brief_mentions_isla(brief: str) -> bool:
+    return bool(brief and re.search(r"\bisla\b", brief, re.IGNORECASE) and
+                not re.search(r"\bsin\s+isla|no\s+(lleva|va)\s+isla", brief, re.IGNORECASE))
+
+
 def _has_pileta_in_card(dual_result: dict) -> bool:
     """True si algún tramo tiene marca de pileta (feature o metadata)."""
     for s in dual_result.get("sectores") or []:
@@ -100,7 +129,7 @@ def _detect_pileta_question(brief: str, dual_result: dict) -> dict | None:
     Skip si brief es explícito ("sin pileta" / "pileta doble" / etc.) o si
     la card tiene sink_double como feature con valor definido.
     """
-    if not _has_sector_type(dual_result, "cocina"):
+    if not _is_cocina_work(dual_result, brief or ""):
         return None
     brief = brief or ""
 
@@ -134,13 +163,14 @@ def _detect_pileta_question(brief: str, dual_result: dict) -> dict | None:
 
 
 def _detect_isla_profundidad_question(brief: str, dual_result: dict) -> dict | None:
-    """Isla → SIEMPRE preguntar profundidad (nunca asumir). Skip solo si el
-    brief lo dice explícito (ej: "isla de 0.80", "profundidad isla X").
+    """Isla → SIEMPRE preguntar profundidad (nunca asumir). Dispara si
+    dual_read detectó isla O si brief la menciona (aunque multi-crop falló).
 
-    Regla D'Angelo: el plano rara vez muestra la cota de profundidad de la
-    isla con claridad → mejor preguntar que asumir silencioso.
+    Skip solo si el brief da el valor explícito (ej: "isla de 0.80",
+    "profundidad isla X").
     """
-    if not _has_sector_type(dual_result, "isla"):
+    has_isla = _has_sector_type(dual_result, "isla") or _brief_mentions_isla(brief)
+    if not has_isla:
         return None
     if brief:
         if re.search(r"isla\s+(de\s+)?\d+[,.]\d", brief, re.IGNORECASE):
@@ -167,8 +197,10 @@ def _detect_isla_profundidad_question(brief: str, dual_result: dict) -> dict | N
 
 def _detect_isla_patas_question(brief: str, dual_result: dict) -> dict | None:
     """Isla → preguntar si lleva patas (frontal + ambos laterales) y alto.
-    Siempre preguntar — no hay default razonable y afecta la cotización."""
-    if not _has_sector_type(dual_result, "isla"):
+    Siempre preguntar — no hay default razonable y afecta la cotización.
+    Dispara si dual_read detectó isla O brief la menciona."""
+    has_isla = _has_sector_type(dual_result, "isla") or _brief_mentions_isla(brief)
+    if not has_isla:
         return None
     return {
         "id": "isla_patas",
@@ -227,7 +259,7 @@ def _detect_anafe_count_question(brief: str, dual_result: dict) -> dict | None:
     """Pregunta unificada de anafe: existe + cuántos. Siempre en cocina
     salvo que el brief lo confirme explícito (count o 'sin anafe').
     """
-    if not _has_sector_type(dual_result, "cocina"):
+    if not _is_cocina_work(dual_result, brief or ""):
         return None
     b = brief or ""
     # Skip si brief dice count explícito o niega anafe
@@ -286,7 +318,7 @@ def _detect_isla_presence_question(brief: str, dual_result: dict) -> dict | None
 def _detect_alzada_question(brief: str, dual_result: dict) -> dict | None:
     """Alzada: típicamente el operador la olvida o no está en el plano.
     Preguntar siempre en cocina salvo que brief sea explícito."""
-    if not _has_sector_type(dual_result, "cocina"):
+    if not _is_cocina_work(dual_result, brief or ""):
         return None
     b = brief or ""
     if _ALZADA.search(b) or _ALZADA_NO.search(b):
