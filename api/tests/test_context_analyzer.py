@@ -189,10 +189,13 @@ class TestContextConfirmationRoundTrip:
         """
         from app.modules.quote_engine.pending_questions import apply_answers
 
-        brief = "material pura prima onix white cliente erica bernardi con zocalos en rosario con colocacion"
+        brief = "material pura prima onix white cliente erica bernardi con pileta doble con zocalos en rosario con colocacion"
         quote = None  # operador recién lo sube, sin datos previos en quote
 
         dual = _dual()
+        # Agregar feature de pileta a un tramo de cocina para que la regla
+        # pileta-empotrada se dispare (simula lo que detectaría la fase global)
+        dual["sectores"][0]["tramos"][0]["features"] = {"has_pileta": True}
         dual["sectores"].append({
             "id": "s2", "tipo": "isla",
             "tramos": [{
