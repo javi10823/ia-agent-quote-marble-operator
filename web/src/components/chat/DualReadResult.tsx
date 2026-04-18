@@ -81,6 +81,11 @@ const VIEW_TYPE_META: Record<string, { label: string; cls: string; emoji: string
     cls: "bg-gray-500/10 text-gray-400 border-gray-400/30",
     emoji: "❓",
   },
+  texto: {
+    label: "Desde texto",
+    cls: "bg-indigo-500/10 text-indigo-300 border-indigo-400/30",
+    emoji: "📝",
+  },
 };
 
 interface Props {
@@ -438,7 +443,11 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
       {/* Header */}
       <div className="flex items-center gap-3 px-5 py-4 bg-gradient-to-b from-s3 to-s2 border-b border-b1">
         <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-acc bg-acc-bg border border-acc/30 px-2 py-1 rounded-md">
-          {data.source === "DUAL" ? "Doble lectura" : data.source.replace("SOLO_", "Solo ")}
+          {data.source === "DUAL"
+            ? "Doble lectura"
+            : data.source === "TEXT"
+            ? "Desde texto"
+            : data.source.replace("SOLO_", "Solo ")}
         </span>
         {/* PR #71 — badge de tipo de vista (planta / render 3D / etc) */}
         {(() => {

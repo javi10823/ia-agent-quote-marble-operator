@@ -1363,6 +1363,88 @@ class AgentService:
             logging.warning(f"[card-editor] handler exception (non-fatal): {e}", exc_info=True)
             # Fall through al flujo normal de Claude.
 
+        # ── Text-only brief → emit card editable ──
+        # Si no hay archivos adjuntos pero el operador mandó texto con medidas,
+        # parseamos el texto y emitimos la MISMA card que dual_read. Así el
+        # despiece editable es SIEMPRE el puente obligatorio antes del cálculo,
+        # independientemente de si el input fue visual (plano) o textual.
+        #
+        # Condiciones:
+        # - No hay plan_bytes ni extra_files (input 100% texto)
+        # - No es un trigger de sistema ([DUAL_READ_CONFIRMED], [SYSTEM_TRIGGER])
+        # - No hay card previa ya emitida ni medidas confirmadas (dedup)
+        # - El parser devuelve ≥1 mesada válida
+        _is_system_trigger = user_message and user_message.strip().startswith("[")
+        if (
+            not _just_confirmed_dual_read
+            and not plan_bytes
+            and not (extra_files or [])
+            and user_message
+            and not _is_system_trigger
+        ):
+            try:
+                _tp_q = await db.execute(select(Quote).where(Quote.id == quote_id))
+                _tp_quote = _tp_q.scalar_one_or_none()
+                _tp_bd = (_tp_quote.quote_breakdown or {}) if _tp_quote else {}
+                _tp_has_card = bool(_tp_bd.get("dual_read_result"))
+                _tp_confirmed = bool(
+                    _tp_bd.get("verified_context") or _tp_bd.get("measurements_confirmed")
+                )
+            except Exception:
+                _tp_quote = None
+                _tp_bd = {}
+                _tp_has_card = False
+                _tp_confirmed = False
+
+            if _tp_quote is not None and not _tp_has_card and not _tp_confirmed:
+                try:
+                    from app.modules.quote_engine.text_parser import parse_brief_to_card
+                    _info_hint = _extract_quote_info(user_message)
+                    yield {"type": "action", "content": "📐 Leyendo medidas del texto..."}
+                    _text_card = await parse_brief_to_card(
+                        user_message,
+                        _info_hint.get("material", "") or "",
+                        _info_hint.get("project", "") or "",
+                    )
+                except Exception as _e_tp:
+                    logging.warning(f"[text-parse] parse_brief_to_card failed: {_e_tp}")
+                    _text_card = None
+
+                if _text_card:
+                    # Guardar card + metadata extraída + turno en historial
+                    try:
+                        _persist_bd = dict(_tp_bd)
+                        _persist_bd["dual_read_result"] = _text_card
+                        _update_values = {"quote_breakdown": _persist_bd}
+                        if _info_hint.get("client_name") and not _tp_quote.client_name:
+                            _update_values["client_name"] = _info_hint["client_name"]
+                        if _info_hint.get("project") and not _tp_quote.project:
+                            _update_values["project"] = _info_hint["project"]
+                        if _info_hint.get("material") and not _tp_quote.material:
+                            _update_values["material"] = _info_hint["material"]
+                        _update_values["messages"] = list(_tp_quote.messages or []) + [
+                            {"role": "user", "content": [{"type": "text", "text": user_message}]},
+                            {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"},
+                        ]
+                        await db.execute(
+                            update(Quote).where(Quote.id == quote_id).values(**_update_values)
+                        )
+                        await db.commit()
+                    except Exception as _e_pp:
+                        logging.warning(f"[text-parse] persist failed: {_e_pp}")
+                    logging.info(
+                        f"[text-parse] emitted card with {len(_text_card['sectores'][0]['tramos'])} "
+                        f"tramos for {quote_id}"
+                    )
+                    yield {
+                        "type": "dual_read_result",
+                        "content": json.dumps(_text_card, ensure_ascii=False),
+                    }
+                    yield {"type": "done", "content": ""}
+                    return
+                # Si parsing devolvió None → sigue al flujo normal; el LLM
+                # verá el mensaje y pedirá medidas con formato en su respuesta.
+
         # Build system prompt per request with contextual loading
         has_plan = plan_bytes is not None and plan_filename is not None
 
