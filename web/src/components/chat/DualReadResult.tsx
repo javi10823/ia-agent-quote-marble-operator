@@ -52,6 +52,10 @@ interface DualReadData {
   view_type?: string;
   view_type_reason?: string;
   _retry?: boolean;
+  /** Si Opus falló en el retry (timeout / error), el backend devuelve la
+   *  card previa de Sonnet intacta + este flag. Mostramos un mensaje
+   *  amigable pero preservamos las medidas que el operador ya tenía. */
+  opus_error?: string;
 }
 
 // PR #71 — metadata del tipo de vista para el badge
@@ -288,8 +292,16 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || `HTTP ${res.status}`);
       }
-      const newData = await res.json();
-      if (onRetry) onRetry(newData);
+      const newData: DualReadData = await res.json();
+      if (newData.opus_error) {
+        // El backend nos devolvió la card previa + un flag de error.
+        // No pisamos onRetry (no hay nueva lectura), mostramos el aviso.
+        setRetryError(
+          `Opus no respondió a tiempo (${newData.opus_error}). Corregí las medidas manualmente con doble-click en los valores.`
+        );
+      } else if (onRetry) {
+        onRetry(newData);
+      }
     } catch (e: unknown) {
       setRetryError(e instanceof Error ? e.message : "Error");
     } finally {

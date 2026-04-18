@@ -1371,13 +1371,29 @@ async def dual_read_retry(
     with open(crop_path, "rb") as f:
         crop_bytes = f.read()
 
-    # Call Opus directly
+    # Call Opus directly. Timeout alto porque Opus vision toma 60-90s para
+    # planos con mucho vector/detalle. El operador disparó esto a propósito,
+    # ok hacerlo esperar.
     opus_model = get_ai_config().get("opus_model", "claude-opus-4-6")
-    logging.info(f"[dual-read-retry] Quote {quote_id}: calling Opus for second opinion")
-    opus_result = await _call_vision(crop_bytes, opus_model, timeout=30)
+    _opus_timeout = int(get_ai_config().get("opus_retry_timeout_seconds", 120))
+    logging.info(
+        f"[dual-read-retry] Quote {quote_id}: calling Opus for second opinion "
+        f"(timeout={_opus_timeout}s)"
+    )
+    opus_result = await _call_vision(crop_bytes, opus_model, timeout=_opus_timeout)
 
     if opus_result.get("error"):
-        raise HTTPException(status_code=500, detail=f"Opus failed: {opus_result['error']}")
+        # Antes: 500 → frontend mostraba "Error" y perdía el contexto.
+        # Ahora: 200 con flag de error + la card previa de Sonnet intacta.
+        # El frontend ve opus_error y muestra mensaje amigable sin romper
+        # la card que ya tenía.
+        logging.warning(
+            f"[dual-read-retry] Opus failed for {quote_id}: {opus_result['error']}"
+        )
+        graceful = dict(prev_result)
+        graceful["opus_error"] = opus_result["error"]
+        graceful["_retry"] = True
+        return graceful
 
     # Retrieve original Sonnet result (saved as _sonnet_raw in prev result)
     sonnet_raw = prev_result.get("_sonnet_raw")
