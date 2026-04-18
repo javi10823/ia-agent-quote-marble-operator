@@ -162,14 +162,21 @@ def _detect_pileta_question(brief: str, dual_result: dict) -> dict | None:
     }
 
 
-def _detect_isla_profundidad_question(brief: str, dual_result: dict) -> dict | None:
+def _detect_isla_profundidad_question(
+    brief: str, dual_result: dict, *, force: bool = False,
+) -> dict | None:
     """Isla → SIEMPRE preguntar profundidad (nunca asumir). Dispara si
-    dual_read detectó isla O si brief la menciona (aunque multi-crop falló).
+    dual_read detectó isla, brief la menciona, o `force=True` (cuando la
+    pregunta de presencia fire y necesitamos el detalle pre-emitido).
 
     Skip solo si el brief da el valor explícito (ej: "isla de 0.80",
     "profundidad isla X").
     """
-    has_isla = _has_sector_type(dual_result, "isla") or _brief_mentions_isla(brief)
+    has_isla = (
+        force
+        or _has_sector_type(dual_result, "isla")
+        or _brief_mentions_isla(brief)
+    )
     if not has_isla:
         return None
     if brief:
@@ -195,11 +202,17 @@ def _detect_isla_profundidad_question(brief: str, dual_result: dict) -> dict | N
     }
 
 
-def _detect_isla_patas_question(brief: str, dual_result: dict) -> dict | None:
+def _detect_isla_patas_question(
+    brief: str, dual_result: dict, *, force: bool = False,
+) -> dict | None:
     """Isla → preguntar si lleva patas (frontal + ambos laterales) y alto.
     Siempre preguntar — no hay default razonable y afecta la cotización.
-    Dispara si dual_read detectó isla O brief la menciona."""
-    has_isla = _has_sector_type(dual_result, "isla") or _brief_mentions_isla(brief)
+    Dispara si dual_read detectó isla, brief la menciona, o `force=True`."""
+    has_isla = (
+        force
+        or _has_sector_type(dual_result, "isla")
+        or _brief_mentions_isla(brief)
+    )
     if not has_isla:
         return None
     return {
@@ -421,15 +434,27 @@ def detect_pending_questions(
     q_anafe = _detect_anafe_count_question(brief, dual_result)
     if q_anafe:
         questions.append(q_anafe)
+
+    # Bloque isla: si puede haber isla (detectada / mencionada en brief / no
+    # negada), emitimos las 3 preguntas juntas. La UI oculta/relaja las
+    # dependientes (profundidad + patas) cuando el operador responde "no"
+    # a la pregunta de presencia.
     q_isla_presence = _detect_isla_presence_question(brief, dual_result)
+    isla_possible = (
+        _has_sector_type(dual_result, "isla")
+        or _brief_mentions_isla(brief)
+        or q_isla_presence is not None
+    )
     if q_isla_presence:
         questions.append(q_isla_presence)
-    q_isla_prof = _detect_isla_profundidad_question(brief, dual_result)
-    if q_isla_prof:
-        questions.append(q_isla_prof)
-    q_isla_patas = _detect_isla_patas_question(brief, dual_result)
-    if q_isla_patas:
-        questions.append(q_isla_patas)
+    if isla_possible:
+        q_isla_prof = _detect_isla_profundidad_question(brief, dual_result, force=True)
+        if q_isla_prof:
+            questions.append(q_isla_prof)
+        q_isla_patas = _detect_isla_patas_question(brief, dual_result, force=True)
+        if q_isla_patas:
+            questions.append(q_isla_patas)
+
     q_zoc = _detect_zocalos_question(brief, dual_result)
     if q_zoc:
         questions.append(q_zoc)
