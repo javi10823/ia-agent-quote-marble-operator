@@ -65,11 +65,11 @@ class TestDetectZocalosQuestion:
             brief="material puraprima onix white cliente Erica",
             dual_result=_make_dual_result(has_zocalos=False),
         )
-        assert len(qs) == 1
-        assert qs[0]["id"] == "zocalos"
-        assert len(qs[0]["options"]) == 3
+        zocalos_qs = [q for q in qs if q["id"] == "zocalos"]
+        assert len(zocalos_qs) == 1
+        assert len(zocalos_qs[0]["options"]) == 3
         # Sí con default, Sí custom, No lleva
-        vals = [o["value"] for o in qs[0]["options"]]
+        vals = [o["value"] for o in zocalos_qs[0]["options"]]
         assert "default_trasero" in vals
         assert "custom" in vals
         assert "no" in vals
@@ -237,3 +237,187 @@ class TestApplyPiletaTypeAnswer:
         result = _make_cocina_with_pileta()
         apply_answers(result, [{"id": "pileta_simple_doble", "value": "invalid"}])
         assert "sink_type" not in result["sectores"][0]
+
+
+# ── PR D: Isla profundidad / patas / colocación / anafe count ───────────────
+
+def _make_with_isla(ancho_status: str = "CONFIRMADO", ancho_val: float = 0.60):
+    return {
+        "sectores": [
+            {
+                "id": "s1",
+                "tipo": "cocina",
+                "tramos": [],
+                "ambiguedades": [],
+            },
+            {
+                "id": "s2",
+                "tipo": "isla",
+                "tramos": [{
+                    "id": "t1",
+                    "descripcion": "Isla",
+                    "largo_m": {"valor": 1.60, "status": "CONFIRMADO"},
+                    "ancho_m": {"valor": ancho_val, "status": ancho_status},
+                    "m2": {"valor": round(1.60 * ancho_val, 2), "status": ancho_status},
+                    "zocalos": [],
+                    "frentin": [],
+                    "regrueso": [],
+                }],
+                "ambiguedades": [],
+            }
+        ],
+        "source": "MULTI_CROP",
+    }
+
+
+class TestDetectIslaProfundidad:
+    def test_emits_when_ancho_is_dudoso(self):
+        result = _make_with_isla(ancho_status="DUDOSO")
+        qs = detect_pending_questions("", result)
+        assert any(q["id"] == "isla_profundidad" for q in qs)
+
+    def test_emits_when_ancho_equals_largo(self):
+        """Fallback silencioso del VLM (L==A) → pedir al operador."""
+        result = _make_with_isla(ancho_status="CONFIRMADO", ancho_val=1.60)
+        qs = detect_pending_questions("", result)
+        assert any(q["id"] == "isla_profundidad" for q in qs)
+
+    def test_skips_when_ancho_confirmed_sensible(self):
+        result = _make_with_isla(ancho_status="CONFIRMADO", ancho_val=0.60)
+        qs = detect_pending_questions("", result)
+        assert all(q["id"] != "isla_profundidad" for q in qs)
+
+    def test_skips_when_no_isla_sector(self):
+        qs = detect_pending_questions("", _make_cocina_with_pileta())
+        assert all(q["id"] != "isla_profundidad" for q in qs)
+
+
+class TestApplyIslaProfundidad:
+    def test_060_preset_sets_ancho_and_recalcs_m2(self):
+        result = _make_with_isla(ancho_status="DUDOSO", ancho_val=2.35)
+        apply_answers(result, [{"id": "isla_profundidad", "value": "0.60"}])
+        t = result["sectores"][1]["tramos"][0]
+        assert t["ancho_m"]["valor"] == 0.60
+        assert t["ancho_m"]["status"] == "CONFIRMADO"
+        assert t["m2"]["valor"] == round(1.60 * 0.60, 2)
+
+    def test_custom_value_parsed(self):
+        result = _make_with_isla(ancho_status="DUDOSO", ancho_val=2.35)
+        apply_answers(result, [{"id": "isla_profundidad", "value": "custom", "detail": "0.80"}])
+        assert result["sectores"][1]["tramos"][0]["ancho_m"]["valor"] == 0.80
+
+    def test_invalid_custom_is_noop(self):
+        result = _make_with_isla(ancho_status="DUDOSO", ancho_val=2.35)
+        apply_answers(result, [{"id": "isla_profundidad", "value": "custom", "detail": "gigante"}])
+        # Valor original preservado
+        assert result["sectores"][1]["tramos"][0]["ancho_m"]["valor"] == 2.35
+
+
+class TestDetectIslaPatas:
+    def test_always_emits_when_isla_present(self):
+        qs = detect_pending_questions("", _make_with_isla())
+        assert any(q["id"] == "isla_patas" for q in qs)
+
+    def test_has_frontal_and_ambos_laterales_option(self):
+        qs = detect_pending_questions("", _make_with_isla())
+        q = next(q for q in qs if q["id"] == "isla_patas")
+        vals = {o["value"] for o in q["options"]}
+        assert "frontal_y_ambos_laterales" in vals
+        assert "solo_frontal" in vals
+        assert "solo_laterales" in vals
+        assert "no" in vals
+
+
+class TestApplyIslaPatas:
+    def test_frontal_y_ambos_laterales(self):
+        result = _make_with_isla()
+        apply_answers(result, [{"id": "isla_patas", "value": "frontal_y_ambos_laterales", "alto_m": 0.85}])
+        sector_isla = result["sectores"][1]
+        assert sector_isla["patas"]["sides"] == ["frontal", "lateral_izq", "lateral_der"]
+        assert sector_isla["patas"]["alto_m"] == 0.85
+
+    def test_no_empty_sides(self):
+        result = _make_with_isla()
+        apply_answers(result, [{"id": "isla_patas", "value": "no"}])
+        assert result["sectores"][1]["patas"]["sides"] == []
+
+
+class TestDetectColocacion:
+    def test_emits_when_brief_silent(self):
+        qs = detect_pending_questions("cliente juan", _make_dual_result())
+        assert any(q["id"] == "colocacion" for q in qs)
+
+    def test_skips_when_brief_says_con_colocacion(self):
+        qs = detect_pending_questions("cliente juan con colocacion", _make_dual_result())
+        assert all(q["id"] != "colocacion" for q in qs)
+
+    def test_skips_when_brief_says_sin_colocacion(self):
+        qs = detect_pending_questions("cliente juan sin colocacion", _make_dual_result())
+        assert all(q["id"] != "colocacion" for q in qs)
+
+
+class TestApplyColocacion:
+    def test_si_sets_flag_true(self):
+        result = _make_dual_result()
+        apply_answers(result, [{"id": "colocacion", "value": "si"}])
+        assert result["colocacion"] is True
+
+    def test_no_sets_flag_false(self):
+        result = _make_dual_result()
+        apply_answers(result, [{"id": "colocacion", "value": "no"}])
+        assert result["colocacion"] is False
+
+
+class TestDetectAnafeCount:
+    def _with_cooktop(self, count: int):
+        return {
+            "sectores": [{
+                "id": "s1", "tipo": "cocina",
+                "tramos": [{
+                    "id": "t1",
+                    "descripcion": "Mesada",
+                    "largo_m": {"valor": 2.95, "status": "CONFIRMADO"},
+                    "ancho_m": {"valor": 0.60, "status": "CONFIRMADO"},
+                    "m2": {"valor": 1.77, "status": "CONFIRMADO"},
+                    "zocalos": [], "frentin": [], "regrueso": [],
+                    "features": {"cooktop_groups": count},
+                }],
+                "ambiguedades": [],
+            }],
+            "source": "MULTI_CROP",
+        }
+
+    def test_emits_when_card_detects_multiple(self):
+        qs = detect_pending_questions("", self._with_cooktop(2))
+        assert any(q["id"] == "anafe_count" for q in qs)
+
+    def test_emits_when_brief_suggests_gas_plus_electrico(self):
+        qs = detect_pending_questions("anafe a gas y anafe eléctrico", self._with_cooktop(0))
+        assert any(q["id"] == "anafe_count" for q in qs)
+
+    def test_skips_when_brief_explicit_count(self):
+        qs = detect_pending_questions("1 anafe", self._with_cooktop(2))
+        assert all(q["id"] != "anafe_count" for q in qs)
+
+    def test_skips_when_card_has_1_and_brief_silent(self):
+        qs = detect_pending_questions("", self._with_cooktop(1))
+        assert all(q["id"] != "anafe_count" for q in qs)
+
+
+class TestApplyAnafeCount:
+    def test_2_sets_anafe_qty(self):
+        result = _make_dual_result()
+        apply_answers(result, [{"id": "anafe_count", "value": "2"}])
+        assert result["anafe"] is True
+        assert result["anafe_qty"] == 2
+
+    def test_0_disables(self):
+        result = _make_dual_result()
+        apply_answers(result, [{"id": "anafe_count", "value": "0"}])
+        assert result["anafe"] is False
+        assert result["anafe_qty"] == 0
+
+    def test_3plus_with_detail(self):
+        result = _make_dual_result()
+        apply_answers(result, [{"id": "anafe_count", "value": "3", "detail": "4"}])
+        assert result["anafe_qty"] == 4

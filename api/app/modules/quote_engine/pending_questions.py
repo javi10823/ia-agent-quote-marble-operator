@@ -40,6 +40,12 @@ _PILETA_DOBLE = re.compile(r"\b(doble\s+bacha|bacha\s+doble|pileta\s+doble|doble
 _PILETA_SIMPLE = re.compile(r"\b(simple\s+bacha|bacha\s+simple|pileta\s+simple|1\s+bacha)\b", re.IGNORECASE)
 _APOYO_EXPLICIT = re.compile(r"\b(pileta|bacha)\s+(de\s+)?apoyo\b", re.IGNORECASE)
 
+_COLOCACION_WITH = re.compile(r"\b(con\s+colocaci[oó]n|incluye\s+colocaci[oó]n|colocaci[oó]n\s*s[ií])\b", re.IGNORECASE)
+_COLOCACION_WITHOUT = re.compile(r"\b(sin\s+colocaci[oó]n|no\s+(incluye\s+)?colocaci[oó]n|colocaci[oó]n\s*no)\b", re.IGNORECASE)
+
+_ANAFE_COUNT_EXPLICIT = re.compile(r"\b(1|un|uno|2|dos|3|tres)\s+anafes?\b", re.IGNORECASE)
+_ANAFE_DUAL = re.compile(r"\b(anafe\s+(a\s+)?gas.*(anafe\s+)?(el[eé]ctrico|vitro)|2\s+anafes)\b", re.IGNORECASE)
+
 
 def brief_mentions_zocalos(brief: str) -> str | None:
     """Devuelve 'yes' si el brief pide zócalos, 'no' si los excluye, None si
@@ -131,6 +137,139 @@ def _detect_pileta_type_question(brief: str, dual_result: dict) -> dict | None:
     }
 
 
+def _detect_isla_profundidad_question(brief: str, dual_result: dict) -> dict | None:
+    """Isla sin cota de profundidad → preguntar. Nunca asumir 0.60 silencioso.
+
+    Dispara cuando:
+    - Hay sector isla.
+    - El tramo de isla tiene ancho_m con status DUDOSO/UNANCHORED o valor
+      igual al largo (fallback silencioso del VLM).
+    """
+    if not _has_sector_type(dual_result, "isla"):
+        return None
+    for s in dual_result.get("sectores") or []:
+        if (s.get("tipo") or "").lower() != "isla":
+            continue
+        for t in s.get("tramos") or []:
+            ancho = t.get("ancho_m") or {}
+            status = ancho.get("status", "")
+            val = ancho.get("valor")
+            largo = (t.get("largo_m") or {}).get("valor")
+            if status in ("DUDOSO", "UNANCHORED") or (
+                val is not None and largo is not None and abs(float(val) - float(largo)) < 0.01
+            ):
+                return {
+                    "id": "isla_profundidad",
+                    "label": "Profundidad de la isla",
+                    "question": (
+                        "¿Cuál es la profundidad (ancho) de la isla? El plano no la "
+                        "muestra explícita — no queremos asumir."
+                    ),
+                    "type": "radio_with_detail",
+                    "options": [
+                        {"value": "0.60", "label": "0.60 m (estándar residencial)"},
+                        {"value": "0.70", "label": "0.70 m"},
+                        {"value": "custom", "label": "Otra medida (detallar)"},
+                    ],
+                    "detail_placeholder": "Ej: 0.80",
+                }
+    return None
+
+
+def _detect_isla_patas_question(brief: str, dual_result: dict) -> dict | None:
+    """Isla → preguntar si lleva patas (frontal + ambos laterales) y alto.
+    Siempre preguntar — no hay default razonable y afecta la cotización."""
+    if not _has_sector_type(dual_result, "isla"):
+        return None
+    return {
+        "id": "isla_patas",
+        "label": "Patas de la isla",
+        "question": (
+            "¿La isla lleva patas (frente y/o laterales)? El alto suele ser del "
+            "piso a la mesada. El plano no deja esto explícito."
+        ),
+        "type": "radio_with_detail",
+        "options": [
+            {
+                "value": "frontal_y_ambos_laterales",
+                "label": "Sí — frontal + ambos laterales",
+                "apply": {"sides": ["frontal", "lateral_izq", "lateral_der"]},
+            },
+            {
+                "value": "solo_frontal",
+                "label": "Solo frontal",
+                "apply": {"sides": ["frontal"]},
+            },
+            {
+                "value": "solo_laterales",
+                "label": "Solo ambos laterales",
+                "apply": {"sides": ["lateral_izq", "lateral_der"]},
+            },
+            {
+                "value": "custom",
+                "label": "Otra combinación (detallar lados y alto)",
+                "apply": {"sides": "custom"},
+            },
+            {"value": "no", "label": "No lleva patas"},
+        ],
+        "detail_placeholder": "Ej: 'solo lateral_izq, alto 0.80m'",
+    }
+
+
+def _detect_colocacion_question(brief: str, dual_result: dict) -> dict | None:
+    """Colocación: si el brief no menciona, preguntar. Default comercial suele
+    ser 'con colocación' pero no lo asumimos silencioso."""
+    b = brief or ""
+    if _COLOCACION_WITH.search(b) or _COLOCACION_WITHOUT.search(b):
+        return None
+    return {
+        "id": "colocacion",
+        "label": "Colocación",
+        "question": "¿El presupuesto incluye colocación (mano de obra de instalación)?",
+        "type": "radio_with_detail",
+        "options": [
+            {"value": "si", "label": "Sí, incluye colocación"},
+            {"value": "no", "label": "No, solo corte y pulido"},
+        ],
+    }
+
+
+def _detect_anafe_count_question(brief: str, dual_result: dict) -> dict | None:
+    """Si la card detectó múltiples anafes o el brief sugiere >1 pero no está
+    claro, preguntar confirmación."""
+    # Hay sector cocina con features.anafe_count >= 2 o multiple_anafe hint
+    b = brief or ""
+    if _ANAFE_COUNT_EXPLICIT.search(b):
+        return None
+
+    has_multi_hint = _ANAFE_DUAL.search(b) is not None
+    card_count = 0
+    for s in dual_result.get("sectores") or []:
+        for t in s.get("tramos") or []:
+            features = t.get("features") or {}
+            card_count = max(card_count, int(features.get("cooktop_groups") or 0))
+
+    if not (has_multi_hint or card_count >= 2):
+        return None
+
+    return {
+        "id": "anafe_count",
+        "label": "Cantidad de anafes",
+        "question": (
+            "¿Cuántos anafes lleva? Detectamos señales de más de uno "
+            "(típicamente gas + eléctrico). Cada anafe empotrado suma MO."
+        ),
+        "type": "radio_with_detail",
+        "options": [
+            {"value": "1", "label": "1 anafe"},
+            {"value": "2", "label": "2 anafes (ej: gas + eléctrico)"},
+            {"value": "3", "label": "3+ anafes (detallar)"},
+            {"value": "0", "label": "No hay anafe empotrado"},
+        ],
+        "detail_placeholder": "Si son 3+: cuántos",
+    }
+
+
 def _detect_zocalos_question(brief: str, dual_result: dict) -> dict | None:
     """Si el brief no menciona zócalos y la card tampoco los detectó, preguntar.
 
@@ -195,17 +334,25 @@ def detect_pending_questions(brief: str, dual_result: dict) -> list[dict]:
     más crítico).
     """
     questions: list[dict] = []
-    q_zoc = _detect_zocalos_question(brief, dual_result)
-    if q_zoc:
-        questions.append(q_zoc)
+    # Orden: primero lo más crítico para el cálculo, después lo de layout.
+    q_anafe = _detect_anafe_count_question(brief, dual_result)
+    if q_anafe:
+        questions.append(q_anafe)
     q_pileta = _detect_pileta_type_question(brief, dual_result)
     if q_pileta:
         questions.append(q_pileta)
-    # Futuros detectores (PR D):
-    # - profundidad isla si no hay cota
-    # - patas isla (frontal + laterales)
-    # - colocación
-    # - anafe count
+    q_isla_prof = _detect_isla_profundidad_question(brief, dual_result)
+    if q_isla_prof:
+        questions.append(q_isla_prof)
+    q_isla_patas = _detect_isla_patas_question(brief, dual_result)
+    if q_isla_patas:
+        questions.append(q_isla_patas)
+    q_zoc = _detect_zocalos_question(brief, dual_result)
+    if q_zoc:
+        questions.append(q_zoc)
+    q_coloc = _detect_colocacion_question(brief, dual_result)
+    if q_coloc:
+        questions.append(q_coloc)
     return questions
 
 
@@ -294,13 +441,116 @@ def apply_pileta_type_answer(dual_result: dict, answer: dict) -> dict:
     return dual_result
 
 
+def apply_isla_profundidad_answer(dual_result: dict, answer: dict) -> dict:
+    """Setea ancho_m del tramo de isla con la profundidad elegida."""
+    if not isinstance(answer, dict):
+        return dual_result
+    value = answer.get("value")
+    if value in ("0.60", "0.70"):
+        prof = float(value)
+    elif value == "custom":
+        try:
+            prof = float(answer.get("detail") or 0)
+        except (TypeError, ValueError):
+            return dual_result
+    else:
+        return dual_result
+    if prof <= 0 or prof > 5:
+        return dual_result
+    for sector in dual_result.get("sectores") or []:
+        if (sector.get("tipo") or "").lower() != "isla":
+            continue
+        for tramo in sector.get("tramos") or []:
+            tramo.setdefault("ancho_m", {})
+            tramo["ancho_m"]["valor"] = prof
+            tramo["ancho_m"]["status"] = "CONFIRMADO"
+            tramo["ancho_m"]["source"] = "brief_rule"
+            largo = (tramo.get("largo_m") or {}).get("valor") or 0
+            tramo.setdefault("m2", {})
+            tramo["m2"]["valor"] = round(float(largo) * prof, 2)
+            tramo["m2"]["status"] = "CONFIRMADO"
+    return dual_result
+
+
+def apply_isla_patas_answer(dual_result: dict, answer: dict) -> dict:
+    """Agrega metadata de patas al sector isla (frontal/laterales + alto)."""
+    if not isinstance(answer, dict):
+        return dual_result
+    value = answer.get("value")
+    side_map = {
+        "frontal_y_ambos_laterales": ["frontal", "lateral_izq", "lateral_der"],
+        "solo_frontal": ["frontal"],
+        "solo_laterales": ["lateral_izq", "lateral_der"],
+        "no": [],
+    }
+    sides: list[str]
+    if value in side_map:
+        sides = side_map[value]
+    elif value == "custom":
+        detail = str(answer.get("detail") or "")
+        sides = [s.strip() for s in re.split(r"[,;/]", detail) if s.strip()]
+    else:
+        return dual_result
+    try:
+        alto = float(answer.get("alto_m") or 0.90)
+    except (TypeError, ValueError):
+        alto = 0.90
+    for sector in dual_result.get("sectores") or []:
+        if (sector.get("tipo") or "").lower() != "isla":
+            continue
+        sector["patas"] = {
+            "sides": sides,
+            "alto_m": alto,
+            "source": "brief_rule",
+            "detail_raw": answer.get("detail"),
+        }
+    return dual_result
+
+
+def apply_colocacion_answer(dual_result: dict, answer: dict) -> dict:
+    if not isinstance(answer, dict):
+        return dual_result
+    value = answer.get("value")
+    if value not in ("si", "no"):
+        return dual_result
+    dual_result["colocacion"] = (value == "si")
+    return dual_result
+
+
+def apply_anafe_count_answer(dual_result: dict, answer: dict) -> dict:
+    if not isinstance(answer, dict):
+        return dual_result
+    value = answer.get("value")
+    if value == "0":
+        count = 0
+    elif value in ("1", "2"):
+        count = int(value)
+    elif value == "3":
+        try:
+            count = int(answer.get("detail") or 3)
+        except (TypeError, ValueError):
+            count = 3
+    else:
+        return dual_result
+    dual_result["anafe"] = count > 0
+    dual_result["anafe_qty"] = count
+    return dual_result
+
+
 def apply_answers(dual_result: dict, answers: list[dict]) -> dict:
-    """Aplica todas las respuestas del operador al card. Extensible por
-    question_id. Hoy: `zocalos` + `pileta_simple_doble`."""
+    """Aplica todas las respuestas del operador al card. Dispatch por id."""
     for ans in answers or []:
         qid = ans.get("id")
         if qid == "zocalos":
             apply_zocalos_answer(dual_result, ans)
         elif qid == "pileta_simple_doble":
             apply_pileta_type_answer(dual_result, ans)
+        elif qid == "isla_profundidad":
+            apply_isla_profundidad_answer(dual_result, ans)
+        elif qid == "isla_patas":
+            apply_isla_patas_answer(dual_result, ans)
+        elif qid == "colocacion":
+            apply_colocacion_answer(dual_result, ans)
+        elif qid == "anafe_count":
+            apply_anafe_count_answer(dual_result, ans)
     return dual_result
