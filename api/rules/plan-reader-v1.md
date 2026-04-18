@@ -40,7 +40,7 @@ Antes de cualquier otra lectura, determiná qué TIPO de plano es esto:
   Tratar cada vista según su tipo.
 
 - `"render_fotorrealista"` → Foto 3D (Blender/V-Ray, sin cotas). NO
-  medir. Con planta: cross-check topológico (mesadas/isla/anafes);
+  leer medidas. Con planta: cross-check topológico (mesadas/isla/anafes);
   discrepancia → ambigüedad. Sin planta: pedirla.
 
 - `"unknown"` → Si realmente no es claro. Usar reglas conservadoras de
