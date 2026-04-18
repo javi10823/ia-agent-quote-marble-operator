@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Chat · error / retry · Mobile 390×844</title>
+<style>
+  :root {
+    --bg:#07070e; --s1:#0c0c16; --s2:#101018; --s3:#15151f;
+    --b1:rgba(255,255,255,.07); --b2:rgba(255,255,255,.13);
+    --t1:rgba(255,255,255,.96); --t2:rgba(255,255,255,.58); --t3:rgba(255,255,255,.28); --t4:rgba(255,255,255,.14);
+    --acc:#4f8fff; --acc2:rgba(79,143,255,.12); --acc3:rgba(79,143,255,.22);
+    --grn:#30d158; --grn2:rgba(48,209,88,.11);
+    --amb:#f5a623; --amb2:rgba(245,166,35,.10);
+    --red:#ff453a; --red2:rgba(255,69,58,.08);
+    --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Geist","Inter",system-ui,sans-serif;
+    --font-mono:ui-monospace,"Geist Mono",Menlo,monospace;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { background:#050508; color:var(--t1); font-family:var(--font-sans); font-size:14px; -webkit-font-smoothing:antialiased; }
+  body { padding:40px 24px; min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .frame-label { font-family:var(--font-mono); font-size:11px; color:rgba(255,255,255,.4); letter-spacing:.05em; }
+  .frame { width:390px; height:844px; border-radius:38px; border:10px solid #0a0a10; background:var(--bg); overflow:hidden; position:relative; display:flex; flex-direction:column; }
+  .frame::after { content:''; position:absolute; inset:0; pointer-events:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E"); }
+
+  .mobile-topbar { display:flex; align-items:center; gap:12px; padding:12px 16px; background:var(--s1); border-bottom:1px solid var(--b1); flex-shrink:0; }
+  .mobile-topbar .burger { background:transparent; border:none; color:var(--t2); padding:2px; display:flex; }
+  .mobile-topbar .dlogo { width:22px; height:22px; border-radius:6px; background:var(--acc); display:flex; align-items:center; justify-content:center; color:#fff; font-size:10px; font-weight:600; }
+  .mobile-topbar .brand { font-size:13px; font-weight:500; color:var(--t1); }
+
+  .qh-header { padding:12px 16px; border-bottom:1px solid var(--b1); background:var(--s1); flex-shrink:0; }
+  .qh-row { display:flex; align-items:center; gap:10px; }
+  .qh-back { width:30px; height:30px; border-radius:6px; border:1px solid var(--b1); background:transparent; color:var(--t2); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .qh-title-wrap { flex:1; min-width:0; }
+  .qh-title { font-size:14px; font-weight:600; color:var(--t1); max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:-.01em; }
+  .qh-sub { font-size:11px; color:var(--t3); margin-top:2px; font-family:var(--font-mono); }
+  .qh-status { display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:99px; font-size:9px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; flex-shrink:0; }
+  .qh-status.draft { color:var(--amb); background:var(--amb2); }
+  .qh-status .dot { width:4px; height:4px; border-radius:99px; background:currentColor; }
+
+  .tabs { display:flex; padding-left:16px; border-bottom:1px solid var(--b1); background:var(--s1); flex-shrink:0; }
+  .tab { padding:10px 16px; font-size:12px; font-weight:500; color:var(--t3); background:transparent; border:none; border-bottom:2px solid transparent; opacity:.6; }
+  .tab.active { color:var(--acc); border-bottom-color:var(--acc); opacity:1; }
+  .tab.locked { opacity:.35; }
+
+  .chat-scroll { flex:1; overflow-y:auto; padding:20px 16px 16px; display:flex; flex-direction:column; gap:16px; }
+
+  .msg { display:flex; gap:10px; align-items:flex-start; }
+  .avatar { width:28px; height:28px; border-radius:99px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:600; }
+  .avatar.v { background:var(--acc); color:#fff; }
+
+  .vwrap { flex:1; border:1px solid var(--b2); border-radius:2px 12px 12px 12px; overflow:hidden; }
+  .blk { padding:12px 14px; background:var(--s2); }
+  .blk + .blk { border-top:1px solid var(--b1); }
+  .blk.thinking { display:flex; flex-direction:column; gap:6px; }
+  .think-line { display:flex; align-items:center; gap:7px; font-size:11px; color:var(--t3); font-style:italic; }
+  .think-line.err { color:var(--red); font-style:normal; }
+  .think-dot { width:5px; height:5px; border-radius:99px; background:var(--acc); flex-shrink:0; animation:pulse 1.4s ease-in-out infinite; }
+  .think-dot.d2 { animation-delay:.3s; }
+  .think-dot.ok { background:var(--grn); animation:none; }
+  .think-dot.err { background:var(--red); animation:none; }
+  @keyframes pulse { 0%,100% { opacity:.35; } 50% { opacity:1; } }
+
+  /* Error banner */
+  .err-banner {
+    padding:14px; background:var(--red2); border:1px solid rgba(255,69,58,.30);
+    border-radius:12px; display:flex; flex-direction:column; gap:8px;
+  }
+  .err-head { display:flex; align-items:center; gap:8px; }
+  .err-icon {
+    width:32px; height:32px; border-radius:8px; background:rgba(255,69,58,.20);
+    color:var(--red); display:flex; align-items:center; justify-content:center;
+    font-size:16px; flex-shrink:0;
+  }
+  .err-title { font-size:13px; font-weight:600; color:var(--red); }
+  .err-body { font-size:12px; color:var(--t2); line-height:1.5; padding-left:40px; }
+  .err-body code {
+    display:block; margin-top:6px; padding:6px 8px;
+    background:rgba(0,0,0,.3); border:1px solid var(--b1); border-radius:6px;
+    font-family:var(--font-mono); font-size:10px; color:var(--t3);
+  }
+
+  .err-actions { display:flex; flex-direction:column; gap:8px; margin-top:4px; }
+  .btn-retry {
+    padding:10px 14px; background:var(--red); color:#fff;
+    font-size:13px; font-weight:600; border:none; border-radius:10px;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+  .btn-secondary {
+    padding:10px 14px; background:transparent; color:var(--t2);
+    font-size:12px; font-weight:500; border:1px solid var(--b2); border-radius:10px;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+
+  .composer { border-top:1px solid var(--b1); background:var(--s1); padding:12px 16px; flex-shrink:0; }
+  .comp-row { display:flex; align-items:center; gap:8px; background:var(--s3); border:1px solid var(--b2); border-radius:12px; padding:8px 10px 8px 12px; }
+  .comp-input { flex:1; background:transparent; border:none; outline:none; font-size:13px; color:var(--t4); }
+  .comp-btns { display:flex; gap:5px; flex-shrink:0; }
+  .icon-btn { width:28px; height:28px; border-radius:99px; display:flex; align-items:center; justify-content:center; border:1px solid var(--b1); background:transparent; color:var(--t2); }
+  .icon-btn.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .comp-hint { font-size:10px; color:var(--t3); margin-top:5px; text-align:right; }
+</style>
+</head>
+<body>
+<span class="frame-label">CHAT · ERROR / RETRY · MOBILE · 390×844 · /quote/pr-0248</span>
+<div class="frame">
+
+  <div class="mobile-topbar">
+    <button class="burger">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="dlogo">D</div>
+    <span class="brand">D'Angelo</span>
+  </div>
+
+  <header class="qh-header">
+    <div class="qh-row">
+      <button class="qh-back">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <div class="qh-title-wrap">
+        <div class="qh-title">Erica Bernardi — Casa Bernardi</div>
+        <div class="qh-sub">#PR-0248 · hace 2 min</div>
+      </div>
+      <span class="qh-status draft"><span class="dot"></span>Borrador</span>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active">Chat</button>
+    <button class="tab locked">Detalle</button>
+  </div>
+
+  <div class="chat-scroll">
+
+    <!-- Thinking with failure -->
+    <div class="msg">
+      <div class="avatar v">V</div>
+      <div class="vwrap">
+        <div class="blk thinking">
+          <div class="think-line"><span class="think-dot ok"></span>Rasterizando plano a 300 DPI…</div>
+          <div class="think-line"><span class="think-dot ok"></span>Detectando páginas relevantes…</div>
+          <div class="think-line"><span class="think-dot d2"></span>Ejecutando Dual Read (Sonnet + Opus)…</div>
+          <div class="think-line err"><span class="think-dot err"></span>Opus no respondió — timeout a los 90 s</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error banner -->
+    <div class="msg">
+      <div class="avatar v">V</div>
+      <div style="flex:1; display:flex; flex-direction:column; gap:10px;">
+
+        <div class="err-banner">
+          <div class="err-head">
+            <div class="err-icon">!</div>
+            <div class="err-title">No pude leer el plano</div>
+          </div>
+          <div class="err-body">
+            Opus no respondió a tiempo y Sonnet no reconoció cotas claras. Puede ser que el plano esté rotado, con baja resolución o que sea una vista 3D sin medidas.
+            <code>dual_read_timeout · 2 retries</code>
+          </div>
+          <div class="err-actions">
+            <button class="btn-retry">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+              Reintentar lectura
+            </button>
+            <button class="btn-secondary">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Subir otro plano
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <div class="composer">
+    <div class="comp-row">
+      <span class="comp-input">Enunciado o adjuntar plano…</span>
+      <div class="comp-btns">
+        <button class="icon-btn">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+        </button>
+        <button class="icon-btn primary">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="comp-hint">Enter para enviar</div>
+  </div>
+
+</div>
+</body>
+</html>
