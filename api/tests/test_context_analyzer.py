@@ -69,11 +69,20 @@ class TestBuildContextAnalysis:
         assert any(r["field"] == "Localidad" for r in out["data_known"])
 
     def test_cocina_triggers_pileta_empotrada_rule(self):
-        out = build_context_analysis("", None, _dual(has_cocina=True))
-        piletas = [a for a in out["assumptions"] if "Pileta" in a["field"]]
+        # La regla aplica cuando hay cocina Y pileta mencionada (evita
+        # agregar la regla cuando el trabajo no tiene pileta).
+        out = build_context_analysis("cocina con pileta", None, _dual(has_cocina=True))
+        piletas = [a for a in out["assumptions"] if a["field"] == "Pileta (tipo de montaje)"]
         assert len(piletas) == 1
         assert "empotrada" in piletas[0]["value"].lower()
         assert piletas[0]["source"] == "rule"
+
+    def test_cocina_without_pileta_mention_no_rule(self):
+        """Sin pileta mencionada en brief ni detectada en card → no aplicamos
+        la regla (el trabajo puede no tener pileta)."""
+        out = build_context_analysis("", None, _dual(has_cocina=True))
+        piletas = [a for a in out["assumptions"] if a["field"] == "Pileta (tipo de montaje)"]
+        assert len(piletas) == 0
 
     def test_no_cocina_no_pileta_rule(self):
         out = build_context_analysis("", None, _dual(has_cocina=False))
