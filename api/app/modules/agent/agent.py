@@ -447,7 +447,22 @@ async def _run_dual_read(
         # responda. Evita que Valentina asuma defaults silenciosos.
         try:
             from app.modules.quote_engine.pending_questions import detect_pending_questions
-            _pending = detect_pending_questions(user_message or "", _dual_result)
+            # Cargamos snapshot del quote para que los detectores de campos
+            # obligatorios (material, localidad) puedan ver datos ya salvos.
+            _quote_snapshot = None
+            try:
+                _pq_q = await db.execute(select(Quote).where(Quote.id == quote_id))
+                _pq_quote = _pq_q.scalar_one_or_none()
+                if _pq_quote:
+                    _quote_snapshot = {
+                        "material": _pq_quote.material,
+                        "localidad": _pq_quote.localidad,
+                        "client_name": _pq_quote.client_name,
+                        "project": _pq_quote.project,
+                    }
+            except Exception:
+                pass
+            _pending = detect_pending_questions(user_message or "", _dual_result, quote=_quote_snapshot)
             if _pending:
                 _dual_result["pending_questions"] = _pending
                 logging.info(

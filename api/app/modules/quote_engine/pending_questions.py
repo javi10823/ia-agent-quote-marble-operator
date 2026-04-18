@@ -325,16 +325,27 @@ def _detect_zocalos_question(brief: str, dual_result: dict) -> dict | None:
 # Entry point: detect all pending questions for this card
 # ─────────────────────────────────────────────────────────────────────────────
 
-def detect_pending_questions(brief: str, dual_result: dict) -> list[dict]:
+def detect_pending_questions(
+    brief: str,
+    dual_result: dict,
+    quote: dict | None = None,
+) -> list[dict]:
     """Devuelve la lista de preguntas pendientes. Vacía si todos los datos
     detectables están presentes.
 
     Cada detector corre independiente — si uno falla o no aplica, los otros
     siguen. Orden de la lista = orden de presentación en la UI (primero lo
-    más crítico).
+    más crítico para el cálculo).
     """
     questions: list[dict] = []
-    # Orden: primero lo más crítico para el cálculo, después lo de layout.
+    # Campos obligatorios globales (PR F): material + localidad.
+    # Son bloqueantes para cualquier cálculo — van primero.
+    try:
+        from app.modules.quote_engine.required_fields import detect_required_field_questions
+        questions.extend(detect_required_field_questions(brief, quote, dual_result))
+    except Exception:
+        pass
+    # Detectores específicos (PR B/C/D).
     q_anafe = _detect_anafe_count_question(brief, dual_result)
     if q_anafe:
         questions.append(q_anafe)
@@ -539,6 +550,11 @@ def apply_anafe_count_answer(dual_result: dict, answer: dict) -> dict:
 
 def apply_answers(dual_result: dict, answers: list[dict]) -> dict:
     """Aplica todas las respuestas del operador al card. Dispatch por id."""
+    # Import lazy para evitar ciclos
+    from app.modules.quote_engine.required_fields import (
+        apply_localidad_answer,
+        apply_material_answer,
+    )
     for ans in answers or []:
         qid = ans.get("id")
         if qid == "zocalos":
@@ -553,4 +569,8 @@ def apply_answers(dual_result: dict, answers: list[dict]) -> dict:
             apply_colocacion_answer(dual_result, ans)
         elif qid == "anafe_count":
             apply_anafe_count_answer(dual_result, ans)
+        elif qid == "material":
+            apply_material_answer(dual_result, ans)
+        elif qid == "localidad":
+            apply_localidad_answer(dual_result, ans)
     return dual_result
