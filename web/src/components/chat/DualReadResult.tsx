@@ -154,33 +154,99 @@ function EditableNumber({
   field,
   onEdit,
   forceEditable = false,
+  dblClickEdit = false,
 }: {
   field: FieldValue;
   onEdit: (v: number) => void;
   forceEditable?: boolean;
+  /** Si true, el campo arranca como label read-only; doble-click entra en
+   *  edit mode. Enter/blur commit (solo si valor válido), Esc cancela. */
+  dblClickEdit?: boolean;
 }) {
-  const editable = forceEditable || field.status === "CONFLICTO" || field.status === "DUDOSO";
-  if (!editable) return <>{field.valor.toFixed(2)}</>;
-  // PR #69 — UX simplificado: una sola celda editable con el valor
-  // reconciliado. Tooltip revela Opus/Sonnet originales si el operador
-  // quiere transparencia. Antes se mostraban 3 cajitas (O:X, S:Y, input)
-  // por cada medida, generando ruido visual.
+  const alwaysEditable = forceEditable || field.status === "CONFLICTO" || field.status === "DUDOSO";
+  const [editing, setEditing] = React.useState(false);
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const originalRef = React.useRef<number>(field.valor);
+
+  // PR #69 — tooltip revela Opus/Sonnet originales (cuando hay reconciliación)
   const tooltipParts: string[] = [];
   if (field.opus != null) tooltipParts.push(`Opus: ${field.opus}`);
   if (field.sonnet != null) tooltipParts.push(`Sonnet: ${field.sonnet}`);
-  const tooltip = tooltipParts.length
+  const reconcileTip = tooltipParts.length
     ? `Reconciliado — ${tooltipParts.join(" · ")}`
-    : "Valor reconciliado";
-  return (
-    <input
-      type="number"
-      step="0.01"
-      defaultValue={field.valor}
-      title={tooltip}
-      className="w-16 px-1.5 py-0.5 bg-s1 border border-b2 rounded text-[11px] text-t1 text-right font-mono hover:border-b1/60 focus:border-acc/50 outline-none"
-      onChange={(e) => onEdit(parseFloat(e.target.value) || 0)}
-    />
-  );
+    : "";
+
+  // Modo "siempre input" (legacy / manual / CONFLICTO / DUDOSO)
+  if (alwaysEditable) {
+    return (
+      <input
+        type="number"
+        step="0.01"
+        defaultValue={field.valor}
+        title={reconcileTip || "Valor reconciliado"}
+        className="w-16 px-1.5 py-0.5 bg-s1 border border-b2 rounded text-[11px] text-t1 text-right font-mono hover:border-b1/60 focus:border-acc/50 outline-none"
+        onChange={(e) => onEdit(parseFloat(e.target.value) || 0)}
+      />
+    );
+  }
+
+  // Modo "dbl-click to edit": read-only por default, input al doble-click
+  if (dblClickEdit) {
+    const commit = () => {
+      const raw = inputRef.current?.value ?? "";
+      const n = parseFloat(raw);
+      if (Number.isFinite(n) && n > 0) {
+        onEdit(n);
+      }
+      // valor inválido → revert silencioso (no pisa el original)
+      setEditing(false);
+    };
+    const cancel = () => setEditing(false);
+
+    if (editing) {
+      return (
+        <input
+          ref={(el) => {
+            inputRef.current = el;
+            if (el) {
+              el.focus();
+              el.select();
+            }
+          }}
+          type="number"
+          step="0.01"
+          defaultValue={field.valor}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commit(); }
+            else if (e.key === "Escape") { e.preventDefault(); cancel(); }
+          }}
+          onBlur={commit}
+          className="w-16 px-1.5 py-0.5 bg-s1 border border-acc/60 rounded text-[11px] text-t1 text-right font-mono outline-none"
+        />
+      );
+    }
+
+    const label = field.valor.toFixed(2);
+    const title = reconcileTip
+      ? `${reconcileTip} · Doble-click para editar`
+      : "Doble-click para editar";
+    return (
+      <span
+        onDoubleClick={(e) => {
+          e.preventDefault();
+          originalRef.current = field.valor;
+          setEditing(true);
+        }}
+        title={title}
+        className="cursor-text underline decoration-dotted decoration-white/10 underline-offset-[3px] hover:decoration-white/30 transition-colors select-none"
+      >
+        {label}
+      </span>
+    );
+  }
+
+  // Default: plain read-only label
+  return <>{field.valor.toFixed(2)}</>;
 }
 
 function EditableZocalo({
@@ -240,6 +306,14 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
         tramo.zocalos[zIdx].ml = val;
       } else {
         tramo[field].valor = val;
+        // Al editar largo o ancho, recalcular m² determinísticamente.
+        // m² queda como valor derivado — no dejamos inconsistencia
+        // largo×ancho≠m² pasar al confirm.
+        if (field === "largo_m" || field === "ancho_m") {
+          const largo = tramo.largo_m.valor || 0;
+          const ancho = tramo.ancho_m.valor || 0;
+          tramo.m2.valor = Math.round(largo * ancho * 100) / 100;
+        }
       }
       return next;
     });
@@ -534,6 +608,7 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                         field={tramo.largo_m}
                         onEdit={(v) => updateField(si, ti, "largo_m", v)}
                         forceEditable={tramo._manual}
+                        dblClickEdit
                       />
                       <span className="text-t4 ml-0.5">m</span>
                     </div>
@@ -542,10 +617,15 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                         field={tramo.ancho_m}
                         onEdit={(v) => updateField(si, ti, "ancho_m", v)}
                         forceEditable={tramo._manual}
+                        dblClickEdit
                       />
                       <span className="text-t4 ml-0.5">m</span>
                     </div>
                     <div className="text-t1 font-medium text-right flex items-center justify-end gap-2">
+                      {/* m² es valor derivado (largo × ancho). Read-only
+                          salvo que el tramo sea _manual o el field esté en
+                          CONFLICTO/DUDOSO — ahí EditableNumber cae en modo
+                          "siempre input" por la rama alwaysEditable. */}
                       <EditableNumber
                         field={tramo.m2}
                         onEdit={(v) => updateField(si, ti, "m2", v)}
