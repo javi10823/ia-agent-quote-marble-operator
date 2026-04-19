@@ -598,7 +598,14 @@ export async function* streamChat(
 // ── Catalog ───────────────────────────────────────────────────────────────────
 
 export async function fetchCatalogs() {
-  const res = await apiFetch(`${API_BASE}/api/catalog`, { credentials: "include" });
+  // Trailing slash obligatorio: el FastAPI router monta "/" en el root,
+  // así que sin slash se dispara un 307 redirect a /api/catalog/. En
+  // Railway la Location header del redirect sale con scheme http://
+  // (uvicorn no sabe que la request original fue https porque no está
+  // configurado para leer X-Forwarded-Proto). El browser bloquea esa
+  // redirect por Mixed Content desde la página https de Vercel y el
+  // fetch falla. Con slash vamos directo al handler, zero redirects.
+  const res = await apiFetch(`${API_BASE}/api/catalog/`, { credentials: "include" });
   handleAuthError(res);
   if (!res.ok) throw new Error("Error al cargar catálogos");
   return res.json();
