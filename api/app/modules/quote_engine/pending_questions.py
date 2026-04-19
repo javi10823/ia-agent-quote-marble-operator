@@ -602,11 +602,22 @@ def apply_pileta_type_answer(dual_result: dict, answer: dict) -> dict:
 
 
 def apply_isla_profundidad_answer(dual_result: dict, answer: dict) -> dict:
-    """Setea ancho_m del tramo de isla con la profundidad elegida."""
+    """Setea ancho_m del tramo de isla con la profundidad elegida.
+
+    Busca tramos de isla en 2 lugares (en este orden):
+      1. Sectores con `tipo == "isla"` (caso canónico).
+      2. Tramos cuya descripción contenga "isla" dentro de cualquier
+         sector (común en cocinas L + isla donde el dual_read lumps
+         todo en un solo sector tipo "L" / "cocina").
+
+    Antes sólo miraba (1) — si el plano no tenía un sector isla
+    separado, el 0.60 que respondía el operador no se aplicaba y el
+    despiece quedaba con la medida original (1.20 u otro valor).
+    """
     if not isinstance(answer, dict):
         return dual_result
     value = answer.get("value")
-    if value in ("0.60", "0.70"):
+    if value in ("0.60", "0.70", "0.80", "0.90", "1.00"):
         prof = float(value)
     elif value == "custom":
         try:
@@ -614,21 +625,49 @@ def apply_isla_profundidad_answer(dual_result: dict, answer: dict) -> dict:
         except (TypeError, ValueError):
             return dual_result
     else:
-        return dual_result
+        try:
+            prof = float(value)  # last resort: si el value es un número crudo
+        except (TypeError, ValueError):
+            return dual_result
     if prof <= 0 or prof > 5:
         return dual_result
+
+    def _update_tramo(tramo: dict) -> None:
+        tramo.setdefault("ancho_m", {})
+        tramo["ancho_m"]["valor"] = prof
+        tramo["ancho_m"]["status"] = "CONFIRMADO"
+        tramo["ancho_m"]["source"] = "brief_rule"
+        largo = (tramo.get("largo_m") or {}).get("valor") or 0
+        tramo.setdefault("m2", {})
+        tramo["m2"]["valor"] = round(float(largo) * prof, 2)
+        tramo["m2"]["status"] = "CONFIRMADO"
+
+    updated_any = False
     for sector in dual_result.get("sectores") or []:
-        if (sector.get("tipo") or "").lower() != "isla":
-            continue
-        for tramo in sector.get("tramos") or []:
-            tramo.setdefault("ancho_m", {})
-            tramo["ancho_m"]["valor"] = prof
-            tramo["ancho_m"]["status"] = "CONFIRMADO"
-            tramo["ancho_m"]["source"] = "brief_rule"
-            largo = (tramo.get("largo_m") or {}).get("valor") or 0
-            tramo.setdefault("m2", {})
-            tramo["m2"]["valor"] = round(float(largo) * prof, 2)
-            tramo["m2"]["status"] = "CONFIRMADO"
+        if (sector.get("tipo") or "").lower() == "isla":
+            for tramo in sector.get("tramos") or []:
+                _update_tramo(tramo)
+                updated_any = True
+
+    # Fallback: buscar tramos "isla" en sectores non-isla (cocina L + isla
+    # lumped juntos). Solo si no actualizamos nada en el loop anterior —
+    # para no pisar dos veces si el plano tiene ambos formatos.
+    if not updated_any:
+        for sector in dual_result.get("sectores") or []:
+            if (sector.get("tipo") or "").lower() == "isla":
+                continue
+            for tramo in sector.get("tramos") or []:
+                desc = (tramo.get("descripcion") or "").lower()
+                feats = tramo.get("features") or {}
+                is_isla_tramo = (
+                    "isla" in desc
+                    or feats.get("is_island")
+                    or feats.get("isla")
+                )
+                if is_isla_tramo:
+                    _update_tramo(tramo)
+                    updated_any = True
+
     return dual_result
 
 
