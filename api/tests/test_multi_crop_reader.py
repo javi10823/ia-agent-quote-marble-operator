@@ -890,7 +890,11 @@ class TestGuardrails:
         }
         result = _apply_guardrails(vlm_output, ranking)
         assert result["confidence"] <= 0.3
-        assert any("no está en el ranking" in s for s in result["suspicious_reasons"])
+        # Wording actualizado en PR 2b.1 — texto "no está en ranking ni rango típico"
+        assert any(
+            ("no está en ranking" in s) or ("no está en el ranking" in s)
+            for s in result["suspicious_reasons"]
+        )
 
 
 class TestRankingPromptFormat:
@@ -921,3 +925,236 @@ class TestRankingPromptFormat:
         # NO debe haber frases tipo "2.35m estimado" ni "respuesta sugerida"
         assert "estimado" not in prompt.lower()
         assert "respuesta" not in prompt.lower()
+
+
+# ── PR 2b.1: R3 hardening + expanded confidence cap + inferred_default ────
+
+class TestR3VerticalBernardi:
+    """Test central de PR 2b.1: R3 vertical derecha del caso Bernardi
+    cuando el topology puso el bbox tan a la derecha que la 4.15 cayó
+    dentro del bbox tight. La regla de exclusión por incompatibilidad
+    geométrica + alternativas debe:
+
+    - excluir 4.15 del length ranking (regla A: >4m con alternativas).
+    - mantener 2.35 y 2.05 en length.
+    - **rankear 2.35 por encima de 2.05** (2.35 está más cerca del bbox
+      de R3 en x → penalización por distancia menor).
+
+    Sin la prioridad de 2.35 sobre 2.05, el VLM puede seguir eligiendo
+    mal y el caso central no queda resuelto.
+    """
+
+    def test_r3_excludes_4_15_and_prefers_2_35_over_2_05(self):
+        image_size = (4963, 3509)
+        # bbox R3 real del log de prod
+        region = {"bbox_rel": {"x": 0.73, "y": 0.26, "w": 0.09, "h": 0.37}}
+        # 7 cotas reales + el 4.15 duplicado que cae dentro del bbox tight
+        cotas = [
+            Cota(text="0.60", value=0.60, x=3028, y=957, width=20, height=10),
+            Cota(text="1.60", value=1.60, x=2119, y=1267, width=20, height=10),
+            Cota(text="4.15", value=4.15, x=3663, y=1339, width=20, height=10),
+            Cota(text="4.15", value=4.15, x=3700, y=1400, width=20, height=10),
+            Cota(text="2.75", value=2.75, x=1577, y=1340, width=20, height=10),
+            Cota(text="2.35", value=2.35, x=2836, y=1458, width=20, height=10),
+            Cota(text="2.05", value=2.05, x=2506, y=1875, width=20, height=10),
+        ]
+        ranking = _rank_cotas_for_region(cotas, region, image_size, scale=None)
+
+        # 4.15 debe estar en excluded_hard, NUNCA en length
+        length_values = [r["value"] for r in ranking["length"]]
+        assert 4.15 not in length_values, (
+            f"4.15 no debe estar en length después del filtro geométrico. "
+            f"Ranking length: {[(r['value'], r['score'], r['bucket']) for r in ranking['length']]}"
+        )
+        # Al menos una 4.15 debe aparecer como excluded_hard con razón reconocible
+        hard_entries = ranking["excluded_hard"]
+        assert any(
+            abs(h["value"] - 4.15) < 0.02
+            and ("alternatives" in h["reason"] or "over_4m" in h["reason"] or "perimeter" in h["reason"])
+            for h in hard_entries
+        ), f"4.15 debe estar en excluded_hard con razón geométrica; got {hard_entries}"
+
+        # 2.35 y 2.05 deben mantenerse en length
+        v235 = next(
+            (r for r in ranking["length"] if abs(r["value"] - 2.35) < 0.02), None,
+        )
+        v205 = next(
+            (r for r in ranking["length"] if abs(r["value"] - 2.05) < 0.02), None,
+        )
+        assert v235 is not None, "2.35 debe estar en length ranking"
+        assert v205 is not None, "2.05 debe estar en length ranking"
+
+        # Requisito central del PR: 2.35 rankea por encima de 2.05
+        # (2.35 está más cerca del bbox de R3 en x: 787px vs 1117px → menos penalty).
+        assert v235["score"] > v205["score"], (
+            f"Para el bbox vertical R3, 2.35 debe rankear > 2.05. "
+            f"Got 2.35=score {v235['score']} ({v235['bucket']}), "
+            f"2.05=score {v205['score']} ({v205['bucket']}). "
+            f"Sin esto el caso central no queda resuelto."
+        )
+
+
+class TestExpandedConfidenceCap:
+    """PR 2b.1 — cap duro de confidence cuando cotas_mode=expanded."""
+
+    def test_confidence_capped_at_065_in_expanded_mode(self):
+        """cotas_mode=expanded + VLM eligió el top-ranked → cap 0.65."""
+        ranking = {
+            "length": [
+                {"value": 2.35, "score": 55, "bucket": "weak", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 75, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 2.35,  # eligió el top
+            "ancho_m": 0.60,
+            "confidence": 0.85,
+        }
+        result = _apply_guardrails(vlm_output, ranking, cotas_mode="expanded")
+        assert result["confidence"] == 0.65, (
+            f"Expected 0.65 cap, got {result['confidence']}"
+        )
+        assert any(
+            "expanded" in s and "cap" in s
+            for s in result["suspicious_reasons"]
+        )
+
+    def test_confidence_capped_at_05_when_expanded_and_not_top(self):
+        """cotas_mode=expanded + VLM eligió no-top en algún campo → cap 0.5."""
+        ranking = {
+            "length": [
+                {"value": 2.35, "score": 55, "bucket": "weak", "reasons": []},
+                {"value": 2.05, "score": 40, "bucket": "weak", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 75, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 2.05,  # NO es el top (2.35 es)
+            "ancho_m": 0.60,  # top
+            "confidence": 0.85,
+        }
+        result = _apply_guardrails(vlm_output, ranking, cotas_mode="expanded")
+        assert result["confidence"] == 0.5, (
+            f"Expected 0.5 cap, got {result['confidence']}"
+        )
+
+    def test_confidence_not_capped_in_local_mode(self):
+        """cotas_mode=local no dispara los caps de expanded."""
+        ranking = {
+            "length": [
+                {"value": 2.35, "score": 80, "bucket": "preferred", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 75, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 2.35,
+            "ancho_m": 0.60,
+            "confidence": 0.90,
+        }
+        result = _apply_guardrails(vlm_output, ranking, cotas_mode="local")
+        assert result["confidence"] == 0.90
+
+    def test_expanded_cap_05_fires_on_largo_even_if_ancho_is_inferred(self):
+        """Check 3 — el cap 0.5 se evalúa por campo (OR, no AND).
+        Si ancho es inferred_default (no en ranking), no debe impedir que
+        el largo dispare el cap."""
+        ranking = {
+            "length": [
+                {"value": 2.35, "score": 55, "bucket": "weak", "reasons": []},
+                {"value": 2.05, "score": 40, "bucket": "weak", "reasons": []},
+            ],
+            "depth": [],  # ningún candidato de depth en el ranking
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 2.05,  # no es el top (2.35 lo es)
+            "ancho_m": 0.60,  # inferred_default — no está en depth ranking
+            "confidence": 0.85,
+        }
+        result = _apply_guardrails(vlm_output, ranking, cotas_mode="expanded")
+        # El ancho inferred no cuenta para el cap de no-top; pero el largo sí.
+        assert result["confidence"] == 0.5
+
+
+class TestInferredDefaultGuardrail:
+    """PR 2b.1 — cuando el VLM elige un valor no-en-ranking pero dentro
+    del rango típico del rol (ej: 0.60 para ancho de mesada), es un
+    inferred_default razonable. Cap suave 0.6, no 0.3 duro."""
+
+    def test_inferred_default_for_ancho_060_caps_at_06(self):
+        """Arregla el falso positivo de R1 en Bernardi: midió 1.60×0.60
+        correcto, pero 0.60 no estaba en el ranking local → confidence
+        bajó a 0.3 injustamente."""
+        ranking = {
+            "length": [
+                {"value": 1.60, "score": 70, "bucket": "preferred", "reasons": []},
+            ],
+            "depth": [],  # sin candidatos de ancho en el ranking
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 1.60,
+            "ancho_m": 0.60,  # inferred — no está en el ranking
+            "confidence": 0.80,
+        }
+        result = _apply_guardrails(vlm_output, ranking, cotas_mode="local")
+        assert result["confidence"] == 0.60, (
+            f"0.60 es default razonable de ancho → cap 0.6, no 0.3. "
+            f"Got {result['confidence']}"
+        )
+        # Suspicious explicativo pero no alarmante
+        assert any(
+            "inferred" in s for s in result["suspicious_reasons"]
+        )
+
+    def test_out_of_range_value_not_in_ranking_hits_03_cap(self):
+        """Valor fuera de rango típico AND no en ranking → halucinación
+        dura, confidence 0.3."""
+        ranking = {
+            "length": [
+                {"value": 2.35, "score": 80, "bucket": "preferred", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 75, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 7.42,  # fuera del rango 1.0-4.0 AND no en ranking
+            "ancho_m": 0.60,
+            "confidence": 0.90,
+        }
+        result = _apply_guardrails(vlm_output, ranking, cotas_mode="local")
+        assert result["confidence"] <= 0.3
+
+
+class TestSevereSpanMismatch:
+    """PR 2b.1 — penalty escalonada. Deviation grande debe empujar a
+    buckets bajos (no solo quedar como "weak por cercanía")."""
+
+    def test_severe_span_mismatch_penalized_heavily(self):
+        """Cota 4.15 con span esperado ~2.35m (deviation ~77%) → -50 puntos."""
+        # bbox vertical con ~400px de alto (~2.35m con scale ~170 px/m)
+        region_bbox_px = {"x": 100, "y": 100, "x2": 200, "y2": 500, "w": 100, "h": 400}
+        # Cota cerca del bbox con valor 4.15
+        cota = Cota(text="4.15", value=4.15, x=150, y=300, width=20, height=10)
+        # scale=170 px/m → expected = 400/170 ≈ 2.35
+        result = _score_cota(
+            cota, region_bbox_px, orientation="vertical", scale=170.0,
+            candidate_for="length",
+        )
+        # Confirmar que la razón de severe span mismatch está presente
+        assert any("severe_span_mismatch" in r for r in result["reasons"]), (
+            f"Expected severe_span_mismatch reason, got {result['reasons']}"
+        )
+        # Bucket weak o inferior (no preferred)
+        assert result["bucket"] in ("weak", "unlikely", "excluded_soft")

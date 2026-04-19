@@ -472,6 +472,10 @@ def _score_cota(
     reasons: list[str] = []
 
     # ── Proximidad al bbox ─────────────────────────────────────────────
+    # Tres niveles discretos + ajuste continuo cuando está afuera.
+    # El continuo es clave para diferenciar dos cotas ambas "fuera del
+    # expanded": si una está más cerca del bbox, se nota en el score.
+    # Sin esto, 2.35 y 2.05 quedaban empatadas en R3 de Bernardi.
     if _cota_in_bbox(cota, region_bbox_px, padding_px=80):
         score += 40
         reasons.append("inside_tight_bbox")
@@ -479,7 +483,18 @@ def _score_cota(
         score += 15
         reasons.append("inside_expanded_bbox")
     else:
-        reasons.append("outside_expanded_bbox")
+        # Castigo continuo — más lejos del bbox, más resta.
+        dist_x = max(
+            0, region_bbox_px["x"] - cota.x, cota.x - region_bbox_px["x2"]
+        )
+        dist_y = max(
+            0, region_bbox_px["y"] - cota.y, cota.y - region_bbox_px["y2"]
+        )
+        # Restamos 1 punto cada 100px fuera del bbox expandido, cap 30.
+        dist_px = dist_x + dist_y
+        dist_penalty = min(30, dist_px // 100)
+        score -= int(dist_penalty)
+        reasons.append(f"outside_expanded_bbox_dist{int(dist_px)}px")
 
     # ── Rango de valor típico según rol ───────────────────────────────
     if candidate_for == "length":
@@ -510,17 +525,25 @@ def _score_cota(
     # Para depth la alineación importa menos — el ancho se escribe típico
     # en cualquier lado.
 
-    # ── Span plausibility (señal DÉBIL — solo si hay scale) ──────────
+    # ── Span plausibility — penalización escalonada ──────────────────
+    # Solo aplica si hay scale confiable. Señal secundaria al valor +
+    # orientación, pero más fuerte que antes: deviations groseras empujan
+    # a bucket unlikely, no quedan weak "por cercanía".
     if scale and candidate_for == "length":
         bbox_long_px = max(region_bbox_px["w"], region_bbox_px["h"])
         expected_m = bbox_long_px / scale
         if expected_m > 0.5:
             deviation = abs(cota.value - expected_m) / expected_m
-            if deviation > 0.40:
-                # Señal débil — no dominante. 20 puntos de castigo.
-                score -= 20
+            if deviation > 0.50:
+                score -= 50
+                reasons.append(f"severe_span_mismatch_{int(deviation * 100)}pct")
+            elif deviation > 0.30:
+                score -= 30
                 reasons.append(f"span_mismatch_{int(deviation * 100)}pct")
-            elif deviation < 0.15:
+            elif deviation > 0.15:
+                score -= 20
+                reasons.append(f"span_deviation_{int(deviation * 100)}pct")
+            else:
                 score += 10
                 reasons.append("span_matches")
 
@@ -542,6 +565,72 @@ def _score_cota(
     }
 
 
+def _filter_length_by_geometry(
+    length_ranking: list[dict],
+    all_candidate_cotas: list[Cota],
+    region_bbox_px: dict,
+    scale: Optional[float],
+    excluded_hard: list[dict],
+) -> list[dict]:
+    """Post-filtro del ranking de largo: mueve a `excluded_hard` cotas
+    claramente incompatibles con el span geométrico del tramo, priorizando
+    preservar alternativas válidas.
+
+    Dos reglas. Si alguna dispara, la cota se excluye. Si ambas disparan,
+    se guardan las DOS razones (lista) para logs y tests.
+
+    Regla A — valor alto con alternativas disponibles:
+      - value > 4.0m (proxy para cota de perímetro del ambiente).
+      - existe al menos 1 alternativa en rango típico [1.0, 4.0] en el pool.
+      - Caso Bernardi R3: el topology agarró 4.15 adentro del bbox tight
+        del tramo vertical; había 2.35/2.05 en expanded — las mantenemos,
+        la 4.15 se excluye.
+
+    Regla B — severa incompatibilidad con span estimado:
+      - scale confiable disponible.
+      - deviation entre cota y span esperado > 60%.
+      - Caso: bbox de tramo chico (~1m esperado) con cota 3.50m → excluir.
+
+    Safety: si el pool total NO tiene alternativas en [1.0, 4.0] (caso
+    edificio con todas las mesadas largas), NO se excluye nada por Regla A
+    — puede ser una mesada legítimamente de >4m.
+    """
+    has_valid_alternative = any(
+        _LENGTH_TYPICAL_RANGE[0] <= c.value <= _LENGTH_TYPICAL_RANGE[1]
+        for c in all_candidate_cotas
+    )
+
+    bbox_long_px = max(region_bbox_px["w"], region_bbox_px["h"])
+    expected_m = (bbox_long_px / scale) if (scale and scale > 0) else None
+
+    keep: list[dict] = []
+    for entry in length_ranking:
+        value = entry["value"]
+        reasons: list[str] = []
+
+        # Regla A
+        if has_valid_alternative and value > 4.0:
+            reasons.append("value_over_4m_with_alternatives_available")
+
+        # Regla B
+        if expected_m and expected_m > 0.5:
+            deviation = abs(value - expected_m) / expected_m
+            if deviation > 0.60:
+                reasons.append(
+                    f"severe_span_incompatibility_{int(deviation * 100)}pct"
+                )
+
+        if reasons:
+            excluded_hard.append({
+                "value": value,
+                "reason": "; ".join(reasons),
+            })
+        else:
+            keep.append(entry)
+
+    return keep
+
+
 def _rank_cotas_for_region(
     cotas: list[Cota],
     region: dict,
@@ -550,12 +639,15 @@ def _rank_cotas_for_region(
 ) -> dict:
     """Genera dos rankings (length + depth) + lista de excluidas duras.
 
-    Excluidas duras:
-    - Perímetro probable (valor >3m + lejos del bbox).
+    Excluidas duras (pre-scoring):
+    - Perímetro probable por posición (valor >3m + fuera del bbox tight).
     - Valor absurdo (<0.1m o >6m).
 
-    Nada más se excluye duro — el resto va a preferred/weak/unlikely
-    según score.
+    Excluidas duras (post-scoring, solo para length):
+    - Incompatibilidad geométrica o valor >4m con alternativas disponibles
+      (ver `_filter_length_by_geometry`).
+
+    El resto va a preferred/weak/unlikely según score.
     """
     region_bbox_px = _bbox_to_px(region.get("bbox_rel") or {}, image_size)
     orientation = _tramo_orientation(region_bbox_px)
@@ -563,9 +655,10 @@ def _rank_cotas_for_region(
     length_ranking: list[dict] = []
     depth_ranking: list[dict] = []
     excluded_hard: list[dict] = []
+    surviving_cotas: list[Cota] = []  # para el filtro geométrico
 
     for cota in cotas:
-        # Hard exclusions
+        # Hard exclusions pre-scoring
         if cota.value < _ABSURD_MIN_M or cota.value > _ABSURD_MAX_M:
             excluded_hard.append({
                 "value": cota.value,
@@ -578,6 +671,7 @@ def _rank_cotas_for_region(
                 "reason": "probable_perimeter",
             })
             continue
+        surviving_cotas.append(cota)
         # Score para ambos roles
         length_ranking.append(
             _score_cota(cota, region_bbox_px, orientation, scale, candidate_for="length")
@@ -585,6 +679,11 @@ def _rank_cotas_for_region(
         depth_ranking.append(
             _score_cota(cota, region_bbox_px, orientation, scale, candidate_for="depth")
         )
+
+    # Post-filtro: exclusión geométrica para length (solo).
+    length_ranking = _filter_length_by_geometry(
+        length_ranking, surviving_cotas, region_bbox_px, scale, excluded_hard,
+    )
 
     # Ordenar desc por score
     length_ranking.sort(key=lambda r: r["score"], reverse=True)
@@ -656,16 +755,27 @@ def _format_ranking_for_prompt(ranking: dict) -> str:
 
 
 def _apply_guardrails(
-    vlm_output: dict, ranking: dict,
+    vlm_output: dict, ranking: dict, cotas_mode: str = "local",
 ) -> dict:
-    """Post-LLM: si el VLM eligió weak/unlikely habiendo preferred
-    disponible, baja confidence y agrega suspicious_reasons.
+    """Post-LLM: valida elección del VLM contra el ranking determinístico
+    y baja confidence cuando la elección es sospechosa.
 
-    Importante: el guardrail se apoya en el RANKING (determinístico), NO
-    en el `reasoning` del VLM (puede sonar convincente y ser falso).
+    Se apoya en el RANKING (geométrico/determinístico), NO en el
+    `reasoning` del VLM (puede sonar convincente y ser falso).
 
-    Si el VLM elige weak PERO no hay preferred disponible, no castigamos
-    — puede ser lo mejor disponible en ese crop.
+    Capas:
+    1. Valor no en ranking:
+       - Si cae en rango típico del rol (0.60 para depth, 2.xx para
+         length) → `inferred_default`, cap 0.6 (no 0.3). El VLM infirió
+         un valor estándar razonable sin cota explícita — aceptable.
+       - Fuera del rango típico → halucinación dura, cap 0.3.
+    2. Valor en ranking pero bucket weak/unlikely habiendo preferred →
+       cap 0.5, suspicious con detalle.
+    3. cotas_mode == "expanded":
+       - Cap duro de confidence 0.65 (evidencia ambigua por naturaleza).
+       - Si además eligió valor distinto al top-ranked para largo **O**
+         ancho (cada campo evaluado por separado, no se exige AND) →
+         cap 0.5.
     """
     largo = vlm_output.get("largo_m")
     ancho = vlm_output.get("ancho_m")
@@ -684,22 +794,38 @@ def _apply_guardrails(
                 return r
         return None
 
-    for field_name, value, rank_list in [
-        ("largo", largo, ranking.get("length") or []),
-        ("ancho", ancho, ranking.get("depth") or []),
+    length_ranking = ranking.get("length") or []
+    depth_ranking = ranking.get("depth") or []
+
+    for field_name, value, rank_list, typical_range in [
+        ("largo", largo, length_ranking, _LENGTH_TYPICAL_RANGE),
+        ("ancho", ancho, depth_ranking, _DEPTH_TYPICAL_RANGE),
     ]:
         if value is None:
             continue
         chosen = _find_match(value, rank_list)
         if chosen is None:
-            # Valor no está en el ranking — halucinado o fuera de scope
-            suspicious.append(
-                f"{field_name} {value}m no está en el ranking de candidatas"
-            )
-            confidence = min(confidence, 0.3)
+            # Valor no está en el ranking. ¿Cae en rango típico?
+            lo, hi = typical_range
+            try:
+                value_float = float(value)
+            except (TypeError, ValueError):
+                value_float = None
+            if value_float is not None and lo <= value_float <= hi:
+                # Inferred default razonable — VLM usó valor estándar sin
+                # cota explícita (ej: 0.60 para ancho). No castigo duro.
+                suspicious.append(
+                    f"{field_name} {value}m inferred (valor típico, no en ranking)"
+                )
+                confidence = min(confidence, 0.6)
+            else:
+                # Fuera de rango típico + no en ranking → halucinación
+                suspicious.append(
+                    f"{field_name} {value}m no está en ranking ni rango típico"
+                )
+                confidence = min(confidence, 0.3)
             continue
         if chosen["bucket"] in ("weak", "unlikely", "excluded_soft"):
-            # ¿Había una preferred disponible?
             top_preferred = next(
                 (r for r in rank_list if r["bucket"] == "preferred"),
                 None,
@@ -713,6 +839,37 @@ def _apply_guardrails(
                 )
                 confidence = min(confidence, 0.5)
             # Si no hay preferred, weak puede ser lo mejor — no castigamos
+
+    # ── Cap duro por cotas_mode=expanded ─────────────────────────────
+    # Evidencia ambigua por naturaleza. Dos niveles:
+    #   1. Cap base 0.65 siempre que sea expanded.
+    #   2. Si además el VLM no eligió el top del ranking en largo O ancho
+    #      (cada campo evaluado por separado), cap 0.5.
+    # El segundo se evalúa por OR — no se exige AND. Un ancho 0.60
+    # inferred_default NO distorsiona el cap del largo.
+    if cotas_mode == "expanded":
+        if confidence > 0.65:
+            confidence = 0.65
+            suspicious.append("cotas_mode=expanded → cap confidence 0.65")
+        for field_name, value, rank_list in [
+            ("largo", largo, length_ranking),
+            ("ancho", ancho, depth_ranking),
+        ]:
+            if value is None or not rank_list:
+                continue
+            chosen = _find_match(value, rank_list)
+            if chosen is None:
+                # inferred_default — no computa para este check
+                continue
+            top = rank_list[0]
+            if top and abs(top["value"] - float(value)) > 0.02:
+                if confidence > 0.5:
+                    confidence = 0.5
+                    suspicious.append(
+                        f"expanded + {field_name}={value}m no es top "
+                        f"({top['value']}m score {top['score']}) → cap 0.5"
+                    )
+                break  # con que uno dispare alcanza
 
     vlm_output["confidence"] = confidence
     if suspicious:
@@ -903,7 +1060,8 @@ async def _measure_region(
 
     # PR 2b — Guardrails post-LLM apoyados en el RANKING determinístico
     # (no en el reasoning del VLM que puede sonar convincente y ser falso).
-    parsed = _apply_guardrails(parsed, ranking)
+    # PR 2b.1 — además, cap duro de confidence cuando cotas_mode=expanded.
+    parsed = _apply_guardrails(parsed, ranking, cotas_mode=cotas_mode)
 
     # Cuando caímos a fallback expanded, el resultado NUNCA es CONFIRMADO
     # aunque los números sean plausibles — el operador tiene que revisar
@@ -1175,6 +1333,7 @@ async def read_plan_multi_crop(
     try:
         _region_summary = []
         for r in region_results:
+            _ranking = r.get("_cota_ranking") or {}
             _region_summary.append({
                 "region_id": r.get("region_id"),
                 "error": r.get("error"),
@@ -1189,6 +1348,25 @@ async def read_plan_multi_crop(
                     {"v": c.get("value"), "why": (c.get("reason") or "")[:60]}
                     for c in (r.get("rejected_candidates") or [])[:3]
                 ],
+                # PR 2b.1 — ranking determinístico completo, para diagnóstico.
+                # Sin esto estamos ciegos: no sabemos si falla el filtro, el
+                # scoring o el guardrail.
+                "ranking": {
+                    "orientation": _ranking.get("orientation"),
+                    "scale_px_per_m": _ranking.get("scale_px_per_m"),
+                    "length_top": [
+                        {"v": e["value"], "s": e["score"], "b": e["bucket"]}
+                        for e in (_ranking.get("length") or [])[:4]
+                    ],
+                    "depth_top": [
+                        {"v": e["value"], "s": e["score"], "b": e["bucket"]}
+                        for e in (_ranking.get("depth") or [])[:4]
+                    ],
+                    "excluded_hard": [
+                        {"v": h["value"], "why": (h.get("reason") or "")[:60]}
+                        for h in (_ranking.get("excluded_hard") or [])
+                    ],
+                } if _ranking else None,
             })
         logger.info(f"[multi-crop/region-detail] {json.dumps(_region_summary, ensure_ascii=False)}")
     except Exception as _e_log:
