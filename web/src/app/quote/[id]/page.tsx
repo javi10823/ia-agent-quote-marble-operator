@@ -17,6 +17,7 @@ import ContextAnalysis from "@/components/chat/ContextAnalysis";
 import HomeHero from "@/components/chat/HomeHero";
 import clsx from "clsx";
 import { A, I, O, N, DOT, SUP2, DASH, ITEM, WARN, CIRCLE, ARROW, XMARK, CLOUD, WAVE, PAGE, PICTURE, CLIP, RULER, TAG, FOLDER, CHART } from "@/lib/chars";
+import { VALID_FILE_TYPES as PARENT_VALID_TYPES, MAX_FILE_SIZE as PARENT_MAX_SIZE, MAX_FILES as PARENT_MAX_FILES } from "@/lib/constants";
 
 export interface UIMessage {
   id: string;
@@ -135,6 +136,58 @@ export default function QuotePage() {
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const dragCounter = useRef(0);
+  const [dropError, setDropError] = useState<string | null>(null);
+
+  // Validación + añadir de archivos soltados sobre el área completa del chat.
+  // Replica la lógica del `addFiles` del composer para que un drop en
+  // cualquier parte del chat funcione idéntico que un drop sobre el input.
+  const addDroppedFiles = (newFiles: FileList | File[]) => {
+    if (sending) return;
+    const arr = Array.from(newFiles);
+    const valid: File[] = [];
+    for (const f of arr) {
+      if (!PARENT_VALID_TYPES.some(t => f.type.includes(t.split("/")[1]))) {
+        setDropError(`"${f.name}" ${DASH} tipo no soportado`);
+        setTimeout(() => setDropError(null), 3000);
+        continue;
+      }
+      if (f.size > PARENT_MAX_SIZE) {
+        setDropError(`"${f.name}" ${DASH} m${A}ximo 10MB`);
+        setTimeout(() => setDropError(null), 3000);
+        continue;
+      }
+      if (attachedFiles.length + valid.length >= PARENT_MAX_FILES) {
+        setDropError(`M${A}ximo ${PARENT_MAX_FILES} archivos`);
+        setTimeout(() => setDropError(null), 3000);
+        break;
+      }
+      if (attachedFiles.some(ef => ef.name === f.name && ef.size === f.size)) continue;
+      if (valid.some(ef => ef.name === f.name && ef.size === f.size)) continue;
+      valid.push(f);
+    }
+    if (valid.length > 0) setAttachedFiles([...attachedFiles, ...valid]);
+  };
+
+  // Drag handlers del wrapper del chat — el overlay full-chat se muestra
+  // cuando hay archivos siendo arrastrados. El dragCounter compensa los
+  // dragEnter/Leave nested.
+  const wrapperDragEnter = (e: React.DragEvent) => {
+    if (!e.dataTransfer?.types?.includes("Files")) return;
+    e.preventDefault();
+    dragCounter.current++;
+    setDragActive(true);
+  };
+  const wrapperDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current--;
+    if (dragCounter.current <= 0) { dragCounter.current = 0; setDragActive(false); }
+  };
+  const wrapperDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current = 0;
+    setDragActive(false);
+    if (e.dataTransfer.files.length > 0) addDroppedFiles(e.dataTransfer.files);
+  };
   const [sending, setSending] = useState(false);
   const [multiPiece, setMultiPiece] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -496,7 +549,19 @@ export default function QuotePage() {
           )}
         </div>
       ) : tab === "chat" ? (
-        <>
+        <div
+          className="flex-1 flex flex-col min-h-0 relative"
+          onDragEnter={wrapperDragEnter}
+          onDragLeave={wrapperDragLeave}
+          onDragOver={(e) => { if (e.dataTransfer?.types?.includes("Files")) e.preventDefault(); }}
+          onDrop={wrapperDrop}
+        >
+          {dragActive && <DragDropOverlay />}
+          {dropError && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 px-4 py-2.5 rounded-lg bg-err/10 border border-err/30 text-[12px] text-err font-sans shadow-lg animate-[fadeUp_0.2s_ease]">
+              {WARN} {dropError}
+            </div>
+          )}
           <div className="flex-1 overflow-y-auto px-4 md:px-7 pt-5 md:pt-7 pb-4 flex flex-col gap-4 md:gap-5">
             {messages.length === 0 && (
               <HomeHero
@@ -669,7 +734,7 @@ export default function QuotePage() {
               <span className="text-xs text-t3">{`Historial de conversaci${O}n ${DOT} Us${A} Modificaciones en la pesta${N}a Detalle para hacer cambios`}</span>
             </div>
           )}
-        </>
+        </div>
       ) : null}
     </div>
   );
@@ -1003,15 +1068,12 @@ function ChatInput({ input, setInput, files, setFiles, multiPiece, setMultiPiece
   const fileIcon = (t: string) => t.includes("pdf") ? PAGE : PICTURE;
 
   return (
+    // El drag overlay full-chat vive en el wrapper del chat tab (ver
+    // DragDropOverlay). Acá sólo exponemos los handlers — el wrapper
+    // parent ya intercepta por burbujeo, pero mantenerlos preserva el
+    // dragCounter compartido y sirve de fallback si el ChatInput se
+    // reutiliza fuera del chat (ej: modificaciones en detalle).
     <div onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={e => e.preventDefault()} onDrop={handleDrop} className="relative">
-      {dragActive && (
-        <div className="absolute inset-0 z-10 bg-acc/[0.08] border-2 border-dashed border-acc rounded-xl flex flex-col items-center justify-center gap-1.5 pointer-events-none">
-          <span className="text-[28px]">{FOLDER}</span>
-          <span className="text-sm font-medium text-acc">{`Solt${A} tu plano PDF o imagen ac${A}`}</span>
-          <span className="text-[11px] text-t3">{`PDF, JPG, PNG ${DOT} M${A}ximo 10MB`}</span>
-        </div>
-      )}
-
       {(files.length > 0 || fileError) && (
         <div className="flex flex-wrap gap-1.5 mb-2">
           {files.map((f, i) => (
@@ -1135,5 +1197,35 @@ function IconBtn({ onClick, children, primary, disabled, title }: { onClick: () 
     )}>
       {children}
     </button>
+  );
+}
+
+// ── DRAG & DROP OVERLAY ──────────────────────────────────────────────────────
+// Full-chat overlay al arrastrar un archivo sobre el área del chat. Cubre
+// toda la superficie (scroll + composer) con un borde dashed y una card
+// centrada en Fraunces italic. Matches el mockup "Drag & drop del plano"
+// del handoff v2.
+function DragDropOverlay() {
+  return (
+    <div
+      className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none"
+      style={{ backdropFilter: "blur(2px)", WebkitBackdropFilter: "blur(2px)" }}
+    >
+      {/* dashed border wrapper */}
+      <div className="absolute inset-4 md:inset-6 border-2 border-dashed border-acc/70 rounded-xl bg-acc/[0.04]" />
+      {/* card centrada */}
+      <div className="relative z-10 px-8 py-7 rounded-2xl bg-s1 border border-b2 shadow-[0_20px_60px_rgba(0,0,0,.45)] flex flex-col items-center gap-2 max-w-[420px] text-center">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="text-acc mb-1">
+          <path d="M12 16V4m0 0l-5 5m5-5l5 5" />
+          <path d="M4 20h16" />
+        </svg>
+        <h3 className="font-serif italic text-[22px] md:text-[24px] font-medium text-t1 -tracking-[0.01em] leading-tight">
+          Soltá el plano acá
+        </h3>
+        <p className="text-[12px] md:text-[13px] text-t3 font-sans">
+          Acepto PDF, JPG, PNG o WEBP · hasta 10 MB
+        </p>
+      </div>
+    </div>
   );
 }
