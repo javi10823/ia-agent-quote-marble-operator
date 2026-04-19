@@ -647,6 +647,35 @@ async def read_plan_multi_crop(
 
     regions = topology.get("regions") or []
     logger.info(f"[multi-crop] global topology detected {len(regions)} regions")
+
+    # Diagnostic log: full topology response structurado. Crítico para
+    # debuggear casos donde la clasificación sale mal (ej: plano Bernardi
+    # abril 2026 — topology detectó 2 regiones en vez de 3, clasificó "isla
+    # con anafe" a lo que es un tramo de la L). Sin esto tenemos que
+    # reproducir el caso pidiéndole al operador que lo vuelva a subir.
+    try:
+        _topology_summary = {
+            "view_type": topology.get("view_type"),
+            "n_regions": len(regions),
+            "regions": [
+                {
+                    "id": r.get("id"),
+                    "bbox_rel": r.get("bbox_rel"),
+                    "features": r.get("features"),
+                    "evidence": (r.get("evidence") or "")[:120],
+                    "legacy_sector": r.get("sector"),
+                }
+                for r in regions
+            ],
+            "brief_len": len(brief_text or ""),
+            "brief_preview": (brief_text or "")[:200],
+            "cotas_count": len(cotas),
+            "cotas_values": sorted({round(c.value, 2) for c in cotas}),
+        }
+        logger.info(f"[multi-crop/topology-detail] {json.dumps(_topology_summary, ensure_ascii=False)}")
+    except Exception as _e_log:
+        logger.warning(f"[multi-crop] topology detail log failed: {_e_log}")
+
     if not regions:
         return {"error": "no_regions_detected"}
 
@@ -663,5 +692,32 @@ async def read_plan_multi_crop(
     ]
     ok_count = sum(1 for r in region_results if not r.get("error"))
     logger.info(f"[multi-crop] {ok_count}/{len(regions)} regions measured successfully")
+
+    # Diagnostic log: resumen por región de lo que devolvió el LLM (o el
+    # error). Útil para ver en prod qué cota eligió cada región — si eligió
+    # una cota swappeada de otro sector, es señal de que el topology puso
+    # el bbox mal. Pareado con el log [topology-detail] de arriba tenemos
+    # el pipeline completo en los logs sin tener que reproducir el caso.
+    try:
+        _region_summary = []
+        for r in region_results:
+            _region_summary.append({
+                "region_id": r.get("region_id"),
+                "error": r.get("error"),
+                "largo_m": r.get("largo_m"),
+                "ancho_m": r.get("ancho_m"),
+                "cotas_mode": r.get("_cotas_mode"),
+                "local_cotas": r.get("_local_cotas_count"),
+                "expanded_cotas": r.get("expanded_cotas_count"),
+                "confidence": r.get("confidence"),
+                "suspicious": r.get("suspicious_reasons"),
+                "rejected": [
+                    {"v": c.get("value"), "why": (c.get("reason") or "")[:60]}
+                    for c in (r.get("rejected_candidates") or [])[:3]
+                ],
+            })
+        logger.info(f"[multi-crop/region-detail] {json.dumps(_region_summary, ensure_ascii=False)}")
+    except Exception as _e_log:
+        logger.warning(f"[multi-crop] region detail log failed: {_e_log}")
 
     return _aggregate(topology, region_results)
