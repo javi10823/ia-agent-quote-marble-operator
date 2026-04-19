@@ -598,7 +598,17 @@ export async function* streamChat(
 // ── Catalog ───────────────────────────────────────────────────────────────────
 
 export async function fetchCatalogs() {
-  const res = await apiFetch(`${API_BASE}/api/catalog`, { credentials: "include" });
+  // Trailing slash obligatorio: el endpoint FastAPI está registrado como
+  // `@router.get("/")` con prefix `/catalog`, así que la ruta real es
+  // `/api/catalog/` (con slash). Sin slash, FastAPI responde 307 con
+  // `Location: .../api/catalog/`. El browser sigue el redirect, y si
+  // Vercel lo procesa como redirect cross-origin (no proxy), terminamos
+  // en origen Railway donde la cookie SameSite=Lax no viaja → 401 →
+  // handleAuthError redirige a /login → usuario ve "sesión cerrada".
+  //
+  // Con el slash vamos directo al handler — zero redirects, zero jumps
+  // cross-origin, cookie viaja.
+  const res = await apiFetch(`${API_BASE}/api/catalog/`, { credentials: "include" });
   handleAuthError(res);
   if (!res.ok) throw new Error("Error al cargar catálogos");
   return res.json();
