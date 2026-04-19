@@ -112,13 +112,22 @@ def decode_token(token: str) -> Optional[dict]:
 # ── Cookie Helpers ───────────────────────────────────────────────────────────
 
 def set_auth_cookie(response: Response, token: str):
-    """Set httpOnly secure cookie with JWT."""
+    """Set httpOnly secure cookie with JWT.
+
+    SameSite: en dev usamos "lax" (mismo origen), en prod "none" porque
+    el frontend (vercel.app) y el backend (railway.app) están en dominios
+    distintos y los rewrites de Next.js a URLs externas pueden comportarse
+    como redirect cross-origin — con "lax" el cookie NO viajaría y todo
+    queda en 401 sin posibilidad de recuperar. "none" requiere Secure=True,
+    que ya tenemos en prod.
+    """
+    is_prod = settings.APP_ENV != "development"
     response.set_cookie(
         key=COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=settings.APP_ENV != "development",  # HTTPS only in production
-        samesite="lax",
+        secure=is_prod,
+        samesite="none" if is_prod else "lax",
         max_age=TOKEN_EXPIRY_HOURS * 3600,
         path="/",
     )
@@ -169,6 +178,13 @@ async def auth_middleware(request: Request, call_next):
     """
     path = request.url.path
     client_ip = request.client.host if request.client else "unknown"
+
+    # Preflight CORS requests (OPTIONS) NO deben pasar por auth. El browser
+    # las dispara antes del request real para chequear Access-Control-*
+    # headers; si acá devolvemos 401 el browser nunca hace el request real
+    # y la UI ve un error genérico de CORS en vez del 401 legítimo.
+    if request.method == "OPTIONS":
+        return await call_next(request)
 
     # Rate limiting on sensitive endpoints
     if path == "/api/auth/login" and not _login_limiter.is_allowed(client_ip):
