@@ -126,6 +126,7 @@
     "rotate_plan_images": false,
     "max_examples": 1,
     "dual_read_enabled": true,
+    "multi_crop_enabled": true,
     "plan_rasterization_dpi": 300
   },
   "zone_aliases": {

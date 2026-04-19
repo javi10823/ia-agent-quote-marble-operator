@@ -16,18 +16,28 @@ from __future__ import annotations
 from typing import Iterable
 
 
-TOLERANCE = 0.02  # metros — margen para error de redondeo o rotación OCR
+TOLERANCE = 0.01  # metros — 1cm. Apretado desde 2cm tras caso real donde
+# Valentina leyó 2.15m en vez de 2.05m en un plano con cota explícita de 2.05:
+# con tol=0.02 la diferencia de 10cm igual se detectaba (|2.15-2.05|=0.10 > 0.02),
+# pero nunca llegó acá porque el reconciliador Opus/Sonnet (±5%) aceptó ambos
+# modelos coincidiendo en 2.15. Bajar a 1cm reduce falsos positivos en cotas
+# cercanas como 0.60/0.62 y fuerza el anchor real contra el text layer.
+
+
+_FP_EPSILON = 1e-6  # evita falsos UNANCHORED por ruido de floating point
 
 
 def _matches_any(value: float, reference: Iterable[float], tol: float = TOLERANCE) -> bool:
-    """True si `value` está dentro de `tol` metros de algún valor de referencia."""
+    """True si `value` está dentro de `tol` metros de algún valor de referencia.
+    Agrega epsilon chico para evitar que `abs(2.94 - 2.95) = 0.01000...231` sea
+    rechazado por un tol="0.01" exacto."""
     if value is None:
         return True  # valores null no se validan (el frontend los renderiza como edit inputs)
     try:
         v = float(value)
     except (TypeError, ValueError):
         return True
-    return any(abs(v - float(r)) <= tol for r in reference if r is not None)
+    return any(abs(v - float(r)) <= tol + _FP_EPSILON for r in reference if r is not None)
 
 
 def annotate_anchoring(result: dict, extracted_values: list[float]) -> dict:
