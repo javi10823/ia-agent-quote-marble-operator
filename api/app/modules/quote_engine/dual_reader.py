@@ -124,9 +124,19 @@ async def _call_vision(
             "text": (
                 cotas_text
                 + "\n\n"
-                + "⚠️ REGLA CRÍTICA: usá SOLO los valores numéricos listados arriba. "
-                + "NO inventes otros números. Tu tarea es asignar cada cota a su rol "
-                + "geométrico (largo, ancho, zócalo, etc.) según su posición (x, y)."
+                + "⚠️ REGLA CRÍTICA (sin excepciones): TODO valor numérico que "
+                + "devuelvas en el JSON (largo_m, ancho_m, zócalos) DEBE coincidir "
+                + "EXACTAMENTE con uno de los valores numéricos listados arriba.\n"
+                + "- Si una medida del plano no aparece en esta lista, NO la uses. "
+                + "Marcala con `status: \"DUDOSO\"` y dejá `valor: null`, en vez de "
+                + "estimar visualmente.\n"
+                + "- NO redondees, NO promedies, NO infieras desde el dibujo sin cota. "
+                + "Mejor un `null` honesto que un número inventado.\n"
+                + "- Si ves varias cotas candidatas para el mismo rol (ej. pared-a-pared "
+                + "vs muro-a-muro), elegí la INTERNA (pared-a-pared) y anotá tu elección "
+                + "en `ambiguedades`.\n"
+                + "Tu tarea es ASIGNAR cada cota listada a su rol geométrico usando la "
+                + "posición (x, y) — no generar números nuevos."
             ),
         })
     user_text_blocks.append({
