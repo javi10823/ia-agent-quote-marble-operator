@@ -151,13 +151,41 @@ async def get_db():
 
 
 async def cleanup_empty_drafts():
-    """Delete draft quotes older than 1 hour that lack client + material.
-    Drafts with real data (client_name AND material set) are preserved."""
+    """Delete draft quotes that are truly abandoned placeholders.
+
+    "Abandoned" means: inactive for >1h AND nothing real attached —
+    no client_name, no plano adjunto, no historial de chat. Un quote
+    con cualquiera de esos es trabajo en curso y NO se toca.
+
+    Causa raíz del bug que arregla esta función (ver regresión en
+    tests/test_cleanup_drafts.py): antes borrábamos cualquier draft con
+    `material IS NULL` más de 1h de antigüedad. Pero `material` se setea
+    recién en Paso 2 (tras confirmar el despiece), así que durante todo
+    el Paso 1 — brief, plano, Dual Read, revisar medidas — material
+    queda NULL. Si el operador tardaba >1h (esperar a Opus, corregir,
+    revisar con cliente) y otro tab disparaba `POST /quotes` (que lanza
+    cleanup fire-and-forget), o Railway hacía cold-start, el quote se
+    borraba en pleno flow y `[DUAL_READ_CONFIRMED]` volvía 404 → el
+    frontend redirigía al listado perdiendo todo el trabajo.
+
+    Fix:
+    - Usar `updated_at` en vez de `created_at` — actividad reciente
+      preserva la quote aunque sea vieja.
+    - Sacar el check de `material IS NULL` — material null es estado
+      normal en Paso 1.
+    - Preservar cualquier quote con source_files (plano pegado) o con
+      mensajes en el historial.
+    """
     if settings.APP_ENV == "test":
         return  # Skip cleanup in test environment
 
+    await _cleanup_empty_drafts_impl()
+
+
+async def _cleanup_empty_drafts_impl():
+    """Implementation sin el guard de APP_ENV=test para poder testear."""
     from datetime import datetime, timedelta, timezone
-    from sqlalchemy import delete
+    from sqlalchemy import delete, cast, String
     from app.models.quote import Quote
 
     cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
@@ -165,9 +193,21 @@ async def cleanup_empty_drafts():
         result = await db.execute(
             delete(Quote).where(
                 Quote.status == "draft",
-                Quote.created_at < cutoff,
-                # Only delete if missing client OR material (incomplete)
-                (Quote.client_name == "") | (Quote.client_name.is_(None)) | (Quote.material.is_(None)),
+                # "Idle for >1h" — updated_at refleja la última edición,
+                # not created_at. Un quote activo se actualiza en cada turno
+                # de chat (messages, quote_breakdown, source_files), así que
+                # nunca llega al cutoff mientras el operador esté laburando.
+                Quote.updated_at < cutoff,
+                # Empty placeholder: sin cliente asignado.
+                (Quote.client_name == "") | (Quote.client_name.is_(None)),
+                # Nunca borrar si hay plano adjunto (es trabajo real).
+                # source_files arranca como NULL; al subir el primer plano
+                # pasa a una lista con 1+ items.
+                (Quote.source_files.is_(None)) | (cast(Quote.source_files, String).in_(("null", "[]"))),
+                # Nunca borrar si hay historial de chat.
+                # messages arranca como [] (default=list), pasa a >1 item
+                # apenas Valentina responde.
+                cast(Quote.messages, String).in_(("null", "[]")),
                 # Never delete web-originated quotes — they may be in progress
                 (Quote.source != "web") | (Quote.source.is_(None)),
             )
