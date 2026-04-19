@@ -10,7 +10,10 @@ class Settings(BaseSettings):
     ANTHROPIC_MODEL: str = "claude-sonnet-4-5-20250514"
     GOOGLE_SERVICE_ACCOUNT_FILE: str = "service-account.json"
     GOOGLE_DRIVE_FOLDER_ID: str
-    APP_ENV: str = "development"
+    # Default PRODUCTION: safer for deploys que olvidan setear la env
+    # (ej. Railway sin APP_ENV explícita). En dev local, el `.env` lo
+    # override a "development" y el cookie sale SameSite=Lax + no Secure.
+    APP_ENV: str = "production"
     CORS_ORIGINS: List[str] = ["http://localhost:3000"]
     SECRET_KEY: str
     QUOTE_API_KEY: str = ""

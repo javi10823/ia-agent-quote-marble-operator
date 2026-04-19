@@ -116,10 +116,11 @@ def set_auth_cookie(response: Response, token: str):
 
     SameSite: en dev usamos "lax" (mismo origen), en prod "none" porque
     el frontend (vercel.app) y el backend (railway.app) están en dominios
-    distintos y los rewrites de Next.js a URLs externas pueden comportarse
-    como redirect cross-origin — con "lax" el cookie NO viajaría y todo
-    queda en 401 sin posibilidad de recuperar. "none" requiere Secure=True,
-    que ya tenemos en prod.
+    distintos → la cookie NECESITA SameSite=None para viajar cross-origin.
+    Requiere Secure=True (Chrome lo obliga), que ya tenemos en prod.
+
+    Default de APP_ENV es "production" (ver config.py), así que aunque
+    Railway no tenga la env var seteada, la cookie sale correcta.
     """
     is_prod = settings.APP_ENV != "development"
     response.set_cookie(
@@ -130,6 +131,10 @@ def set_auth_cookie(response: Response, token: str):
         samesite="none" if is_prod else "lax",
         max_age=TOKEN_EXPIRY_HOURS * 3600,
         path="/",
+    )
+    logger.info(
+        f"Set auth cookie — APP_ENV={settings.APP_ENV!r}, "
+        f"secure={is_prod}, samesite={'none' if is_prod else 'lax'}"
     )
 
 
