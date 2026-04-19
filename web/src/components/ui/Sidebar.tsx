@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { logout } from "@/lib/auth";
 import { useQuotes } from "@/lib/quotes-context";
@@ -9,15 +8,7 @@ import clsx from "clsx";
 export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
   const router = useRouter();
   const path = usePathname();
-  const { quotes, addQuote } = useQuotes();
-
-  async function handleNew() {
-    try {
-      const id = await addQuote();
-      onClose?.();
-      router.push(`/quote/${id}`);
-    } catch { /* toast already shown by context */ }
-  }
+  const { quotes } = useQuotes();
 
   function navigate(to: string) {
     onClose?.();
@@ -38,11 +29,10 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
       <NavItem icon={<BookIcon />} label="Catálogo" active={path === "/config"} onClick={() => navigate("/config")} />
       <NavItem icon={<CogIcon />} label="Configuración" active={path === "/settings"} onClick={() => navigate("/settings")} />
 
+      {/* Footer — sólo logout. El CTA "+Nuevo presupuesto" vive en el
+          header del dashboard (arriba-derecha) según diseño v2. */}
       <div className="mt-auto">
-        <button onClick={handleNew} className="w-full py-2.5 px-3 bg-acc border-none rounded-lg text-white text-[13px] font-medium font-sans cursor-pointer flex items-center justify-center gap-[7px] -tracking-[0.01em] transition-all duration-150 hover:bg-acc-hover hover:-translate-y-px hover:shadow-[0_8px_24px_var(--acc-shadow)]">
-          <PlusIcon /> Nuevo presupuesto
-        </button>
-        <button onClick={async () => { await logout(); router.push("/login"); }} className="w-full py-[7px] px-2 bg-transparent border-none rounded-md text-t3 text-[11px] font-normal font-sans cursor-pointer flex items-center justify-center gap-1.5 transition-colors duration-150 hover:text-t2 mt-2.5">
+        <button onClick={async () => { await logout(); router.push("/login"); }} className="w-full py-2 px-2 bg-transparent border-none rounded-md text-t3 text-[12px] font-normal font-sans cursor-pointer flex items-center gap-2 transition-colors duration-150 hover:text-t2">
           <LogoutIcon /> Cerrar sesión
         </button>
       </div>
@@ -110,9 +100,6 @@ function BookIcon() {
 }
 function CogIcon() {
   return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>;
-}
-function PlusIcon() {
-  return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
 }
 function LogoutIcon() {
   return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>;

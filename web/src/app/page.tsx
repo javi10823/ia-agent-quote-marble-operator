@@ -318,23 +318,34 @@ export default function DashboardPage() {
             Presupuestos
           </h1>
         </div>
-        <button
-          onClick={() => {
-            const rows = [["Cliente","Proyecto","Material","ARS","USD","Estado","Fuente","Fecha"]];
-            filteredQuotes.forEach(q => rows.push([
-              q.client_name, q.project, q.material || "", String(q.total_ars || ""), String(q.total_usd || ""),
-              q.status, q.source || "operator", new Date(q.created_at).toLocaleDateString("es-AR"),
-            ]));
-            const csv = rows.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(",")).join("\n");
-            const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-            const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-            a.download = `presupuestos-${new Date().toISOString().slice(0,10)}.csv`; a.click();
-          }}
-          className="hidden md:inline-flex items-center gap-2 px-3.5 py-[7px] rounded-md text-xs font-medium font-sans cursor-pointer border border-b1 bg-transparent text-t2 -tracking-[0.01em] hover:border-b2 hover:text-t1 transition shrink-0 mb-1"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v12m0 0l-5-5m5 5l5-5M4 20h16"/></svg>
-          Exportar
-        </button>
+        <div className="hidden md:flex items-center gap-3 shrink-0 mb-1">
+          <button
+            onClick={() => {
+              const rows = [["Cliente","Proyecto","Material","ARS","USD","Estado","Fuente","Fecha"]];
+              filteredQuotes.forEach(q => rows.push([
+                q.client_name, q.project, q.material || "", String(q.total_ars || ""), String(q.total_usd || ""),
+                q.status, q.source || "operator", new Date(q.created_at).toLocaleDateString("es-AR"),
+              ]));
+              const csv = rows.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(",")).join("\n");
+              const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+              const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+              a.download = `presupuestos-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+            }}
+            className="inline-flex items-center gap-2 px-4 py-[9px] rounded-lg text-[13px] font-medium font-sans cursor-pointer border border-b1 bg-transparent text-t2 -tracking-[0.01em] hover:border-b2 hover:text-t1 transition"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v12m0 0l-5-5m5 5l5-5M4 20h16"/></svg>
+            Exportar
+          </button>
+          <button
+            onClick={async () => {
+              try { const id = await addQuote(); router.push(`/quote/${id}`); } catch { /* toast already shown */ }
+            }}
+            className="inline-flex items-center gap-2 px-4 py-[9px] rounded-lg text-[13px] font-medium font-sans cursor-pointer bg-acc text-white border-none -tracking-[0.01em] hover:bg-acc-hover transition shadow-[0_4px_14px_var(--acc-shadow)]"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Nuevo presupuesto
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -567,7 +578,7 @@ export default function DashboardPage() {
                       )}
                     >
                       {/* Checkbox */}
-                      <td className="pl-6 pr-2 py-6 w-10" onClick={(e) => e.stopPropagation()}>
+                      <td className="pl-6 pr-2 py-7 w-10" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={isChecked}
@@ -583,7 +594,7 @@ export default function DashboardPage() {
                         />
                       </td>
                       {/* Cliente — serif italic grande + sublabel sans */}
-                      <td className="px-4 py-6 max-w-[320px]">
+                      <td className="px-4 py-7 max-w-[320px]">
                         <div className="flex items-baseline gap-2">
                           {isUnread && <span className="w-[7px] h-[7px] rounded-full bg-acc shrink-0" />}
                           <div className="min-w-0">
@@ -601,7 +612,7 @@ export default function DashboardPage() {
                         </div>
                       </td>
                       {/* Material — sans sentence case, chip OBRA outlined */}
-                      <td className="px-4 py-6 text-[13px] max-w-[280px] text-t2">
+                      <td className="px-4 py-7 text-[13px] max-w-[280px] text-t2">
                         {isBuilding ? (
                           <span className="flex items-center gap-2">
                             <span className="text-[9px] font-semibold font-mono tracking-wider px-1.5 py-[2px] rounded border border-[#b48fe0]/30 text-[#b48fe0]">OBRA</span>
@@ -612,7 +623,7 @@ export default function DashboardPage() {
                         )}
                       </td>
                       {/* Importe — ARS Fraunces grande + USD mono chico */}
-                      <td className="px-4 py-6 text-right whitespace-nowrap">
+                      <td className="px-4 py-7 text-right whitespace-nowrap">
                         <div className="font-serif text-[18px] text-t1 -tracking-[0.01em] leading-none">
                           {q.total_ars ? `$\u00A0${q.total_ars.toLocaleString("es-AR")}` : "\u2014"}
                         </div>
@@ -621,7 +632,7 @@ export default function DashboardPage() {
                         ) : null}
                       </td>
                       {/* Estado — dot + texto, no pill */}
-                      <td className="px-4 py-6">
+                      <td className="px-4 py-7">
                         <button
                           onClick={(e) => toggleStatus(e, q.id, q.status)}
                           title={STATUS_NEXT[q.status] ? `Cambiar a ${STATUS_LABEL[STATUS_NEXT[q.status]!]}` : "Estado final"}
@@ -636,38 +647,20 @@ export default function DashboardPage() {
                         </button>
                       </td>
                       {/* Fecha — mono chico */}
-                      <td className={clsx("px-4 py-6 text-[12px] font-mono tabular-nums whitespace-nowrap", isStale ? "text-amb" : "text-t3")}>
+                      <td className={clsx("px-4 py-7 text-[12px] font-mono tabular-nums whitespace-nowrap", isStale ? "text-amb" : "text-t3")}>
                         {format(new Date(q.created_at), "d MMM", { locale: es })}
                         {isStale && ` · ${Math.floor(daysOld)}d`}
                       </td>
-                      {/* Archivos — pills outline */}
-                      <td className="px-4 py-6">
-                        <div className="flex gap-1.5 justify-end" onClick={e => e.stopPropagation()}>
-                          {(q.drive_pdf_url || q.pdf_url) && <FileBtn href={q.drive_pdf_url || q.pdf_url!} emoji="📄" label="PDF" />}
-                          {(q.drive_excel_url || q.excel_url) && <FileBtn href={q.drive_excel_url || q.excel_url!} emoji="📊" label="Excel" />}
-                          {!q.drive_pdf_url && !q.pdf_url && !q.drive_excel_url && !q.excel_url && <span className="text-t4 text-[11px] font-mono">—</span>}
-                        </div>
+                      {/* Archivos — pills outline con chip +N si hay más */}
+                      <td className="px-4 py-7">
+                        <FileCell q={q} />
                       </td>
-                      {/* Acciones (hover reveal) */}
-                      <td className="pl-2 pr-6 py-6 w-[72px]">
-                        <div className="flex gap-1 opacity-0 hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                          {q.material && (
-                            <button
-                              onClick={(e) => askDerive(e, q.id, q.material || "", q.client_name)}
-                              title="Duplicar con otro material"
-                              className="w-7 h-7 rounded-md border border-b1 bg-transparent text-t3 cursor-pointer flex items-center justify-center text-[10px] font-medium transition-all hover:border-acc/50 hover:text-acc"
-                            >
-                              +M
-                            </button>
-                          )}
-                          <button
-                            onClick={(e) => askDelete(e, q.id, q.client_name)}
-                            title="Eliminar presupuesto"
-                            className="w-7 h-7 rounded-md border border-b1 bg-transparent text-t3 cursor-pointer flex items-center justify-center text-xs transition-all hover:border-err/50 hover:text-err"
-                          >
-                            ✕
-                          </button>
-                        </div>
+                      {/* Menu 3-dots — siempre visible, con popover al click */}
+                      <td className="pl-2 pr-6 py-7 w-[44px]">
+                        <RowMenu
+                          onDerive={q.material ? (e) => askDerive(e, q.id, q.material || "", q.client_name) : undefined}
+                          onDelete={(e) => askDelete(e, q.id, q.client_name)}
+                        />
                       </td>
                     </tr>
                   );
@@ -836,7 +829,7 @@ export default function DashboardPage() {
         >
           <div
             onClick={e => e.stopPropagation()}
-            className="bg-s2 border border-b2 rounded-[14px] px-6 md:px-8 py-6 md:py-7 w-[calc(100vw-32px)] max-w-[380px] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
+            className="bg-s2 border border-b2 rounded-[14px] px-6 md:px-8 py-7 md:py-7 w-[calc(100vw-32px)] max-w-[380px] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
           >
             <div className="text-[15px] font-medium text-t1 mb-2">Eliminar presupuesto</div>
             <div className="text-[13px] text-t2 leading-relaxed mb-6">
@@ -872,7 +865,7 @@ export default function DashboardPage() {
         >
           <div
             onClick={e => e.stopPropagation()}
-            className="bg-s2 border border-b2 rounded-[14px] px-6 md:px-8 py-6 md:py-7 w-[calc(100vw-32px)] max-w-[380px] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
+            className="bg-s2 border border-b2 rounded-[14px] px-6 md:px-8 py-7 md:py-7 w-[calc(100vw-32px)] max-w-[380px] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
           >
             <div className="text-[15px] font-medium text-t1 mb-2">Cambiar estado</div>
             <div className="text-[13px] text-t2 leading-relaxed mb-1.5">
@@ -911,7 +904,7 @@ export default function DashboardPage() {
         >
           <div
             onClick={e => e.stopPropagation()}
-            className="bg-s2 border border-b2 rounded-[14px] px-6 md:px-8 py-6 md:py-7 w-[calc(100vw-32px)] max-w-[420px] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
+            className="bg-s2 border border-b2 rounded-[14px] px-6 md:px-8 py-7 md:py-7 w-[calc(100vw-32px)] max-w-[420px] shadow-[0_20px_60px_rgba(0,0,0,.5)]"
           >
             <div className="text-[15px] font-medium text-t1 mb-1">Duplicar con otro material</div>
             <div className="text-[12px] text-t3 mb-4">
@@ -984,5 +977,86 @@ function FileBtn({ href, emoji, label }: { href: string; emoji: string; label?: 
     >
       {emoji}{label && <span className="text-[9px] font-medium">{label}</span>}
     </a>
+  );
+}
+
+// ── FileCell — PDF + Excel + "+N" para archivos extra ──────────────────────
+function FileCell({ q }: { q: any }) {
+  const files: { href: string; label: string; emoji: string }[] = [];
+  if (q.drive_pdf_url || q.pdf_url) files.push({ href: q.drive_pdf_url || q.pdf_url, label: "PDF", emoji: "📄" });
+  if (q.drive_excel_url || q.excel_url) files.push({ href: q.drive_excel_url || q.excel_url, label: "Excel", emoji: "📊" });
+  if (q.resumen_obra_pdf_url) files.push({ href: q.resumen_obra_pdf_url, label: "Resumen", emoji: "📑" });
+  if (q.condiciones_pdf_url) files.push({ href: q.condiciones_pdf_url, label: "Condiciones", emoji: "📋" });
+
+  if (files.length === 0) return <div className="flex justify-end"><span className="text-t4 text-[12px] font-mono">—</span></div>;
+
+  // Primeros 2 visibles, resto colapsado en chip "+N"
+  const visible = files.slice(0, 2);
+  const extra = files.length - visible.length;
+  return (
+    <div className="flex gap-1.5 justify-end" onClick={e => e.stopPropagation()}>
+      {visible.map((f) => <FileBtn key={f.label} href={f.href} emoji={f.emoji} label={f.label} />)}
+      {extra > 0 && (
+        <span
+          title={files.slice(2).map(f => f.label).join(" · ")}
+          className="h-[26px] px-2 rounded-[5px] border border-b1 bg-transparent flex items-center justify-center text-[11px] font-medium font-mono text-t3"
+        >
+          +{extra}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ── RowMenu — 3-dot popover siempre visible ──────────────────────────────
+function RowMenu({ onDerive, onDelete }: {
+  onDerive?: (e: React.MouseEvent) => void;
+  onDelete: (e: React.MouseEvent) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  return (
+    <div className="relative flex justify-end" ref={ref} onClick={e => e.stopPropagation()}>
+      <button
+        onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}
+        title="Acciones"
+        aria-label="Acciones"
+        className="w-7 h-7 rounded-md border border-b1 bg-transparent text-t3 cursor-pointer flex items-center justify-center transition-all hover:border-b2 hover:text-t1"
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="12" cy="5" r="1.4" />
+          <circle cx="12" cy="12" r="1.4" />
+          <circle cx="12" cy="19" r="1.4" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute top-full right-0 mt-1.5 z-50 min-w-[168px] bg-s2 border border-b2 rounded-lg shadow-[0_14px_40px_rgba(0,0,0,0.5)] py-1 animate-[fadeUp_0.12s_ease]">
+          {onDerive && (
+            <button
+              onClick={(e) => { setOpen(false); onDerive(e); }}
+              className="w-full text-left px-3.5 py-2 text-[12.5px] font-sans text-t2 bg-transparent border-none cursor-pointer hover:bg-white/[0.04] hover:text-t1 transition flex items-center gap-2.5"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
+              Duplicar con otro material
+            </button>
+          )}
+          <button
+            onClick={(e) => { setOpen(false); onDelete(e); }}
+            className="w-full text-left px-3.5 py-2 text-[12.5px] font-sans text-err bg-transparent border-none cursor-pointer hover:bg-err/10 transition flex items-center gap-2.5"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M6 6l1 14a2 2 0 002 2h6a2 2 0 002-2l1-14"/></svg>
+            Eliminar
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
