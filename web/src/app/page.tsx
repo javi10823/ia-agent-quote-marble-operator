@@ -304,12 +304,15 @@ export default function DashboardPage() {
   }
 
   // ── Formatters — matching dash-airy.jsx exact ──────────────────────────
-  const fmtMes = () => {
-    // Eyebrow formato "ABRIL 2029" (sin "DE"). letterSpacing 1px uppercase.
+  // Mes/año en eyebrow "ABRIL 2029". Se calcula solo del lado client (en
+  // mount) para evitar hydration mismatch — SSR y client pueden tener
+  // timezones distintos y producir meses distintos en el boundary.
+  const [mesHeader, setMesHeader] = useState("");
+  useEffect(() => {
     const d = new Date();
     const mes = d.toLocaleDateString("es-AR", { month: "long" }).toUpperCase();
-    return `${mes} ${d.getFullYear()}`;
-  };
+    setMesHeader(`${mes} ${d.getFullYear()}`);
+  }, []);
   const fmtARS = (n: number | null | undefined) => n == null ? "\u2014" : `$\u00A0${n.toLocaleString("es-AR")}`;
   const fmtUSD = (n: number | null | undefined) => n == null ? null : `USD\u00A0${n.toLocaleString("en-US")}`;
   const fmtDia = (iso: string) => format(new Date(iso), "d MMM", { locale: es });
@@ -352,7 +355,7 @@ export default function DashboardPage() {
               letterSpacing: "1px", marginBottom: 6, fontWeight: 600,
             }}
           >
-            {fmtMes()} · {quotes.length} registros
+            {mesHeader} · {quotes.length} registros
             {quotes.filter(q => !q.is_read).length > 0 && (
               <> · <span style={{ color: "var(--acc)" }}>{quotes.filter(q => !q.is_read).length} sin leer</span></>
             )}
@@ -398,7 +401,7 @@ export default function DashboardPage() {
       <div className="md:hidden flex items-end justify-between shrink-0" style={{ padding: "20px 16px 14px" }}>
         <div className="min-w-0">
           <div className="font-mono uppercase" style={{ fontSize: 10, color: "var(--t3)", letterSpacing: "1px", marginBottom: 4, fontWeight: 600 }}>
-            {fmtMes()} · {quotes.length}
+            {mesHeader} · {quotes.length}
           </div>
           <h1 className="font-serif italic" style={{ fontSize: 28, color: "var(--t1)", letterSpacing: "-0.5px", lineHeight: 1.1, fontWeight: 400 }}>Presupuestos</h1>
         </div>

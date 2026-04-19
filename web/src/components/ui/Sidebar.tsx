@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { logout, getCurrentUsername, prettyFirstName } from "@/lib/auth";
 import { useQuotes } from "@/lib/quotes-context";
@@ -20,7 +21,14 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
     router.push(to);
   }
 
-  const name = prettyFirstName(getCurrentUsername()) || "Operador";
+  // getCurrentUsername() lee localStorage — NO se puede llamar en render
+  // porque el SSR no tiene window → hidratación mismatch (React error #418/#425).
+  // Lo leemos después del mount. Fallback "Operador" mientras tanto.
+  const [name, setName] = useState("Operador");
+  useEffect(() => {
+    const n = prettyFirstName(getCurrentUsername());
+    if (n) setName(n);
+  }, []);
 
   const sidebarContent = (
     <nav

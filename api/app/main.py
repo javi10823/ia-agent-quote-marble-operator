@@ -4,6 +4,7 @@ import os
 import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from contextlib import asynccontextmanager
 
 from fastapi import Depends
@@ -103,6 +104,15 @@ app = FastAPI(
 # auth — si no, un 401 de auth sale SIN los headers CORS, el browser
 # lo bloquea, y la UI ve un error genérico en vez del 401 real.
 app.middleware("http")(auth_middleware)
+
+# ProxyHeadersMiddleware — Railway termina TLS antes de llegar a uvicorn.
+# Sin esto, cualquier redirect que FastAPI genere (ej. trailing-slash:
+# /api/catalog → /api/catalog/) sale con `Location: http://...` porque
+# uvicorn cree que la request llegó por HTTP. El browser bloquea ese
+# redirect por Mixed Content desde la página https de Vercel.
+# Con este middleware, uvicorn lee X-Forwarded-Proto y arma los
+# redirects con scheme correcto (https).
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 app.add_middleware(
     CORSMiddleware,
