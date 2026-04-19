@@ -252,9 +252,12 @@ export default function ConfigPage() {
             </div>
           )}
 
-          {/* Editor + Backups */}
-          <div className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-4">
-            <div className="min-h-[400px] max-h-[60vh] border border-b1 rounded-lg overflow-auto">
+          {/* Editor + Backups — editor fills all remaining space,
+              backups debajo en sección propia. Ambos scrollables por
+              separado: el editor tiene su propio overflow-auto (scroll
+              interno del JSON), los backups con max-height. */}
+          <div className="flex-1 flex flex-col min-h-0 px-5 py-3 gap-4">
+            <div className="flex-1 min-h-[400px] border border-b1 rounded-lg overflow-hidden flex flex-col">
               <CatalogEditor
                 value={content}
                 onChange={setContent}
@@ -264,13 +267,13 @@ export default function ConfigPage() {
               />
             </div>
 
-            {/* Backup History */}
+            {/* Backup History — section propia con max-h + scroll */}
             {backups.length > 0 && (
-              <div className="shrink-0 pb-4">
-                <div className="text-[11px] font-semibold text-t3 uppercase tracking-wide mb-2">Historial de backups {"\u2014"} {selected}</div>
-                <div className="flex flex-col gap-1">
+              <div className="shrink-0 max-h-[28vh] flex flex-col">
+                <div className="text-[11px] font-semibold text-t3 uppercase tracking-wide mb-2 shrink-0">Historial de backups {"\u2014"} {selected}</div>
+                <div className="flex flex-col gap-1 overflow-y-auto pb-2">
                   {backups.map(b => (
-                    <div key={b.id} className="flex items-center gap-3 px-3.5 py-2.5 bg-white/[0.015] border border-b1 rounded-lg">
+                    <div key={b.id} className="flex items-center gap-3 px-3.5 py-2.5 bg-white/[0.015] border border-b1 rounded-lg shrink-0">
                       <div className="flex-1 min-w-0">
                         <div className="text-[12px] font-medium text-t1">{b.created_at ? new Date(b.created_at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "\u2014"}</div>
                         <div className="text-[10px] text-t3 truncate mt-0.5">{b.source_file || "manual"}{b.stats?.items_before != null ? ` \u00B7 ${b.stats.items_before} items` : ""}{b.stats?.reason ? ` \u00B7 ${b.stats.reason}` : ""}</div>
