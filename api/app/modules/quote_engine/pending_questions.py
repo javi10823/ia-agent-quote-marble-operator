@@ -250,6 +250,46 @@ def _detect_isla_patas_question(
     }
 
 
+def _detect_isla_patas_alto_question(
+    brief: str, dual_result: dict, *, force: bool = False,
+) -> dict | None:
+    """Isla con patas → preguntar el alto (piso a mesada). Default 0.90m es
+    razonable pero NO silencioso — el operador lo confirma. Skip si brief ya
+    da el valor explícito (raro).
+
+    Frontend oculta esta pregunta cuando la respuesta a `isla_patas` es "no"
+    (cascada isla_presence → isla_patas → isla_patas_alto).
+    """
+    has_isla = (
+        force
+        or _has_sector_type(dual_result, "isla")
+        or _brief_mentions_isla(brief)
+    )
+    if not has_isla:
+        return None
+    if brief:
+        if re.search(r"\balto\s+(de\s+)?patas?\s*[=:]?\s*\d", brief, re.IGNORECASE):
+            return None
+        if re.search(r"\bpatas?\s+(de\s+)?\d+[,.]\d\s*m\b", brief, re.IGNORECASE):
+            return None
+    return {
+        "id": "isla_patas_alto",
+        "label": "Alto de las patas",
+        "question": (
+            "¿De qué alto son las patas? Es la distancia del piso al borde "
+            "inferior de la mesada."
+        ),
+        "type": "radio_with_detail",
+        "options": [
+            {"value": "0.90", "label": "0.90 m (estándar — piso a mesada)"},
+            {"value": "0.85", "label": "0.85 m"},
+            {"value": "0.80", "label": "0.80 m"},
+            {"value": "custom", "label": "Otra medida (detallar)"},
+        ],
+        "detail_placeholder": "Ej: 0.75",
+    }
+
+
 def _detect_colocacion_question(brief: str, dual_result: dict) -> dict | None:
     """Colocación: si el brief no menciona, preguntar. Default comercial suele
     ser 'con colocación' pero no lo asumimos silencioso."""
@@ -454,6 +494,9 @@ def detect_pending_questions(
         q_isla_patas = _detect_isla_patas_question(brief, dual_result, force=True)
         if q_isla_patas:
             questions.append(q_isla_patas)
+        q_isla_patas_alto = _detect_isla_patas_alto_question(brief, dual_result, force=True)
+        if q_isla_patas_alto:
+            questions.append(q_isla_patas_alto)
 
     q_zoc = _detect_zocalos_question(brief, dual_result)
     if q_zoc:
@@ -624,6 +667,36 @@ def apply_isla_patas_answer(dual_result: dict, answer: dict) -> dict:
     return dual_result
 
 
+def apply_isla_patas_alto_answer(dual_result: dict, answer: dict) -> dict:
+    """Setea el alto de las patas de la isla. Convive con apply_isla_patas_answer:
+    patas sets sides+default alto, este pisa alto con el valor real.
+
+    Idempotente — si la sección `patas` no existía (patas=no), no hace nada."""
+    if not isinstance(answer, dict):
+        return dual_result
+    value = answer.get("value")
+    if value in ("0.90", "0.85", "0.80"):
+        alto = float(value)
+    elif value == "custom":
+        try:
+            alto = float(answer.get("detail") or 0)
+        except (TypeError, ValueError):
+            return dual_result
+    else:
+        return dual_result
+    if alto <= 0 or alto > 5:
+        return dual_result
+    for sector in dual_result.get("sectores") or []:
+        if (sector.get("tipo") or "").lower() != "isla":
+            continue
+        patas = sector.get("patas")
+        if not patas or not patas.get("sides"):
+            continue  # no lleva patas → alto no aplica
+        patas["alto_m"] = alto
+        patas["alto_source"] = "operator"
+    return dual_result
+
+
 def apply_colocacion_answer(dual_result: dict, answer: dict) -> dict:
     if not isinstance(answer, dict):
         return dual_result
@@ -707,6 +780,8 @@ def apply_answers(dual_result: dict, answers: list[dict]) -> dict:
             apply_isla_presence_answer(dual_result, ans)
         elif qid == "isla_profundidad":
             apply_isla_profundidad_answer(dual_result, ans)
+        elif qid == "isla_patas_alto":
+            apply_isla_patas_alto_answer(dual_result, ans)
         elif qid == "isla_patas":
             apply_isla_patas_answer(dual_result, ans)
         elif qid == "colocacion":

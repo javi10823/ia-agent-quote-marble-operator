@@ -98,15 +98,25 @@ export default function ContextAnalysis({ data, onConfirm }: Props) {
 
   const questions = data.pending_questions || [];
 
-  // Preguntas dependientes de isla: si el operador dijo "no" a isla_presence,
-  // las preguntas de profundidad + patas quedan no-aplicables. Las marcamos
-  // como auto-respondidas para no bloquear Confirmar, y las ocultamos.
+  // Preguntas dependientes de isla (cascada):
+  //  - isla_presence=no  → oculto profundidad, patas, patas_alto
+  //  - isla_patas=no     → oculto patas_alto (la alto no aplica sin patas)
   const islaPresenceValue = answers["isla_presence"]?.value;
   const islaNotApplicable = islaPresenceValue === "no";
-  const hiddenIfNoIsla = new Set(["isla_profundidad", "isla_patas"]);
+  const hiddenIfNoIsla = new Set(["isla_profundidad", "isla_patas", "isla_patas_alto"]);
+
+  const islaPatasValue = answers["isla_patas"]?.value;
+  const patasNotApplicable = islaPatasValue === "no";
+  const hiddenIfNoPatas = new Set(["isla_patas_alto"]);
+
+  const isHidden = (id: string): boolean => {
+    if (islaNotApplicable && hiddenIfNoIsla.has(id)) return true;
+    if (patasNotApplicable && hiddenIfNoPatas.has(id)) return true;
+    return false;
+  };
 
   const allAnswered = questions.every(q => {
-    if (islaNotApplicable && hiddenIfNoIsla.has(q.id)) return true;
+    if (isHidden(q.id)) return true;
     return answers[q.id]?.value;
   });
 
