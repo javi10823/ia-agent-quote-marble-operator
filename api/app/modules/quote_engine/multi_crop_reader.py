@@ -252,20 +252,20 @@ async def _measure_region(
     if x2 - x < 10 or y2 - y < 10:
         return {"error": "region_bbox_too_small", "region_id": region.get("id")}
 
-    # Filtrar cotas candidatas ANTES de croppear. Escalada de niveles:
-    #   L1 (local): cotas dentro del bbox + padding estándar. Caso ideal —
-    #       2+ cotas ancladas a la región → LLM + status CONFIRMADO/DUDOSO
-    #       según sanity checks post.
-    #   L2 (expanded): si L1 da <2, expandimos el área de búsqueda de cotas
-    #       300px más allá del bbox (solo para el filtro de cotas; el CROP
-    #       visual sigue siendo el bbox original). Cubre el caso típico: la
-    #       cota está DIBUJADA justo fuera del bbox detectado por el topology
-    #       LLM, pero obviamente pertenece a esta mesada.
-    #   L3 (global_fallback): si L2 sigue dando <2, pasamos TODAS las cotas
-    #       candidatas del plano. El LLM se apoya en el crop visual para
-    #       discriminar. Siempre marcamos suspicious_reasons post → status
-    #       queda DUDOSO aunque el LLM "acierte", para que el operador
-    #       revise (no ancladas = no confirmables).
+    # Filtrar cotas candidatas ANTES de croppear. Dos niveles:
+    #   L1 (local): cotas dentro del bbox + padding estándar.
+    #   L2 (expanded): si L1 <2, expandimos +300px SOLO el filtro de cotas
+    #       (el crop visual sigue siendo bbox original). Cubre el caso típico:
+    #       la cota está dibujada justo al borde del bbox del topology LLM,
+    #       pero claramente pertenece a esta región.
+    #
+    # Lo que NO hacemos: pasar TODAS las cotas del plano al LLM cuando el
+    # bbox queda lejos. Ese fallback global hacía que el LLM eligiera cotas
+    # de OTROS sectores e inventara medidas plausibles pero incorrectas
+    # (ej: caso Bernardi — R2 recibió 13 cotas globales, eligió 4.15 que
+    # era una cota de perímetro de la isla, no del tramo de cocina).
+    # Prefiero "— × —" honesto antes que un número swappeado que el
+    # operador pueda confirmar por error.
     local_cotas: list[Cota] = [c for c in candidate_cotas if x <= c.x <= x2 and y <= c.y <= y2]
 
     MIN_LOCAL_COTAS = 2
@@ -291,13 +291,17 @@ async def _measure_region(
                 f"— retry con pool expandido"
             )
         else:
-            cotas_for_llm = list(candidate_cotas)
-            cotas_mode = "global_fallback"
             logger.info(
                 f"[multi-crop] region {region.get('id')}: {len(local_cotas)} local / "
-                f"{len(expanded_cotas)} expanded — fallback a pool global "
-                f"({len(candidate_cotas)} cotas). Marcará DUDOSO post-LLM."
+                f"{len(expanded_cotas)} expanded cotas (<{MIN_LOCAL_COTAS}) — "
+                f"skip LLM, return DUDOSO (no inventamos medidas con pool global)"
             )
+            return {
+                "error": "insufficient_local_cotas",
+                "region_id": region.get("id"),
+                "local_cotas_count": len(local_cotas),
+                "expanded_cotas_count": len(expanded_cotas),
+            }
 
     # Crop la imagen con PIL
     try:
@@ -318,13 +322,6 @@ async def _measure_region(
         "expanded": (
             "COTAS CERCANAS (dentro del bbox expandido — algunas pueden "
             "pertenecer a regiones vecinas, descartá las que no correspondan):"
-        ),
-        "global_fallback": (
-            "COTAS DEL PLANO COMPLETO (FALLBACK — no hay cotas propias en el "
-            "bbox de esta región). Usá el CROP VISUAL para elegir las que "
-            "correspondan a ESTA mesada. Si no podés anclar ninguna con "
-            "certeza, devolvé largo_m=null / ancho_m=null y explicalo en "
-            "rejected_candidates. NO inventes medidas."
         ),
     }[cotas_mode]
     meta_txt = (

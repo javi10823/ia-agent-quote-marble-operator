@@ -288,34 +288,31 @@ class TestReadPlanMultiCrop:
         assert result.get("_cotas_mode") == "expanded"
 
     @pytest.mark.asyncio
-    async def test_measure_region_global_fallback_when_still_insufficient(self):
-        """Si NI siquiera expandiendo hay 2 cotas, caemos al pool global. El
-        LLM recibe todas las cotas del plano + prompt explícito: "estas cotas
-        son del plano completo — usá el crop visual para discriminar".
-        Siempre DUDOSO."""
+    async def test_measure_region_no_global_fallback_when_no_cotas_near_bbox(self):
+        """Si NI siquiera expandiendo hay 2 cotas cerca del bbox, devolvemos
+        DUDOSO sin llamar al LLM. NO inventamos medidas con pool global.
+
+        Motivación (caso Bernardi, abril 2026): el global_fallback hacía que
+        el LLM eligiera cotas de OTROS sectores, devolviendo medidas
+        plausibles pero incorrectas. Preferimos DUDOSO honesto que el
+        operador ve como "— × —" y completa manual.
+        """
         image = _make_image_bytes(1000, 800)
-        # bbox chico en esquina — lejos de las cotas
         region = {"id": "R2", "bbox_rel": {"x": 0.7, "y": 0.7, "w": 0.1, "h": 0.1}}
-        # Todas las cotas están en la otra punta del plano
         cotas = [
             _make_cota(2.35, x=100, y=100),
             _make_cota(0.60, x=120, y=120),
             _make_cota(1.20, x=150, y=150),
         ]
-        mock_response = type("R", (), {
-            "content": [type("B", (), {"text": '{"largo_m": 2.35, "ancho_m": 0.60}'})()]
-        })()
         with patch(
             "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
         ) as mock_anth:
-            mock_anth.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await _measure_region(image, (1000, 800), region, cotas, model="test")
-        assert result.get("error") is None
-        assert result.get("largo_m") == 2.35
-        assert result.get("_cotas_mode") == "global_fallback"
-        # Suspicious flag garantiza status DUDOSO
-        assert "suspicious_reasons" in result
-        assert any("fallback global" in s for s in result["suspicious_reasons"])
+            # NO debe haberse llamado al LLM
+            mock_anth.assert_not_called()
+        assert result.get("error") == "insufficient_local_cotas"
+        assert result.get("local_cotas_count") == 0
+        assert result.get("expanded_cotas_count") == 0
 
     @pytest.mark.asyncio
     async def test_measure_region_detects_unanchored_values(self):
@@ -364,16 +361,20 @@ class TestReadPlanMultiCrop:
         assert any("largo == ancho" in s for s in result["suspicious_reasons"])
 
     @pytest.mark.asyncio
-    async def test_bernardi_control_r2_gets_fallback_cotas(self):
-        """Regresión del caso real: plano de Bernardi, 2 regiones del topology
-        LLM, R2 (cocina con pileta) caía en zona sin cotas locales → antes del
-        fix se devolvía insufficient_local_cotas → frontend mostraba "— × —".
+    async def test_bernardi_control_r2_stays_dudoso_without_inventing(self):
+        """Regresión del caso real Bernardi (abril 2026): 2 regiones en el
+        topology, R2 (cocina) en zona del plano sin cotas locales.
 
-        Con el fallback escalonado, R2 ahora recibe las cotas globales para
-        que el LLM las discrimine visualmente. Status final = DUDOSO (no
-        CONFIRMADO) porque no hubo anchoring local — el operador revisa.
+        CONTRATO ACTUAL (post-revert del global_fallback): R2 devuelve
+        `insufficient_local_cotas` → aggregator emite largo/ancho=null con
+        status DUDOSO → UI muestra "— × —". El operador completa a mano.
 
-        Coordenadas de cotas tomadas del PDF real
+        Lo que NO hacemos: pasar las cotas globales al LLM para que invente
+        una medida. Ese fallback hacía que el LLM eligiera cotas de otros
+        sectores, devolviendo medidas swappeadas con look-confiado que
+        podían confirmarse por error.
+
+        Coordenadas tomadas del PDF real
         `tests/fixtures/bernardi_erica_mesadas_cocina.pdf` con
         `extract_cotas_from_drawing` a 300 DPI.
         """
@@ -443,13 +444,14 @@ class TestReadPlanMultiCrop:
             result = await read_plan_multi_crop(image, cotas, brief_text="Bernardi — Puraprima")
 
         assert result.get("error") is None
-        # Ambas regiones devolvieron medidas (ninguna con "— × —").
         isla = next(s for s in result["sectores"] if s["tipo"] == "isla")
         cocina = next(s for s in result["sectores"] if s["tipo"] == "cocina")
+        # R1 (isla) tiene cotas locales → mide
         assert isla["tramos"][0]["largo_m"]["valor"] is not None
-        assert cocina["tramos"][0]["largo_m"]["valor"] is not None, \
-            "R2 volvió a tirar null — el fallback no se activó"
-        # R2 queda DUDOSO porque fue fallback, no CONFIRMADO.
+        # R2 (cocina) sin cotas cercanas → valor null + status DUDOSO.
+        # NO debe inventar una medida global que confunda al operador.
+        assert cocina["tramos"][0]["largo_m"]["valor"] is None, \
+            "R2 tiene valor no-null — está inventando desde pool global"
         assert cocina["tramos"][0]["largo_m"]["status"] == "DUDOSO"
         assert result["requires_human_review"] is True
 
