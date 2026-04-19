@@ -40,16 +40,6 @@ function normalizeApiUrl(raw) {
 const API_URL = normalizeApiUrl(process.env.NEXT_PUBLIC_API_URL);
 
 const nextConfig = {
-  // skipTrailingSlashRedirect: sin esto, Next.js (Vercel) auto-redirige
-  // `/api/catalog/` → `/api/catalog` con 308. Cuando ese redirect se
-  // combina con el 307 del backend (de `/api/catalog` → `/api/catalog/`),
-  // el browser termina siguiendo la cadena hasta el ORIGEN del backend
-  // (railway.app) y pierde la cookie de sesión (que está seteada para
-  // .vercel.app) → 401. Desactivando el redirect de Next, la URL se
-  // mantiene como el browser la pidió y el rewrite proxy funciona sin
-  // saltar de origen.
-  skipTrailingSlashRedirect: true,
-
   async rewrites() {
     return [
       {
