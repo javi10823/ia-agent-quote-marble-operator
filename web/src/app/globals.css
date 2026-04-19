@@ -96,3 +96,19 @@ body::after {
 
 /* Mobile drawer slide-in */
 @keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+
+/* Valentina avatar — 3 layer animated sphere (breathing ring +
+   conic shimmer + pulsing core). La esfera no se mueve de posición,
+   el efecto es actividad interna. Respetamos prefers-reduced-motion
+   congelando las 3 animaciones. Ver components/ui/VAvatar.tsx */
+@keyframes vring { 0%, 100% { opacity: 0.35; transform: scale(0.96); } 50% { opacity: 0.85; transform: scale(1.06); } }
+@keyframes vspin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+@keyframes vcore { 0%, 100% { opacity: 0.3; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.04); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
