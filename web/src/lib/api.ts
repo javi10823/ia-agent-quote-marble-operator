@@ -1,10 +1,24 @@
 // Use relative URLs to go through Next.js rewrite proxy (avoids CORS)
 const API_BASE = "";
 
-function handleAuthError(res: Response): void {
-  if (res.status === 401 && typeof window !== "undefined") {
-    window.location.href = "/login";
-  }
+/**
+ * Antes: cualquier 401 redirigía automáticamente a /login. Problema: si
+ * un SOLO fetch secundario (ej: una de las 3 requests que hace /config
+ * al montar) devolvía 401 por cualquier motivo transiente (cross-origin
+ * cookie issue, redirect chain, expired token en un endpoint pero no en
+ * otros), el usuario era pateado a login sin ver el error real.
+ *
+ * Ahora: NO redirigimos automáticamente. Dejamos que el error burbujee
+ * como cualquier otro — el caller muestra toast o inline error. El
+ * usuario mantiene su sesión y puede decidir si volver a loguearse
+ * manualmente. Si la cookie realmente expiró todas las siguientes
+ * requests fallarán con 401, pero al menos ve QUÉ está pasando en vez
+ * de un rebote misterioso a /login.
+ *
+ * El flujo de login/logout explícito sigue funcionando (auth.ts).
+ */
+function handleAuthError(_res: Response): void {
+  // no-op intentional — ver doc arriba
 }
 
 /**
