@@ -113,11 +113,11 @@ function buildFullSnapshot(quote: QuoteDetail | null, messages: UIMessage[]): st
   return parts.join("\n").trim();
 }
 
-const STATUS_CLASS: Record<string, { label: string; cls: string }> = {
-  draft:     { label: "Borrador",  cls: "bg-amb-bg text-amb" },
-  pending:   { label: "Pendiente", cls: "bg-acc-bg text-acc" },
-  validated: { label: "Validado",  cls: "bg-grn-bg text-grn" },
-  sent:      { label: "Enviado",   cls: "bg-acc-bg text-acc" },
+const STATUS_CLASS: Record<string, { label: string; cls: string; text: string; dotColor: string }> = {
+  draft:     { label: "Borrador",  cls: "bg-amb-bg text-amb", text: "text-amb",          dotColor: "var(--amb)" },
+  pending:   { label: "Pendiente", cls: "bg-acc-bg text-acc", text: "text-[#b299ff]",    dotColor: "#b299ff" },
+  validated: { label: "Validado",  cls: "bg-grn-bg text-grn", text: "text-grn",          dotColor: "var(--grn)" },
+  sent:      { label: "Enviado",   cls: "bg-acc-bg text-acc", text: "text-acc",          dotColor: "var(--acc)" },
 };
 
 // ── MAIN ─────────────────────────────────────────────────────────────────────
@@ -418,19 +418,22 @@ export default function QuotePage() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between px-4 md:px-7 py-3 md:py-3.5 border-b border-b1 shrink-0 bg-s1 gap-2 md:gap-0">
-        <div className="flex items-center gap-3.5">
-          <button onClick={() => router.push("/")} className="w-[30px] h-[30px] rounded-md border border-b1 bg-transparent text-t2 cursor-pointer flex items-center justify-center hover:border-b2 hover:text-t1 transition">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
+      {/* Header — editorial: cliente Fraunces italic + status dot+text */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between px-4 md:px-9 py-4 md:py-5 border-b border-b1 shrink-0 bg-bg gap-2 md:gap-0">
+        <div className="flex items-center gap-4">
+          <button onClick={() => router.push("/")} className="w-[32px] h-[32px] rounded-md border border-b1 bg-transparent text-t2 cursor-pointer flex items-center justify-center hover:border-b2 hover:text-t1 transition">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
           </button>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-sm md:text-base font-semibold text-t1 truncate max-w-[200px] md:max-w-[500px]">{quote?.client_name || "Nuevo presupuesto"}</span>
-              <span className={clsx("inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-[10px] font-semibold shrink-0", st.cls)}>{CIRCLE} {st.label}</span>
-              {quote?.source === "web" && <span className="inline-flex items-center gap-1 px-2 py-[2px] rounded-full text-[10px] font-semibold bg-purple-500/15 text-purple-400 shrink-0">WEB</span>}
+            <div className="flex items-baseline gap-2.5">
+              <span className="font-serif italic text-[18px] md:text-[22px] font-medium text-t1 -tracking-[0.01em] truncate max-w-[200px] md:max-w-[500px] leading-tight">{quote?.client_name || "Nuevo presupuesto"}</span>
+              <span className={clsx("inline-flex items-center gap-1.5 text-[12px] shrink-0 font-sans", st.text)}>
+                <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: st.dotColor }} />
+                {st.label}
+              </span>
+              {quote?.source === "web" && <span className="text-[9px] font-semibold font-mono tracking-wider px-1.5 py-[2px] rounded border border-[#b48fe0]/30 text-[#b48fe0] shrink-0 not-italic">WEB</span>}
             </div>
-            <div className="text-xs text-t3 mt-0.5 truncate max-w-[600px]">
+            <div className="text-xs text-t3 mt-1 truncate max-w-[600px] font-sans">
               {quote?.project}{quote?.material ? ` ${DOT} ${quote.material}` : ""}
             </div>
           </div>
@@ -452,7 +455,7 @@ export default function QuotePage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-b1 bg-s1 pl-4 md:pl-7">
+      <div className="flex border-b border-b1 bg-bg pl-4 md:pl-9">
         <TabBtn active={tab === "detail"} onClick={() => setTab("detail")} disabled={!quote || (quote.status === "draft" && quote.source !== "web")}>Detalle</TabBtn>
         <TabBtn active={tab === "chat"} onClick={() => setTab("chat")}>Chat</TabBtn>
       </div>

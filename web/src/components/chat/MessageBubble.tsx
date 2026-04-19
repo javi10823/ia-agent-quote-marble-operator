@@ -286,12 +286,27 @@ const InlineFormat = memo(function InlineFormat({ text }: { text: string }) {
 // ── AVATAR ───────────────────────────────────────────────────────────────────
 
 function Avatar({ isV }: { isV: boolean }) {
+  if (isV) {
+    // Esfera Valentina — radial gradient con highlight tipo piedra pulida.
+    // PR G reemplazará esto por la versión animada (breathing ring + shimmer).
+    return (
+      <svg width="30" height="30" viewBox="0 0 40 40" className="shrink-0 block">
+        <defs>
+          <radialGradient id="vavatar-g" cx="35%" cy="30%" r="70%">
+            <stop offset="0%" stopColor="oklch(0.85 0.06 200)" />
+            <stop offset="55%" stopColor="var(--acc)" />
+            <stop offset="100%" stopColor="oklch(0.38 0.06 220)" />
+          </radialGradient>
+        </defs>
+        <circle cx="20" cy="20" r="18" fill="url(#vavatar-g)" />
+        <ellipse cx="14" cy="14" rx="6" ry="3" fill="rgba(255,255,255,0.38)" />
+        <ellipse cx="12" cy="12" rx="2" ry="1.2" fill="rgba(255,255,255,0.65)" />
+      </svg>
+    );
+  }
   return (
-    <div className={clsx(
-      "w-[30px] h-[30px] rounded-full shrink-0 flex items-center justify-center text-[11px] font-semibold",
-      isV ? "bg-acc text-white" : "bg-s3 text-t2 border border-b2",
-    )}>
-      {isV ? "V" : "OP"}
+    <div className="w-[30px] h-[30px] rounded-full shrink-0 flex items-center justify-center text-[11px] font-semibold bg-s3 text-t2 border border-b2 font-sans">
+      OP
     </div>
   );
 }

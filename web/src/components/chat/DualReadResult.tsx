@@ -562,9 +562,9 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
 
   return (
     <div className="my-2 w-full rounded-2xl border border-b1 bg-s1 overflow-hidden shadow-[0_20px_40px_-20px_rgba(0,0,0,0.5)]">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-5 py-4 bg-gradient-to-b from-s3 to-s2 border-b border-b1">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-acc bg-acc-bg border border-acc/30 px-2 py-1 rounded-md">
+      {/* Header — eyebrow mono + título serif italic editorial */}
+      <div className="flex items-center gap-4 px-6 py-5 border-b border-b1 bg-s2">
+        <span className="text-[10px] font-mono font-semibold uppercase tracking-[0.12em] text-acc bg-acc-bg border border-acc/30 px-2.5 py-1 rounded-md shrink-0">
           {data.source === "DUAL"
             ? "Doble lectura"
             : data.source === "TEXT"
@@ -587,8 +587,8 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
             </span>
           );
         })()}
-        <h3 className="text-[15px] font-semibold text-t1 tracking-tight">{firstSectorHead || title}</h3>
-        <span className="ml-auto text-[12px] text-t3 font-mono hidden md:inline">
+        <h3 className="font-serif italic text-[19px] font-medium text-t1 -tracking-[0.01em] leading-tight">{firstSectorHead || title}</h3>
+        <span className="ml-auto text-[12px] text-t3 font-mono hidden md:inline tabular-nums">
           {piecesCount} {piecesCount === 1 ? "mesada" : "mesadas"} · {zocalosCount}{" "}
           {zocalosCount === 1 ? "zócalo" : "zócalos"}
         </span>
