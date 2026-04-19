@@ -1,29 +1,33 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login"];
-const COOKIE_NAME = "auth_token";
-
-export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  // Allow public paths
-  if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
-    return NextResponse.next();
-  }
-
-  // Allow static assets and API rewrites
-  if (pathname.startsWith("/_next") || pathname.startsWith("/api") || pathname.startsWith("/files") || pathname.includes(".")) {
-    return NextResponse.next();
-  }
-
-  // Check for auth cookie
-  const token = request.cookies.get(COOKIE_NAME);
-  if (!token) {
-    const loginUrl = new URL("/login", request.url);
-    return NextResponse.redirect(loginUrl);
-  }
-
+/**
+ * Auth middleware DESHABILITADO.
+ *
+ * Contexto: cuando el frontend (vercel.app) llamaba al backend a través
+ * del rewrite proxy de Next.js, el `Set-Cookie` de login quedaba atado
+ * al dominio vercel.app. El middleware podía leer esa cookie y usarla
+ * como gate de rutas.
+ *
+ * Después del fix cross-origin (PR #322), el frontend llama DIRECTO a
+ * railway.app. El `Set-Cookie` se asocia a railway.app (distinto
+ * dominio). Este middleware, que corre en el edge de Vercel, sólo ve
+ * cookies de vercel.app → no encuentra `auth_token` → redirige a
+ * `/login` aunque el usuario esté perfectamente logueado contra
+ * Railway → loop infinito al intentar entrar al dashboard.
+ *
+ * La auth real vive en el backend FastAPI. Si una request no está
+ * autenticada, el backend devuelve 401 directamente. No necesitamos
+ * una segunda capa en el edge de Vercel — es incluso contraproducente
+ * porque no puede ver el cookie correcto.
+ *
+ * Nota: cualquier usuario que navegue a `/` sin estar logueado va a
+ * ver el dashboard shell con errores de API (401s). Si después de uso
+ * real queremos auto-redirigir al login en ese caso, lo hacemos
+ * client-side chequeando localStorage (ya seteamos el username del
+ * user logueado en `lib/auth.ts`).
+ */
+export function middleware(_request: NextRequest) {
   return NextResponse.next();
 }
 
