@@ -4,6 +4,7 @@ import os
 import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from contextlib import asynccontextmanager
 
 from fastapi import Depends
@@ -96,6 +97,17 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# ProxyHeadersMiddleware — cuando FastAPI corre detrás de un proxy/LB que
+# termina TLS (Railway, Vercel, nginx, Cloudflare), las requests entran
+# como HTTP al contenedor. Sin este middleware, cualquier redirect que
+# genere FastAPI (ej: trailing-slash: /api/catalog → /api/catalog/) arma
+# la Location header con scheme http://, que el browser bloquea por
+# Mixed Content desde una página https. Este middleware lee
+# X-Forwarded-Proto y reescribe el request scope para que los redirects
+# salgan como https://. `trusted_hosts="*"` es OK porque Railway no
+# expone el puerto interno a internet — sólo el proxy frontal.
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 app.add_middleware(
     CORSMiddleware,
