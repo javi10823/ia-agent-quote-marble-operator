@@ -40,6 +40,16 @@ function normalizeApiUrl(raw) {
 const API_URL = normalizeApiUrl(process.env.NEXT_PUBLIC_API_URL);
 
 const nextConfig = {
+  // skipTrailingSlashRedirect: sin esto, Next.js (Vercel) auto-redirige
+  // `/api/catalog/` → `/api/catalog` con 308. Pero el endpoint real del
+  // backend FastAPI vive en `/api/catalog/` (con slash). Al quitarlo,
+  // FastAPI responde 307 devolviendo el slash → el browser sigue el
+  // redirect cross-origin a Railway → cookie con SameSite=Lax no viaja
+  // → 401 → handleAuthError redirige a /login.
+  // Con este flag el path original se mantiene intacto hasta el rewrite
+  // proxy, todo pasa same-origin, la cookie viaja.
+  skipTrailingSlashRedirect: true,
+
   async rewrites() {
     return [
       {
