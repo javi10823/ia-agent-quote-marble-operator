@@ -2,6 +2,61 @@
 import React, { useState } from "react";
 import CopyButton from "./CopyButton";
 
+// Helpers defensivos: el backend a veces emite `{valor: null}` o
+// `largo_m: null` o `alto_m: null` (ver `dual_reader.py` — `dict.get("k",
+// default)` en Python devuelve None si la key existe con valor null, no
+// el default). Antes de estos helpers, cualquier null detonaba un
+// "Cannot read properties of null (reading 'toFixed')" en pleno click
+// de Confirmar medidas → crash del componente → la app entera muere
+// (error boundary de Next.js).
+const fixed2 = (n: unknown): string => {
+  const num = typeof n === "number" && Number.isFinite(n) ? n : 0;
+  return num.toFixed(2);
+};
+const safeNum = (n: unknown): number =>
+  typeof n === "number" && Number.isFinite(n) ? n : 0;
+
+// Garantiza un FieldValue con `valor` numérico y `status` string, aunque
+// el backend haya mandado null, undefined, o el objeto entero omitido.
+const normalizeField = (f: unknown): FieldValue => {
+  const obj = (f && typeof f === "object" ? (f as Record<string, unknown>) : {}) as Partial<FieldValue>;
+  return {
+    valor: safeNum(obj.valor),
+    status: typeof obj.status === "string" ? obj.status : "CONFIRMADO",
+    opus: typeof obj.opus === "number" ? obj.opus : null,
+    sonnet: typeof obj.sonnet === "number" ? obj.sonnet : null,
+  };
+};
+
+// Normaliza el payload dual_read del backend. Cualquier shape inesperado
+// (campos null, arrays faltantes) se completa con defaults seguros para
+// que el render nunca crashee.
+const normalizeDualReadData = (raw: DualReadData): DualReadData => {
+  const sectores = Array.isArray(raw?.sectores) ? raw.sectores : [];
+  return {
+    ...raw,
+    sectores: sectores.map((s) => ({
+      ...s,
+      tramos: (Array.isArray(s?.tramos) ? s.tramos : []).map((t) => ({
+        ...t,
+        largo_m: normalizeField(t?.largo_m),
+        ancho_m: normalizeField(t?.ancho_m),
+        m2: normalizeField(t?.m2),
+        zocalos: (Array.isArray(t?.zocalos) ? t.zocalos : []).map((z) => ({
+          ...z,
+          ml: safeNum(z?.ml),
+          alto_m: safeNum(z?.alto_m),
+          status: typeof z?.status === "string" ? z.status : "CONFIRMADO",
+          lado: typeof z?.lado === "string" ? z.lado : "trasero",
+        })),
+        frentin: Array.isArray(t?.frentin) ? t.frentin : [],
+        regrueso: Array.isArray(t?.regrueso) ? t.regrueso : [],
+      })),
+      ambiguedades: Array.isArray(s?.ambiguedades) ? s.ambiguedades : [],
+    })),
+  };
+};
+
 interface FieldValue {
   opus?: number | null;
   sonnet?: number | null;
@@ -261,7 +316,7 @@ function EditableNumber({
       );
     }
 
-    const label = field.valor.toFixed(2);
+    const label = fixed2(field.valor);
     const title = reconcileTip
       ? `${reconcileTip} · Doble-click para editar`
       : "Doble-click para editar";
@@ -281,7 +336,7 @@ function EditableNumber({
   }
 
   // Default: plain read-only label
-  return <>{field.valor.toFixed(2)}</>;
+  return <>{fixed2(field.valor)}</>;
 }
 
 function EditableZocalo({
@@ -294,7 +349,7 @@ function EditableZocalo({
   forceEditable?: boolean;
 }) {
   const editable = forceEditable || z.status === "CONFLICTO" || z.status === "DUDOSO";
-  if (!editable) return <>{z.ml.toFixed(2)}</>;
+  if (!editable) return <>{fixed2(z.ml)}</>;
   return (
     <input
       type="number"
@@ -309,7 +364,7 @@ function EditableZocalo({
 export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Props) {
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
-  const [editedData, setEditedData] = useState<DualReadData>(data);
+  const [editedData, setEditedData] = useState<DualReadData>(() => normalizeDualReadData(data));
   // Respuestas a pending_questions — se arman a medida que el operador
   // selecciona opciones. Confirmar se bloquea hasta que todas tengan valor.
   const [pendingAnswers, setPendingAnswers] = useState<Record<string, PendingAnswer>>({});
@@ -508,11 +563,12 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
   let zocalosCount = 0;
   editedData.sectores.forEach((s) =>
     s.tramos.forEach((t) => {
-      mesadasM2 += t.m2.valor || 0;
+      mesadasM2 += safeNum(t.m2?.valor);
       piecesCount += 1;
       t.zocalos.forEach((z) => {
-        if ((z.ml || 0) > 0) {
-          zocalosM2 += z.ml * (z.alto_m || 0);
+        const ml = safeNum(z.ml);
+        if (ml > 0) {
+          zocalosM2 += ml * safeNum(z.alto_m);
           zocalosCount += 1;
         }
       });
@@ -540,20 +596,22 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
       }
       sector.tramos.forEach((tramo) => {
         const desc = tramo.descripcion || tramo.id;
-        const largo = tramo.largo_m.valor.toFixed(2);
-        const ancho = tramo.ancho_m.valor.toFixed(2);
-        const m2 = tramo.m2.valor || 0;
+        const largo = fixed2(tramo.largo_m?.valor);
+        const ancho = fixed2(tramo.ancho_m?.valor);
+        const m2 = safeNum(tramo.m2?.valor);
         total += m2;
-        lines.push(`| ${desc} | ${largo} × ${ancho} | ${m2.toFixed(2)} |`);
+        lines.push(`| ${desc} | ${largo} × ${ancho} | ${fixed2(m2)} |`);
         tramo.zocalos.forEach((z) => {
-          if ((z.ml ?? 0) <= 0) return;
-          const zm2 = z.ml * (z.alto_m || 0);
+          const ml = safeNum(z.ml);
+          if (ml <= 0) return;
+          const alto = safeNum(z.alto_m);
+          const zm2 = ml * alto;
           total += zm2;
-          lines.push(`| Zóc. ${z.lado} | ${z.ml.toFixed(2)} ml × ${z.alto_m.toFixed(2)} | ${zm2.toFixed(2)} |`);
+          lines.push(`| Zóc. ${z.lado} | ${fixed2(ml)} ml × ${fixed2(alto)} | ${fixed2(zm2)} |`);
         });
       });
     });
-    lines.push(`| **Total** | — | **${total.toFixed(2)}** |`);
+    lines.push(`| **Total** | — | **${fixed2(total)}** |`);
     return lines.join("\n");
   })();
   const firstSectorHead = editedData.sectores[0]
@@ -746,12 +804,12 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                               onChange={(e) => updateZocaloAlto(si, ti, zi, parseFloat(e.target.value) || 0)}
                             />
                           ) : (
-                            <>{z.alto_m.toFixed(2)}</>
+                            <>{fixed2(z.alto_m)}</>
                           )}
                           <span className="text-t4 ml-0.5">m</span>
                         </div>
                         <div className="text-t1 font-medium text-right flex items-center justify-end gap-2">
-                          <span>{(z.ml * z.alto_m).toFixed(2)}</span>
+                          <span>{fixed2(safeNum(z.ml) * safeNum(z.alto_m))}</span>
                           {/* PR #61 — botón remover siempre disponible, independiente
                               del status (el operador confirma con el cliente si lleva
                               zócalos o no; Dual Read solo sugiere). Hover aumenta
