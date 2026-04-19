@@ -295,6 +295,10 @@ Reglas:
 - NO confundas cotas del perímetro del ambiente (típicamente > 3m y
   alineadas con el borde exterior del dibujo) con cotas de la mesada.
 
+Las cotas candidatas vienen RANKEADAS por compatibilidad geométrica con
+la región. Elegir una cota DÉBIL o POCO PROBABLE requiere justificación
+visual explícita del crop. NO elegir una EXCLUIDA.
+
 Devolvé SOLO JSON:
 {
   "largo_m": 2.95,
@@ -306,6 +310,414 @@ Devolvé SOLO JSON:
   ]
 }
 """
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PR 2b — Region-aware cota ranking + guardrails
+#
+# Objetivo: que el VLM elija 2.35 en vez de 2.95 para el tramo vertical de
+# Bernardi. El bug es de matching de cotas en pool expanded, no de perímetro.
+# 4 capas:
+#   1. Hard filter (perímetro + absurdos).
+#   2. Ranking SEPARADO para largo y ancho.
+#   3. Prompt estructurado (buckets, sin sugerir valores).
+#   4. Guardrails post-LLM que bajan confidence cuando ignora el ranking.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Valores por fuera de este rango casi nunca corresponden a mesada residencial
+_ABSURD_MIN_M = 0.10
+_ABSURD_MAX_M = 6.0
+
+# Perímetro probable: valor alto + lejos del bbox de la región
+_PERIMETER_VALUE_THRESHOLD_M = 3.0
+_PERIMETER_DISTANCE_THRESHOLD_NORM = 0.20  # suma de distancias x+y normalizadas
+
+# Rangos típicos para cocinas residenciales
+_LENGTH_TYPICAL_RANGE = (1.0, 4.0)
+_DEPTH_TYPICAL_RANGE = (0.40, 0.80)
+_DEPTH_ANCHO_REFERENCE_RANGE = (0.3, 0.8)  # usamos 0.60 y similares como escala
+
+# Umbrales de bucket (score sumatorio 0..100)
+_BUCKET_PREFERRED = 60
+_BUCKET_WEAK = 40
+_BUCKET_UNLIKELY = 20
+
+
+def _bbox_to_px(bbox: dict, image_size: tuple[int, int]) -> dict:
+    """Convierte bbox_rel {x,y,w,h} 0..1 → coords absolutas px."""
+    img_w, img_h = image_size
+    x = int((bbox.get("x") or 0) * img_w)
+    y = int((bbox.get("y") or 0) * img_h)
+    w = int((bbox.get("w") or 0) * img_w)
+    h = int((bbox.get("h") or 0) * img_h)
+    return {"x": x, "y": y, "x2": x + w, "y2": y + h, "w": w, "h": h}
+
+
+def _cota_in_bbox(
+    cota: Cota, bbox_px: dict, *, padding_px: int = 0,
+) -> bool:
+    x, y, x2, y2 = bbox_px["x"], bbox_px["y"], bbox_px["x2"], bbox_px["y2"]
+    return (
+        x - padding_px <= cota.x <= x2 + padding_px
+        and y - padding_px <= cota.y <= y2 + padding_px
+    )
+
+
+def _is_probable_perimeter(
+    cota: Cota, region_bbox_px: dict, image_size: tuple[int, int],
+) -> bool:
+    """Perímetro = valor grande (>3m) + posición fuera del bbox de la región.
+
+    Dos señales combinadas:
+    - value > 3m (cotas de ambiente típicamente son más grandes que mesadas).
+    - Posición: la cota está fuera del bbox tight de la región. NO importa
+      si está pegada o lejos — si el valor es grande y no cae dentro del
+      bbox inmediato, es muy probable que sea cota de perímetro del
+      ambiente arrastrada visualmente.
+
+    Contraejemplo que la regla NO rompe: una cota 2.50 en la isla que
+    estará fuera del bbox de la isla chica — no es perímetro porque su
+    valor <3m. El umbral de 3m captura específicamente las cotas de
+    perímetro del ambiente (> 3m típicamente).
+
+    Contraejemplo que SÍ se contempla: una cota 3.50 DENTRO del bbox
+    tight → no es perímetro, puede ser una mesada larga.
+    """
+    if cota.value <= _PERIMETER_VALUE_THRESHOLD_M:
+        return False
+    # Fuera del bbox tight (sin padding) → probable perímetro
+    if not _cota_in_bbox(cota, region_bbox_px, padding_px=0):
+        return True
+    return False
+
+
+def _tramo_orientation(region_bbox_px: dict) -> str:
+    """'vertical' si h > w, sino 'horizontal'. Determina qué cotas son
+    candidatas a largo vs ancho."""
+    return "vertical" if region_bbox_px["h"] > region_bbox_px["w"] else "horizontal"
+
+
+def _cota_aligned_with_long_axis(
+    cota: Cota, region_bbox_px: dict, orientation: str,
+) -> bool:
+    """True si la cota está posicionada a lo largo del eje largo del tramo.
+
+    Para un tramo vertical: la cota de largo se escribe típicamente al
+    costado (fuera del rango x del bbox) pero alineada con el rango y.
+    Para horizontal: al revés.
+
+    Usamos rango ± 30% de tolerancia para capturar cotas escritas
+    ligeramente fuera del bbox estricto.
+    """
+    if orientation == "vertical":
+        y_tol = 0.30 * region_bbox_px["h"]
+        return (
+            region_bbox_px["y"] - y_tol <= cota.y <= region_bbox_px["y2"] + y_tol
+        )
+    else:
+        x_tol = 0.30 * region_bbox_px["w"]
+        return (
+            region_bbox_px["x"] - x_tol <= cota.x <= region_bbox_px["x2"] + x_tol
+        )
+
+
+def _estimate_plan_scale(
+    regions: list[dict], all_cotas: list[Cota], image_size: tuple[int, int],
+) -> Optional[float]:
+    """Estima `px_per_m` del plano usando pares (region_bbox, cota chica
+    local). Señal DÉBIL — solo se usa para penalizar outliers groseros,
+    no para decidir entre cotas plausibles.
+
+    Requiere ≥2 pares confiables para que la mediana tenga sentido.
+    Devuelve None si no hay suficiente evidencia.
+    """
+    candidates: list[float] = []
+    for region in regions:
+        bbox_px = _bbox_to_px(region.get("bbox_rel") or {}, image_size)
+        if bbox_px["w"] < 10 or bbox_px["h"] < 10:
+            continue
+        # Cotas dentro del bbox que caen en el rango de "ancho de mesada"
+        local = [
+            c for c in all_cotas
+            if _cota_in_bbox(c, bbox_px, padding_px=80)
+            and _DEPTH_ANCHO_REFERENCE_RANGE[0] <= c.value <= _DEPTH_ANCHO_REFERENCE_RANGE[1]
+        ]
+        if not local:
+            continue
+        # Usar la dimensión CORTA del bbox como referencia del ancho
+        short_px = min(bbox_px["w"], bbox_px["h"])
+        for c in local:
+            if c.value > 0:
+                candidates.append(short_px / c.value)
+    if len(candidates) < 2:
+        return None
+    candidates.sort()
+    return candidates[len(candidates) // 2]  # mediana
+
+
+def _score_cota(
+    cota: Cota,
+    region_bbox_px: dict,
+    orientation: str,
+    scale: Optional[float],
+    *,
+    candidate_for: str,  # "length" | "depth"
+) -> dict:
+    """Score sumatorio 0..100 + bucket + razones.
+
+    `candidate_for`: rankeamos por separado para largo y ancho — una cota
+    de 0.60 debe ganar como ancho y perder como largo; 2.35 al revés.
+    """
+    score = 0
+    reasons: list[str] = []
+
+    # ── Proximidad al bbox ─────────────────────────────────────────────
+    if _cota_in_bbox(cota, region_bbox_px, padding_px=80):
+        score += 40
+        reasons.append("inside_tight_bbox")
+    elif _cota_in_bbox(cota, region_bbox_px, padding_px=380):
+        score += 15
+        reasons.append("inside_expanded_bbox")
+    else:
+        reasons.append("outside_expanded_bbox")
+
+    # ── Rango de valor típico según rol ───────────────────────────────
+    if candidate_for == "length":
+        lo, hi = _LENGTH_TYPICAL_RANGE
+        if lo <= cota.value <= hi:
+            score += 15
+            reasons.append("value_in_length_range")
+        else:
+            score -= 10
+            reasons.append("value_outside_length_range")
+    else:  # depth
+        lo, hi = _DEPTH_TYPICAL_RANGE
+        if lo <= cota.value <= hi:
+            score += 35
+            reasons.append("value_in_depth_range")
+        else:
+            score -= 20
+            reasons.append("value_outside_depth_range")
+
+    # ── Orientación vs eje ────────────────────────────────────────────
+    if candidate_for == "length":
+        if _cota_aligned_with_long_axis(cota, region_bbox_px, orientation):
+            score += 25
+            reasons.append(f"aligned_with_{orientation}_long_axis")
+        else:
+            score -= 10
+            reasons.append("not_aligned_with_long_axis")
+    # Para depth la alineación importa menos — el ancho se escribe típico
+    # en cualquier lado.
+
+    # ── Span plausibility (señal DÉBIL — solo si hay scale) ──────────
+    if scale and candidate_for == "length":
+        bbox_long_px = max(region_bbox_px["w"], region_bbox_px["h"])
+        expected_m = bbox_long_px / scale
+        if expected_m > 0.5:
+            deviation = abs(cota.value - expected_m) / expected_m
+            if deviation > 0.40:
+                # Señal débil — no dominante. 20 puntos de castigo.
+                score -= 20
+                reasons.append(f"span_mismatch_{int(deviation * 100)}pct")
+            elif deviation < 0.15:
+                score += 10
+                reasons.append("span_matches")
+
+    # ── Clamp + bucket ─────────────────────────────────────────────────
+    score = max(0, min(100, score))
+    if score >= _BUCKET_PREFERRED:
+        bucket = "preferred"
+    elif score >= _BUCKET_WEAK:
+        bucket = "weak"
+    elif score >= _BUCKET_UNLIKELY:
+        bucket = "unlikely"
+    else:
+        bucket = "excluded_soft"
+    return {
+        "value": cota.value,
+        "score": score,
+        "bucket": bucket,
+        "reasons": reasons,
+    }
+
+
+def _rank_cotas_for_region(
+    cotas: list[Cota],
+    region: dict,
+    image_size: tuple[int, int],
+    scale: Optional[float],
+) -> dict:
+    """Genera dos rankings (length + depth) + lista de excluidas duras.
+
+    Excluidas duras:
+    - Perímetro probable (valor >3m + lejos del bbox).
+    - Valor absurdo (<0.1m o >6m).
+
+    Nada más se excluye duro — el resto va a preferred/weak/unlikely
+    según score.
+    """
+    region_bbox_px = _bbox_to_px(region.get("bbox_rel") or {}, image_size)
+    orientation = _tramo_orientation(region_bbox_px)
+
+    length_ranking: list[dict] = []
+    depth_ranking: list[dict] = []
+    excluded_hard: list[dict] = []
+
+    for cota in cotas:
+        # Hard exclusions
+        if cota.value < _ABSURD_MIN_M or cota.value > _ABSURD_MAX_M:
+            excluded_hard.append({
+                "value": cota.value,
+                "reason": "absurd_value",
+            })
+            continue
+        if _is_probable_perimeter(cota, region_bbox_px, image_size):
+            excluded_hard.append({
+                "value": cota.value,
+                "reason": "probable_perimeter",
+            })
+            continue
+        # Score para ambos roles
+        length_ranking.append(
+            _score_cota(cota, region_bbox_px, orientation, scale, candidate_for="length")
+        )
+        depth_ranking.append(
+            _score_cota(cota, region_bbox_px, orientation, scale, candidate_for="depth")
+        )
+
+    # Ordenar desc por score
+    length_ranking.sort(key=lambda r: r["score"], reverse=True)
+    depth_ranking.sort(key=lambda r: r["score"], reverse=True)
+
+    return {
+        "length": length_ranking,
+        "depth": depth_ranking,
+        "excluded_hard": excluded_hard,
+        "orientation": orientation,
+        "scale_px_per_m": scale,
+    }
+
+
+def _format_ranking_for_prompt(ranking: dict) -> str:
+    """Prompt estructurado — sin sugerir valores específicos."""
+    lines: list[str] = []
+
+    def _bucket_label(bucket: str) -> str:
+        return {
+            "preferred": "PREFERIDAS",
+            "weak": "DÉBILES",
+            "unlikely": "POCO PROBABLES",
+            "excluded_soft": "POCO PROBABLES",  # collapse para el prompt
+        }.get(bucket, "POCO PROBABLES")
+
+    def _format_section(title: str, rows: list[dict]) -> list[str]:
+        out = [f"{title}:"]
+        if not rows:
+            out.append("  (ninguna)")
+            return out
+        by_bucket: dict[str, list[dict]] = {}
+        for r in rows:
+            by_bucket.setdefault(r["bucket"], []).append(r)
+        # Orden fijo
+        for bk in ("preferred", "weak", "unlikely", "excluded_soft"):
+            entries = by_bucket.get(bk) or []
+            if not entries:
+                continue
+            out.append(f"  {_bucket_label(bk)}:")
+            for e in entries[:6]:  # top 6 por bucket
+                reasons = ", ".join(e["reasons"][:3])
+                out.append(
+                    f"    - {e['value']:.2f}m (score {e['score']}) — {reasons}"
+                )
+        return out
+
+    lines.append(f"Orientación del tramo: {ranking['orientation']}")
+    if ranking.get("scale_px_per_m"):
+        lines.append("(escala del plano estimada desde cotas locales)")
+    lines.append("")
+    lines.extend(_format_section("CANDIDATAS PARA LARGO", ranking["length"]))
+    lines.append("")
+    lines.extend(_format_section("CANDIDATAS PARA ANCHO", ranking["depth"]))
+
+    hard = ranking.get("excluded_hard") or []
+    if hard:
+        lines.append("")
+        lines.append("EXCLUIDAS (no usar):")
+        for h in hard[:6]:
+            lines.append(f"  - {h['value']:.2f}m — {h['reason']}")
+
+    lines.append("")
+    lines.append(
+        "Usá el ranking como prior. Elegir una DÉBIL o POCO PROBABLE "
+        "requiere justificación visual explícita del crop."
+    )
+    return "\n".join(lines)
+
+
+def _apply_guardrails(
+    vlm_output: dict, ranking: dict,
+) -> dict:
+    """Post-LLM: si el VLM eligió weak/unlikely habiendo preferred
+    disponible, baja confidence y agrega suspicious_reasons.
+
+    Importante: el guardrail se apoya en el RANKING (determinístico), NO
+    en el `reasoning` del VLM (puede sonar convincente y ser falso).
+
+    Si el VLM elige weak PERO no hay preferred disponible, no castigamos
+    — puede ser lo mejor disponible en ese crop.
+    """
+    largo = vlm_output.get("largo_m")
+    ancho = vlm_output.get("ancho_m")
+    confidence = vlm_output.get("confidence", 0.5)
+    try:
+        confidence = float(confidence)
+    except (TypeError, ValueError):
+        confidence = 0.5
+    suspicious: list[str] = list(vlm_output.get("suspicious_reasons") or [])
+
+    def _find_match(value, rank_list):
+        if value is None:
+            return None
+        for r in rank_list:
+            if abs(r["value"] - float(value)) <= 0.02:
+                return r
+        return None
+
+    for field_name, value, rank_list in [
+        ("largo", largo, ranking.get("length") or []),
+        ("ancho", ancho, ranking.get("depth") or []),
+    ]:
+        if value is None:
+            continue
+        chosen = _find_match(value, rank_list)
+        if chosen is None:
+            # Valor no está en el ranking — halucinado o fuera de scope
+            suspicious.append(
+                f"{field_name} {value}m no está en el ranking de candidatas"
+            )
+            confidence = min(confidence, 0.3)
+            continue
+        if chosen["bucket"] in ("weak", "unlikely", "excluded_soft"):
+            # ¿Había una preferred disponible?
+            top_preferred = next(
+                (r for r in rank_list if r["bucket"] == "preferred"),
+                None,
+            )
+            if top_preferred and abs(top_preferred["value"] - float(value)) > 0.02:
+                suspicious.append(
+                    f"VLM eligió {field_name} {chosen['value']}m (bucket "
+                    f"{chosen['bucket']}, score {chosen['score']}) habiendo "
+                    f"preferred {top_preferred['value']}m (score "
+                    f"{top_preferred['score']}) disponible"
+                )
+                confidence = min(confidence, 0.5)
+            # Si no hay preferred, weak puede ser lo mejor — no castigamos
+
+    vlm_output["confidence"] = confidence
+    if suspicious:
+        vlm_output["suspicious_reasons"] = suspicious
+    return vlm_output
 
 
 async def _measure_region(
@@ -402,14 +814,14 @@ async def _measure_region(
         return {"error": f"crop_failed: {e}", "region_id": region.get("id")}
 
     client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    cotas_txt = format_cotas_for_prompt(cotas_for_llm) if cotas_for_llm else "(sin cotas extraídas)"
-    cotas_header = {
-        "local": "COTAS LOCALES (dentro del bbox de esta región):",
-        "expanded": (
-            "COTAS CERCANAS (dentro del bbox expandido — algunas pueden "
-            "pertenecer a regiones vecinas, descartá las que no correspondan):"
-        ),
-    }[cotas_mode]
+
+    # PR 2b — Ranking determinístico ANTES del VLM.
+    # Scale estimation pasa TODAS las candidatas (no solo cotas_for_llm)
+    # para obtener más evidencia si otras regiones tienen cotas locales.
+    plan_scale = _estimate_plan_scale([region], candidate_cotas, image_size)
+    ranking = _rank_cotas_for_region(cotas_for_llm, region, image_size, plan_scale)
+    ranking_txt = _format_ranking_for_prompt(ranking)
+
     meta_txt = (
         f"Sector: {region.get('sector') or 'cocina'}\n"
         f"Toca paredes: {region.get('touches_walls')}\n"
@@ -425,7 +837,7 @@ async def _measure_region(
         },
         {
             "type": "text",
-            "text": f"{cotas_header}\n{cotas_txt}",
+            "text": ranking_txt,
         },
     ]
     if brief_text and brief_text.strip():
@@ -487,56 +899,32 @@ async def _measure_region(
     parsed["region_id"] = region.get("id")
     parsed["_local_cotas_count"] = len(local_cotas)
     parsed["_cotas_mode"] = cotas_mode
+    parsed["_cota_ranking"] = ranking  # expuesto al log [region-detail]
 
-    # Sanity checks post-LLM: marcamos suspicious_reasons para que el
-    # aggregator emita DUDOSO en vez de CONFIRMADO. Regla: no aceptar
-    # output del VLM con "cara de confiado" cuando la evidencia no cierra.
-    largo = parsed.get("largo_m")
-    ancho = parsed.get("ancho_m")
-    suspicious: list[str] = []
-    # Anclamos contra TODAS las cotas que le pasamos al LLM (no solo las
-    # estrictamente locales): si usamos el pool expanded/global y el LLM
-    # eligió una cota real, el valor está anclado — aceptable aunque no
-    # sea "local". El nivel de confianza viene del flag cotas_mode, no
-    # de si la cota vino del bbox estricto.
-    cota_values = [c.value for c in cotas_for_llm]
+    # PR 2b — Guardrails post-LLM apoyados en el RANKING determinístico
+    # (no en el reasoning del VLM que puede sonar convincente y ser falso).
+    parsed = _apply_guardrails(parsed, ranking)
 
-    def _anchored(v) -> bool:
-        if v is None or not isinstance(v, (int, float)):
-            return False
-        return any(abs(float(v) - cv) <= 0.02 for cv in cota_values)
-
-    if cotas_for_llm:
-        if largo is not None and not _anchored(largo):
-            suspicious.append(f"largo {largo}m no está en las cotas candidatas ({cotas_mode})")
-        if ancho is not None and not _anchored(ancho):
-            suspicious.append(f"ancho {ancho}m no está en las cotas candidatas ({cotas_mode})")
-
-    # Cuando caímos a fallback expanded o global, el resultado NUNCA es
-    # CONFIRMADO aunque los números sean plausibles — el operador tiene
-    # que revisar porque el anchoring no fue estricto. Esto es la línea
-    # roja de "fail-loud": mostramos número (útil para arrancar), pero
-    # con badge DUDOSO para que se revise.
+    # Cuando caímos a fallback expanded, el resultado NUNCA es CONFIRMADO
+    # aunque los números sean plausibles — el operador tiene que revisar
+    # porque el anchoring no fue estricto.
     if cotas_mode == "expanded":
-        suspicious.append(
-            "medida tomada con pool de cotas expandido (no estricto a esta región)"
-        )
-    elif cotas_mode == "global_fallback":
-        suspicious.append(
-            "medida tomada con fallback global (no había cotas cercanas a esta región) — revisar"
-        )
+        _susp = list(parsed.get("suspicious_reasons") or [])
+        _susp.append("medida tomada con pool de cotas expandido (no estricto a esta región)")
+        parsed["suspicious_reasons"] = _susp
 
     # Fallback silencioso típico: el modelo devuelve L==A cuando no puede
     # elegir → usualmente agarra 0.60 (el ancho estándar) dos veces.
+    largo = parsed.get("largo_m")
+    ancho = parsed.get("ancho_m")
     if (
         isinstance(largo, (int, float))
         and isinstance(ancho, (int, float))
         and abs(float(largo) - float(ancho)) < 0.01
     ):
-        suspicious.append(f"largo == ancho ({largo}m) — probable fallback silencioso del VLM")
-
-    if suspicious:
-        parsed["suspicious_reasons"] = suspicious
+        _susp = list(parsed.get("suspicious_reasons") or [])
+        _susp.append(f"largo == ancho ({largo}m) — probable fallback silencioso del VLM")
+        parsed["suspicious_reasons"] = _susp
 
     return parsed
 

@@ -16,10 +16,17 @@ from PIL import Image
 from app.modules.quote_engine.cotas_extractor import Cota
 from app.modules.quote_engine.multi_crop_reader import (
     _aggregate,
+    _apply_guardrails,
+    _bbox_to_px,
     _call_global_topology,
+    _estimate_plan_scale,
+    _format_ranking_for_prompt,
     _GLOBAL_SYSTEM_PROMPT,
     _infer_expected_region_count,
+    _is_probable_perimeter,
     _measure_region,
+    _rank_cotas_for_region,
+    _score_cota,
     read_plan_multi_crop,
 )
 
@@ -619,3 +626,298 @@ class TestTopologyCallInjectsHint:
         # Pero NO hay frase de count inferido
         assert "tramos rectos cotizables" not in joined
         assert "fusionaste" not in joined
+
+
+# ── PR 2b: cota ranking + guardrails ─────────────────────────────────────────
+
+class TestPerimeterFilter:
+    """Perímetro = valor grande (>3m) Y lejos del bbox. Ambas señales
+    requeridas — una cota de 4m cercana al bbox puede ser una mesada larga."""
+
+    def test_large_value_far_from_bbox_is_perimeter(self):
+        img_size = (1000, 800)
+        # bbox en la esquina sup-izq; cota en la otra esquina
+        bbox = {"x": 100, "y": 100, "x2": 200, "y2": 200, "w": 100, "h": 100}
+        cota = Cota(text="4.15", value=4.15, x=900, y=700, width=20, height=10)
+        assert _is_probable_perimeter(cota, bbox, img_size) is True
+
+    def test_large_value_close_to_bbox_is_not_perimeter(self):
+        img_size = (1000, 800)
+        bbox = {"x": 100, "y": 100, "x2": 500, "y2": 200, "w": 400, "h": 100}
+        cota = Cota(text="4.15", value=4.15, x=300, y=150, width=20, height=10)
+        assert _is_probable_perimeter(cota, bbox, img_size) is False
+
+    def test_small_value_far_from_bbox_is_not_perimeter(self):
+        # Cota chica lejos NO es perímetro (podría ser ancho de otra región).
+        img_size = (1000, 800)
+        bbox = {"x": 100, "y": 100, "x2": 200, "y2": 200, "w": 100, "h": 100}
+        cota = Cota(text="0.60", value=0.60, x=900, y=700, width=20, height=10)
+        assert _is_probable_perimeter(cota, bbox, img_size) is False
+
+
+class TestEstimatePlanScale:
+    """Scale estimation — señal débil. Requiere ≥2 pares para mediana."""
+
+    def test_scale_from_multiple_regions_with_local_depth_cotas(self):
+        img_size = (4000, 3000)
+        regions = [
+            {"bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.05, "h": 0.3}},  # bbox corto ~200px
+            {"bbox_rel": {"x": 0.4, "y": 0.4, "w": 0.05, "h": 0.3}},  # idem
+        ]
+        # Cotas 0.60 dentro de cada bbox → short_px / 0.60 = 200 / 0.60 ≈ 333
+        cotas = [
+            Cota(text="0.60", value=0.60, x=500, y=450, width=20, height=10),  # dentro region 1
+            Cota(text="0.60", value=0.60, x=1700, y=1350, width=20, height=10),  # dentro region 2
+        ]
+        scale = _estimate_plan_scale(regions, cotas, img_size)
+        assert scale is not None
+        assert 300 <= scale <= 400  # ~333 px/m
+
+    def test_scale_returns_none_without_enough_evidence(self):
+        img_size = (4000, 3000)
+        regions = [{"bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.05, "h": 0.3}}]
+        cotas = [Cota(text="0.60", value=0.60, x=500, y=450, width=20, height=10)]
+        # Solo 1 par → mediana no confiable → None
+        assert _estimate_plan_scale(regions, cotas, img_size) is None
+
+    def test_scale_ignores_cotas_outside_reference_range(self):
+        """Solo cotas chicas (0.30-0.80) cuentan como referencia de ancho."""
+        img_size = (4000, 3000)
+        regions = [
+            {"bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.05, "h": 0.3}},
+            {"bbox_rel": {"x": 0.4, "y": 0.4, "w": 0.05, "h": 0.3}},
+        ]
+        cotas = [
+            Cota(text="2.35", value=2.35, x=500, y=450, width=20, height=10),
+            Cota(text="2.05", value=2.05, x=1700, y=1350, width=20, height=10),
+        ]
+        # Ninguna en rango 0.30-0.80 → None
+        assert _estimate_plan_scale(regions, cotas, img_size) is None
+
+
+class TestScoreCota:
+    """Score sumatorio 0..100. Cota de largo debe preferir alineación con
+    eje largo; cota de ancho debe preferir valor típico (0.40-0.80)."""
+
+    def test_length_cota_aligned_with_vertical_tramo_scores_high(self):
+        # Bbox vertical: 100x500 en posición (200, 200)
+        region_bbox_px = {"x": 200, "y": 200, "x2": 300, "y2": 700, "w": 100, "h": 500}
+        # Cota a la derecha del bbox, alineada en y, valor típico de largo
+        cota = Cota(text="2.35", value=2.35, x=340, y=450, width=20, height=10)
+        result = _score_cota(
+            cota, region_bbox_px, orientation="vertical", scale=None,
+            candidate_for="length",
+        )
+        assert result["score"] >= 60
+        assert result["bucket"] == "preferred"
+
+    def test_length_cota_misaligned_scores_lower(self):
+        region_bbox_px = {"x": 200, "y": 200, "x2": 300, "y2": 700, "w": 100, "h": 500}
+        # Cota MUY arriba del bbox, no alineada en y
+        cota = Cota(text="2.35", value=2.35, x=250, y=50, width=20, height=10)
+        result = _score_cota(
+            cota, region_bbox_px, orientation="vertical", scale=None,
+            candidate_for="length",
+        )
+        # No "inside_tight_bbox" y no alineada con eje → score bajo
+        assert result["score"] < 60
+
+    def test_depth_cota_prefers_small_typical_values(self):
+        region_bbox_px = {"x": 200, "y": 200, "x2": 300, "y2": 700, "w": 100, "h": 500}
+        # 0.60 dentro del bbox
+        cota_chica = Cota(text="0.60", value=0.60, x=250, y=400, width=20, height=10)
+        cota_grande = Cota(text="2.35", value=2.35, x=250, y=400, width=20, height=10)
+        score_chica = _score_cota(
+            cota_chica, region_bbox_px, orientation="vertical", scale=None,
+            candidate_for="depth",
+        )
+        score_grande = _score_cota(
+            cota_grande, region_bbox_px, orientation="vertical", scale=None,
+            candidate_for="depth",
+        )
+        assert score_chica["score"] > score_grande["score"]
+        assert score_chica["bucket"] == "preferred"
+        assert score_grande["bucket"] in ("weak", "unlikely", "excluded_soft")
+
+
+class TestBernardiRankingR2:
+    """Test central del PR. Usa las 7 cotas REALES extraídas del PDF de
+    Erica Bernardi (via `extract_cotas_from_drawing`) + el bbox de R2 tal
+    cual lo devolvió el topology LLM en prod (logs del 2026-04-19):
+    `x:0.64, y:0.28, w:0.08, h:0.32`.
+
+    El 2.95 que el VLM eligió en prod viene de otra ruta de extracción
+    (da 13 cotas) y no tenemos sus coordenadas exactas — no lo inventamos.
+
+    Valida el contrato del ranking contra los datos verificables:
+    - 2.35 aparece en length (es la medida correcta)
+    - 4.15 queda en excluded_hard como perímetro probable
+    - 0.60 aparece en depth preferred
+    - Ninguna de las cotas ajenas (2.75, 1.60, 2.05) supera al 2.35 en length
+    """
+
+    def test_r2_ranking_prefers_2_35_for_length(self):
+        image_size = (4963, 3509)
+        region = {"bbox_rel": {"x": 0.64, "y": 0.28, "w": 0.08, "h": 0.32}}
+        cotas = [
+            Cota(text="0.60", value=0.60, x=3028, y=957, width=20, height=10),
+            Cota(text="1.60", value=1.60, x=2119, y=1267, width=20, height=10),
+            Cota(text="4.15", value=4.15, x=3663, y=1339, width=20, height=10),
+            Cota(text="2.75", value=2.75, x=1577, y=1340, width=20, height=10),
+            Cota(text="2.35", value=2.35, x=2836, y=1458, width=20, height=10),
+            Cota(text="2.05", value=2.05, x=2506, y=1875, width=20, height=10),
+            Cota(text="0.60", value=0.60, x=1941, y=2039, width=20, height=10),
+        ]
+        ranking = _rank_cotas_for_region(cotas, region, image_size, scale=None)
+
+        # 4.15 debe estar en excluded_hard como perímetro (valor >3m fuera del bbox)
+        hard_values = [h["value"] for h in ranking["excluded_hard"]]
+        assert 4.15 in hard_values, (
+            f"4.15 debería ser perímetro; excluded_hard={ranking['excluded_hard']}"
+        )
+
+        # 2.35 debe estar en length
+        v235 = next(
+            (r for r in ranking["length"] if abs(r["value"] - 2.35) < 0.02),
+            None,
+        )
+        assert v235 is not None, (
+            f"2.35 debe estar en length; got values={[(r['value'], r['bucket']) for r in ranking['length']]}"
+        )
+
+        # Ninguna otra cota de largo (2.75, 1.60, 2.05) debe rankear por
+        # encima del 2.35 — el 2.35 es la respuesta correcta para R2.
+        for other_value in (2.75, 1.60, 2.05):
+            other = next(
+                (r for r in ranking["length"] if abs(r["value"] - other_value) < 0.02),
+                None,
+            )
+            if other is None:
+                continue  # puede haber sido filtrada por razones válidas
+            assert v235["score"] >= other["score"], (
+                f"2.35 (score {v235['score']}) debe rankear ≥ {other_value} "
+                f"(score {other['score']}). Ranking actual: "
+                f"{[(r['value'], r['score']) for r in ranking['length']]}"
+            )
+
+        # 0.60 debe aparecer en depth (ancho estándar). No exigimos "preferred"
+        # porque en el plano real de Bernardi las 0.60 quedan cerca del bbox
+        # expandido pero no dentro del tight — el bbox del tramo vertical es
+        # angosto y las cotas 0.60 se escriben arriba/abajo del tramo.
+        # Exigimos al menos que NO quede en "excluded_soft" o "unlikely" todas.
+        depth_matches = [r for r in ranking["depth"] if abs(r["value"] - 0.60) < 0.02]
+        assert len(depth_matches) >= 1
+        best_depth_060 = max(depth_matches, key=lambda r: r["score"])
+        assert best_depth_060["bucket"] in ("preferred", "weak"), (
+            f"Al menos una 0.60 debe ser depth preferred/weak; "
+            f"got {[(r['value'], r['bucket'], r['score']) for r in depth_matches]}"
+        )
+        # Ninguna cota grande (2.35, 1.60, 2.75) debe ranker preferido en depth
+        for v in (2.35, 1.60, 2.75):
+            bad = next(
+                (r for r in ranking["depth"] if abs(r["value"] - v) < 0.02), None,
+            )
+            if bad:
+                assert bad["bucket"] != "preferred", (
+                    f"{v} NO debe ser depth preferred (valor fuera de rango depth)"
+                )
+
+
+class TestGuardrails:
+    """Post-LLM: si VLM elige weak/unlikely habiendo preferred, baja
+    confidence + suspicious. Si no había preferred, no castigamos."""
+
+    def test_guardrail_lowers_confidence_on_weak_choice_vs_preferred(self):
+        ranking = {
+            "length": [
+                {"value": 2.35, "score": 80, "bucket": "preferred", "reasons": []},
+                {"value": 2.95, "score": 45, "bucket": "weak", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 75, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 2.95,  # eligió weak
+            "ancho_m": 0.60,
+            "confidence": 0.85,
+            "reasoning": "me pareció mejor",
+        }
+        result = _apply_guardrails(vlm_output, ranking)
+        assert result["confidence"] <= 0.5
+        assert "suspicious_reasons" in result
+        assert any("2.95" in s and "2.35" in s for s in result["suspicious_reasons"])
+
+    def test_guardrail_does_not_punish_weak_choice_when_no_preferred(self):
+        """Si solo hay weak disponible, no castigamos — puede ser lo mejor."""
+        ranking = {
+            "length": [
+                {"value": 2.95, "score": 45, "bucket": "weak", "reasons": []},
+                {"value": 2.05, "score": 38, "bucket": "weak", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 75, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 2.95,
+            "ancho_m": 0.60,
+            "confidence": 0.80,
+        }
+        result = _apply_guardrails(vlm_output, ranking)
+        # Confidence NO bajó a 0.5 — no había preferred que perder
+        assert result["confidence"] == 0.80
+        # No suspicious del guardrail tampoco
+        reasons = result.get("suspicious_reasons") or []
+        assert not any("preferred" in r for r in reasons)
+
+    def test_guardrail_flags_hallucinated_value_not_in_ranking(self):
+        ranking = {
+            "length": [
+                {"value": 2.35, "score": 80, "bucket": "preferred", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 75, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 7.42,  # valor que no está en el ranking
+            "ancho_m": 0.60,
+            "confidence": 0.90,
+        }
+        result = _apply_guardrails(vlm_output, ranking)
+        assert result["confidence"] <= 0.3
+        assert any("no está en el ranking" in s for s in result["suspicious_reasons"])
+
+
+class TestRankingPromptFormat:
+    """El prompt estructurado NO debe sugerir valores específicos que
+    contaminen la elección del VLM."""
+
+    def test_prompt_has_buckets_without_suggesting_values(self):
+        ranking = {
+            "length": [
+                {"value": 2.35, "score": 80, "bucket": "preferred", "reasons": ["aligned"]},
+                {"value": 2.95, "score": 45, "bucket": "weak", "reasons": ["far"]},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 75, "bucket": "preferred", "reasons": ["depth_range"]},
+            ],
+            "excluded_hard": [{"value": 4.15, "reason": "probable_perimeter"}],
+            "orientation": "vertical",
+            "scale_px_per_m": None,
+        }
+        prompt = _format_ranking_for_prompt(ranking)
+        # Buckets presentes
+        assert "PREFERIDAS" in prompt
+        assert "DÉBILES" in prompt
+        # Sección "EXCLUIDAS" presente
+        assert "EXCLUIDAS" in prompt
+        # Orientación informada
+        assert "vertical" in prompt.lower()
+        # NO debe haber frases tipo "2.35m estimado" ni "respuesta sugerida"
+        assert "estimado" not in prompt.lower()
+        assert "respuesta" not in prompt.lower()
