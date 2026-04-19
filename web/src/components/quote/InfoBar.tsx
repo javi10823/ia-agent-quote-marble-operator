@@ -13,8 +13,8 @@ function InfoBar({ icon, label, status, detail }: Props) {
     <div style={{
       display: "flex", alignItems: "center", gap: 10,
       padding: "10px 14px", borderRadius: 8,
-      background: isNo ? "rgba(255,255,255,.02)" : "rgba(245,166,35,.06)",
-      border: `1px solid ${isNo ? "var(--b1)" : "rgba(245,166,35,.16)"}`,
+      background: isNo ? "rgba(255,255,255,.02)" : "rgba(217,162,90,0.06)",
+      border: `1px solid ${isNo ? "var(--b1)" : "rgba(217,162,90,0.16)"}`,
       fontSize: 12,
     }}>
       <span>{icon}</span>

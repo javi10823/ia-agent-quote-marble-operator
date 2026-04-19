@@ -152,7 +152,7 @@ function UsersSection({ toast }: { toast: (m: string, v?: "error" | "success" | 
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="min. 6 caracteres" className="w-full px-3 py-2 bg-s3 border border-b1 rounded-lg text-t1 text-[13px] font-sans outline-none focus:border-acc placeholder:text-t4" />
           </div>
         </div>
-        <button onClick={handleCreate} disabled={loading} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+        <button onClick={handleCreate} disabled={loading} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-acc-hover transition disabled:opacity-50">
           {loading ? "Creando..." : "Crear usuario"}
         </button>
       </div>
@@ -236,7 +236,7 @@ function ArchitectsSection({ toast }: { toast: (m: string, v?: "error" | "succes
             <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Referencia interna" className="w-full px-3 py-2 bg-s3 border border-b1 rounded-lg text-t1 text-[13px] font-sans outline-none focus:border-acc placeholder:text-t4" />
           </div>
         </div>
-        <button onClick={handleAdd} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition">Agregar</button>
+        <button onClick={handleAdd} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-acc-hover transition">Agregar</button>
       </div>
     </>
   );
@@ -296,7 +296,7 @@ function DiscountsSection({ toast }: { toast: (m: string, v?: "error" | "success
         </div>
       </div>
 
-      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-acc-hover transition disabled:opacity-50">
         {saving ? "Guardando..." : "Guardar cambios"}
       </button>
     </>
@@ -324,7 +324,7 @@ function DeliverySection({ toast }: { toast: (m: string, v?: "error" | "success"
         </div>
       </div>
 
-      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-acc-hover transition disabled:opacity-50">
         {saving ? "Guardando..." : "Guardar cambios"}
       </button>
     </>
@@ -357,7 +357,7 @@ function CompanySection({ toast }: { toast: (m: string, v?: "error" | "success" 
         <Field label="Email" value={c.email} onChange={v => upd("email", v)} />
       </div>
 
-      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-acc-hover transition disabled:opacity-50">
         {saving ? "Guardando..." : "Guardar cambios"}
       </button>
     </>
@@ -398,7 +398,7 @@ function ConditionsSection({ toast }: { toast: (m: string, v?: "error" | "succes
         />
       </div>
 
-      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-acc-hover transition disabled:opacity-50">
         {saving ? "Guardando..." : "Guardar cambios"}
       </button>
     </>
@@ -428,7 +428,7 @@ function MeasurementsSection({ toast }: { toast: (m: string, v?: "error" | "succ
         <div className="text-[11px] text-t4 mt-2">Umbral zócalo alto: si el alto supera este valor, se agrega 1 toma de corriente automáticamente.</div>
       </div>
 
-      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-acc-hover transition disabled:opacity-50">
         {saving ? "Guardando..." : "Guardar cambios"}
       </button>
     </>
@@ -454,7 +454,7 @@ function ColocacionSection({ toast }: { toast: (m: string, v?: "error" | "succes
         <div className="text-[11px] text-t4 mt-2">Si el total de m² es menor a este valor, se cobra este mínimo.</div>
       </div>
 
-      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-acc-hover transition disabled:opacity-50">
         {saving ? "Guardando..." : "Guardar cambios"}
       </button>
     </>
@@ -482,7 +482,7 @@ function IvaSection({ toast }: { toast: (m: string, v?: "error" | "success" | "w
         </div>
       </div>
 
-      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-acc-hover transition disabled:opacity-50">
         {saving ? "Guardando..." : "Guardar cambios"}
       </button>
     </>
@@ -507,7 +507,7 @@ function MermaSection({ toast }: { toast: (m: string, v?: "error" | "success" | 
         <Field label="Umbral pieza chica (m²)" type="number" value={m.small_piece_threshold_m2} onChange={v => upd("small_piece_threshold_m2", +v)} />
       </div>
 
-      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-acc-hover transition disabled:opacity-50">
         {saving ? "Guardando..." : "Guardar cambios"}
       </button>
     </>
@@ -566,7 +566,7 @@ function PlacasStockSection({ toast }: { toast: (m: string, v?: "error" | "succe
         </div>
       </div>
 
-      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-acc-hover transition disabled:opacity-50">
         {saving ? "Guardando..." : "Guardar cambios"}
       </button>
     </>
@@ -608,7 +608,7 @@ function BuildingSection({ toast }: { toast: (m: string, v?: "error" | "success"
         </div>
       </div>
 
-      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-[#3d7be6] transition disabled:opacity-50">
+      <button onClick={() => save(config)} disabled={saving} className="px-3.5 py-[7px] rounded-md text-xs font-medium bg-acc text-white border-none cursor-pointer hover:bg-acc-hover transition disabled:opacity-50">
         {saving ? "Guardando..." : "Guardar cambios"}
       </button>
     </>

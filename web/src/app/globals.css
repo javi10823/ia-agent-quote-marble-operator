@@ -3,25 +3,35 @@
 @tailwind utilities;
 
 :root {
-  --bg:    #07070e;
-  --s1:    #0c0c16;
-  --s2:    #101018;
-  --s3:    #15151f;
-  --b1:    rgba(255,255,255,0.07);
-  --b2:    rgba(255,255,255,0.13);
-  --b3:    rgba(255,255,255,0.20);
-  --t1:    rgba(255,255,255,0.96);
-  --t2:    rgba(255,255,255,0.58);
-  --t3:    rgba(255,255,255,0.28);
-  --t4:    rgba(255,255,255,0.14);
-  --acc:   #4f8fff;
-  --acc2:  rgba(79,143,255,0.12);
-  --acc3:  rgba(79,143,255,0.22);
-  --grn:   #30d158;
-  --grn2:  rgba(48,209,88,0.11);
-  --amb:   #f5a623;
-  --amb2:  rgba(245,166,35,0.10);
-  --red:   #ff453a;
+  /* Paleta "Pizarra & acero" — carbón azulado con acento celeste polvo.
+     Tinta crema fría para reducir glare sobre fondos oscuros. */
+  --bg:    #0f1318;
+  --s1:    #141923;
+  --s2:    #1a1f26;
+  --s3:    #232934;
+  --b1:    rgba(232,237,229,0.07);
+  --b2:    rgba(232,237,229,0.14);
+  --b3:    rgba(232,237,229,0.20);
+  --t1:    #e8ede5;
+  --t2:    rgba(232,237,229,0.66);
+  --t3:    rgba(232,237,229,0.42);
+  --t4:    rgba(232,237,229,0.22);
+  /* Acento: "añil sobrio" (swatch 2 de la paleta del design). Lo
+     elegimos en lugar del "celeste polvo" default porque pasa WCAG
+     AA large text con `text-white` en botones primarios (ratio
+     ~3.9:1). Swap a celeste polvo requiere migrar text-white →
+     text-acc-ink en ~33 sitios. */
+  --acc:        #5f7da0;
+  --acc2:       rgba(95,125,160,0.14);
+  --acc3:       rgba(95,125,160,0.22);
+  --acc-ink:    #0f1318;
+  --acc-hover:  #4d678a;
+  --acc-shadow: rgba(95,125,160,0.30);
+  --grn:   #5cb38f;
+  --grn2:  rgba(92,179,143,0.14);
+  --amb:   #d9a25a;
+  --amb2:  rgba(217,162,90,0.14);
+  --red:   #d46b60;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -37,7 +47,7 @@ html, body { height: 100%; overflow: hidden; }
 }
 
 body {
-  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   background: var(--bg);
   color: var(--t1);
   font-size: 15px;

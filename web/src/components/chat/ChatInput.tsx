@@ -85,7 +85,7 @@ export default function ChatInput({ input, setInput, files, setFiles, multiPiece
       {dragActive && (
         <div style={{
           position: "absolute", inset: 0, zIndex: 10,
-          background: "rgba(79,143,255,0.08)", border: "2px dashed var(--acc)",
+          background: "rgba(95,125,160,0.08)", border: "2px dashed var(--acc)",
           borderRadius: 12, display: "flex", flexDirection: "column",
           alignItems: "center", justifyContent: "center", gap: 6,
           pointerEvents: "none",
@@ -143,7 +143,7 @@ export default function ChatInput({ input, setInput, files, setFiles, multiPiece
         display: "flex", alignItems: "flex-end", gap: 8,
         background: "var(--s3)",
         border: dragActive ? "1px solid var(--acc)" : "1px solid var(--b2)",
-        boxShadow: dragActive ? "0 0 20px rgba(79,143,255,0.15)" : "none",
+        boxShadow: dragActive ? "0 0 20px rgba(95,125,160,0.15)" : "none",
         borderRadius: 12, padding: "10px 10px 10px 16px",
         transition: "border-color 0.15s, box-shadow 0.15s",
       }}>

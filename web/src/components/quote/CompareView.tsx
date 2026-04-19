@@ -88,7 +88,7 @@ export default function CompareView({ data }: Props) {
                 {variants.map((v, i) => (
                   <th key={v.id} style={{
                     ...headerCell, textAlign: "center",
-                    background: i === bestIdx ? "rgba(48,209,88,0.12)" : "rgba(255,255,255,.05)",
+                    background: i === bestIdx ? "rgba(92,179,143,0.12)" : "rgba(255,255,255,.05)",
                     borderLeft: "1px solid var(--b1)",
                   }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "var(--t1)" }}>
@@ -131,7 +131,7 @@ export default function CompareView({ data }: Props) {
                   <td key={v.id} style={{
                     ...cellBase, textAlign: "center", fontWeight: 700, fontSize: 14,
                     color: "var(--t1)",
-                    background: i === bestIdx ? "rgba(48,209,88,0.08)" : "transparent",
+                    background: i === bestIdx ? "rgba(92,179,143,0.08)" : "transparent",
                     borderLeft: "1px solid var(--b1)",
                   }}>
                     {v.totalArs ? fmtARS(v.totalArs) : "—"}
@@ -146,7 +146,7 @@ export default function CompareView({ data }: Props) {
                   <td key={v.id} style={{
                     ...cellBase, textAlign: "center", fontWeight: 700, fontSize: 14,
                     color: i === bestIdx ? "var(--grn)" : "var(--acc)",
-                    background: i === bestIdx ? "rgba(48,209,88,0.08)" : "transparent",
+                    background: i === bestIdx ? "rgba(92,179,143,0.08)" : "transparent",
                     borderLeft: "1px solid var(--b1)",
                   }}>
                     {v.totalUsd ? fmtUSD(v.totalUsd) : "—"}
@@ -188,7 +188,7 @@ export default function CompareView({ data }: Props) {
             href={v.driveUrl}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ ...btnStyle, background: "transparent", border: "1px solid rgba(79,143,255,0.3)", color: "var(--acc)" }}
+            style={{ ...btnStyle, background: "transparent", border: "1px solid rgba(95,125,160,0.3)", color: "var(--acc)" }}
           >
             Drive {v.material}
           </a>
@@ -234,7 +234,7 @@ function Row({ label, values, bestIdx, odd }: {
       {values.map((val, i) => (
         <td key={i} style={{
           ...cellBase, textAlign: "center",
-          background: i === bestIdx && odd ? "rgba(48,209,88,0.05)" : undefined,
+          background: i === bestIdx && odd ? "rgba(92,179,143,0.05)" : undefined,
           borderLeft: "1px solid var(--b1)",
         }}>
           {val}
