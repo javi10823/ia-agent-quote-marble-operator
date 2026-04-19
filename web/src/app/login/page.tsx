@@ -41,15 +41,15 @@ export default function LoginPage() {
       <div className="hidden md:block fixed w-[600px] h-[600px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none bg-[radial-gradient(circle,rgba(95,125,160,0.06)_0%,transparent_70%)]" />
 
       <div className="relative z-[1] w-full max-w-[400px] mx-4 bg-s1 border border-b1 rounded-2xl px-5 md:px-9 pt-8 md:pt-10 pb-7 md:pb-9 shadow-[0_24px_80px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,255,255,0.03)_inset]">
-        {/* Branding */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-11 h-11 bg-acc-bg border border-acc/20 rounded-xl text-xl font-bold text-acc mb-4 -tracking-[0.02em]">
+        {/* Branding — badge con gradient + brand serif italic */}
+        <div className="text-center mb-9">
+          <div className="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-br from-acc/90 to-acc-hover rounded-xl text-[22px] font-semibold text-white mb-5 -tracking-[0.02em] shadow-[0_6px_20px_var(--acc-shadow)]">
             D
           </div>
-          <div className="text-lg font-semibold text-t1 -tracking-[0.03em]">
+          <div className="font-serif italic text-[22px] font-medium text-t1 -tracking-[0.01em] leading-tight">
             D&apos;Angelo Marmoleria
           </div>
-          <div className="text-xs text-t3 mt-1 tracking-wide">
+          <div className="text-[11px] text-t3 mt-2 tracking-[0.14em] uppercase font-mono">
             Sistema de presupuestos
           </div>
         </div>
