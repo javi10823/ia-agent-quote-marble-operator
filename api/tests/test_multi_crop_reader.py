@@ -16,6 +16,9 @@ from PIL import Image
 from app.modules.quote_engine.cotas_extractor import Cota
 from app.modules.quote_engine.multi_crop_reader import (
     _aggregate,
+    _call_global_topology,
+    _GLOBAL_SYSTEM_PROMPT,
+    _infer_expected_region_count,
     _measure_region,
     read_plan_multi_crop,
 )
@@ -486,3 +489,133 @@ class TestReadPlanMultiCrop:
         assert tramos_cocina[1]["largo_m"]["status"] == "DUDOSO"
         # requires_human_review se dispara por el DUDOSO
         assert result["requires_human_review"] is True
+
+
+# ── PR 2a: counter-runs semantics in topology prompt + brief hint ───────────
+
+class TestGlobalSystemPromptCounterRuns:
+    """Verifica que el prompt del topology use la semántica de tramos
+    cotizables (counter runs) en vez de masas grises contiguas. La
+    contradicción previa (`L = 2 regiones` vs `región contigua = 1 entry`)
+    causaba que el VLM colapsara L/U en un solo bbox."""
+
+    def test_contradiction_phrase_removed(self):
+        p = _GLOBAL_SYSTEM_PROMPT.lower()
+        assert "cada región rellena contigua" not in p, (
+            "La frase vieja contradictoria sigue presente"
+        )
+
+    def test_counter_run_concepts_present(self):
+        p = _GLOBAL_SYSTEM_PROMPT.lower()
+        # Conceptos clave del nuevo modelo mental
+        assert "tramo recto" in p
+        assert "masa gris" in p  # para decir que masa gris ≠ tramo
+        assert "cocina en l" in p
+        assert "isla" in p
+
+    def test_schema_compat_note_present(self):
+        """El prompt debe aclarar que `regions` mantiene el nombre por
+        compatibilidad pero ahora significa tramos."""
+        p = _GLOBAL_SYSTEM_PROMPT.lower()
+        assert "retrocompat" in p or "compatibilidad de esquema" in p
+
+
+class TestInferExpectedRegionCount:
+    """La heurística del brief es un prior liviano — NO fuente de verdad.
+    Valida keywords realistas que puede escribir el operador."""
+
+    @pytest.mark.parametrize("brief, expected", [
+        # Variaciones comunes de L
+        ("cocina en L con isla", {"count": 3, "description": "cocina en L + isla"}),
+        ("cocina tipo L con isla", {"count": 3, "description": "cocina en L + isla"}),
+        ("forma de L, sin isla", {"count": 2, "description": "cocina en L"}),
+        # "península" todavía no suma — explícito por ahora
+        ("cocina en L y península", {"count": 2, "description": "cocina en L"}),
+        # Variaciones de U
+        ("cocina en U + isla central", {"count": 4, "description": "cocina en U + isla"}),
+        ("forma de U con isla", {"count": 4, "description": "cocina en U + isla"}),
+        # Recta / lineal
+        ("cocina recta, 1 bacha", {"count": 1, "description": "cocina en recta"}),
+        ("cocina lineal sin isla", {"count": 1, "description": "cocina en recta"}),
+        ("contra una pared, simple", {"count": 1, "description": "cocina en recta"}),
+        # Solo isla
+        ("isla central", {"count": 1, "description": "isla"}),
+        ("solo una isla 1.60", {"count": 1, "description": "isla"}),
+        # Excluyentes
+        ("cocina en L, sin isla", {"count": 2, "description": "cocina en L"}),
+        ("cocina recta, no lleva isla", {"count": 1, "description": "cocina en recta"}),
+        # Sin keywords → None (no forzamos un count cuando el brief es vago)
+        ("presupuesto de mesada Silestone", None),
+        ("", None),
+        ("   ", None),
+    ])
+    def test_infer_expected_region_count(self, brief, expected):
+        assert _infer_expected_region_count(brief) == expected
+
+
+class TestTopologyCallInjectsHint:
+    """Cuando el brief sugiere una forma clara, el bloque que va al VLM
+    debe incluir: (a) brief original, (b) count esperado, (c) advertencia
+    de L/U fusionada — todo en tono de consistencia, no mandato."""
+
+    @pytest.mark.asyncio
+    async def test_hint_injected_when_shape_detected(self):
+        captured_blocks: list = []
+
+        async def fake_create(**kwargs):
+            for m in kwargs.get("messages", []):
+                for b in m.get("content", []):
+                    if isinstance(b, dict) and b.get("type") == "text":
+                        captured_blocks.append(b)
+            return type("R", (), {
+                "content": [type("B", (), {"text": '{"regions": []}'})()]
+            })()
+
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_anth.return_value.messages.create = AsyncMock(side_effect=fake_create)
+            await _call_global_topology(
+                image_bytes=_make_image_bytes(),
+                model="test",
+                brief_text="cocina en L + isla",
+            )
+
+        joined = " ".join(b["text"] for b in captured_blocks).lower()
+        # Brief original presente
+        assert "cocina en l" in joined
+        # Count esperado presente (formato flexible, no literal)
+        assert "3 tramos" in joined or "aproximadamente 3" in joined
+        # Advertencia anti-fusión de L/U
+        assert "l/u" in joined or "fusion" in joined
+
+    @pytest.mark.asyncio
+    async def test_hint_absent_when_brief_vague(self):
+        """Sin keywords claros en el brief, NO se inyecta hint de count —
+        evitamos wishful segmentation."""
+        captured_blocks: list = []
+
+        async def fake_create(**kwargs):
+            for m in kwargs.get("messages", []):
+                for b in m.get("content", []):
+                    if isinstance(b, dict) and b.get("type") == "text":
+                        captured_blocks.append(b)
+            return type("R", (), {
+                "content": [type("B", (), {"text": '{"regions": []}'})()]
+            })()
+
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_anth.return_value.messages.create = AsyncMock(side_effect=fake_create)
+            await _call_global_topology(
+                image_bytes=_make_image_bytes(),
+                model="test",
+                brief_text="presupuesto para Silestone",
+            )
+
+        joined = " ".join(b["text"] for b in captured_blocks).lower()
+        assert "silestone" in joined  # brief pasa
+        # Pero NO hay frase de count inferido
+        assert "tramos rectos cotizables" not in joined
+        assert "fusionaste" not in joined
