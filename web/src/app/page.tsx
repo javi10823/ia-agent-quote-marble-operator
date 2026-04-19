@@ -303,49 +303,109 @@ export default function DashboardPage() {
     }
   }
 
+  // ── Formatters — matching dash-airy.jsx exact ──────────────────────────
+  const fmtMes = () => {
+    // Eyebrow formato "ABRIL 2029" (sin "DE"). letterSpacing 1px uppercase.
+    const d = new Date();
+    const mes = d.toLocaleDateString("es-AR", { month: "long" }).toUpperCase();
+    return `${mes} ${d.getFullYear()}`;
+  };
+  const fmtARS = (n: number | null | undefined) => n == null ? "\u2014" : `$\u00A0${n.toLocaleString("es-AR")}`;
+  const fmtUSD = (n: number | null | undefined) => n == null ? null : `USD\u00A0${n.toLocaleString("en-US")}`;
+  const fmtDia = (iso: string) => format(new Date(iso), "d MMM", { locale: es });
+  const toTitleCase = (s: string | null | undefined) => {
+    if (!s) return "";
+    return s.toLowerCase().replace(/\b[\wáéíóúñ]/g, (ch) => ch.toUpperCase());
+  };
+
+  const handleExport = () => {
+    const rows = [["Cliente","Proyecto","Material","ARS","USD","Estado","Fuente","Fecha"]];
+    filteredQuotes.forEach(q => rows.push([
+      q.client_name, q.project, q.material || "", String(q.total_ars || ""), String(q.total_usd || ""),
+      q.status, q.source || "operator", new Date(q.created_at).toLocaleDateString("es-AR"),
+    ]));
+    const csv = rows.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = `presupuestos-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+  };
+
+  const handleNew = async () => {
+    try { const id = await addQuote(); router.push(`/quote/${id}`); } catch { /* toast shown by context */ }
+  };
+
   return (
-    <div className="flex flex-col h-full">
-      {/* Header — editorial: eyebrow mono uppercase + título Fraunces italic gigante */}
-      <div className="flex items-end justify-between px-4 md:px-10 pt-5 md:pt-10 pb-5 md:pb-8 shrink-0 gap-6">
-        <div className="min-w-0">
-          <div className="text-[10px] md:text-[11px] font-medium font-mono text-t4 uppercase tracking-[0.14em] mb-2 md:mb-3">
-            {new Date().toLocaleDateString("es-AR", { month: "long", year: "numeric" })} · {quotes.length} registros
+    <div className="flex flex-col h-full" style={{ background: "var(--bg)" }}>
+      {/* Header — exact match con AiryHeader. Padding 36px 40px 22px, eyebrow
+          mono uppercase size 11 weight 600 letterSpacing 1px, título Fraunces
+          italic 40px tracking -0.8, botones Exportar (height 32) y Nuevo
+          presupuesto (height 36, color bg sobre accent). */}
+      <div
+        className="hidden md:flex items-end shrink-0"
+        style={{ padding: "36px 40px 22px", gap: 16 }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            className="font-mono uppercase"
+            style={{
+              fontSize: 11, color: "var(--t3)",
+              letterSpacing: "1px", marginBottom: 6, fontWeight: 600,
+            }}
+          >
+            {fmtMes()} · {quotes.length} registros
             {quotes.filter(q => !q.is_read).length > 0 && (
-              <> · <span className="text-acc">{quotes.filter(q => !q.is_read).length} sin leer</span></>
+              <> · <span style={{ color: "var(--acc)" }}>{quotes.filter(q => !q.is_read).length} sin leer</span></>
             )}
           </div>
-          <h1 className="font-serif italic text-[34px] md:text-[44px] font-normal -tracking-[0.01em] text-t1 leading-[1.05]">
+          <h1
+            className="font-serif italic"
+            style={{
+              margin: 0, fontStyle: "italic", fontWeight: 400,
+              fontSize: 40, color: "var(--t1)",
+              letterSpacing: "-0.8px", lineHeight: 1.1,
+            }}
+          >
             Presupuestos
           </h1>
         </div>
-        <div className="hidden md:flex items-center gap-3 shrink-0 mb-1">
-          <button
-            onClick={() => {
-              const rows = [["Cliente","Proyecto","Material","ARS","USD","Estado","Fuente","Fecha"]];
-              filteredQuotes.forEach(q => rows.push([
-                q.client_name, q.project, q.material || "", String(q.total_ars || ""), String(q.total_usd || ""),
-                q.status, q.source || "operator", new Date(q.created_at).toLocaleDateString("es-AR"),
-              ]));
-              const csv = rows.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(",")).join("\n");
-              const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-              const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-              a.download = `presupuestos-${new Date().toISOString().slice(0,10)}.csv`; a.click();
-            }}
-            className="inline-flex items-center gap-2 px-4 py-[9px] rounded-lg text-[13px] font-medium font-sans cursor-pointer border border-b1 bg-transparent text-t2 -tracking-[0.01em] hover:border-b2 hover:text-t1 transition"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v12m0 0l-5-5m5 5l5-5M4 20h16"/></svg>
-            Exportar
-          </button>
-          <button
-            onClick={async () => {
-              try { const id = await addQuote(); router.push(`/quote/${id}`); } catch { /* toast already shown */ }
-            }}
-            className="inline-flex items-center gap-2 px-4 py-[9px] rounded-lg text-[13px] font-medium font-sans cursor-pointer bg-acc text-white border-none -tracking-[0.01em] hover:bg-acc-hover transition shadow-[0_4px_14px_var(--acc-shadow)]"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Nuevo presupuesto
-          </button>
+        <button
+          onClick={handleExport}
+          className="inline-flex items-center cursor-pointer"
+          style={{
+            height: 32, padding: "0 12px", borderRadius: 8,
+            border: "1px solid var(--b1)", background: "transparent",
+            color: "var(--t2)", fontSize: 12.5,
+            gap: 6,
+          }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v12m0 0l-5-5m5 5l5-5M4 20h16"/></svg>
+          <span>Exportar</span>
+        </button>
+        <button
+          onClick={handleNew}
+          className="inline-flex items-center cursor-pointer"
+          style={{
+            height: 36, padding: "0 16px", borderRadius: 8, border: "none",
+            background: "var(--acc)", color: "var(--bg)",
+            gap: 7, fontSize: 13.5, fontWeight: 600,
+          }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span>Nuevo presupuesto</span>
+        </button>
+      </div>
+      {/* Mobile header — compacto */}
+      <div className="md:hidden flex items-end justify-between shrink-0" style={{ padding: "20px 16px 14px" }}>
+        <div className="min-w-0">
+          <div className="font-mono uppercase" style={{ fontSize: 10, color: "var(--t3)", letterSpacing: "1px", marginBottom: 4, fontWeight: 600 }}>
+            {fmtMes()} · {quotes.length}
+          </div>
+          <h1 className="font-serif italic" style={{ fontSize: 28, color: "var(--t1)", letterSpacing: "-0.5px", lineHeight: 1.1, fontWeight: 400 }}>Presupuestos</h1>
         </div>
+        <button onClick={handleNew} className="inline-flex items-center cursor-pointer" style={{ height: 32, padding: "0 12px", borderRadius: 8, border: "none", background: "var(--acc)", color: "var(--bg)", gap: 5, fontSize: 12.5, fontWeight: 600 }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Nuevo
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -371,70 +431,123 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="bg-transparent">
-            {/* Filter strip — inline dot + text, estilo editorial */}
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 px-4 md:px-10 py-3 md:py-4 border-b border-b1/60">
-              <div className="flex items-center gap-4 md:gap-6 overflow-x-auto pb-1 md:pb-0">
+            {/* Filter strip — exact match AiryFilters: padding 0 40px 20px,
+                gap 14 entre pills. Activo: border-bottom 1.5px accent.
+                Date range: mono text "01 abr — 30 abr" con calendar icon
+                (sin inputs visibles — click reveals). Search: inline con
+                border-bottom sutil, placeholder "Buscar…". */}
+            <div
+              className="hidden md:flex items-center"
+              style={{ padding: "0 40px 20px", gap: 16, borderBottom: "1px solid var(--b1)" }}
+            >
+              <div className="flex items-center" style={{ gap: 14 }}>
                 {([
-                  { key: "todos", label: "Todos", dot: null },
+                  { key: "todos", label: "Todos", dot: null as string | null },
                   { key: "draft", label: "Borrador", dot: "var(--amb)" },
                   { key: "pending", label: "Pendiente", dot: "#b299ff" },
                   { key: "validated", label: "Validado", dot: "var(--grn)" },
                   { key: "sent", label: "Enviado", dot: "var(--acc)" },
                   { key: "web", label: "Web", dot: "#b48fe0" },
-                ] as const).map(f => {
+                ]).map(f => {
                   const active = statusFilter === f.key;
                   return (
                     <button
                       key={f.key}
                       onClick={() => setStatusFilter(f.key)}
-                      className={clsx(
-                        "flex items-center gap-2 py-1 bg-transparent border-none text-[13px] font-sans cursor-pointer transition-colors shrink-0 relative",
-                        active ? "text-t1 font-medium" : "text-t3 hover:text-t2 font-normal",
-                      )}
+                      className="inline-flex items-center bg-transparent cursor-pointer"
+                      style={{
+                        gap: 7,
+                        fontSize: 13,
+                        color: active ? "var(--t1)" : "var(--t2)",
+                        fontWeight: active ? 600 : 400,
+                        paddingBottom: 2,
+                        borderBottom: active ? "1.5px solid var(--acc)" : "1.5px solid transparent",
+                        border: "none",
+                        borderBottomWidth: "1.5px",
+                        borderBottomStyle: "solid",
+                        borderBottomColor: active ? "var(--acc)" : "transparent",
+                      }}
                     >
                       {f.dot && (
-                        <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: f.dot }} />
+                        <span
+                          style={{
+                            width: 7, height: 7, borderRadius: 999,
+                            background: f.dot, display: "inline-block",
+                          }}
+                        />
                       )}
                       <span>{f.label}</span>
-                      <span className={clsx(
-                        "text-[11px] font-mono tabular-nums",
-                        active ? "text-t3" : "text-t4",
-                      )}>{statusCounts[f.key]}</span>
-                      {active && (
-                        <span className="absolute -bottom-[13px] left-0 right-0 h-px bg-t1" />
-                      )}
+                      <span
+                        className="font-mono"
+                        style={{ fontSize: 11, color: "var(--t3)", fontVariantNumeric: "tabular-nums" }}
+                      >
+                        {statusCounts[f.key as keyof typeof statusCounts]}
+                      </span>
                     </button>
                   );
                 })}
               </div>
-              <div className="flex items-center gap-3 md:gap-4 shrink-0">
-                <div className="hidden md:flex items-center gap-2 text-[12px] text-t3">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4" strokeLinecap="round"/></svg>
-                  <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="px-1 py-0.5 text-[12px] font-sans bg-transparent text-t2 outline-none w-[92px] [color-scheme:dark] border-0 focus:text-t1" title="Desde" />
-                  <span className="text-t4">—</span>
-                  <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="px-1 py-0.5 text-[12px] font-sans bg-transparent text-t2 outline-none w-[92px] [color-scheme:dark] border-0 focus:text-t1" title="Hasta" />
-                  {(dateFrom || dateTo) && (
-                    <button onClick={() => { setDateFrom(""); setDateTo(""); }} className="text-t3 text-[11px] bg-transparent border-none cursor-pointer hover:text-t2 p-0 ml-1">✕</button>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-b1 bg-transparent w-full md:w-56">
-                  <svg className="text-t3 shrink-0" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
-                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                  </svg>
-                  <input
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    placeholder="Buscar cliente, material..."
-                    aria-label="Buscar presupuestos"
-                    className="bg-transparent border-none outline-none text-t1 text-[12px] font-sans w-full placeholder:text-t4"
-                  />
-                  {search && (
-                    <button onClick={() => setSearch("")} className="bg-transparent border-none text-t3 cursor-pointer text-[11px] p-0 hover:text-t2">
-                      ✕
-                    </button>
-                  )}
-                </div>
+              <div style={{ flex: 1 }} />
+              {/* Date range display + input overlay */}
+              <DateRangeField dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} />
+              {/* Search — inline minimal con border-bottom sutil */}
+              <div
+                className="inline-flex items-center"
+                style={{
+                  gap: 8, padding: "6px 0",
+                  borderBottom: "1px solid var(--b1)",
+                  fontSize: 13, color: "var(--t3)",
+                  minWidth: 200,
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Buscar…"
+                  className="bg-transparent outline-none"
+                  style={{ fontSize: 13, color: "var(--t1)", width: "100%", border: "none" }}
+                />
+                {search && (
+                  <button onClick={() => setSearch("")} className="bg-transparent border-none cursor-pointer p-0" style={{ color: "var(--t3)", fontSize: 11 }}>✕</button>
+                )}
               </div>
+            </div>
+            {/* Mobile — filter pills scroll + search */}
+            <div className="md:hidden flex items-center overflow-x-auto" style={{ padding: "0 16px 14px", gap: 16 }}>
+              {([
+                { key: "todos", label: "Todos", dot: null as string | null },
+                { key: "draft", label: "Borrador", dot: "var(--amb)" },
+                { key: "pending", label: "Pendiente", dot: "#b299ff" },
+                { key: "validated", label: "Validado", dot: "var(--grn)" },
+                { key: "sent", label: "Enviado", dot: "var(--acc)" },
+                { key: "web", label: "Web", dot: "#b48fe0" },
+              ]).map(f => {
+                const active = statusFilter === f.key;
+                return (
+                  <button
+                    key={f.key}
+                    onClick={() => setStatusFilter(f.key)}
+                    className="inline-flex items-center bg-transparent border-none cursor-pointer shrink-0"
+                    style={{
+                      gap: 6,
+                      fontSize: 12.5,
+                      color: active ? "var(--t1)" : "var(--t2)",
+                      fontWeight: active ? 600 : 400,
+                      paddingBottom: 2,
+                      borderBottomWidth: "1.5px",
+                      borderBottomStyle: "solid",
+                      borderBottomColor: active ? "var(--acc)" : "transparent",
+                    }}
+                  >
+                    {f.dot && <span style={{ width: 7, height: 7, borderRadius: 999, background: f.dot, display: "inline-block" }} />}
+                    <span>{f.label}</span>
+                    <span className="font-mono" style={{ fontSize: 11, color: "var(--t3)" }}>{statusCounts[f.key as keyof typeof statusCounts]}</span>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Mobile — Selection mode toggle */}
@@ -536,162 +649,185 @@ export default function DashboardPage() {
               })}
             </div>
 
-            {/* Desktop Table — editorial: sin header de columnas, filas
-                con cliente serif italic, importe serif, estado como
-                dot+texto, separador sutil. */}
-            <table className="w-full border-collapse hidden md:table">
-              <tbody>
-                {pageQuotes.map(q => {
-                  const daysOld = (Date.now() - new Date(q.created_at).getTime()) / 86400000;
-                  const isStale = q.status === "draft" && daysOld > 5;
-                  const isUnread = !q.is_read;
-                  const isSelected = selectedId === q.id;
-                  const isChecked = selectedIds.has(q.id);
-                  const selectable = isSelectable(q);
-                  const checkboxDisabled = !isChecked && !selectable;
-                  const checkboxReason =
-                    q.status !== "validated"
-                      ? "Solo presupuestos validados"
-                      : selectionAnchor &&
-                          !areFuzzySameClient(
-                            q.client_name,
-                            selectionAnchor.client_name
-                          )
-                        ? "Cliente distinto — limpiá la selección para elegir éste, o confirmá manualmente en el siguiente paso"
-                        : undefined;
-                  const isBuilding = q.quote_kind === "building_parent" || q.is_building;
-                  return (
-                    <tr
-                      key={q.id}
-                      onClick={() => { setSelectedId(q.id); router.push(`/quote/${q.id}`); }}
-                      className={clsx(
-                        "border-b border-b1/50 cursor-pointer transition-colors duration-75",
-                        isChecked
-                          ? "bg-acc/[0.08]"
-                          : checkboxDisabled && selectedIds.size > 0
-                            ? "opacity-45 hover:bg-white/[0.015]"
-                            : isSelected
-                              ? "bg-acc/[0.05]"
-                              : isUnread
-                                ? "bg-acc/[0.03] hover:bg-acc/[0.05]"
-                                : "hover:bg-white/[0.02]",
-                      )}
-                    >
-                      {/* Checkbox */}
-                      <td className="pl-6 pr-2 py-7 w-10" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          disabled={checkboxDisabled}
-                          onChange={() => toggleSelect(q.id)}
-                          title={checkboxReason}
-                          aria-label={checkboxReason || "Seleccionar presupuesto"}
-                          className={clsx(
-                            "w-4 h-4 accent-acc cursor-pointer",
-                            checkboxDisabled && "cursor-not-allowed",
-                            !isChecked && "opacity-0 hover:opacity-100 transition-opacity"
-                          )}
-                        />
-                      </td>
-                      {/* Cliente — serif italic grande + sublabel sans */}
-                      <td className="px-4 py-7 max-w-[320px]">
-                        <div className="flex items-baseline gap-2">
-                          {isUnread && <span className="w-[7px] h-[7px] rounded-full bg-acc shrink-0" />}
-                          <div className="min-w-0">
-                            <div className="font-serif italic text-[18px] font-medium text-t1 -tracking-[0.01em] truncate leading-tight">
-                              {q.client_name || <span className="text-t3">Sin nombre</span>}
-                              {q.source === "web" && (
-                                <span className="ml-2 text-[9px] font-semibold font-mono tracking-wider px-1.5 py-[2px] rounded border border-[#b48fe0]/30 text-[#b48fe0] align-middle not-italic">WEB</span>
-                              )}
-                              {isUnread && (
-                                <span className="ml-2 text-[9px] font-semibold font-mono tracking-wider px-1.5 py-[2px] rounded border border-acc/40 text-acc align-middle not-italic">NUEVO</span>
-                              )}
-                            </div>
-                            <div className="text-[12px] text-t3 mt-0.5 truncate font-sans">{q.project}</div>
-                          </div>
-                        </div>
-                      </td>
-                      {/* Material — sans sentence case, chip OBRA outlined */}
-                      <td className="px-4 py-7 text-[13px] max-w-[280px] text-t2">
-                        {isBuilding ? (
-                          <span className="flex items-center gap-2">
-                            <span className="text-[9px] font-semibold font-mono tracking-wider px-1.5 py-[2px] rounded border border-[#b48fe0]/30 text-[#b48fe0]">OBRA</span>
-                            <span className="truncate">{q.material || q.project || "Edificio"}</span>
-                          </span>
-                        ) : (
-                          <span className="truncate">{q.material || "\u2014"}</span>
-                        )}
-                      </td>
-                      {/* Importe — ARS Fraunces grande + USD mono chico */}
-                      <td className="px-4 py-7 text-right whitespace-nowrap">
-                        <div className="font-serif text-[18px] text-t1 -tracking-[0.01em] leading-none">
-                          {q.total_ars ? `$\u00A0${q.total_ars.toLocaleString("es-AR")}` : "\u2014"}
-                        </div>
-                        {q.total_usd ? (
-                          <div className="text-[11px] text-t3 mt-1.5 font-mono tabular-nums">USD {q.total_usd.toLocaleString()}</div>
-                        ) : null}
-                      </td>
-                      {/* Estado — dot + texto, no pill */}
-                      <td className="px-4 py-7">
-                        <button
-                          onClick={(e) => toggleStatus(e, q.id, q.status)}
-                          title={STATUS_NEXT[q.status] ? `Cambiar a ${STATUS_LABEL[STATUS_NEXT[q.status]!]}` : "Estado final"}
-                          className={clsx(
-                            "inline-flex items-center gap-2 bg-transparent border-none text-[13px] font-sans p-0",
-                            STATUS_NEXT[q.status] ? "cursor-pointer hover:opacity-80" : "cursor-default",
-                            STATUS_TEXT[q.status],
-                          )}
+            {/* Desktop rows — CSS Grid exacto como AiryRow.
+                gridTemplateColumns "2fr 2.5fr 1fr 1.2fr 0.9fr 1.3fr 28px"
+                gap 20, padding 20px 4px, border-bottom b1. */}
+            <div className="hidden md:block" style={{ padding: "4px 40px 20px" }}>
+              {pageQuotes.map(q => {
+                const daysOld = (Date.now() - new Date(q.created_at).getTime()) / 86400000;
+                const isStale = q.status === "draft" && daysOld > 5;
+                const isUnread = !q.is_read;
+                const isSelected = selectedId === q.id;
+                const isChecked = selectedIds.has(q.id);
+                const isBuilding = q.quote_kind === "building_parent" || q.is_building;
+                return (
+                  <div
+                    key={q.id}
+                    onClick={() => { setSelectedId(q.id); router.push(`/quote/${q.id}`); }}
+                    className={clsx(
+                      "grid items-center cursor-pointer transition-colors",
+                      isChecked ? "bg-acc/[0.08]"
+                        : isSelected ? "bg-acc/[0.05]"
+                        : isUnread ? "bg-acc/[0.03] hover:bg-acc/[0.05]"
+                        : "hover:bg-white/[0.02]",
+                    )}
+                    style={{
+                      gridTemplateColumns: "2fr 2.5fr 1fr 1.2fr 0.9fr 1.3fr 28px",
+                      gap: 20,
+                      padding: "20px 4px",
+                      borderBottom: "1px solid var(--b1)",
+                    }}
+                  >
+                    {/* Cliente + sublabel */}
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        className="font-serif italic truncate"
+                        style={{
+                          fontSize: 17, fontWeight: 500, color: "var(--t1)",
+                          letterSpacing: "-0.2px", lineHeight: 1.15,
+                        }}
+                      >
+                        {q.client_name || "Sin nombre"}
+                      </div>
+                      <div
+                        className="truncate"
+                        style={{ fontSize: 11.5, color: "var(--t3)", marginTop: 2 }}
+                      >
+                        {q.project}
+                      </div>
+                    </div>
+
+                    {/* Material con chip OBRA */}
+                    <div className="flex items-center" style={{ gap: 10, minWidth: 0 }}>
+                      {isBuilding && (
+                        <span
+                          className="font-mono shrink-0"
+                          style={{
+                            fontSize: 9.5, fontWeight: 700, letterSpacing: "0.8px",
+                            padding: "3px 6px", borderRadius: 3,
+                            background: "transparent",
+                            border: "1px solid var(--acc)",
+                            color: "var(--acc)",
+                            lineHeight: 1,
+                          }}
                         >
-                          <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: STATUS_DOT[q.status] }} />
-                          {STATUS_LABEL[q.status]}
-                        </button>
-                      </td>
-                      {/* Fecha — mono chico */}
-                      <td className={clsx("px-4 py-7 text-[12px] font-mono tabular-nums whitespace-nowrap", isStale ? "text-amb" : "text-t3")}>
-                        {format(new Date(q.created_at), "d MMM", { locale: es })}
-                        {isStale && ` · ${Math.floor(daysOld)}d`}
-                      </td>
-                      {/* Archivos — pills outline con chip +N si hay más */}
-                      <td className="px-4 py-7">
-                        <FileCell q={q} />
-                      </td>
-                      {/* Menu 3-dots — siempre visible, con popover al click */}
-                      <td className="pl-2 pr-6 py-7 w-[44px]">
-                        <RowMenu
-                          onDerive={q.material ? (e) => askDerive(e, q.id, q.material || "", q.client_name) : undefined}
-                          onDelete={(e) => askDelete(e, q.id, q.client_name)}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {/* Pagination bar — transparente, minimal */}
+                          OBRA
+                        </span>
+                      )}
+                      <span
+                        className="truncate"
+                        style={{ fontSize: 13, color: "var(--t2)" }}
+                      >
+                        {toTitleCase(q.material) || "\u2014"}
+                      </span>
+                    </div>
+
+                    {/* Importe ARS + USD */}
+                    <div className="text-right" style={{ fontVariantNumeric: "tabular-nums" }}>
+                      <div
+                        className="font-serif"
+                        style={{
+                          fontSize: 14.5, fontWeight: 500, color: "var(--t1)",
+                          letterSpacing: "-0.1px",
+                        }}
+                      >
+                        {fmtARS(q.total_ars)}
+                      </div>
+                      {q.total_usd != null && (
+                        <div
+                          className="font-mono"
+                          style={{ fontSize: 10.5, color: "var(--t3)", marginTop: 1 }}
+                        >
+                          {fmtUSD(q.total_usd)}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Estado — dot + texto */}
+                    <button
+                      onClick={(e) => toggleStatus(e, q.id, q.status)}
+                      title={STATUS_NEXT[q.status] ? `Cambiar a ${STATUS_LABEL[STATUS_NEXT[q.status]!]}` : "Estado final"}
+                      className={clsx(
+                        "inline-flex items-center bg-transparent border-none p-0",
+                        STATUS_NEXT[q.status] ? "cursor-pointer" : "cursor-default",
+                        STATUS_TEXT[q.status],
+                      )}
+                      style={{ gap: 8, fontSize: 12.5 }}
+                    >
+                      <span
+                        style={{
+                          width: 7, height: 7, borderRadius: 999,
+                          background: STATUS_DOT[q.status], display: "inline-block",
+                        }}
+                      />
+                      {STATUS_LABEL[q.status]}
+                    </button>
+
+                    {/* Fecha */}
+                    <div
+                      className={clsx("font-mono", isStale ? "text-amb" : "")}
+                      style={{
+                        fontSize: 12.5,
+                        color: isStale ? undefined : "var(--t3)",
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      {format(new Date(q.created_at), "d MMM", { locale: es })}
+                    </div>
+
+                    {/* Archivos */}
+                    <div className="flex flex-wrap" style={{ gap: 5 }}>
+                      <FileCell q={q} />
+                    </div>
+
+                    {/* Menu 3-dots */}
+                    <RowMenu
+                      onDerive={q.material ? (e) => askDerive(e, q.id, q.material || "", q.client_name) : undefined}
+                      onDelete={(e) => askDelete(e, q.id, q.client_name)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            {/* Pagination — exact match AiryFooter: padding 16px 40px 20px,
+                "1–8 de 18" | flex-1 | "Página 1 / 3" | chevL ghost | chevR accent. */}
             {filteredQuotes.length > 0 && totalPages > 1 && (
-              <div className="flex items-center justify-between px-6 md:px-10 py-5 text-[12px]">
-                <span className="text-t3 font-mono tabular-nums">
+              <div
+                className="flex items-center"
+                style={{ padding: "16px 40px 20px", gap: 12, fontSize: 12, color: "var(--t2)" }}
+              >
+                <span className="font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
                   {page * pageSize + 1}–{Math.min((page + 1) * pageSize, filteredQuotes.length)} de {filteredQuotes.length}
                 </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    disabled={page === 0}
-                    onClick={() => setPage(p => p - 1)}
-                    className="px-3 py-1.5 rounded-md text-t2 bg-transparent border border-b1 cursor-pointer disabled:opacity-30 disabled:cursor-default hover:bg-white/[0.03] hover:text-t1 transition text-[11px] font-medium"
-                  >
-                    ← Anterior
-                  </button>
-                  <span className="px-2 text-t3 font-mono tabular-nums">
-                    {page + 1} / {totalPages}
-                  </span>
-                  <button
-                    disabled={page >= totalPages - 1}
-                    onClick={() => setPage(p => p + 1)}
-                    className="px-3 py-1.5 rounded-md text-t2 bg-transparent border border-b1 cursor-pointer disabled:opacity-30 disabled:cursor-default hover:bg-white/[0.03] hover:text-t1 transition text-[11px] font-medium"
-                  >
-                    Siguiente →
-                  </button>
-                </div>
+                <div style={{ flex: 1 }} />
+                <span className="font-mono" style={{ color: "var(--t3)", fontVariantNumeric: "tabular-nums" }}>
+                  Página {page + 1} / {totalPages}
+                </span>
+                <button
+                  disabled={page === 0}
+                  onClick={() => setPage(p => p - 1)}
+                  className="grid place-items-center cursor-pointer disabled:opacity-30 disabled:cursor-default"
+                  style={{
+                    height: 28, width: 28, borderRadius: 6,
+                    border: "1px solid var(--b1)", background: "transparent",
+                    color: "var(--t2)",
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                <button
+                  disabled={page >= totalPages - 1}
+                  onClick={() => setPage(p => p + 1)}
+                  className="grid place-items-center cursor-pointer disabled:opacity-30 disabled:cursor-default"
+                  style={{
+                    height: 28, width: 28, borderRadius: 6,
+                    border: "1px solid var(--acc)",
+                    background: "var(--acc)",
+                    color: "var(--bg)",
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
               </div>
             )}
 
@@ -970,12 +1106,17 @@ function FileBtn({ href, emoji, label }: { href: string; emoji: string; label?: 
       target="_blank"
       rel="noopener noreferrer"
       title={label}
-      className={clsx(
-        "rounded-[5px] border border-b1 bg-transparent flex items-center justify-center text-[11px] cursor-pointer no-underline text-t2 transition-all hover:border-b2 hover:bg-white/[0.06]",
-        label ? "px-1.5 h-[26px] gap-1" : "w-[26px] h-[26px]",
-      )}
+      className="inline-flex items-center cursor-pointer no-underline"
+      style={{
+        gap: 4, height: 24, padding: label ? "0 8px 0 6px" : 0,
+        width: label ? undefined : 24,
+        borderRadius: 4, border: "1px solid var(--b1)",
+        background: "transparent", color: "var(--t2)",
+        fontSize: 11,
+      }}
     >
-      {emoji}{label && <span className="text-[9px] font-medium">{label}</span>}
+      <span style={{ fontSize: 11, lineHeight: 1 }}>{emoji}</span>
+      {label && <span style={{ fontSize: 10.5, fontWeight: 500 }}>{label}</span>}
     </a>
   );
 }
@@ -1055,6 +1196,75 @@ function RowMenu({ onDerive, onDelete }: {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M6 6l1 14a2 2 0 002 2h6a2 2 0 002-2l1-14"/></svg>
             Eliminar
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── DateRangeField — display "01 abr — 30 abr" mono con click reveal ───
+function DateRangeField({ dateFrom, setDateFrom, dateTo, setDateTo }: {
+  dateFrom: string; setDateFrom: (v: string) => void;
+  dateTo: string; setDateTo: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const label = (() => {
+    if (!dateFrom && !dateTo) return "Todo el mes";
+    const fmt = (d: string) => d ? format(new Date(d), "d MMM", { locale: es }) : "…";
+    return `${fmt(dateFrom)} — ${fmt(dateTo)}`;
+  })();
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="inline-flex items-center cursor-pointer bg-transparent border-none"
+        style={{ gap: 8, fontSize: 12.5, color: "var(--t2)", fontFamily: "var(--font-mono)" }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" style={{ color: "var(--t3)" }}>
+          <rect x="3" y="5" width="18" height="16" rx="2"/>
+          <path d="M3 10h18M8 3v4M16 3v4" strokeLinecap="round"/>
+        </svg>
+        <span>{label}</span>
+      </button>
+      {open && (
+        <div
+          className="absolute top-full right-0 z-50 mt-2 animate-[fadeUp_0.12s_ease]"
+          style={{
+            background: "var(--s2)", border: "1px solid var(--b2)",
+            borderRadius: 10, padding: 14,
+            boxShadow: "0 14px 40px rgba(0,0,0,0.5)",
+            display: "flex", gap: 10, alignItems: "center",
+          }}
+          onMouseLeave={() => setOpen(false)}
+        >
+          <input
+            type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+            className="[color-scheme:dark]"
+            style={{
+              background: "var(--bg)", border: "1px solid var(--b1)",
+              borderRadius: 6, padding: "6px 10px",
+              color: "var(--t1)", fontSize: 12, fontFamily: "var(--font-mono)",
+              outline: "none",
+            }}
+          />
+          <span style={{ color: "var(--t3)", fontSize: 12 }}>—</span>
+          <input
+            type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+            className="[color-scheme:dark]"
+            style={{
+              background: "var(--bg)", border: "1px solid var(--b1)",
+              borderRadius: 6, padding: "6px 10px",
+              color: "var(--t1)", fontSize: 12, fontFamily: "var(--font-mono)",
+              outline: "none",
+            }}
+          />
+          {(dateFrom || dateTo) && (
+            <button
+              onClick={() => { setDateFrom(""); setDateTo(""); }}
+              className="bg-transparent border-none cursor-pointer"
+              style={{ color: "var(--t3)", fontSize: 11 }}
+            >Limpiar</button>
+          )}
         </div>
       )}
     </div>

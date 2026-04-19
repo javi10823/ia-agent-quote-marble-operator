@@ -17,16 +17,16 @@
  */
 
 export const COLORS = {
-  /* Superficies (dark, "pizarra & acero") */
-  bg: "#060a0f",
-  s1: "#080c11",
-  s2: "#0f141b",
-  s3: "#171e28",
+  /* Superficies — valores exactos del design handoff v2 (shared.jsx TOKENS) */
+  bg: "#0f1318",
+  s1: "#141923",
+  s2: "#1a1f26",
+  s3: "#232934",
 
   /* Bordes y líneas sutiles — tint crema fría */
-  b1: "rgba(232,237,229,0.04)",
-  b2: "rgba(232,237,229,0.10)",
-  b3: "rgba(232,237,229,0.16)",
+  b1: "rgba(232,237,229,0.07)",
+  b2: "rgba(232,237,229,0.14)",
+  b3: "rgba(232,237,229,0.20)",
 
   /* Tinta */
   t1: "#e8ede5",

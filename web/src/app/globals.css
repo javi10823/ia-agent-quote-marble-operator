@@ -8,13 +8,14 @@
      (~1% luminance) para que la sidebar no se separe visualmente del
      main — look editorial. Tinta crema fría para reducir glare sobre
      fondos oscuros. */
-  --bg:    #060a0f;
-  --s1:    #080c11;
-  --s2:    #0f141b;
-  --s3:    #171e28;
-  --b1:    rgba(232,237,229,0.04);
-  --b2:    rgba(232,237,229,0.10);
-  --b3:    rgba(232,237,229,0.16);
+  /* Valores exactos del design handoff v2 — TOKENS de shared.jsx */
+  --bg:    #0f1318;       /* bg */
+  --s1:    #141923;       /* bgMuted */
+  --s2:    #1a1f26;       /* surface */
+  --s3:    #232934;       /* surface2 */
+  --b1:    rgba(232,237,229,0.07);  /* line */
+  --b2:    rgba(232,237,229,0.14);  /* lineStrong */
+  --b3:    rgba(232,237,229,0.20);
   --t1:    #e8ede5;
   --t2:    rgba(232,237,229,0.66);
   --t3:    rgba(232,237,229,0.42);
