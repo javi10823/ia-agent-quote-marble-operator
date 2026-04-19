@@ -4,7 +4,6 @@ import os
 import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from contextlib import asynccontextmanager
 
 from fastapi import Depends
@@ -98,16 +97,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ProxyHeadersMiddleware — cuando FastAPI corre detrás de un proxy/LB que
-# termina TLS (Railway, Vercel, nginx, Cloudflare), las requests entran
-# como HTTP al contenedor. Sin este middleware, cualquier redirect que
-# genere FastAPI (ej: trailing-slash: /api/catalog → /api/catalog/) arma
-# la Location header con scheme http://, que el browser bloquea por
-# Mixed Content desde una página https. Este middleware lee
-# X-Forwarded-Proto y reescribe el request scope para que los redirects
-# salgan como https://. `trusted_hosts="*"` es OK porque Railway no
-# expone el puerto interno a internet — sólo el proxy frontal.
-app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+# Orden CRÍTICO: Starlette aplica los middlewares en orden INVERSO al
+# `add_middleware`. El último agregado es el OUTER (corre primero). Así
+# que CORS tiene que ser el ÚLTIMO en agregarse para que envuelva a
+# auth — si no, un 401 de auth sale SIN los headers CORS, el browser
+# lo bloquea, y la UI ve un error genérico en vez del 401 real.
+app.middleware("http")(auth_middleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -116,8 +111,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.middleware("http")(auth_middleware)
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(usage_router, prefix="/api")
