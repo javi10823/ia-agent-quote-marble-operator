@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
 import { getCurrentUsername, prettyFirstName } from "@/lib/auth";
 import VAvatar from "@/components/ui/VAvatar";
 
@@ -28,8 +28,15 @@ function greeting(): string {
  * (docs/BACKLOG.md) para clonar quote con otro material.
  */
 export default function HomeHero({ onPickFile, onFocusText }: Props) {
-  const name = useMemo(() => prettyFirstName(getCurrentUsername()), []);
-  const greet = useMemo(() => greeting(), []);
+  // Ambas se calculan post-mount para evitar hydration mismatch:
+  // - `name` viene de localStorage (no existe en SSR)
+  // - `greet` depende de la hora del cliente (timezone-dependent)
+  const [name, setName] = useState("");
+  const [greet, setGreet] = useState("Hola");
+  useEffect(() => {
+    setName(prettyFirstName(getCurrentUsername()));
+    setGreet(greeting());
+  }, []);
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-6 pb-20">
