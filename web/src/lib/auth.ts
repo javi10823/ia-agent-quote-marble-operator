@@ -1,4 +1,12 @@
-const API_BASE = "";
+// Ver lib/api.ts para explicación completa — llamamos DIRECTO a Railway.
+function resolveApiBase(): string {
+  if (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, "");
+  }
+  return "http://localhost:8000";
+}
+
+const API_BASE = resolveApiBase();
 const STORAGE_KEY = "dangelo:username";
 
 export async function login(username: string, password: string): Promise<{ ok: boolean; username: string }> {
