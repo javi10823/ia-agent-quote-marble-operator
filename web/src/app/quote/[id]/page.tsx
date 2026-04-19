@@ -595,6 +595,13 @@ export default function QuotePage() {
               const isShortConfirm = msg.role === "user" && /^(confirmo|sí|si|dale|ok|listo)$/i.test(msg.content.trim());
               // Hide DUAL_READ_CONFIRMED raw JSON — show green pill instead
               const isDualConfirm = msg.role === "user" && msg.content.startsWith("[DUAL_READ_CONFIRMED]");
+              // Idem CONTEXT_CONFIRMED: pseudo-mensaje que manda la card de
+              // contexto al confirmar — muestra pill en vez del JSON crudo.
+              const isContextConfirm = msg.role === "user" && msg.content.startsWith("[CONTEXT_CONFIRMED]");
+              // SYSTEM_TRIGGER (ej: zone_confirmed) — ocultar entero, no
+              // muestra ni pill, es ruido puramente interno.
+              const isSystemTriggerMsg = msg.role === "user" && msg.content.startsWith("[SYSTEM_TRIGGER");
+              if (isSystemTriggerMsg) return null;
 
               // Hide ghost messages (dots from sanitization)
               const isDot = msg.content.trim() === "." || msg.content.trim() === "..";
@@ -606,6 +613,12 @@ export default function QuotePage() {
                     <div className="flex justify-end">
                       <span className="px-3 py-1 rounded-full text-[11px] font-medium bg-grn/20 text-grn border border-grn/30">
                         Medidas verificadas {"\u2705"}
+                      </span>
+                    </div>
+                  ) : isContextConfirm ? (
+                    <div className="flex justify-end">
+                      <span className="px-3 py-1 rounded-full text-[11px] font-medium bg-grn/20 text-grn border border-grn/30">
+                        Contexto confirmado {"\u2705"}
                       </span>
                     </div>
                   ) : isShortConfirm ? (
