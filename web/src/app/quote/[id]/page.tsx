@@ -14,6 +14,7 @@ import { CondicionesCard } from "@/components/quote/CondicionesCard";
 import RegenerateButton from "@/components/quote/RegenerateButton";
 import EditableField from "@/components/quote/EditableField";
 import ContextAnalysis from "@/components/chat/ContextAnalysis";
+import HomeHero from "@/components/chat/HomeHero";
 import clsx from "clsx";
 import { A, I, O, N, DOT, SUP2, DASH, ITEM, WARN, CIRCLE, ARROW, XMARK, CLOUD, WAVE, PAGE, PICTURE, CLIP, RULER, TAG, FOLDER, CHART } from "@/lib/chars";
 
@@ -498,9 +499,10 @@ export default function QuotePage() {
         <>
           <div className="flex-1 overflow-y-auto px-4 md:px-7 pt-5 md:pt-7 pb-4 flex flex-col gap-4 md:gap-5">
             {messages.length === 0 && (
-              <div className="px-[18px] py-3.5 bg-s2 rounded-xl text-[13px] text-t2">
-                {`Hola ${WAVE} Soy Valentina. Pasame el enunciado del trabajo y/o el plano.`}
-              </div>
+              <HomeHero
+                onPickFile={() => fileRef.current?.click()}
+                onFocusText={() => { const ta = document.querySelector("textarea"); if (ta) (ta as HTMLTextAreaElement).focus(); }}
+              />
             )}
             {messages.map((msg, idx) => {
               // Find last REAL assistant message (not dots or empty)
