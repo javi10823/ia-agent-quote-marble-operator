@@ -9,20 +9,39 @@ export default function PricingSummary({ totalArs, totalUsd }: Props) {
   if (!totalArs && !totalUsd) return null;
   return (
     <div style={{
-      marginTop: 20, padding: "16px 20px", borderRadius: 10,
-      background: "var(--s3)", border: "1px solid var(--b2)",
-      display: "flex", justifyContent: "space-between", alignItems: "center",
+      marginTop: 24, padding: "22px 28px", borderRadius: 12,
+      background: "var(--s2)", border: "1px solid var(--b1)",
+      display: "flex", justifyContent: "space-between", alignItems: "flex-end",
     }}>
-      <span style={{ fontSize: 14, fontWeight: 600, color: "var(--t1)" }}>PRESUPUESTO TOTAL</span>
+      <div>
+        <div style={{
+          fontSize: 10, fontFamily: "var(--font-mono)", fontWeight: 500,
+          color: "var(--t4)", letterSpacing: "0.14em", textTransform: "uppercase",
+          marginBottom: 8,
+        }}>Presupuesto total</div>
+        <div style={{
+          fontFamily: "var(--font-serif), Georgia, serif", fontStyle: "italic",
+          fontSize: 15, color: "var(--t3)", fontWeight: 400,
+          letterSpacing: "-0.01em",
+        }}>Contado · 30 días demora</div>
+      </div>
       <div style={{ textAlign: "right" }}>
         {totalArs && (
-          <div style={{ fontSize: 18, fontWeight: 700, color: "var(--t1)" }}>
-            {fmtARS(totalArs)} <span style={{ color: "var(--t3)", fontWeight: 400, fontSize: 13 }}>mano de obra</span>
+          <div style={{
+            fontFamily: "var(--font-serif), Georgia, serif",
+            fontSize: 28, fontWeight: 500, color: "var(--t1)",
+            letterSpacing: "-0.02em", lineHeight: 1, marginBottom: 2,
+          }}>
+            {fmtARS(totalArs)}
           </div>
         )}
         {totalUsd && (
-          <div style={{ fontSize: 15, fontWeight: 600, color: "var(--acc)", marginTop: 2 }}>
-            + {fmtUSD(totalUsd)} <span style={{ color: "var(--t3)", fontWeight: 400, fontSize: 13 }}>material</span>
+          <div style={{
+            fontSize: 13, fontWeight: 500, color: "var(--acc)",
+            marginTop: 6, fontFamily: "var(--font-mono)",
+            letterSpacing: "-0.01em",
+          }}>
+            {fmtUSD(totalUsd)}
           </div>
         )}
       </div>

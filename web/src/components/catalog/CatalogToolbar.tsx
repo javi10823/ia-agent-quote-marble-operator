@@ -43,19 +43,19 @@ export default function CatalogToolbar({
   const disableSave = !validation?.valid || saving || !hasChanges;
 
   return (
-    <div className="flex flex-wrap md:flex-nowrap items-center justify-between px-3 md:px-5 py-2.5 md:py-3 border-b border-b1 bg-s1 shrink-0 gap-2 md:gap-3">
-      {/* Left: back + title */}
-      <div className="flex items-center gap-3 shrink-0">
+    <div className="flex flex-wrap md:flex-nowrap items-center justify-between px-4 md:px-8 py-3 md:py-4 border-b border-b1 bg-bg shrink-0 gap-2 md:gap-3">
+      {/* Left: back + title (Fraunces italic editorial) */}
+      <div className="flex items-center gap-4 shrink-0">
         <button
           onClick={onBack}
-          className="w-[30px] h-[30px] rounded-md border border-b1 bg-transparent text-t2 cursor-pointer flex items-center justify-center transition hover:border-b2 hover:text-t1"
+          className="w-[32px] h-[32px] rounded-md border border-b1 bg-transparent text-t2 cursor-pointer flex items-center justify-center transition hover:border-b2 hover:text-t1"
           aria-label="Volver"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
         <div>
-          <div className="text-[15px] font-medium text-t1 -tracking-[0.02em]">Catalogo</div>
-          <div className="text-[10px] text-t3 mt-0.5">Validacion IA antes de guardar</div>
+          <div className="font-serif italic text-[20px] font-medium text-t1 -tracking-[0.01em] leading-none">Catálogo</div>
+          <div className="text-[10px] text-t4 mt-1.5 uppercase tracking-[0.14em] font-mono">Validación IA antes de guardar</div>
         </div>
       </div>
 
