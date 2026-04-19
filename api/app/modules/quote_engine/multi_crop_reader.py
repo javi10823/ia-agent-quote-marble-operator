@@ -252,26 +252,52 @@ async def _measure_region(
     if x2 - x < 10 or y2 - y < 10:
         return {"error": "region_bbox_too_small", "region_id": region.get("id")}
 
-    # Filtrar cotas candidatas ANTES de croppear: si no hay evidencia
-    # suficiente para elegir largo + ancho, cortamos acá sin gastar la
-    # llamada al LLM. Menos latencia + menos tokens + menos chance de
-    # que el modelo fabrique un 0.60×0.60 silencioso.
-    local_cotas: list[Cota] = []
-    for c in candidate_cotas:
-        if x <= c.x <= x2 and y <= c.y <= y2:
-            local_cotas.append(c)
+    # Filtrar cotas candidatas ANTES de croppear. Escalada de niveles:
+    #   L1 (local): cotas dentro del bbox + padding estándar. Caso ideal —
+    #       2+ cotas ancladas a la región → LLM + status CONFIRMADO/DUDOSO
+    #       según sanity checks post.
+    #   L2 (expanded): si L1 da <2, expandimos el área de búsqueda de cotas
+    #       300px más allá del bbox (solo para el filtro de cotas; el CROP
+    #       visual sigue siendo el bbox original). Cubre el caso típico: la
+    #       cota está DIBUJADA justo fuera del bbox detectado por el topology
+    #       LLM, pero obviamente pertenece a esta mesada.
+    #   L3 (global_fallback): si L2 sigue dando <2, pasamos TODAS las cotas
+    #       candidatas del plano. El LLM se apoya en el crop visual para
+    #       discriminar. Siempre marcamos suspicious_reasons post → status
+    #       queda DUDOSO aunque el LLM "acierte", para que el operador
+    #       revise (no ancladas = no confirmables).
+    local_cotas: list[Cota] = [c for c in candidate_cotas if x <= c.x <= x2 and y <= c.y <= y2]
 
     MIN_LOCAL_COTAS = 2
+    COTA_SEARCH_EXTRA_PX = 300
+    cotas_for_llm: list[Cota] = local_cotas
+    cotas_mode: str = "local"
+
     if candidate_cotas and len(local_cotas) < MIN_LOCAL_COTAS:
-        logger.info(
-            f"[multi-crop] region {region.get('id')} has only {len(local_cotas)} "
-            f"local cotas (<{MIN_LOCAL_COTAS}) — skip LLM, return DUDOSO"
-        )
-        return {
-            "error": "insufficient_local_cotas",
-            "region_id": region.get("id"),
-            "local_cotas_count": len(local_cotas),
-        }
+        ex_x = max(0, x - COTA_SEARCH_EXTRA_PX)
+        ex_y = max(0, y - COTA_SEARCH_EXTRA_PX)
+        ex_x2 = min(img_w, x2 + COTA_SEARCH_EXTRA_PX)
+        ex_y2 = min(img_h, y2 + COTA_SEARCH_EXTRA_PX)
+        expanded_cotas = [
+            c for c in candidate_cotas
+            if ex_x <= c.x <= ex_x2 and ex_y <= c.y <= ex_y2
+        ]
+        if len(expanded_cotas) >= MIN_LOCAL_COTAS:
+            cotas_for_llm = expanded_cotas
+            cotas_mode = "expanded"
+            logger.info(
+                f"[multi-crop] region {region.get('id')}: {len(local_cotas)} cotas "
+                f"en bbox tight → {len(expanded_cotas)} en bbox expandido +{COTA_SEARCH_EXTRA_PX}px "
+                f"— retry con pool expandido"
+            )
+        else:
+            cotas_for_llm = list(candidate_cotas)
+            cotas_mode = "global_fallback"
+            logger.info(
+                f"[multi-crop] region {region.get('id')}: {len(local_cotas)} local / "
+                f"{len(expanded_cotas)} expanded — fallback a pool global "
+                f"({len(candidate_cotas)} cotas). Marcará DUDOSO post-LLM."
+            )
 
     # Crop la imagen con PIL
     try:
@@ -286,7 +312,21 @@ async def _measure_region(
         return {"error": f"crop_failed: {e}", "region_id": region.get("id")}
 
     client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    cotas_txt = format_cotas_for_prompt(local_cotas) if local_cotas else "(sin cotas extraídas en esta región)"
+    cotas_txt = format_cotas_for_prompt(cotas_for_llm) if cotas_for_llm else "(sin cotas extraídas)"
+    cotas_header = {
+        "local": "COTAS LOCALES (dentro del bbox de esta región):",
+        "expanded": (
+            "COTAS CERCANAS (dentro del bbox expandido — algunas pueden "
+            "pertenecer a regiones vecinas, descartá las que no correspondan):"
+        ),
+        "global_fallback": (
+            "COTAS DEL PLANO COMPLETO (FALLBACK — no hay cotas propias en el "
+            "bbox de esta región). Usá el CROP VISUAL para elegir las que "
+            "correspondan a ESTA mesada. Si no podés anclar ninguna con "
+            "certeza, devolvé largo_m=null / ancho_m=null y explicalo en "
+            "rejected_candidates. NO inventes medidas."
+        ),
+    }[cotas_mode]
     meta_txt = (
         f"Sector: {region.get('sector') or 'cocina'}\n"
         f"Toca paredes: {region.get('touches_walls')}\n"
@@ -302,7 +342,7 @@ async def _measure_region(
         },
         {
             "type": "text",
-            "text": f"COTAS CANDIDATAS (del text layer del PDF):\n{cotas_txt}",
+            "text": f"{cotas_header}\n{cotas_txt}",
         },
     ]
     if brief_text and brief_text.strip():
@@ -363,6 +403,7 @@ async def _measure_region(
 
     parsed["region_id"] = region.get("id")
     parsed["_local_cotas_count"] = len(local_cotas)
+    parsed["_cotas_mode"] = cotas_mode
 
     # Sanity checks post-LLM: marcamos suspicious_reasons para que el
     # aggregator emita DUDOSO en vez de CONFIRMADO. Regla: no aceptar
@@ -370,18 +411,37 @@ async def _measure_region(
     largo = parsed.get("largo_m")
     ancho = parsed.get("ancho_m")
     suspicious: list[str] = []
-    cota_values = [c.value for c in local_cotas]
+    # Anclamos contra TODAS las cotas que le pasamos al LLM (no solo las
+    # estrictamente locales): si usamos el pool expanded/global y el LLM
+    # eligió una cota real, el valor está anclado — aceptable aunque no
+    # sea "local". El nivel de confianza viene del flag cotas_mode, no
+    # de si la cota vino del bbox estricto.
+    cota_values = [c.value for c in cotas_for_llm]
 
     def _anchored(v) -> bool:
         if v is None or not isinstance(v, (int, float)):
             return False
         return any(abs(float(v) - cv) <= 0.02 for cv in cota_values)
 
-    if local_cotas:
+    if cotas_for_llm:
         if largo is not None and not _anchored(largo):
-            suspicious.append(f"largo {largo}m no está en las cotas locales de la región")
+            suspicious.append(f"largo {largo}m no está en las cotas candidatas ({cotas_mode})")
         if ancho is not None and not _anchored(ancho):
-            suspicious.append(f"ancho {ancho}m no está en las cotas locales de la región")
+            suspicious.append(f"ancho {ancho}m no está en las cotas candidatas ({cotas_mode})")
+
+    # Cuando caímos a fallback expanded o global, el resultado NUNCA es
+    # CONFIRMADO aunque los números sean plausibles — el operador tiene
+    # que revisar porque el anchoring no fue estricto. Esto es la línea
+    # roja de "fail-loud": mostramos número (útil para arrancar), pero
+    # con badge DUDOSO para que se revise.
+    if cotas_mode == "expanded":
+        suspicious.append(
+            "medida tomada con pool de cotas expandido (no estricto a esta región)"
+        )
+    elif cotas_mode == "global_fallback":
+        suspicious.append(
+            "medida tomada con fallback global (no había cotas cercanas a esta región) — revisar"
+        )
 
     # Fallback silencioso típico: el modelo devuelve L==A cuando no puede
     # elegir → usualmente agarra 0.60 (el ancho estándar) dos veces.
