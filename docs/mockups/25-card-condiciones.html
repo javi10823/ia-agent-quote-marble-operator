@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Card · Condiciones · 920×auto</title>
+<style>
+  :root {
+    --bg:#07070e; --s1:#0c0c16; --s2:#101018; --s3:#15151f;
+    --b1:rgba(255,255,255,.07); --b2:rgba(255,255,255,.13); --b3:rgba(255,255,255,.20);
+    --t1:rgba(255,255,255,.96); --t2:rgba(255,255,255,.58); --t3:rgba(255,255,255,.28); --t4:rgba(255,255,255,.14);
+    --acc:#4f8fff; --acc2:rgba(79,143,255,.12); --acc3:rgba(79,143,255,.22);
+    --grn:#30d158; --amb:#f5a623; --red:#ff453a;
+    --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Geist","Inter",system-ui,sans-serif;
+    --font-mono:ui-monospace,"Geist Mono",Menlo,monospace;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { background:#050508; color:var(--t1); font-family:var(--font-sans); font-size:15px; -webkit-font-smoothing:antialiased; }
+  body { padding:40px 24px; min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .frame-label { font-family:var(--font-mono); font-size:11px; color:rgba(255,255,255,.4); letter-spacing:.05em; }
+  .canvas {
+    background:var(--bg); padding:30px; border-radius:8px; width:920px; position:relative;
+    border:1px solid rgba(255,255,255,.06);
+  }
+  .canvas::after {
+    content:''; position:absolute; inset:0; border-radius:8px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+    pointer-events:none;
+  }
+
+  .card-small {
+    width:520px;
+    border:1px solid var(--b1);
+    border-radius:10px; background:rgba(255,255,255,.015);
+  }
+
+  .card-head {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 16px; border-bottom:1px solid var(--b1);
+  }
+  .head-left { display:flex; align-items:center; gap:8px; }
+  .head-icon { font-size:16px; }
+  .head-label {
+    font-size:11px; font-weight:600;
+    text-transform:uppercase; letter-spacing:.09em;
+    color:var(--t3);
+  }
+  .head-sub {
+    font-size:11px; color:var(--t4); margin-top:2px;
+  }
+
+  .card-body { padding:12px 16px; }
+
+  .cond-line {
+    font-size:12px; color:var(--t3); line-height:1.6;
+  }
+  .cond-line + .cond-line { margin-top:6px; }
+  .cond-label { font-weight:600; color:var(--t3); }
+  .cond-value { color:var(--t2); }
+
+  .links-row {
+    display:flex; flex-wrap:wrap; gap:8px; margin-top:14px;
+  }
+  .link-pill {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:6px 12px; border-radius:6px;
+    background:transparent; border:1px solid var(--b1);
+    color:var(--t2); font-size:12px; font-weight:500;
+    text-decoration:none;
+  }
+  .link-pill:hover { color:var(--t1); border-color:var(--b2); }
+</style>
+</head>
+<body>
+<span class="frame-label">CARD · CONDICIONES · 920×auto</span>
+<div class="canvas" style="display:flex; justify-content:center;">
+  <div class="card-small">
+    <!-- Header -->
+    <div class="card-head">
+      <div class="head-left">
+        <span class="head-icon">📋</span>
+        <div>
+          <div class="head-label">Condiciones</div>
+          <div class="head-sub">Generado hace 2 min</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div class="card-body">
+      <div class="cond-line">
+        <span class="cond-label">Plazo de entrega:</span>
+        <span class="cond-value">30 días hábiles desde seña</span>
+      </div>
+      <div class="cond-line">
+        <span class="cond-label">Forma de pago:</span>
+        <span class="cond-value">Contado</span>
+      </div>
+      <div class="cond-line">
+        <span class="cond-label">Validez del presupuesto:</span>
+        <span class="cond-value">15 días corridos</span>
+      </div>
+
+      <div class="links-row">
+        <a href="#" class="link-pill">☁ Drive</a>
+        <a href="#" class="link-pill">📄 PDF</a>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

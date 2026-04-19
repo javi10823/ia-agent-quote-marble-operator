@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Chat · plano procesando · Desktop 1440×900</title>
+<style>
+  :root {
+    --bg:#07070e; --s1:#0c0c16; --s2:#101018; --s3:#15151f;
+    --b1:rgba(255,255,255,.07); --b2:rgba(255,255,255,.13);
+    --t1:rgba(255,255,255,.96); --t2:rgba(255,255,255,.58); --t3:rgba(255,255,255,.28); --t4:rgba(255,255,255,.14);
+    --acc:#4f8fff; --acc2:rgba(79,143,255,.12); --acc3:rgba(79,143,255,.22);
+    --grn:#30d158; --grn2:rgba(48,209,88,.11);
+    --amb:#f5a623; --amb2:rgba(245,166,35,.10);
+    --red:#ff453a;
+    --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Geist","Inter",system-ui,sans-serif;
+    --font-mono:ui-monospace,"Geist Mono",Menlo,monospace;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { background:#050508; color:var(--t1); font-family:var(--font-sans); font-size:15px; -webkit-font-smoothing:antialiased; }
+  body { padding:40px 24px; min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .frame-label { font-family:var(--font-mono); font-size:11px; color:rgba(255,255,255,.4); letter-spacing:.05em; }
+  .frame { width:1440px; height:900px; background:var(--bg); overflow:hidden; position:relative; border:1px solid rgba(255,255,255,.06); border-radius:6px; display:flex; }
+  .sidebar { width:212px; flex-shrink:0; background:var(--s1); border-right:1px solid var(--b1); display:flex; flex-direction:column; padding:18px 10px 20px; }
+  .side-logo { display:flex; align-items:center; gap:10px; padding:2px 8px 20px; }
+  .side-logo-badge { width:26px; height:26px; border-radius:6px; background:var(--acc); color:#fff; font-weight:600; font-size:12px; display:flex; align-items:center; justify-content:center; }
+  .side-logo-text { font-size:13px; font-weight:500; letter-spacing:-.02em; }
+  .side-label { font-size:10px; font-weight:500; color:var(--t4); text-transform:uppercase; letter-spacing:.1em; padding:0 8px 4px; }
+  .side-label.mt { margin-top:14px; }
+  .side-item { display:flex; align-items:center; gap:8px; padding:8px; border-radius:6px; font-size:12px; color:var(--t2); border:none; background:transparent; width:100%; text-align:left; cursor:pointer; }
+  .side-item.active { color:var(--acc); background:rgba(79,143,255,.11); }
+  .side-item svg { flex-shrink:0; opacity:.65; }
+  .side-item.active svg { opacity:1; }
+  .side-item .count { margin-left:auto; font-size:10px; font-weight:500; padding:1px 7px; border-radius:99px; background:rgba(255,255,255,.07); color:var(--t3); font-family:var(--font-mono); }
+  .side-item.active .count { background:var(--acc); color:#fff; font-weight:600; }
+  .side-divider { height:1px; background:var(--b1); margin:12px 0; }
+  .side-spacer { flex:1; }
+  .side-new { width:100%; padding:10px 12px; background:var(--acc); color:#fff; font-size:13px; font-weight:500; border:none; border-radius:8px; display:flex; align-items:center; justify-content:center; gap:7px; }
+  .side-logout { width:100%; padding:7px 8px; background:transparent; border:none; color:var(--t3); font-size:11px; display:flex; align-items:center; justify-content:center; gap:6px; margin-top:10px; }
+  .main { flex:1; display:flex; flex-direction:column; min-width:0; }
+  .qh-header { padding:14px 28px; border-bottom:1px solid var(--b1); background:var(--s1); display:flex; align-items:center; gap:14px; }
+  .qh-back { width:30px; height:30px; border-radius:6px; border:1px solid var(--b1); background:transparent; color:var(--t2); display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  .qh-title-wrap { min-width:0; flex:1; }
+  .qh-title { font-size:15px; font-weight:600; color:var(--t1); display:flex; align-items:center; gap:10px; }
+  .qh-status { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:99px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; }
+  .qh-status.draft { color:var(--amb); background:var(--amb2); }
+  .qh-status .dot { width:5px; height:5px; border-radius:99px; background:currentColor; }
+  .qh-sub { font-size:11px; color:var(--t3); margin-top:2px; font-family:var(--font-mono); }
+  .tabs { display:flex; padding-left:28px; border-bottom:1px solid var(--b1); background:var(--s1); }
+  .tab { padding:10px 20px; font-size:13px; font-weight:500; color:var(--t3); background:transparent; border:none; cursor:pointer; border-bottom:2px solid transparent; opacity:.6; }
+  .tab.active { color:var(--acc); border-bottom-color:var(--acc); opacity:1; }
+  .tab.locked { opacity:.35; cursor:not-allowed; }
+
+  .chat-scroll { flex:1; overflow-y:auto; padding:28px 28px 16px; display:flex; flex-direction:column; gap:20px; background:var(--bg); }
+  .msg { display:flex; gap:12px; align-items:flex-start; }
+  .msg.user { flex-direction:row-reverse; }
+  .avatar { width:30px; height:30px; border-radius:99px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; }
+  .avatar.v { background:var(--acc); color:#fff; }
+  .avatar.u { background:var(--s3); color:var(--t2); border:1px solid var(--b2); }
+  .bubble.user { max-width:52%; padding:12px 16px; background:var(--acc2); border:1px solid rgba(79,143,255,.25); border-radius:12px 2px 12px 12px; font-size:15px; line-height:1.65; color:rgba(255,255,255,.78); }
+  .bubble.user.collapsed { opacity:.7; font-size:13px; }
+  .attach-badge { display:inline-flex; align-items:center; gap:5px; padding:4px 8px; border-radius:5px; background:rgba(255,255,255,.08); border:1px solid var(--b1); font-size:11px; color:var(--t2); margin-bottom:7px; }
+  .vwrap { flex:1; border:1px solid var(--b2); border-radius:2px 12px 12px 12px; overflow:hidden; }
+  .blk { padding:14px 18px; background:var(--s2); }
+  .blk + .blk { border-top:1px solid var(--b1); }
+  .blk.thinking { padding:12px 18px; display:flex; flex-direction:column; gap:6px; }
+  .think-line { display:flex; align-items:center; gap:7px; font-size:11px; color:var(--t3); font-style:italic; }
+  .think-dot { width:5px; height:5px; border-radius:99px; background:var(--acc); flex-shrink:0; animation:pulse 1.4s ease-in-out infinite; }
+  .think-dot.d2 { animation-delay:.3s; } .think-dot.d3 { animation-delay:.6s; } .think-dot.d4 { animation-delay:.9s; }
+  @keyframes pulse { 0%,100% { opacity:.35; } 50% { opacity:1; } }
+  .blk.text { font-size:15px; line-height:1.7; color:var(--t2); }
+  .progress-wrap { margin-top:8px; }
+  .progress-lbl { font-size:12px; color:var(--t2); margin-bottom:8px; }
+  .progress-bar { width:100%; height:4px; background:rgba(255,255,255,.05); border-radius:99px; overflow:hidden; }
+  .progress-fill { width:75%; height:100%; background:var(--acc); border-radius:99px; }
+
+  .composer { border-top:1px solid var(--b1); background:var(--s1); padding:14px 20px; }
+  .comp-row { display:flex; align-items:flex-end; gap:8px; background:var(--s3); border:1px solid var(--b2); border-radius:12px; padding:10px 10px 10px 16px; }
+  .comp-input { flex:1; background:transparent; border:none; outline:none; font-size:13px; color:var(--t1); line-height:1.5; min-height:20px; padding:2px 0; }
+  .comp-input.placeholder { color:var(--t4); }
+  .comp-btns { display:flex; gap:5px; flex-shrink:0; }
+  .icon-btn { width:32px; height:32px; border-radius:99px; display:flex; align-items:center; justify-content:center; cursor:pointer; border:1px solid var(--b1); background:transparent; color:var(--t2); }
+  .icon-btn.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .icon-btn:disabled { opacity:.4; cursor:not-allowed; }
+  .comp-foot { display:flex; justify-content:space-between; align-items:center; margin-top:6px; font-size:11px; color:var(--t3); }
+  .multi-check { display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
+</style>
+</head>
+<body>
+<span class="frame-label">CHAT · PLANO PROCESANDO · DESKTOP · 1440×900 · /quote/pr-0248</span>
+<div class="frame">
+  <aside class="sidebar">
+    <div class="side-logo"><div class="side-logo-badge">D</div><span class="side-logo-text">D'Angelo</span></div>
+    <div class="side-label">Principal</div>
+    <button class="side-item active">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Presupuestos<span class="count">3</span>
+    </button>
+    <div class="side-label mt">Sistema</div>
+    <button class="side-item"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 01-1 3.5l2 2-3 3-2-2a7 7 0 01-3.5 1"/></svg>Catálogo</button>
+    <button class="side-item"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="4" y1="21" x2="4" y2="14"/></svg>Configuración</button>
+    <div class="side-divider"></div>
+    <div class="side-spacer"></div>
+    <button class="side-new"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nuevo presupuesto</button>
+    <button class="side-logout">Cerrar sesión</button>
+  </aside>
+
+  <main class="main">
+    <header class="qh-header">
+      <button class="qh-back">←</button>
+      <div class="qh-title-wrap">
+        <div class="qh-title">
+          Erica Bernardi — Casa Bernardi
+          <span class="qh-status draft"><span class="dot"></span>borrador</span>
+        </div>
+        <div class="qh-sub">#PR-0248 · hace 45 s</div>
+      </div>
+    </header>
+
+    <div class="tabs">
+      <button class="tab active">Chat</button>
+      <button class="tab locked">Detalle</button>
+    </div>
+
+    <div class="chat-scroll">
+      <div class="msg user">
+        <div class="avatar u">EB</div>
+        <div class="bubble user collapsed">
+          Hola, necesito presupuesto para cocina de Erica Bernardi en Casa Bernardi (Rosario). Material Puraprima Onix White Mate 3 cm…
+        </div>
+      </div>
+
+      <div class="msg">
+        <div class="avatar v">V</div>
+        <div class="vwrap">
+          <div class="blk text"><p>Anotado. Ahora mandame el plano así mido los tramos.</p></div>
+        </div>
+      </div>
+
+      <div class="msg user">
+        <div class="avatar u">EB</div>
+        <div class="bubble user">
+          <div class="attach-badge">📎 plano-cocina-U-bernardi.pdf · 2.3 MB · 3 páginas</div>
+          <p>Acá va, gracias.</p>
+        </div>
+      </div>
+
+      <div class="msg">
+        <div class="avatar v">V</div>
+        <div class="vwrap">
+          <div class="blk thinking">
+            <div class="think-line"><span class="think-dot"></span>Rasterizando PDF a 300 DPI…</div>
+            <div class="think-line"><span class="think-dot d2"></span>Extrayendo capa de texto con cotas…</div>
+            <div class="think-line"><span class="think-dot d3"></span>Identificando topología global (LLM)…</div>
+            <div class="think-line"><span class="think-dot d4"></span>Midiendo regiones en paralelo (4 crops)…</div>
+          </div>
+          <div class="blk text">
+            <div class="progress-wrap">
+              <div class="progress-lbl">3 de 4 tramos medidos</div>
+              <div class="progress-bar"><div class="progress-fill"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="composer">
+      <div class="comp-row">
+        <div class="comp-input placeholder">Escribí el enunciado o arrastrá el plano…</div>
+        <div class="comp-btns">
+          <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></button>
+          <button class="icon-btn primary" disabled><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+        </div>
+      </div>
+      <div class="comp-foot">
+        <span>Enter para enviar · Shift+Enter para nueva línea</span>
+        <label class="multi-check"><input type="checkbox"/> multi-pieza</label>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

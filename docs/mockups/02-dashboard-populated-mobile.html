@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Dashboard · populado · Mobile 390×844</title>
+<style>
+  :root {
+    --bg:#07070e; --s1:#0c0c16; --s2:#101018; --s3:#15151f;
+    --b1:rgba(255,255,255,.07); --b2:rgba(255,255,255,.13); --b3:rgba(255,255,255,.20);
+    --t1:rgba(255,255,255,.96); --t2:rgba(255,255,255,.58); --t3:rgba(255,255,255,.28); --t4:rgba(255,255,255,.14);
+    --acc:#4f8fff; --acc2:rgba(79,143,255,.12); --acc3:rgba(79,143,255,.22);
+    --grn:#30d158; --grn2:rgba(48,209,88,.11);
+    --amb:#f5a623; --amb2:rgba(245,166,35,.10);
+    --red:#ff453a;
+    --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Geist","Inter",system-ui,sans-serif;
+    --font-mono:ui-monospace,"Geist Mono",Menlo,monospace;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { background:#050508; color:var(--t1); font-family:var(--font-sans); font-size:15px; -webkit-font-smoothing:antialiased; }
+  body { padding:40px 24px; min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .frame-label { font-family:var(--font-mono); font-size:11px; color:rgba(255,255,255,.4); letter-spacing:.05em; }
+  .frame {
+    width:390px; height:844px; background:var(--bg); overflow:hidden; position:relative;
+    border-radius:38px; border:10px solid #0a0a10; display:flex; flex-direction:column;
+  }
+  .frame::after {
+    content:''; position:absolute; inset:0; pointer-events:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+  }
+
+  /* Mobile top bar */
+  .mtop {
+    display:flex; align-items:center; gap:10px; padding:12px 16px;
+    background:var(--s1); border-bottom:1px solid var(--b1);
+  }
+  .mburger { width:28px; height:28px; border-radius:6px; display:flex; align-items:center; justify-content:center; color:var(--t2); background:transparent; border:none; }
+  .mlogo-badge {
+    width:24px; height:24px; border-radius:6px; background:var(--acc); color:#fff;
+    font-weight:600; font-size:11px; display:flex; align-items:center; justify-content:center; letter-spacing:-.5px;
+  }
+  .mlogo-text { font-size:13px; font-weight:500; letter-spacing:-.02em; }
+
+  .mhead { padding:16px 16px 12px; }
+  .mhead-h1 { font-size:18px; font-weight:500; letter-spacing:-.03em; color:var(--t1); }
+  .mhead-sub { font-size:11px; color:var(--t3); margin-top:2px; }
+
+  /* Tabs (horizontal scroll) */
+  .mtabs {
+    display:flex; gap:6px; padding:8px 16px; overflow-x:auto;
+    background:var(--s2); border-top:1px solid var(--b1); border-bottom:1px solid var(--b1);
+    white-space:nowrap;
+  }
+  .mtabs::-webkit-scrollbar { display:none; }
+  .ftab {
+    display:inline-flex; align-items:center; gap:6px; padding:5px 11px;
+    border:1px solid var(--b1); border-radius:6px; background:transparent;
+    font-size:12px; font-weight:500; color:var(--t3); cursor:pointer; flex-shrink:0;
+  }
+  .ftab.active { background:var(--acc2); border-color:var(--acc); color:var(--acc); }
+  .ftab .count { font-size:10px; padding:1px 6px; border-radius:99px; background:rgba(255,255,255,.08); color:var(--t3); font-family:var(--font-mono); }
+  .ftab.active .count { background:var(--acc3); color:var(--acc); }
+
+  /* Cards list */
+  .list { flex:1; overflow-y:auto; }
+  .card-row {
+    display:grid; grid-template-columns:1fr auto; gap:8px;
+    padding:12px; border-bottom:1px solid rgba(255,255,255,.045); cursor:pointer;
+  }
+  .card-row.unread { background:rgba(79,143,255,.04); }
+  .cli-main { font-size:13px; color:var(--t1); font-weight:500; }
+  .card-row.unread .cli-main { font-weight:600; }
+  .cli-sub { font-size:11px; color:var(--t3); margin-top:2px; }
+  .price { text-align:right; font-size:13px; font-family:var(--font-mono); color:var(--t1); letter-spacing:-.02em; }
+  .amt-usd { font-size:11px; color:var(--t3); margin-top:2px; font-family:var(--font-mono); }
+  .meta-row { grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; margin-top:6px; }
+  .status { display:inline-flex; align-items:center; gap:6px; padding:3px 8px; border-radius:99px; font-size:11px; font-weight:500; }
+  .status .dot { width:5px; height:5px; border-radius:99px; background:currentColor; }
+  .status.draft { color:var(--amb); background:var(--amb2); }
+  .status.pending { color:#b299ff; background:rgba(180,160,255,.1); }
+  .status.validated { color:var(--grn); background:var(--grn2); }
+  .status.sent { color:var(--acc); background:var(--acc2); }
+  .status.web { color:var(--t2); background:rgba(255,255,255,.05); }
+  .fecha { font-size:11px; color:var(--t3); font-family:var(--font-mono); }
+
+  /* FAB */
+  .fab {
+    position:absolute; bottom:24px; right:16px;
+    padding:12px 20px; border-radius:99px; background:var(--acc); color:#fff;
+    font-size:13px; font-weight:500; border:none; display:inline-flex; align-items:center; gap:7px;
+    box-shadow:0 10px 30px rgba(79,143,255,.35), 0 0 0 1px rgba(255,255,255,.05) inset;
+    letter-spacing:-.01em;
+  }
+</style>
+</head>
+<body>
+<span class="frame-label">DASHBOARD · POBLADO · MOBILE · 390×844 · /</span>
+<div class="frame">
+
+  <!-- MobileTopBar -->
+  <div class="mtop">
+    <button class="mburger">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="mlogo-badge">D</div>
+    <span class="mlogo-text">D'Angelo</span>
+  </div>
+
+  <!-- Header -->
+  <div class="mhead">
+    <div class="mhead-h1">Presupuestos</div>
+    <div class="mhead-sub">abril de 2026 · 8 registros · 3 sin leer</div>
+  </div>
+
+  <!-- Filter tabs -->
+  <div class="mtabs">
+    <button class="ftab active">Todos <span class="count">8</span></button>
+    <button class="ftab">Borrador <span class="count">2</span></button>
+    <button class="ftab">Pendiente <span class="count">2</span></button>
+    <button class="ftab">Validado <span class="count">2</span></button>
+    <button class="ftab">Enviado <span class="count">1</span></button>
+    <button class="ftab">Web <span class="count">1</span></button>
+  </div>
+
+  <!-- Cards -->
+  <div class="list">
+
+    <div class="card-row unread">
+      <div>
+        <div class="cli-main">Erica Bernardi</div>
+        <div class="cli-sub">Casa Bernardi · cocina U + isla</div>
+      </div>
+      <div>
+        <div class="price">$ 4.284.000</div>
+        <div class="amt-usd">USD 3.180</div>
+      </div>
+      <div class="meta-row">
+        <span class="status draft"><span class="dot"></span>Borrador</span>
+        <span class="fecha">18/04</span>
+      </div>
+    </div>
+
+    <div class="card-row">
+      <div>
+        <div class="cli-main">Carlos Pereyra</div>
+        <div class="cli-sub">Cocina Pereyra · mesada L</div>
+      </div>
+      <div>
+        <div class="price">$ 1.842.000</div>
+      </div>
+      <div class="meta-row">
+        <span class="status validated"><span class="dot"></span>Validado</span>
+        <span class="fecha">17/04</span>
+      </div>
+    </div>
+
+    <div class="card-row unread">
+      <div>
+        <div class="cli-main">Johnson Arquitectura</div>
+        <div class="cli-sub">Residencia Álzaga — 12 unidades</div>
+      </div>
+      <div>
+        <div class="price">$ 24.820.000</div>
+        <div class="amt-usd">USD 18.400</div>
+      </div>
+      <div class="meta-row">
+        <span class="status pending"><span class="dot"></span>Pendiente</span>
+        <span class="fecha">16/04</span>
+      </div>
+    </div>
+
+    <div class="card-row">
+      <div>
+        <div class="cli-main">Marta Álvarez</div>
+        <div class="cli-sub">Baño suite — vanitory</div>
+      </div>
+      <div>
+        <div class="price">$ 907.200</div>
+        <div class="amt-usd">USD 672</div>
+      </div>
+      <div class="meta-row">
+        <span class="status sent"><span class="dot"></span>Enviado</span>
+        <span class="fecha">14/04</span>
+      </div>
+    </div>
+
+    <div class="card-row unread">
+      <div>
+        <div class="cli-main">Estudio Nómade</div>
+        <div class="cli-sub">Obra Fisherton — cocina + isla</div>
+      </div>
+      <div>
+        <div class="price">$ 4.320.000</div>
+        <div class="amt-usd">USD 3.200</div>
+      </div>
+      <div class="meta-row">
+        <span class="status pending"><span class="dot"></span>Pendiente</span>
+        <span class="fecha">12/04</span>
+      </div>
+    </div>
+
+    <div class="card-row">
+      <div>
+        <div class="cli-main">Taller Iván</div>
+        <div class="cli-sub">Revestimiento loft</div>
+      </div>
+      <div>
+        <div class="price">$ 2.902.500</div>
+        <div class="amt-usd">USD 2.150</div>
+      </div>
+      <div class="meta-row">
+        <span class="status validated"><span class="dot"></span>Validado</span>
+        <span class="fecha">08/04</span>
+      </div>
+    </div>
+
+    <div class="card-row">
+      <div>
+        <div class="cli-main">Gastón Ruiz</div>
+        <div class="cli-sub">Ampliación Fisherton</div>
+      </div>
+      <div>
+        <div class="price">$ 6.480.000</div>
+        <div class="amt-usd">USD 4.800</div>
+      </div>
+      <div class="meta-row">
+        <span class="status draft"><span class="dot"></span>Borrador</span>
+        <span class="fecha">04/04</span>
+      </div>
+    </div>
+
+    <div class="card-row">
+      <div>
+        <div class="cli-main">Ramiro Díaz</div>
+        <div class="cli-sub">Vía formulario web</div>
+      </div>
+      <div>
+        <div class="price">$ 607.500</div>
+        <div class="amt-usd">USD 450</div>
+      </div>
+      <div class="meta-row">
+        <span class="status web"><span class="dot"></span>Web</span>
+        <span class="fecha">03/04</span>
+      </div>
+    </div>
+
+  </div>
+
+  <button class="fab">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    Nuevo presupuesto
+  </button>
+
+</div>
+</body>
+</html>

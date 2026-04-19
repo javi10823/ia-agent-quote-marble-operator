@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Catálogo · Desktop 1440×900</title>
+<style>
+  :root {
+    --bg:#07070e; --s1:#0c0c16; --s2:#101018; --s3:#15151f;
+    --b1:rgba(255,255,255,.07); --b2:rgba(255,255,255,.13); --b3:rgba(255,255,255,.20);
+    --t1:rgba(255,255,255,.96); --t2:rgba(255,255,255,.58); --t3:rgba(255,255,255,.28); --t4:rgba(255,255,255,.14);
+    --acc:#4f8fff; --acc2:rgba(79,143,255,.12); --acc3:rgba(79,143,255,.22);
+    --grn:#30d158; --grn2:rgba(48,209,88,.11);
+    --amb:#f5a623; --amb2:rgba(245,166,35,.10);
+    --red:#ff453a;
+    --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Geist","Inter",system-ui,sans-serif;
+    --font-mono:ui-monospace,"Geist Mono",Menlo,monospace;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { background:#050508; color:var(--t1); font-family:var(--font-sans); font-size:15px; -webkit-font-smoothing:antialiased; }
+  body { padding:40px 24px; min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .frame-label { font-family:var(--font-mono); font-size:11px; color:rgba(255,255,255,.4); letter-spacing:.05em; }
+  .frame { width:1440px; height:900px; background:var(--bg); overflow:hidden; position:relative; border:1px solid rgba(255,255,255,.06); border-radius:6px; display:flex; }
+  .frame::after {
+    content:''; position:absolute; inset:0; pointer-events:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+  }
+
+  /* SIDEBAR */
+  .sidebar { width:212px; flex-shrink:0; background:var(--s1); border-right:1px solid var(--b1); display:flex; flex-direction:column; padding:18px 10px 20px; }
+  .side-logo { display:flex; align-items:center; gap:10px; padding:2px 8px 20px; cursor:pointer; }
+  .side-logo-badge { width:26px; height:26px; border-radius:6px; background:var(--acc); color:#fff; font-weight:600; font-size:12px; display:flex; align-items:center; justify-content:center; letter-spacing:-.5px; }
+  .side-logo-text { font-size:13px; font-weight:500; letter-spacing:-.02em; }
+  .side-label { font-size:10px; font-weight:500; color:var(--t4); text-transform:uppercase; letter-spacing:.1em; padding:0 8px 4px; }
+  .side-label.mt { margin-top:14px; }
+  .side-item { display:flex; align-items:center; gap:8px; padding:8px; border-radius:6px; font-size:12px; color:var(--t2); cursor:pointer; border:none; background:transparent; width:100%; text-align:left; }
+  .side-item.active { color:var(--acc); background:rgba(79,143,255,.11); }
+  .side-item svg { flex-shrink:0; opacity:.65; }
+  .side-item.active svg { opacity:1; }
+  .side-item .count { margin-left:auto; font-size:10px; font-weight:500; padding:1px 7px; border-radius:99px; background:rgba(255,255,255,.07); color:var(--t3); font-family:var(--font-mono); }
+  .side-item.active .count { background:var(--acc); color:#fff; font-weight:600; }
+  .side-divider { height:1px; background:var(--b1); margin:12px 0; }
+  .side-spacer { flex:1; }
+  .side-new { width:100%; padding:10px 12px; background:var(--acc); color:#fff; font-size:13px; font-weight:500; border:none; border-radius:8px; display:flex; align-items:center; justify-content:center; gap:7px; letter-spacing:-.01em; }
+  .side-logout { width:100%; padding:7px 8px; background:transparent; border:none; color:var(--t3); font-size:11px; display:flex; align-items:center; justify-content:center; gap:6px; margin-top:10px; cursor:pointer; }
+
+  /* MAIN */
+  .main { flex:1; display:flex; flex-direction:column; min-width:0; }
+
+  /* TOOLBAR */
+  .toolbar { display:flex; align-items:center; gap:12px; padding:12px 24px; border-bottom:1px solid var(--b1); }
+  .tb-title { font-size:14px; font-weight:500; color:var(--t1); font-family:var(--font-mono); }
+  .tb-sub { font-size:11px; color:var(--t3); }
+  .tb-spacer { flex:1; }
+  .btn { padding:7px 14px; border-radius:6px; font-size:12px; font-weight:500; border:1px solid var(--b1); cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+  .btn.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .btn.secondary { background:transparent; color:var(--t2); }
+
+  /* BODY: 2-col split */
+  .body2col { flex:1; display:flex; min-height:0; }
+  .catlist { width:200px; flex-shrink:0; background:var(--s1); border-right:1px solid var(--b1); overflow-y:auto; padding:10px 6px; }
+  .catlist-label { font-size:10px; font-weight:500; color:var(--t4); text-transform:uppercase; letter-spacing:.1em; padding:8px 10px 4px; }
+  .cat-item { display:block; width:100%; padding:8px 12px; border-radius:6px; font-size:12px; color:var(--t2); background:transparent; border:none; text-align:left; cursor:pointer; font-family:var(--font-mono); letter-spacing:-.02em; }
+  .cat-item.active { background:var(--acc2); color:var(--acc); }
+  .cat-item:hover:not(.active) { background:rgba(255,255,255,.04); }
+
+  /* RIGHT editor */
+  .editor { flex:1; overflow-y:auto; padding:20px 24px; display:flex; flex-direction:column; gap:14px; min-width:0; }
+
+  /* Warnings banner */
+  .warnings {
+    border:1px solid rgba(245,166,35,.25); background:rgba(245,166,35,.06);
+    border-radius:10px; padding:12px 14px;
+  }
+  .warn-head { display:flex; align-items:center; gap:8px; font-size:12px; font-weight:600; color:var(--amb); }
+  .warn-head .dot { width:6px; height:6px; border-radius:99px; background:var(--amb); }
+  .warn-list { margin-top:8px; display:flex; flex-direction:column; gap:6px; padding-left:16px; }
+  .warn-item { font-size:12px; color:rgba(245,166,35,.85); }
+
+  /* Code editor */
+  .editor-title { font-size:11px; font-weight:600; letter-spacing:.06em; color:var(--t3); text-transform:uppercase; }
+  .code { border:1px solid var(--b1); border-radius:10px; background:#08080f; padding:14px 16px; font-family:var(--font-mono); font-size:12px; line-height:1.6; color:var(--t2); min-height:400px; max-height:60vh; overflow:auto; }
+  .code .k { color:#79c0ff; }
+  .code .s { color:#a5d6ff; }
+  .code .n { color:#f2cc60; }
+  .code .c { color:var(--t4); font-style:italic; }
+  .code .ln { color:var(--t4); display:inline-block; width:28px; text-align:right; margin-right:14px; user-select:none; }
+
+  /* Backup history */
+  .backups { display:flex; flex-direction:column; gap:6px; margin-top:4px; }
+  .backup-row {
+    display:flex; align-items:center; gap:12px; padding:10px 14px;
+    border:1px solid var(--b1); border-radius:8px; background:var(--s2);
+  }
+  .bk-ts { font-family:var(--font-mono); font-size:12px; color:var(--t1); letter-spacing:-.02em; width:150px; }
+  .bk-src { font-size:12px; color:var(--t2); flex:1; }
+  .bk-restore { padding:5px 10px; font-size:11px; font-weight:500; border:1px solid var(--b1); border-radius:6px; color:var(--t2); background:transparent; cursor:pointer; }
+</style>
+</head>
+<body>
+<span class="frame-label">CATÁLOGO · DESKTOP · 1440×900 · /config/labor</span>
+<div class="frame">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="side-logo">
+      <div class="side-logo-badge">D</div>
+      <span class="side-logo-text">D'Angelo</span>
+    </div>
+
+    <div class="side-label">Principal</div>
+    <button class="side-item">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Presupuestos
+      <span class="count">3</span>
+    </button>
+
+    <div class="side-label mt">Sistema</div>
+    <button class="side-item active">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 01-1 3.5l2 2-3 3-2-2a7 7 0 01-3.5 1"/></svg>
+      Catálogo
+    </button>
+    <button class="side-item">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+      Configuración
+    </button>
+
+    <div class="side-divider"></div>
+    <div class="side-spacer"></div>
+
+    <button class="side-new">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nuevo presupuesto
+    </button>
+    <button class="side-logout">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      Cerrar sesión
+    </button>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <div class="toolbar">
+      <div>
+        <div class="tb-title">labor.json</div>
+        <div class="tb-sub">Editado hace 2 días</div>
+      </div>
+      <span class="tb-spacer"></span>
+      <button class="btn secondary">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+        Restaurar backup
+      </button>
+      <button class="btn primary">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Guardar
+      </button>
+    </div>
+
+    <div class="body2col">
+      <!-- Catalog list -->
+      <aside class="catlist">
+        <div class="catlist-label">Catálogos</div>
+        <button class="cat-item active">labor.json</button>
+        <button class="cat-item">delivery-zones.json</button>
+        <button class="cat-item">architects.json</button>
+        <button class="cat-item">materials-granito-nacional.json</button>
+        <button class="cat-item">materials-silestone.json</button>
+        <button class="cat-item">sinks.json</button>
+        <button class="cat-item">stock.json</button>
+        <button class="cat-item">config.json</button>
+      </aside>
+
+      <!-- Editor column -->
+      <section class="editor">
+        <div class="warnings">
+          <div class="warn-head"><span class="dot"></span>2 advertencias de validación</div>
+          <ul class="warn-list">
+            <li class="warn-item">Precio desactualizado hace 180 días</li>
+            <li class="warn-item">Campo 'pulido_esquinero' sin documentar</li>
+          </ul>
+        </div>
+
+        <div class="editor-title">labor.json</div>
+        <pre class="code"><span class="ln"> 1</span><span class="k">{</span>
+<span class="ln"> 2</span>  <span class="s">"version"</span>: <span class="s">"2026-03-25"</span>,
+<span class="ln"> 3</span>  <span class="s">"currency"</span>: <span class="s">"ARS"</span>,
+<span class="ln"> 4</span>  <span class="s">"notes"</span>: <span class="s">"Precios sin IVA. Actualizar con cada revisión del taller."</span>,
+<span class="ln"> 5</span>  <span class="s">"items"</span>: <span class="k">[</span>
+<span class="ln"> 6</span>    <span class="k">{</span>
+<span class="ln"> 7</span>      <span class="s">"code"</span>: <span class="s">"corte_pulido_recto"</span>,
+<span class="ln"> 8</span>      <span class="s">"label"</span>: <span class="s">"Corte y pulido borde recto"</span>,
+<span class="ln"> 9</span>      <span class="s">"unit"</span>: <span class="s">"ml"</span>,
+<span class="ln">10</span>      <span class="s">"price"</span>: <span class="n">6500</span>
+<span class="ln">11</span>    <span class="k">}</span>,
+<span class="ln">12</span>    <span class="k">{</span>
+<span class="ln">13</span>      <span class="s">"code"</span>: <span class="s">"pegado_pileta_empotrada"</span>,
+<span class="ln">14</span>      <span class="s">"label"</span>: <span class="s">"Pegado pileta empotrada"</span>,
+<span class="ln">15</span>      <span class="s">"unit"</span>: <span class="s">"un"</span>,
+<span class="ln">16</span>      <span class="s">"price"</span>: <span class="n">78000</span>
+<span class="ln">17</span>    <span class="k">}</span>,
+<span class="ln">18</span>    <span class="k">{</span>
+<span class="ln">19</span>      <span class="s">"code"</span>: <span class="s">"pegado_pileta_bajo"</span>,
+<span class="ln">20</span>      <span class="s">"label"</span>: <span class="s">"Pegado pileta bajomesada"</span>,
+<span class="ln">21</span>      <span class="s">"unit"</span>: <span class="s">"un"</span>,
+<span class="ln">22</span>      <span class="s">"price"</span>: <span class="n">52000</span>
+<span class="ln">23</span>    <span class="k">}</span>,
+<span class="ln">24</span>    <span class="k">{</span>
+<span class="ln">25</span>      <span class="s">"code"</span>: <span class="s">"agujero_anafe"</span>,
+<span class="ln">26</span>      <span class="s">"label"</span>: <span class="s">"Agujero anafe"</span>,
+<span class="ln">27</span>      <span class="s">"unit"</span>: <span class="s">"un"</span>,
+<span class="ln">28</span>      <span class="s">"price"</span>: <span class="n">32000</span>
+<span class="ln">29</span>    <span class="k">}</span>,
+<span class="ln">30</span>    <span class="k">{</span>
+<span class="ln">31</span>      <span class="s">"code"</span>: <span class="s">"agujero_bacha"</span>,
+<span class="ln">32</span>      <span class="s">"label"</span>: <span class="s">"Agujero bacha lavabo"</span>,
+<span class="ln">33</span>      <span class="s">"unit"</span>: <span class="s">"un"</span>,
+<span class="ln">34</span>      <span class="s">"price"</span>: <span class="n">28000</span>
+<span class="ln">35</span>    <span class="k">}</span>,
+<span class="ln">36</span>    <span class="k">{</span>
+<span class="ln">37</span>      <span class="s">"code"</span>: <span class="s">"colocacion"</span>,
+<span class="ln">38</span>      <span class="s">"label"</span>: <span class="s">"Colocación"</span>,
+<span class="ln">39</span>      <span class="s">"unit"</span>: <span class="s">"m2"</span>,
+<span class="ln">40</span>      <span class="s">"price"</span>: <span class="n">54000</span>
+<span class="ln">41</span>    <span class="k">}</span>
+<span class="ln">42</span>  <span class="k">]</span>
+<span class="ln">43</span><span class="k">}</span></pre>
+
+        <div class="editor-title">Backups recientes</div>
+        <div class="backups">
+          <div class="backup-row">
+            <span class="bk-ts">16/04/2026 18:03</span>
+            <span class="bk-src">Edición manual · javier@dangelo</span>
+            <button class="bk-restore">Restaurar</button>
+          </div>
+          <div class="backup-row">
+            <span class="bk-ts">25/03/2026 10:12</span>
+            <span class="bk-src">Validación IA · sugerencias aceptadas</span>
+            <button class="bk-restore">Restaurar</button>
+          </div>
+          <div class="backup-row">
+            <span class="bk-ts">08/02/2026 09:44</span>
+            <span class="bk-src">Edición manual · javier@dangelo</span>
+            <button class="bk-restore">Restaurar</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+</div>
+</body>
+</html>

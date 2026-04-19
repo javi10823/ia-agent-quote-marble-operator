@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Card · Dual Read (Despiece) · 920×auto</title>
+<style>
+  :root {
+    --bg:#07070e; --s1:#0c0c16; --s2:#101018; --s3:#15151f;
+    --b1:rgba(255,255,255,.07); --b2:rgba(255,255,255,.13); --b3:rgba(255,255,255,.20);
+    --t1:rgba(255,255,255,.96); --t2:rgba(255,255,255,.58); --t3:rgba(255,255,255,.28); --t4:rgba(255,255,255,.14);
+    --acc:#4f8fff; --acc2:rgba(79,143,255,.12); --acc3:rgba(79,143,255,.22);
+    --grn:#30d158; --amb:#f5a623; --red:#ff453a;
+    --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Geist","Inter",system-ui,sans-serif;
+    --font-mono:ui-monospace,"Geist Mono",Menlo,monospace;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { background:#050508; color:var(--t1); font-family:var(--font-sans); font-size:15px; -webkit-font-smoothing:antialiased; }
+  body { padding:40px 24px; min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .frame-label { font-family:var(--font-mono); font-size:11px; color:rgba(255,255,255,.4); letter-spacing:.05em; }
+  .canvas {
+    background:var(--bg); padding:30px; border-radius:8px; width:920px; position:relative;
+    border:1px solid rgba(255,255,255,.06);
+  }
+  .canvas::after {
+    content:''; position:absolute; inset:0; border-radius:8px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+    pointer-events:none;
+  }
+
+  .card {
+    width:100%; border:1px solid var(--b1); background:var(--s1);
+    border-radius:16px; overflow:hidden;
+    box-shadow:0 20px 40px -20px rgba(0,0,0,.5);
+  }
+
+  .card-header {
+    display:flex; align-items:center; gap:10px;
+    padding:16px 20px; border-bottom:1px solid var(--b1);
+    background:linear-gradient(to bottom, var(--s3), var(--s2));
+  }
+  .badge-primary {
+    font-size:10px; font-weight:600; text-transform:uppercase;
+    letter-spacing:.1em; color:var(--acc);
+    background:var(--acc2); border:1px solid var(--acc3);
+    padding:5px 8px; border-radius:6px;
+  }
+  .card-title {
+    font-size:15px; font-weight:600; color:var(--t1); letter-spacing:-.01em;
+  }
+  .chip-mini {
+    font-size:10px; padding:3px 8px; border-radius:999px;
+    font-weight:500; display:inline-flex; align-items:center; gap:5px;
+  }
+  .chip-grn {
+    background:rgba(48,209,88,.10); color:var(--grn);
+    border:1px solid rgba(48,209,88,.30);
+  }
+  .chip-amb {
+    background:rgba(245,166,35,.10); color:var(--amb);
+    border:1px solid rgba(245,166,35,.30);
+  }
+  .chips-cluster { margin-left:auto; display:flex; gap:6px; }
+  .copy-btn {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:6px 8px; border-radius:6px;
+    font-size:11px; font-weight:500; color:var(--t3);
+    background:transparent; border:1px solid var(--b2);
+    cursor:pointer;
+  }
+  .copy-btn svg { width:12px; height:12px; }
+
+  .card-body { padding:16px; }
+
+  /* Sector heading */
+  .sector-head {
+    font-size:13px; font-weight:600; color:var(--t1);
+    padding:8px 0; border-bottom:1px solid var(--b1);
+    margin-bottom:12px;
+  }
+  .sector-head-second { margin-top:18px; }
+
+  /* Tramo card */
+  .tramo-card {
+    background:var(--s2); border:1px solid var(--b1);
+    border-radius:10px; padding:12px; margin-bottom:10px;
+  }
+  .tramo-title {
+    font-size:13px; color:var(--t1); font-weight:600; margin-bottom:10px;
+  }
+  .tramo-grid {
+    display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:12px;
+    align-items:start;
+  }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field-label {
+    font-size:10px; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--t3); font-weight:600;
+  }
+  .field-input {
+    font-family:var(--font-mono); font-size:12px; color:var(--t1);
+    background:var(--s3); border:1px solid var(--b1);
+    border-radius:6px; padding:5px 8px;
+    display:inline-flex; align-items:center; gap:6px; width:fit-content;
+  }
+  .field-input.amber { border-color:rgba(245,166,35,.6); }
+  .field-input.disabled {
+    color:var(--t2); background:transparent;
+    border-color:transparent; padding-left:0;
+  }
+  .dot {
+    display:inline-block; width:6px; height:6px; border-radius:50%;
+    flex-shrink:0;
+  }
+  .dot-grn { background:var(--grn); box-shadow:0 0 6px rgba(48,209,88,.4); }
+  .dot-amb { background:var(--amb); box-shadow:0 0 6px rgba(245,166,35,.4); }
+
+  .features { margin-top:10px; display:flex; flex-wrap:wrap; gap:6px; }
+  .feat-chip {
+    font-size:10px; padding:2px 8px; border-radius:999px;
+    background:rgba(255,255,255,.03); border:1px solid var(--b1);
+    color:var(--t3);
+  }
+  .feat-chip.acc {
+    background:rgba(79,143,255,.10); color:var(--acc);
+    border-color:rgba(79,143,255,.22);
+  }
+
+  .tramo-note {
+    margin-top:8px; font-size:11px; color:var(--amb); font-style:italic;
+    line-height:1.5;
+  }
+
+  /* Totals row */
+  .totals {
+    background:var(--s3); border-top:1px solid var(--b1);
+    padding:12px 20px;
+  }
+  .total-line {
+    display:flex; justify-content:space-between; align-items:center;
+    font-size:13px;
+  }
+  .total-line + .total-line { margin-top:6px; }
+  .total-label { color:var(--t2); }
+  .total-value {
+    font-family:var(--font-mono); color:var(--t1); font-weight:600;
+    letter-spacing:-.01em;
+  }
+
+  /* Footer */
+  .card-footer {
+    padding:16px 20px; border-top:1px solid var(--b1);
+    background:var(--s2);
+  }
+  .btn-primary {
+    width:100%; padding:10px 16px; border-radius:12px;
+    background:var(--acc); color:#fff; border:none; cursor:pointer;
+    font-size:13px; font-weight:600;
+  }
+</style>
+</head>
+<body>
+<span class="frame-label">CARD · DUAL READ (DESPIECE) · 920×auto</span>
+<div class="canvas">
+  <div class="card">
+    <!-- Header -->
+    <div class="card-header">
+      <span class="badge-primary">📐 Despiece</span>
+      <h3 class="card-title">Medidas verificadas — cocina U + isla</h3>
+      <div class="chips-cluster">
+        <span class="chip-mini chip-grn">● 3 confirmados</span>
+        <span class="chip-mini chip-amb">● 1 dudoso</span>
+      </div>
+      <button class="copy-btn" title="Copiar despiece">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5h8a2 2 0 012 2v12a2 2 0 01-2 2H8a2 2 0 01-2-2V7a2 2 0 012-2z"/><path d="M16 3H10a2 2 0 00-2 2"/></svg>
+      </button>
+    </div>
+
+    <!-- Body -->
+    <div class="card-body">
+      <!-- Sector 1: Cocina -->
+      <div class="sector-head">Cocina (tipo U) · 3 tramos · 4.32 m²</div>
+
+      <!-- Tramo P1 -->
+      <div class="tramo-card">
+        <div class="tramo-title">P1 · Mesada principal contra pared</div>
+        <div class="tramo-grid">
+          <div class="field">
+            <span class="field-label">Largo</span>
+            <span class="field-input"><span class="dot dot-grn"></span>3.20 m</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Ancho</span>
+            <span class="field-input"><span class="dot dot-grn"></span>0.60 m</span>
+          </div>
+          <div class="field">
+            <span class="field-label">m²</span>
+            <span class="field-input disabled">1.92</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Zóc. trasero</span>
+            <span class="field-input">3.20 ml</span>
+          </div>
+        </div>
+        <div class="features">
+          <span class="feat-chip">🧱 toca pared</span>
+        </div>
+      </div>
+
+      <!-- Tramo P2 -->
+      <div class="tramo-card">
+        <div class="tramo-title">P2 · Ala derecha</div>
+        <div class="tramo-grid">
+          <div class="field">
+            <span class="field-label">Largo</span>
+            <span class="field-input"><span class="dot dot-grn"></span>1.80 m</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Ancho</span>
+            <span class="field-input"><span class="dot dot-grn"></span>0.60 m</span>
+          </div>
+          <div class="field">
+            <span class="field-label">m²</span>
+            <span class="field-input disabled">1.08</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Zóc. trasero</span>
+            <span class="field-input">1.80 ml</span>
+          </div>
+        </div>
+        <div class="features">
+          <span class="feat-chip">🧱 toca pared</span>
+        </div>
+      </div>
+
+      <!-- Tramo P3 -->
+      <div class="tramo-card">
+        <div class="tramo-title">P3 · Ala izquierda con pileta doble</div>
+        <div class="tramo-grid">
+          <div class="field">
+            <span class="field-label">Largo</span>
+            <span class="field-input"><span class="dot dot-grn"></span>2.20 m</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Ancho</span>
+            <span class="field-input"><span class="dot dot-grn"></span>0.60 m</span>
+          </div>
+          <div class="field">
+            <span class="field-label">m²</span>
+            <span class="field-input disabled">1.32</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Zóc. trasero</span>
+            <span class="field-input">2.20 ml</span>
+          </div>
+        </div>
+        <div class="features">
+          <span class="feat-chip acc">🚰 sink_double</span>
+          <span class="feat-chip">🧱 toca pared</span>
+        </div>
+      </div>
+
+      <!-- Sector 2: Isla -->
+      <div class="sector-head sector-head-second">Isla · 1 tramo · 0.96 m²</div>
+
+      <!-- Tramo P4 -->
+      <div class="tramo-card">
+        <div class="tramo-title">P4 · Isla central</div>
+        <div class="tramo-grid">
+          <div class="field">
+            <span class="field-label">Largo</span>
+            <span class="field-input"><span class="dot dot-grn"></span>1.60 m</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Ancho</span>
+            <span class="field-input amber"><span class="dot dot-amb"></span>0.60 m</span>
+          </div>
+          <div class="field">
+            <span class="field-label">m²</span>
+            <span class="field-input disabled">0.96</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Zóc. trasero</span>
+            <span class="field-input disabled">—</span>
+          </div>
+        </div>
+        <div class="features">
+          <span class="feat-chip acc">🏝 isla central</span>
+        </div>
+        <div class="tramo-note">
+          Ancho derivado por default (0.60 m) — confirmá la profundidad real de la isla.
+        </div>
+      </div>
+    </div>
+
+    <!-- Totals -->
+    <div class="totals">
+      <div class="total-line">
+        <span class="total-label">Total m² material</span>
+        <span class="total-value">5.28 m²</span>
+      </div>
+      <div class="total-line">
+        <span class="total-label">Total ml zóc. trasero</span>
+        <span class="total-value">7.20 ml</span>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="card-footer">
+      <button class="btn-primary">Confirmar despiece — calcular presupuesto</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

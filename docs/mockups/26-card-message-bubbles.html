@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Card · Message Bubble Variants · 720×auto</title>
+<style>
+  :root {
+    --bg:#07070e; --s1:#0c0c16; --s2:#101018; --s3:#15151f;
+    --b1:rgba(255,255,255,.07); --b2:rgba(255,255,255,.13); --b3:rgba(255,255,255,.20);
+    --t1:rgba(255,255,255,.96); --t2:rgba(255,255,255,.58); --t3:rgba(255,255,255,.28); --t4:rgba(255,255,255,.14);
+    --acc:#4f8fff; --acc2:rgba(79,143,255,.12); --acc3:rgba(79,143,255,.22);
+    --acc-bg:rgba(79,143,255,.08);
+    --acc-hover:rgba(79,143,255,.30);
+    --grn:#30d158; --amb:#f5a623; --red:#ff453a;
+    --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Geist","Inter",system-ui,sans-serif;
+    --font-mono:ui-monospace,"Geist Mono",Menlo,monospace;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { background:#050508; color:var(--t1); font-family:var(--font-sans); font-size:15px; -webkit-font-smoothing:antialiased; }
+  body { padding:40px 24px; min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .frame-label { font-family:var(--font-mono); font-size:11px; color:rgba(255,255,255,.4); letter-spacing:.05em; }
+  .canvas {
+    background:var(--bg); padding:30px; border-radius:8px; width:720px; position:relative;
+    border:1px solid rgba(255,255,255,.06);
+  }
+  .canvas::after {
+    content:''; position:absolute; inset:0; border-radius:8px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+    pointer-events:none;
+  }
+
+  .variant-label {
+    font-family:var(--font-mono); font-size:10px;
+    color:rgba(255,255,255,.3); letter-spacing:.04em;
+    text-transform:uppercase;
+    padding-top:14px; padding-bottom:6px;
+    border-top:1px dashed rgba(255,255,255,.08);
+    margin-top:14px;
+  }
+  .variant-label:first-child { margin-top:0; border-top:none; padding-top:0; }
+
+  /* Message row */
+  .msg { display:flex; gap:12px; align-items:flex-start; }
+  .msg.user { flex-direction:row-reverse; }
+  .avatar {
+    width:30px; height:30px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:600;
+  }
+  .avatar.v { background:var(--acc); color:#fff; }
+  .avatar.op { background:var(--s3); color:var(--t2); border:1px solid var(--b2); }
+
+  /* User bubble */
+  .user-bubble {
+    max-width:70%; padding:10px 16px;
+    background:var(--acc-bg);
+    border:1px solid var(--acc-hover);
+    border-radius:12px 2px 12px 12px;
+    font-size:14px; line-height:1.65; color:rgba(255,255,255,.78);
+  }
+  .attach-chip {
+    display:inline-flex; align-items:center; gap:5px;
+    padding:4px 8px; border-radius:5px;
+    background:rgba(255,255,255,.08); border:1px solid var(--b1);
+    font-size:11px; color:var(--t2); margin-bottom:7px;
+  }
+
+  /* Assistant wrapper */
+  .assist-wrap {
+    flex:1; border:1px solid var(--b2);
+    border-radius:2px 12px 12px 12px;
+    overflow:hidden;
+    max-width:92%;
+  }
+  .block {
+    padding:12px 18px; background:var(--s2);
+  }
+  .block + .block { border-top:1px solid var(--b1); }
+
+  /* Thinking block */
+  .think-block { display:flex; flex-direction:column; gap:6px; }
+  .think-line {
+    display:flex; align-items:center; gap:7px;
+    font-size:11px; color:var(--t3); font-style:italic;
+  }
+  .pulse-dot {
+    width:5px; height:5px; border-radius:50%; background:var(--acc);
+    flex-shrink:0;
+    animation:pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity:.4; transform:scale(.85); }
+    50% { opacity:1; transform:scale(1); }
+  }
+  .pulse-dot.d2 { animation-delay:.3s; }
+  .pulse-dot.d3 { animation-delay:.6s; }
+
+  /* Text block */
+  .text-block {
+    font-size:15px; line-height:1.7; color:var(--t2);
+  }
+  .text-block h3 {
+    font-size:15px; font-weight:600; color:var(--t1);
+    margin-top:0; margin-bottom:8px;
+    padding-bottom:6px; border-bottom:1px solid var(--b1);
+    letter-spacing:-.01em;
+  }
+  .text-block h3 + p { margin-top:0; }
+  .text-block p { margin-bottom:2px; }
+  .text-block ul { list-style:none; padding:0; }
+  .text-block ul li {
+    margin-bottom:3px; padding-left:12px; position:relative;
+  }
+  .text-block ul li::before {
+    content:"•"; position:absolute; left:0; color:var(--t3);
+  }
+
+  /* Table block */
+  .md-table-wrap {
+    margin:8px 0; border-radius:10px; overflow:hidden;
+    border:1px solid var(--b1); background:rgba(255,255,255,.02);
+  }
+  table.md-table {
+    width:100%; border-collapse:collapse;
+  }
+  .md-table th {
+    padding:8px 14px; font-weight:600; color:var(--t1);
+    font-size:13px; letter-spacing:.01em;
+    border-bottom:2px solid rgba(255,255,255,.10);
+    text-align:left;
+  }
+  .md-table th.num { text-align:right; }
+  .md-table td {
+    padding:10px 14px; font-size:14px; line-height:1.4;
+    color:var(--t2); font-weight:400;
+    border-bottom:1px solid rgba(255,255,255,.06);
+    text-align:left;
+  }
+  .md-table td.num { text-align:right; }
+  .md-table tr.total td {
+    background:rgba(255,255,255,.04);
+    font-weight:600; color:var(--t1); border-bottom:none;
+  }
+
+  /* Streaming cursor */
+  .cursor {
+    display:inline-block; color:var(--acc); font-weight:700;
+    animation:blink 1s steps(2, start) infinite;
+    margin-left:2px;
+  }
+  @keyframes blink { to { visibility:hidden; } }
+</style>
+</head>
+<body>
+<span class="frame-label">CARD · MESSAGE BUBBLES · 720×auto</span>
+<div class="canvas">
+
+  <!-- Variant 1: User with attachment -->
+  <div class="variant-label">User message (role=user, with attachment)</div>
+  <div class="msg user">
+    <div class="avatar op">EB</div>
+    <div class="user-bubble">
+      <div class="attach-chip">📎 plano-cocina-U-bernardi.pdf · 2.3 MB</div>
+      <p>Material Puraprima Onix White Mate. Cocina en U con isla, pileta doble, anafes gas + eléctrico.</p>
+    </div>
+  </div>
+
+  <!-- Variant 2: Thinking only -->
+  <div class="variant-label">Assistant — thinking only (pulsing dots)</div>
+  <div class="msg">
+    <div class="avatar v">V</div>
+    <div class="assist-wrap">
+      <div class="block think-block">
+        <div class="think-line"><span class="pulse-dot"></span>Analizando brief…</div>
+        <div class="think-line"><span class="pulse-dot d2"></span>Identificando material…</div>
+        <div class="think-line"><span class="pulse-dot d3"></span>Detectando sectores…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Variant 3: Text block (headings + markdown) -->
+  <div class="variant-label">Assistant — text block (headings + markdown)</div>
+  <div class="msg">
+    <div class="avatar v">V</div>
+    <div class="assist-wrap">
+      <div class="block text-block">
+        <h3>Material</h3>
+        <p>Puraprima Onix White Mate, espesor 3 cm. Es un sintético — aplica merma 10%.</p>
+        <h3>Cobertura</h3>
+        <ul>
+          <li>Mesada U — 4.32 m²</li>
+          <li>Isla central — 0.96 m²</li>
+          <li>Total — 5.28 m²</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Variant 4: Calc table block -->
+  <div class="variant-label">Assistant — calc table block</div>
+  <div class="msg">
+    <div class="avatar v">V</div>
+    <div class="assist-wrap">
+      <div class="block text-block">
+        <div class="md-table-wrap">
+          <table class="md-table">
+            <thead>
+              <tr>
+                <th>Ítem</th>
+                <th class="num">Cantidad</th>
+                <th class="num">Unit</th>
+                <th class="num">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Puraprima Onix White Mate</td>
+                <td class="num">5.81 m²</td>
+                <td class="num">USD 485/m²</td>
+                <td class="num">USD 2.818</td>
+              </tr>
+              <tr>
+                <td>Corte y pulido borde recto</td>
+                <td class="num">7.20 ml</td>
+                <td class="num">$ 6.500</td>
+                <td class="num">$ 46.800</td>
+              </tr>
+              <tr>
+                <td>Pegado pileta empotrada</td>
+                <td class="num">1 un</td>
+                <td class="num">$ 78.000</td>
+                <td class="num">$ 78.000</td>
+              </tr>
+              <tr>
+                <td>Agujero anafe</td>
+                <td class="num">2 un</td>
+                <td class="num">$ 32.000</td>
+                <td class="num">$ 64.000</td>
+              </tr>
+              <tr>
+                <td>Colocación</td>
+                <td class="num">5.28 m²</td>
+                <td class="num">$ 54.000</td>
+                <td class="num">$ 285.120</td>
+              </tr>
+              <tr class="total">
+                <td><strong>TOTAL</strong></td>
+                <td class="num">—</td>
+                <td class="num">—</td>
+                <td class="num"><strong>USD 3.180 / $ 4.284.000</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Variant 5: Multi-block -->
+  <div class="variant-label">Assistant — multi-block (thinking + text + table)</div>
+  <div class="msg">
+    <div class="avatar v">V</div>
+    <div class="assist-wrap">
+      <div class="block think-block">
+        <div class="think-line"><span class="pulse-dot"></span>Aplicando IVA + merma…</div>
+        <div class="think-line"><span class="pulse-dot d2"></span>Calculando colocación…</div>
+      </div>
+      <div class="block text-block">
+        <p>Cálculo listo, revisá la tabla.</p>
+      </div>
+      <div class="block text-block">
+        <div class="md-table-wrap">
+          <table class="md-table">
+            <thead>
+              <tr>
+                <th>Ítem</th>
+                <th class="num">m²</th>
+                <th class="num">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Material + merma</td>
+                <td class="num">5.81</td>
+                <td class="num">USD 2.818</td>
+              </tr>
+              <tr>
+                <td>MO (corte, pegado, agujeros)</td>
+                <td class="num">—</td>
+                <td class="num">$ 188.800</td>
+              </tr>
+              <tr class="total">
+                <td><strong>Total</strong></td>
+                <td class="num">—</td>
+                <td class="num"><strong>USD 3.180</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Variant 6: Streaming cursor -->
+  <div class="variant-label">Assistant — streaming cursor</div>
+  <div class="msg">
+    <div class="avatar v">V</div>
+    <div class="assist-wrap">
+      <div class="block text-block">
+        <p>Listo, ya tengo el despiece. Estoy armando el cálculo de precios ahora<span class="cursor">▋</span></p>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Card · Context Analysis · 920×auto</title>
+<style>
+  :root {
+    --bg:#07070e; --s1:#0c0c16; --s2:#101018; --s3:#15151f;
+    --b1:rgba(255,255,255,.07); --b2:rgba(255,255,255,.13); --b3:rgba(255,255,255,.20);
+    --t1:rgba(255,255,255,.96); --t2:rgba(255,255,255,.58); --t3:rgba(255,255,255,.28); --t4:rgba(255,255,255,.14);
+    --acc:#4f8fff; --acc2:rgba(79,143,255,.12); --acc3:rgba(79,143,255,.22);
+    --grn:#30d158; --amb:#f5a623; --red:#ff453a;
+    --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Geist","Inter",system-ui,sans-serif;
+    --font-mono:ui-monospace,"Geist Mono",Menlo,monospace;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { background:#050508; color:var(--t1); font-family:var(--font-sans); font-size:15px; -webkit-font-smoothing:antialiased; }
+  body { padding:40px 24px; min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .frame-label { font-family:var(--font-mono); font-size:11px; color:rgba(255,255,255,.4); letter-spacing:.05em; }
+  .canvas {
+    background:var(--bg); padding:30px; border-radius:8px; width:920px; position:relative;
+    border:1px solid rgba(255,255,255,.06);
+  }
+  .canvas::after {
+    content:''; position:absolute; inset:0; border-radius:8px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+    pointer-events:none;
+  }
+
+  /* ── Card ─────────────────────────────────────────────────── */
+  .card {
+    width:100%; border:1px solid var(--b1); background:var(--s1);
+    border-radius:16px; overflow:hidden;
+    box-shadow:0 20px 40px -20px rgba(0,0,0,.5);
+  }
+  .card-header {
+    display:flex; align-items:center; gap:12px;
+    padding:16px 20px; border-bottom:1px solid var(--b1);
+    background:linear-gradient(to bottom, var(--s3), var(--s2));
+  }
+  .badge-primary {
+    font-size:10px; font-weight:600; text-transform:uppercase;
+    letter-spacing:.1em; color:var(--acc);
+    background:var(--acc2); border:1px solid var(--acc3);
+    padding:5px 8px; border-radius:6px;
+  }
+  .card-title {
+    font-size:15px; font-weight:600; color:var(--t1); letter-spacing:-.01em;
+  }
+  .sector-summary {
+    margin-left:auto; font-family:var(--font-mono);
+    font-size:12px; color:var(--t3);
+  }
+  .copy-btn {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:6px 10px; border-radius:6px;
+    font-size:11px; font-weight:500; color:var(--t3);
+    background:transparent; border:1px solid var(--b2);
+    cursor:pointer;
+  }
+  .copy-btn svg { width:12px; height:12px; }
+  .card-body { padding:20px; }
+  .intro-text {
+    font-size:12px; color:var(--t3); line-height:1.55; margin-bottom:18px;
+  }
+  .section { margin-bottom:20px; }
+  .section h4 {
+    font-size:11px; font-weight:600; text-transform:uppercase;
+    letter-spacing:.1em; margin-bottom:8px;
+  }
+  .section h4.grn { color:var(--grn); }
+  .section h4.amb { color:var(--amb); }
+
+  .row {
+    display:grid; grid-template-columns:140px 1fr auto; gap:12px;
+    align-items:start; padding:8px 0;
+    border-top:1px solid rgba(255,255,255,.035);
+  }
+  .row-label {
+    font-size:12px; color:var(--t3); text-transform:uppercase;
+    letter-spacing:.06em;
+  }
+  .row-value { font-size:13px; color:var(--t1); }
+  .row-note {
+    font-size:11px; color:var(--t3); margin-top:3px; font-style:italic;
+    line-height:1.45;
+  }
+
+  .src-badge {
+    font-size:10px; text-transform:uppercase; letter-spacing:.08em;
+    padding:2px 6px; border-radius:4px; border:1px solid transparent;
+    white-space:nowrap;
+  }
+  .src-brief  { background:rgba(79,143,255,.10); color:var(--acc); border-color:rgba(79,143,255,.30); }
+  .src-rule   { background:rgba(245,166,35,.10); color:var(--amb); border-color:rgba(245,166,35,.30); }
+  .src-default{ background:rgba(255,255,255,.05); color:var(--t3); border-color:var(--b1); }
+  .src-inferred{ background:rgba(255,255,255,.05); color:var(--t3); border-color:var(--b1); }
+
+  .status-verified {
+    background:rgba(48,209,88,.15); color:var(--grn);
+    border:1px solid rgba(48,209,88,.40);
+    font-size:10px; text-transform:uppercase; letter-spacing:.08em;
+    padding:2px 6px; border-radius:4px;
+  }
+
+  /* Tech detection row */
+  .tech-row { padding:10px 0; border-top:1px solid rgba(255,255,255,.035); }
+  .tech-head {
+    display:flex; align-items:center; gap:8px; margin-bottom:8px;
+  }
+  .tech-label {
+    font-size:12px; color:var(--t3);
+    text-transform:uppercase; letter-spacing:.06em;
+  }
+  .tech-confidence {
+    margin-left:auto; font-family:var(--font-mono);
+    font-size:10px; color:var(--t3);
+  }
+  .radio-pills { display:flex; flex-wrap:wrap; gap:6px; }
+  .radio-pill {
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:12px; padding:5px 10px; border-radius:6px;
+    border:1px solid var(--b1); background:transparent; color:var(--t2);
+    cursor:pointer;
+  }
+  .radio-pill.selected {
+    border-color:var(--acc);
+    background:rgba(79,143,255,.10);
+    color:var(--t1);
+  }
+  .radio-dot {
+    display:inline-block; width:10px; height:10px; border-radius:50%;
+    border:1.5px solid var(--t3); background:transparent;
+  }
+  .radio-pill.selected .radio-dot {
+    border-color:var(--acc);
+    background:radial-gradient(circle, var(--acc) 40%, transparent 42%);
+  }
+
+  .card-footer {
+    padding:16px 20px; border-top:1px solid var(--b1);
+    background:var(--s2);
+  }
+  .btn-primary {
+    width:100%; padding:10px 16px; border-radius:12px;
+    background:var(--acc); color:#fff; border:none; cursor:pointer;
+    font-size:13px; font-weight:600; letter-spacing:-.005em;
+  }
+  .btn-primary:hover { background:#3d7be6; }
+</style>
+</head>
+<body>
+<span class="frame-label">CARD · CONTEXT ANALYSIS · 920×auto</span>
+<div class="canvas">
+  <div class="card">
+    <!-- Header -->
+    <div class="card-header">
+      <span class="badge-primary">🔍 Análisis de contexto</span>
+      <h3 class="card-title">Paso previo al despiece</h3>
+      <span class="sector-summary">4 mesada(s) en cocina + isla</span>
+      <button class="copy-btn" title="Copiar contexto">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5h8a2 2 0 012 2v12a2 2 0 01-2 2H8a2 2 0 01-2-2V7a2 2 0 012-2z"/><path d="M16 3H10a2 2 0 00-2 2"/></svg>
+      </button>
+    </div>
+
+    <!-- Body -->
+    <div class="card-body">
+      <p class="intro-text">
+        Antes de medir el plano, validemos lo que sé del trabajo. Corregí lo que esté mal
+        con doble-click y respondé las preguntas bloqueantes.
+      </p>
+
+      <!-- Datos que tengo -->
+      <div class="section">
+        <h4 class="grn">📋 Datos que tengo</h4>
+
+        <div class="row">
+          <div class="row-label">Cliente</div>
+          <div class="row-value">Erica Bernardi</div>
+          <span class="src-badge src-brief">del brief</span>
+        </div>
+        <div class="row">
+          <div class="row-label">Proyecto</div>
+          <div class="row-value">Casa Bernardi</div>
+          <span class="src-badge src-brief">del brief</span>
+        </div>
+        <div class="row">
+          <div class="row-label">Material</div>
+          <div class="row-value">Puraprima Onix White Mate</div>
+          <span class="src-badge src-brief">del brief</span>
+        </div>
+        <div class="row">
+          <div class="row-label">Localidad</div>
+          <div class="row-value">Rosario</div>
+          <span class="src-badge src-brief">del brief</span>
+        </div>
+        <div class="row">
+          <div class="row-label">Tipo de trabajo</div>
+          <div class="row-value">Cocina</div>
+          <span class="src-badge src-brief">del brief</span>
+        </div>
+      </div>
+
+      <!-- Detectado en plano / brief -->
+      <div class="section">
+        <h4 class="grn">🔎 Detectado en plano / brief</h4>
+
+        <div class="tech-row">
+          <div class="tech-head">
+            <span class="tech-label">Isla central</span>
+            <span class="src-badge src-brief">del brief</span>
+            <span class="status-verified">confirmado</span>
+            <span class="tech-confidence">95%</span>
+          </div>
+          <div class="radio-pills">
+            <label class="radio-pill selected"><span class="radio-dot"></span>Sí, hay isla</label>
+            <label class="radio-pill"><span class="radio-dot"></span>No hay isla</label>
+          </div>
+        </div>
+
+        <div class="tech-row">
+          <div class="tech-head">
+            <span class="tech-label">Pileta</span>
+            <span class="src-badge src-brief">del brief</span>
+            <span class="status-verified">confirmado</span>
+            <span class="tech-confidence">95%</span>
+          </div>
+          <div class="radio-pills">
+            <label class="radio-pill"><span class="radio-dot"></span>Simple</label>
+            <label class="radio-pill selected"><span class="radio-dot"></span>Doble (2 bachas)</label>
+            <label class="radio-pill"><span class="radio-dot"></span>No lleva</label>
+          </div>
+        </div>
+
+        <div class="tech-row">
+          <div class="tech-head">
+            <span class="tech-label">Anafe</span>
+            <span class="src-badge src-brief">del brief</span>
+            <span class="status-verified">confirmado</span>
+            <span class="tech-confidence">95%</span>
+          </div>
+          <div class="radio-pills">
+            <label class="radio-pill"><span class="radio-dot"></span>No lleva</label>
+            <label class="radio-pill"><span class="radio-dot"></span>1</label>
+            <label class="radio-pill selected"><span class="radio-dot"></span>2 (gas + eléctrico)</label>
+            <label class="radio-pill"><span class="radio-dot"></span>3+</label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reglas / defaults -->
+      <div class="section">
+        <h4 class="amb">✨ Reglas / defaults que aplico</h4>
+
+        <div class="row">
+          <div class="row-label">Pileta (montaje)</div>
+          <div class="row-value">
+            Empotrada (PEGADOPILETA)
+            <div class="row-note">
+              Regla D'Angelo: en cocina la pileta siempre va empotrada, nunca apoyo. El operador puede corregir si es excepción.
+            </div>
+          </div>
+          <span class="src-badge src-rule">regla D'Angelo</span>
+        </div>
+
+        <div class="row">
+          <div class="row-label">Zócalos</div>
+          <div class="row-value">
+            Trasero por tramo, 7 cm
+            <div class="row-note">
+              Brief dice "con zócalos". Default 7 cm trasero por tramo del largo real.
+            </div>
+          </div>
+          <span class="src-badge src-rule">brief + regla</span>
+        </div>
+
+        <div class="row">
+          <div class="row-label">Colocación</div>
+          <div class="row-value">Incluye</div>
+          <span class="src-badge src-brief">del brief</span>
+        </div>
+
+        <div class="row">
+          <div class="row-label">Forma de pago</div>
+          <div class="row-value">Contado</div>
+          <span class="src-badge src-brief">del brief</span>
+        </div>
+
+        <div class="row">
+          <div class="row-label">Demora</div>
+          <div class="row-value">30 días</div>
+          <span class="src-badge src-default">default</span>
+        </div>
+
+        <div class="row">
+          <div class="row-label">Tipo</div>
+          <div class="row-value">
+            Particular
+            <div class="row-note">
+              Inferido — si tiene varias unidades/tipologías, corregí a Edificio.
+            </div>
+          </div>
+          <span class="src-badge src-inferred">inferido</span>
+        </div>
+
+        <div class="row">
+          <div class="row-label">Descuento</div>
+          <div class="row-value">
+            No aplica
+            <div class="row-note">
+              Si el cliente tiene descuento (arquitecta u otro), corregí.
+            </div>
+          </div>
+          <span class="src-badge src-default">default</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="card-footer">
+      <button class="btn-primary">Confirmar contexto — seguir al despiece</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

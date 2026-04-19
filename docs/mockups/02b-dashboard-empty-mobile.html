@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Dashboard · vacío · Mobile 390×844</title>
+<style>
+  :root {
+    --bg:#07070e; --s1:#0c0c16; --s2:#101018; --s3:#15151f;
+    --b1:rgba(255,255,255,.07); --b2:rgba(255,255,255,.13); --b3:rgba(255,255,255,.20);
+    --t1:rgba(255,255,255,.96); --t2:rgba(255,255,255,.58); --t3:rgba(255,255,255,.28); --t4:rgba(255,255,255,.14);
+    --acc:#4f8fff; --acc2:rgba(79,143,255,.12); --acc3:rgba(79,143,255,.22);
+    --grn:#30d158; --grn2:rgba(48,209,88,.11);
+    --amb:#f5a623; --amb2:rgba(245,166,35,.10);
+    --red:#ff453a;
+    --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Geist","Inter",system-ui,sans-serif;
+    --font-mono:ui-monospace,"Geist Mono",Menlo,monospace;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { background:#050508; color:var(--t1); font-family:var(--font-sans); font-size:15px; -webkit-font-smoothing:antialiased; }
+  body { padding:40px 24px; min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .frame-label { font-family:var(--font-mono); font-size:11px; color:rgba(255,255,255,.4); letter-spacing:.05em; }
+  .frame {
+    width:390px; height:844px; background:var(--bg); overflow:hidden; position:relative;
+    border-radius:38px; border:10px solid #0a0a10; display:flex; flex-direction:column;
+  }
+  .frame::after {
+    content:''; position:absolute; inset:0; pointer-events:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+  }
+
+  .mtop {
+    display:flex; align-items:center; gap:10px; padding:12px 16px;
+    background:var(--s1); border-bottom:1px solid var(--b1);
+  }
+  .mburger { width:28px; height:28px; border-radius:6px; display:flex; align-items:center; justify-content:center; color:var(--t2); background:transparent; border:none; }
+  .mlogo-badge { width:24px; height:24px; border-radius:6px; background:var(--acc); color:#fff; font-weight:600; font-size:11px; display:flex; align-items:center; justify-content:center; letter-spacing:-.5px; }
+  .mlogo-text { font-size:13px; font-weight:500; letter-spacing:-.02em; }
+
+  .mhead { padding:16px 16px 12px; }
+  .mhead-h1 { font-size:18px; font-weight:500; letter-spacing:-.03em; color:var(--t1); }
+  .mhead-sub { font-size:11px; color:var(--t3); margin-top:2px; }
+
+  .mtabs {
+    display:flex; gap:6px; padding:8px 16px; overflow-x:auto;
+    background:var(--s2); border-top:1px solid var(--b1); border-bottom:1px solid var(--b1);
+    white-space:nowrap;
+  }
+  .mtabs::-webkit-scrollbar { display:none; }
+  .ftab { display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border:1px solid var(--b1); border-radius:6px; background:transparent; font-size:12px; font-weight:500; color:var(--t3); cursor:pointer; flex-shrink:0; }
+  .ftab.active { background:var(--acc2); border-color:var(--acc); color:var(--acc); }
+  .ftab .count { font-size:10px; padding:1px 6px; border-radius:99px; background:rgba(255,255,255,.08); color:var(--t3); font-family:var(--font-mono); }
+  .ftab.active .count { background:var(--acc3); color:var(--acc); }
+
+  .empty-wrap { flex:1; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .empty { display:flex; flex-direction:column; align-items:center; text-align:center; gap:14px; max-width:320px; width:100%; }
+  .empty-icon { width:52px; height:52px; border-radius:99px; background:var(--acc2); border:1px solid var(--acc3); display:flex; align-items:center; justify-content:center; color:var(--acc); }
+  .empty-title { font-size:15px; font-weight:500; color:var(--t1); letter-spacing:-.02em; }
+  .empty-sub { font-size:13px; color:var(--t3); line-height:1.5; }
+  .empty-cta { margin-top:8px; width:100%; padding:12px 16px; background:var(--acc); color:#fff; font-size:13px; font-weight:500; border:none; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; gap:7px; box-shadow:0 6px 24px rgba(79,143,255,.25); }
+</style>
+</head>
+<body>
+<span class="frame-label">DASHBOARD · VACÍO · MOBILE · 390×844 · /</span>
+<div class="frame">
+
+  <div class="mtop">
+    <button class="mburger">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="mlogo-badge">D</div>
+    <span class="mlogo-text">D'Angelo</span>
+  </div>
+
+  <div class="mhead">
+    <div class="mhead-h1">Presupuestos</div>
+    <div class="mhead-sub">0 registros</div>
+  </div>
+
+  <div class="mtabs">
+    <button class="ftab active">Todos <span class="count">0</span></button>
+    <button class="ftab">Borrador <span class="count">0</span></button>
+    <button class="ftab">Pendiente <span class="count">0</span></button>
+    <button class="ftab">Validado <span class="count">0</span></button>
+    <button class="ftab">Enviado <span class="count">0</span></button>
+    <button class="ftab">Web <span class="count">0</span></button>
+  </div>
+
+  <div class="empty-wrap">
+    <div class="empty">
+      <div class="empty-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.64 5.64l2.12 2.12M16.24 16.24l2.12 2.12M5.64 18.36l2.12-2.12M16.24 7.76l2.12-2.12"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </div>
+      <div class="empty-title">Sin presupuestos todavía</div>
+      <div class="empty-sub">Subí un plano o dictá un enunciado para que Valentina arme el primero</div>
+      <button class="empty-cta">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nuevo presupuesto
+      </button>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
