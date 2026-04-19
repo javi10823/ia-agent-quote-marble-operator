@@ -43,7 +43,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
       <div className="h-px bg-b1 my-3" />
 
       <div className="mt-auto">
-        <button onClick={handleNew} className="w-full py-2.5 px-3 bg-acc border-none rounded-lg text-white text-[13px] font-medium font-sans cursor-pointer flex items-center justify-center gap-[7px] -tracking-[0.01em] transition-all duration-150 hover:bg-[#3a7aff] hover:-translate-y-px hover:shadow-[0_8px_24px_rgba(79,143,255,.30)]">
+        <button onClick={handleNew} className="w-full py-2.5 px-3 bg-acc border-none rounded-lg text-white text-[13px] font-medium font-sans cursor-pointer flex items-center justify-center gap-[7px] -tracking-[0.01em] transition-all duration-150 hover:bg-acc-hover hover:-translate-y-px hover:shadow-[0_8px_24px_var(--acc-shadow)]">
           <PlusIcon /> Nuevo presupuesto
         </button>
         <button onClick={async () => { await logout(); router.push("/login"); }} className="w-full py-[7px] px-2 bg-transparent border-none rounded-md text-t3 text-[11px] font-normal font-sans cursor-pointer flex items-center justify-center gap-1.5 transition-colors duration-150 hover:text-t2 mt-2.5">

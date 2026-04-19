@@ -126,7 +126,7 @@ export default function RegenerateButton({ quoteId, enabled, onRegenerated }: Pr
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-lg bg-grn text-white text-[13px] font-medium shadow-[0_10px_30px_-10px_rgba(48,209,88,0.5)] animate-[fadeIn_0.2s_ease]">
+        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-lg bg-grn text-white text-[13px] font-medium shadow-[0_10px_30px_-10px_rgba(92,179,143,0.5)] animate-[fadeIn_0.2s_ease]">
           ✓ {toast}
         </div>
       )}

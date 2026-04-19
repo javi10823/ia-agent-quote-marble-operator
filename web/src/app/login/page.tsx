@@ -38,7 +38,7 @@ export default function LoginPage() {
   return (
     <div className="flex items-center justify-center h-screen bg-bg relative">
       {/* Subtle glow */}
-      <div className="hidden md:block fixed w-[600px] h-[600px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none bg-[radial-gradient(circle,rgba(79,143,255,0.06)_0%,transparent_70%)]" />
+      <div className="hidden md:block fixed w-[600px] h-[600px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none bg-[radial-gradient(circle,rgba(95,125,160,0.06)_0%,transparent_70%)]" />
 
       <div className="relative z-[1] w-full max-w-[400px] mx-4 bg-s1 border border-b1 rounded-2xl px-5 md:px-9 pt-8 md:pt-10 pb-7 md:pb-9 shadow-[0_24px_80px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,255,255,0.03)_inset]">
         {/* Branding */}
@@ -126,7 +126,7 @@ export default function LoginPage() {
               "transition-[background,transform] duration-150",
               loading
                 ? "bg-acc/40 cursor-wait"
-                : "bg-acc hover:bg-[#3d7be6] active:scale-[0.99] cursor-pointer",
+                : "bg-acc hover:bg-acc-hover active:scale-[0.99] cursor-pointer",
             )}
           >
             {loading ? "Verificando..." : "Iniciar sesión"}

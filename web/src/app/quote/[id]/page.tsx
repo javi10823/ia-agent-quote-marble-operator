@@ -913,7 +913,7 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating, 
           )}
         </Section>
       ) : quote.source === "web" && quote.source_files && quote.source_files.length > 0 ? (
-        <div className="p-5 rounded-[10px] text-center border border-dashed border-acc/30" style={{ background: "linear-gradient(135deg, rgba(79,143,255,0.08), rgba(79,143,255,0.03))" }}>
+        <div className="p-5 rounded-[10px] text-center border border-dashed border-acc/30" style={{ background: "linear-gradient(135deg, rgba(95,125,160,0.08), rgba(95,125,160,0.03))" }}>
           <div className="flex justify-center mb-3">
             <div className="flex gap-1.5">
               <span className="w-2 h-2 rounded-full bg-acc animate-pulse" />
@@ -1034,7 +1034,7 @@ function ChatInput({ input, setInput, files, setFiles, multiPiece, setMultiPiece
 
       <div className={clsx(
         "flex items-end gap-2 bg-s3 rounded-xl px-4 py-2.5 transition-[border-color,box-shadow] duration-150",
-        dragActive ? "border border-acc shadow-[0_0_20px_rgba(79,143,255,0.15)]" : "border border-b2",
+        dragActive ? "border border-acc shadow-[0_0_20px_rgba(95,125,160,0.15)]" : "border border-b2",
       )}>
         <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKey} rows={1} disabled={sending} autoFocus
           placeholder={customPlaceholder || `Escrib${I} el enunciado o arrastr${A} el plano ac${A}...`}

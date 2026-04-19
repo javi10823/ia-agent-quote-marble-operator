@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { GeistSans } from "geist/font/sans";
-import { GeistMono } from "geist/font/mono";
+import { fraunces, interTight, jetbrainsMono } from "./fonts";
 import "./globals.css";
 import AppShell from "@/components/ui/AppShell";
 
@@ -11,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+    <html lang="es" className={`${interTight.variable} ${fraunces.variable} ${jetbrainsMono.variable}`}>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
