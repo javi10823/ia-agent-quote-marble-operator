@@ -1,4 +1,5 @@
 const API_BASE = "";
+const STORAGE_KEY = "dangelo:username";
 
 export async function login(username: string, password: string): Promise<{ ok: boolean; username: string }> {
   const res = await fetch(`${API_BASE}/api/auth/login`, {
@@ -12,7 +13,13 @@ export async function login(username: string, password: string): Promise<{ ok: b
     throw new Error(err.detail || "Usuario o contraseña incorrectos");
   }
   if (!res.ok) throw new Error("Error de conexión");
-  return res.json();
+  const data = await res.json();
+  // Cacheamos el username del lado del cliente para saludos personalizados
+  // (Home hero "Buen día, X."). La sesión real vive en cookie.
+  if (typeof window !== "undefined" && data?.username) {
+    try { localStorage.setItem(STORAGE_KEY, data.username); } catch {}
+  }
+  return data;
 }
 
 export async function logout(): Promise<void> {
@@ -20,4 +27,22 @@ export async function logout(): Promise<void> {
     method: "POST",
     credentials: "include",
   });
+  if (typeof window !== "undefined") {
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+  }
+}
+
+/** Username del operador logueado, si está disponible. null si no hay sesión
+ * guardada en localStorage (no consulta al backend). */
+export function getCurrentUsername(): string | null {
+  if (typeof window === "undefined") return null;
+  try { return localStorage.getItem(STORAGE_KEY); } catch { return null; }
+}
+
+/** Capitaliza y limpia el username para mostrar en saludos.
+ * "javier" → "Javier", "javier.hernandez" → "Javier". */
+export function prettyFirstName(u: string | null): string {
+  if (!u) return "";
+  const first = u.split(/[.\s_-]/)[0] || u;
+  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
 }
