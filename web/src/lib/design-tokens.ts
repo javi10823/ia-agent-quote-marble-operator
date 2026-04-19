@@ -18,15 +18,15 @@
 
 export const COLORS = {
   /* Superficies (dark, "pizarra & acero") */
-  bg: "#0f1318",
-  s1: "#141923",
-  s2: "#1a1f26",
-  s3: "#232934",
+  bg: "#070b10",
+  s1: "#0a0e13",
+  s2: "#111720",
+  s3: "#1a2230",
 
   /* Bordes y líneas sutiles — tint crema fría */
-  b1: "rgba(232,237,229,0.07)",
-  b2: "rgba(232,237,229,0.14)",
-  b3: "rgba(232,237,229,0.20)",
+  b1: "rgba(232,237,229,0.06)",
+  b2: "rgba(232,237,229,0.12)",
+  b3: "rgba(232,237,229,0.18)",
 
   /* Tinta */
   t1: "#e8ede5",

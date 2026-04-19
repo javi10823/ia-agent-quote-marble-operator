@@ -24,23 +24,19 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
     router.push(to);
   }
 
+  const unread = quotes.filter(q => !q.is_read).length;
   const sidebarContent = (
-    <nav className="w-[212px] shrink-0 bg-s1 border-r border-b1 flex flex-col px-2.5 pt-[18px] pb-5 h-full">
-      {/* Logo */}
-      <div onClick={() => navigate("/")} className="flex items-center gap-2.5 px-2 pt-0.5 pb-5 cursor-pointer">
-        <div className="w-[26px] h-[26px] rounded-md bg-acc flex items-center justify-center text-xs font-semibold text-white -tracking-[0.5px]">D</div>
-        <span className="text-[13px] font-medium -tracking-[0.02em] text-t1">D&apos;Angelo</span>
+    <nav className="w-[200px] shrink-0 bg-bg flex flex-col px-4 pt-6 pb-6 h-full">
+      {/* Logo — Fraunces italic, badge con acento suave */}
+      <div onClick={() => navigate("/")} className="flex items-center gap-3 pb-8 cursor-pointer group">
+        <div className="w-[34px] h-[34px] rounded-lg bg-gradient-to-br from-acc/90 to-acc-hover flex items-center justify-center text-[13px] font-semibold text-white -tracking-[0.5px] shadow-[0_4px_12px_var(--acc-shadow)]">D</div>
+        <span className="font-serif italic text-[19px] font-medium -tracking-[0.01em] text-t1 leading-none">D&apos;Angelo</span>
       </div>
 
-      {/* Nav */}
-      <span className="text-[10px] font-medium text-t4 uppercase tracking-[0.10em] px-2 pb-1">Principal</span>
-      <NavItem icon={<GridIcon />} label="Presupuestos" badge={String(quotes.length)} unreadCount={quotes.filter(q => !q.is_read).length} active={path === "/"} onClick={() => navigate("/")} />
-
-      <span className="text-[10px] font-medium text-t4 uppercase tracking-[0.10em] px-2 pb-1 mt-3.5">Sistema</span>
-      <NavItem icon={<GearIcon />} label="Catálogo" active={path === "/config"} onClick={() => navigate("/config")} />
-      <NavItem icon={<SettingsIcon />} label="Configuración" active={path === "/settings"} onClick={() => navigate("/settings")} />
-
-      <div className="h-px bg-b1 my-3" />
+      {/* Nav items — sin labels de sección, tipografía editorial */}
+      <NavItem icon={<InboxIcon />} label="Presupuestos" count={quotes.length} unreadCount={unread} active={path === "/"} onClick={() => navigate("/")} />
+      <NavItem icon={<BookIcon />} label="Catálogo" active={path === "/config"} onClick={() => navigate("/config")} />
+      <NavItem icon={<CogIcon />} label="Configuración" active={path === "/settings"} onClick={() => navigate("/settings")} />
 
       <div className="mt-auto">
         <button onClick={handleNew} className="w-full py-2.5 px-3 bg-acc border-none rounded-lg text-white text-[13px] font-medium font-sans cursor-pointer flex items-center justify-center gap-[7px] -tracking-[0.01em] transition-all duration-150 hover:bg-acc-hover hover:-translate-y-px hover:shadow-[0_8px_24px_var(--acc-shadow)]">
@@ -74,48 +70,49 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
 // Mobile top bar component
 export function MobileTopBar({ onMenuClick }: { onMenuClick: () => void }) {
   return (
-    <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-s1 border-b border-b1 shrink-0">
+    <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-bg border-b border-b1 shrink-0">
       <button onClick={onMenuClick} className="bg-transparent border-none text-t2 cursor-pointer p-1">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
         </svg>
       </button>
-      <div className="w-[22px] h-[22px] rounded-md bg-acc flex items-center justify-center text-[10px] font-semibold text-white">D</div>
-      <span className="text-[13px] font-medium text-t1">D&apos;Angelo</span>
+      <div className="w-[24px] h-[24px] rounded-md bg-gradient-to-br from-acc/90 to-acc-hover flex items-center justify-center text-[11px] font-semibold text-white">D</div>
+      <span className="font-serif italic text-[15px] font-medium text-t1 leading-none">D&apos;Angelo</span>
     </div>
   );
 }
 
-function NavItem({ icon, label, badge, unreadCount, active, onClick }: {
-  icon: React.ReactNode; label: string; badge?: string; unreadCount?: number; active: boolean; onClick: () => void;
+function NavItem({ icon, label, count, unreadCount, active, onClick }: {
+  icon: React.ReactNode; label: string; count?: number; unreadCount?: number; active: boolean; onClick: () => void;
 }) {
   return (
     <button onClick={onClick} className={clsx(
-      "flex items-center gap-2 p-2 rounded-md text-xs font-normal cursor-pointer border-none w-full text-left transition-all duration-100 font-sans",
-      active ? "text-acc bg-acc/[0.11]" : "text-t2 bg-transparent hover:bg-white/[0.04]",
+      "flex items-center gap-3 px-3 py-[9px] rounded-md text-[13px] cursor-pointer border-none w-full text-left transition-colors duration-100 font-sans mb-0.5",
+      active ? "text-t1 bg-white/[0.035]" : "text-t2 bg-transparent hover:bg-white/[0.025]",
     )}>
-      <span className={clsx("shrink-0", active ? "opacity-100" : "opacity-65")}>{icon}</span>
-      {label}
+      <span className={clsx("shrink-0", active ? "text-acc" : "text-t3")}>{icon}</span>
+      <span className={clsx("flex-1", active ? "font-medium" : "font-normal")}>{label}</span>
       {unreadCount ? (
-        <span className="ml-auto text-[10px] font-semibold px-[7px] py-px rounded-full bg-acc text-white font-mono">{unreadCount}</span>
-      ) : badge ? (
-        <span className="ml-auto text-[10px] font-medium px-[7px] py-px rounded-full bg-white/[0.07] text-t3 font-mono">{badge}</span>
+        <span className="text-[10px] font-semibold px-[7px] py-px rounded-full bg-acc text-white font-mono">{unreadCount}</span>
+      ) : count != null ? (
+        <span className="text-[11px] text-t4 font-mono tabular-nums">{count}</span>
       ) : null}
     </button>
   );
 }
 
-function GridIcon() {
-  return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>;
+// Iconos de trazo fino — estilo editorial, no "blocky".
+function InboxIcon() {
+  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 14l2-8h14l2 8"/><path d="M3 14h6l1 2h4l1-2h6v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4z"/></svg>;
 }
-function GearIcon() {
-  return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>;
+function BookIcon() {
+  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2V5zM4 19a2 2 0 012-2h13"/></svg>;
+}
+function CogIcon() {
+  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>;
 }
 function PlusIcon() {
   return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
-}
-function SettingsIcon() {
-  return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>;
 }
 function LogoutIcon() {
   return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>;
