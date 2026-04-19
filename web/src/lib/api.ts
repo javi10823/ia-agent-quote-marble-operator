@@ -7,6 +7,25 @@ function handleAuthError(res: Response): void {
   }
 }
 
+/**
+ * Wrap `fetch()` → si tira TypeError "Failed to fetch" (red caída / CORS /
+ * backend inalcanzable), el browser muestra un mensaje crudo horrible en
+ * los toasts. Lo traducimos a algo accionable.
+ *
+ * Uso: `apiFetch(url, init)` en lugar de `fetch(url, init)`.
+ */
+export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (err: any) {
+    // TypeError: Failed to fetch (Chrome/Safari) / NetworkError (Firefox)
+    if (err instanceof TypeError || err?.name === "NetworkError") {
+      throw new Error("No pude conectar con el servidor. Revisá tu conexión e intentalo de nuevo.");
+    }
+    throw err;
+  }
+}
+
 export interface ResumenObraRecord {
   pdf_url: string;
   drive_url: string | null;
@@ -109,7 +128,7 @@ export interface ContentBlock {
 // ── Quotes ────────────────────────────────────────────────────────────────────
 
 export async function fetchQuotes(): Promise<Quote[]> {
-  const res = await fetch(`${API_BASE}/api/quotes`, { credentials: "include" });
+  const res = await apiFetch(`${API_BASE}/api/quotes`, { credentials: "include" });
   handleAuthError(res);
   if (!res.ok) throw new Error("Error al cargar presupuestos");
   return res.json();
@@ -121,14 +140,14 @@ export interface QuotesCheck {
 }
 
 export async function checkQuotes(): Promise<QuotesCheck> {
-  const res = await fetch(`${API_BASE}/api/quotes/check`, { credentials: "include" });
+  const res = await apiFetch(`${API_BASE}/api/quotes/check`, { credentials: "include" });
   handleAuthError(res);
   if (!res.ok) throw new Error("Error al verificar presupuestos");
   return res.json();
 }
 
 export async function fetchQuote(id: string): Promise<QuoteDetail> {
-  const res = await fetch(`${API_BASE}/api/quotes/${id}`, { credentials: "include" });
+  const res = await apiFetch(`${API_BASE}/api/quotes/${id}`, { credentials: "include" });
   handleAuthError(res);
   if (!res.ok) {
     const err = new Error("Presupuesto no encontrado");
@@ -142,7 +161,7 @@ export async function createQuote(
   options?: { status?: Quote["status"] }
 ): Promise<{ id: string }> {
   const hasBody = options?.status != null;
-  const res = await fetch(`${API_BASE}/api/quotes`, {
+  const res = await apiFetch(`${API_BASE}/api/quotes`, {
     method: "POST",
     credentials: "include",
     ...(hasBody && {
@@ -159,7 +178,7 @@ export async function updateQuoteStatus(
   id: string,
   status: Quote["status"]
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/quotes/${id}/status`, {
+  const res = await apiFetch(`${API_BASE}/api/quotes/${id}/status`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status }),
@@ -170,13 +189,13 @@ export async function updateQuoteStatus(
 }
 
 export async function deleteQuote(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/quotes/${id}`, { method: "DELETE", credentials: "include" });
+  const res = await apiFetch(`${API_BASE}/api/quotes/${id}`, { method: "DELETE", credentials: "include" });
   handleAuthError(res);
   if (!res.ok) throw new Error("Error al eliminar presupuesto");
 }
 
 export async function markQuoteAsRead(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/quotes/${id}/read`, { method: "PATCH", credentials: "include" });
+  const res = await apiFetch(`${API_BASE}/api/quotes/${id}/read`, { method: "PATCH", credentials: "include" });
   if (!res.ok) throw new Error("Error al marcar como leído");
 }
 
@@ -187,7 +206,7 @@ export type QuoteEditablePatch = Partial<{
 }>;
 
 export async function updateQuote(id: string, patch: QuoteEditablePatch): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/quotes/${id}`, {
+  const res = await apiFetch(`${API_BASE}/api/quotes/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
@@ -217,7 +236,7 @@ export interface DeriveMaterialResponse {
 }
 
 export async function deriveMaterial(quoteId: string, payload: DeriveMaterialPayload): Promise<DeriveMaterialResponse> {
-  const res = await fetch(`${API_BASE}/api/quotes/${quoteId}/derive-material`, {
+  const res = await apiFetch(`${API_BASE}/api/quotes/${quoteId}/derive-material`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -242,7 +261,7 @@ export interface ResumenObraRequest {
 export async function generateResumenObra(
   payload: ResumenObraRequest
 ): Promise<ResumenObraRecord> {
-  const res = await fetch(`${API_BASE}/api/quotes/resumen-obra`, {
+  const res = await apiFetch(`${API_BASE}/api/quotes/resumen-obra`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -267,7 +286,7 @@ export interface ClientMatchCheckResult {
 export async function clientMatchCheck(
   quoteIds: string[]
 ): Promise<ClientMatchCheckResult> {
-  const res = await fetch(`${API_BASE}/api/quotes/client-match-check`, {
+  const res = await apiFetch(`${API_BASE}/api/quotes/client-match-check`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ quote_ids: quoteIds }),
@@ -292,7 +311,7 @@ export async function mergeClient(
   quoteIds: string[],
   canonicalClientName: string
 ): Promise<MergeClientResult> {
-  const res = await fetch(`${API_BASE}/api/quotes/merge-client`, {
+  const res = await apiFetch(`${API_BASE}/api/quotes/merge-client`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -322,7 +341,7 @@ export interface EmailDraft {
 }
 
 export async function fetchEmailDraft(quoteId: string): Promise<EmailDraft> {
-  const res = await fetch(`${API_BASE}/api/quotes/${quoteId}/email-draft`, {
+  const res = await apiFetch(`${API_BASE}/api/quotes/${quoteId}/email-draft`, {
     credentials: "include",
   });
   handleAuthError(res);
@@ -336,7 +355,7 @@ export async function fetchEmailDraft(quoteId: string): Promise<EmailDraft> {
 export async function regenerateEmailDraft(
   quoteId: string
 ): Promise<EmailDraft> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_BASE}/api/quotes/${quoteId}/email-draft/regenerate`,
     { method: "POST", credentials: "include" }
   );
@@ -370,7 +389,7 @@ export interface QuoteCompareResponse {
 }
 
 export async function fetchQuoteComparison(id: string): Promise<QuoteCompareResponse | null> {
-  const res = await fetch(`${API_BASE}/api/quotes/${id}/compare`, { credentials: "include" });
+  const res = await apiFetch(`${API_BASE}/api/quotes/${id}/compare`, { credentials: "include" });
   if (res.status === 404) return null;
   handleAuthError(res);
   if (!res.ok) throw new Error("Error al cargar comparación");
@@ -380,7 +399,7 @@ export async function fetchQuoteComparison(id: string): Promise<QuoteCompareResp
 // ── Generate Documents ───────────────────────────────────────────────────────
 
 export async function generateQuoteDocuments(id: string): Promise<{ ok: boolean; pdf_url?: string; excel_url?: string; drive_url?: string }> {
-  const res = await fetch(`${API_BASE}/api/quotes/${id}/generate`, { method: "POST", credentials: "include" });
+  const res = await apiFetch(`${API_BASE}/api/quotes/${id}/generate`, { method: "POST", credentials: "include" });
   handleAuthError(res);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -390,7 +409,7 @@ export async function generateQuoteDocuments(id: string): Promise<{ ok: boolean;
 }
 
 export async function validateQuote(id: string): Promise<{ ok: boolean; pdf_url?: string; excel_url?: string; drive_url?: string }> {
-  const res = await fetch(`${API_BASE}/api/quotes/${id}/validate`, { method: "POST", credentials: "include" });
+  const res = await apiFetch(`${API_BASE}/api/quotes/${id}/validate`, { method: "POST", credentials: "include" });
   handleAuthError(res);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -411,7 +430,7 @@ export async function regenerateQuoteDocs(id: string): Promise<{
   drive_url: string | null;
   regenerated_at: string;
 }> {
-  const res = await fetch(`${API_BASE}/api/quotes/${id}/regenerate`, { method: "POST", credentials: "include" });
+  const res = await apiFetch(`${API_BASE}/api/quotes/${id}/regenerate`, { method: "POST", credentials: "include" });
   handleAuthError(res);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -423,21 +442,21 @@ export async function regenerateQuoteDocs(id: string): Promise<{
 // ── Usage ────────────────────────────────────────────────────────────────────
 
 export async function fetchUsageDashboard() {
-  const res = await fetch(`${API_BASE}/api/usage/dashboard`, { credentials: "include" });
+  const res = await apiFetch(`${API_BASE}/api/usage/dashboard`, { credentials: "include" });
   handleAuthError(res);
   if (!res.ok) throw new Error("Error cargando uso de API");
   return res.json();
 }
 
 export async function fetchUsageDaily() {
-  const res = await fetch(`${API_BASE}/api/usage/daily`, { credentials: "include" });
+  const res = await apiFetch(`${API_BASE}/api/usage/daily`, { credentials: "include" });
   handleAuthError(res);
   if (!res.ok) throw new Error("Error cargando detalle diario");
   return res.json();
 }
 
 export async function updateUsageBudget(data: { monthly_budget_usd?: number; enable_hard_limit?: boolean }) {
-  const res = await fetch(`${API_BASE}/api/usage/budget`, {
+  const res = await apiFetch(`${API_BASE}/api/usage/budget`, {
     method: "PATCH", credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -461,7 +480,7 @@ export async function selectZone(
   bbox: { x1: number; y1: number; x2: number; y2: number },
   pageNum: number = 1,
 ) {
-  const res = await fetch(`/api/quotes/${quoteId}/zone-select`, {
+  const res = await apiFetch(`/api/quotes/${quoteId}/zone-select`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -579,21 +598,21 @@ export async function* streamChat(
 // ── Catalog ───────────────────────────────────────────────────────────────────
 
 export async function fetchCatalogs() {
-  const res = await fetch(`${API_BASE}/api/catalog`, { credentials: "include" });
+  const res = await apiFetch(`${API_BASE}/api/catalog`, { credentials: "include" });
   handleAuthError(res);
   if (!res.ok) throw new Error("Error al cargar catálogos");
   return res.json();
 }
 
 export async function fetchCatalog(name: string) {
-  const res = await fetch(`${API_BASE}/api/catalog/${name}`, { credentials: "include" });
+  const res = await apiFetch(`${API_BASE}/api/catalog/${name}`, { credentials: "include" });
   handleAuthError(res);
   if (!res.ok) throw new Error("Catálogo no encontrado");
   return res.json();
 }
 
 export async function validateCatalog(name: string, content: unknown) {
-  const res = await fetch(`${API_BASE}/api/catalog/${name}/validate`, {
+  const res = await apiFetch(`${API_BASE}/api/catalog/${name}/validate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
@@ -605,7 +624,7 @@ export async function validateCatalog(name: string, content: unknown) {
 }
 
 export async function updateCatalog(name: string, content: unknown) {
-  const res = await fetch(`${API_BASE}/api/catalog/${name}`, {
+  const res = await apiFetch(`${API_BASE}/api/catalog/${name}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
@@ -669,7 +688,7 @@ export interface BackupEntry {
 export async function importPreview(file: File): Promise<ImportPreviewResult> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${API_BASE}/api/catalog/import-preview`, {
+  const res = await apiFetch(`${API_BASE}/api/catalog/import-preview`, {
     method: "POST",
     body: form,
     credentials: "include",
@@ -688,7 +707,7 @@ export async function importApply(file: File, catalogs: string[], includeNew: bo
   form.append("catalogs", JSON.stringify(catalogs));
   form.append("include_new", String(includeNew));
   form.append("source_file", sourceFile);
-  const res = await fetch(`${API_BASE}/api/catalog/import-apply`, {
+  const res = await apiFetch(`${API_BASE}/api/catalog/import-apply`, {
     method: "POST",
     body: form,
     credentials: "include",
@@ -702,14 +721,14 @@ export async function importApply(file: File, catalogs: string[], includeNew: bo
 }
 
 export async function listBackups(catalogName: string): Promise<BackupEntry[]> {
-  const res = await fetch(`${API_BASE}/api/catalog/backups/${catalogName}`, { credentials: "include" });
+  const res = await apiFetch(`${API_BASE}/api/catalog/backups/${catalogName}`, { credentials: "include" });
   handleAuthError(res);
   if (!res.ok) throw new Error("Error al cargar backups");
   return res.json();
 }
 
 export async function restoreBackup(backupId: number): Promise<{ ok: boolean; catalog: string }> {
-  const res = await fetch(`${API_BASE}/api/catalog/backups/${backupId}/restore`, {
+  const res = await apiFetch(`${API_BASE}/api/catalog/backups/${backupId}/restore`, {
     method: "POST",
     credentials: "include",
   });
@@ -730,14 +749,14 @@ export interface UserInfo {
 }
 
 export async function fetchUsers(): Promise<UserInfo[]> {
-  const res = await fetch(`${API_BASE}/api/auth/users`, { credentials: "include" });
+  const res = await apiFetch(`${API_BASE}/api/auth/users`, { credentials: "include" });
   handleAuthError(res);
   if (!res.ok) throw new Error("Error al cargar usuarios");
   return res.json();
 }
 
 export async function apiCreateUser(username: string, password: string): Promise<{ ok: boolean; id: string }> {
-  const res = await fetch(`${API_BASE}/api/auth/create-user`, {
+  const res = await apiFetch(`${API_BASE}/api/auth/create-user`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
@@ -752,7 +771,7 @@ export async function apiCreateUser(username: string, password: string): Promise
 }
 
 export async function deleteUser(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/auth/users/${id}`, { method: "DELETE", credentials: "include" });
+  const res = await apiFetch(`${API_BASE}/api/auth/users/${id}`, { method: "DELETE", credentials: "include" });
   handleAuthError(res);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
