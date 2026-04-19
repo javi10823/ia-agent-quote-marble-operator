@@ -329,6 +329,75 @@ class TestApplyIslaProfundidad:
         # Valor original preservado
         assert result["sectores"][1]["tramos"][0]["ancho_m"]["valor"] == 2.35
 
+    def test_isla_lumped_in_cocina_sector_gets_updated(self):
+        """Caso real Bernardi: el dual_read puso el tramo de isla dentro del
+        sector "L" (cocina), no en un sector tipo="isla" separado. El applier
+        debe encontrar el tramo por su descripcion ("isla central") y
+        actualizar su ancho y m² igual.
+        """
+        result = {
+            "sectores": [{
+                "id": "s1",
+                "tipo": "L",  # cocina L — NO "isla"
+                "tramos": [
+                    {"id": "t1", "descripcion": "Mesada principal horizontal",
+                     "largo_m": {"valor": 2.95, "status": "CONFIRMADO"},
+                     "ancho_m": {"valor": 0.60, "status": "CONFIRMADO"},
+                     "m2": {"valor": 1.77, "status": "CONFIRMADO"},
+                     "zocalos": []},
+                    {"id": "t2", "descripcion": "Retorno vertical",
+                     "largo_m": {"valor": 2.15, "status": "CONFIRMADO"},
+                     "ancho_m": {"valor": 0.60, "status": "CONFIRMADO"},
+                     "m2": {"valor": 1.29, "status": "CONFIRMADO"},
+                     "zocalos": []},
+                    {"id": "t3", "descripcion": "Isla central",
+                     "largo_m": {"valor": 1.60, "status": "CONFIRMADO"},
+                     "ancho_m": {"valor": 1.20, "status": "DUDOSO"},  # valor inicial del plano
+                     "m2": {"valor": 1.92, "status": "DUDOSO"},
+                     "zocalos": []},
+                ],
+            }],
+        }
+        apply_answers(result, [{"id": "isla_profundidad", "value": "0.60"}])
+        tramos = result["sectores"][0]["tramos"]
+        # Los dos primeros quedan intactos
+        assert tramos[0]["ancho_m"]["valor"] == 0.60
+        assert tramos[0]["m2"]["valor"] == 1.77
+        assert tramos[1]["ancho_m"]["valor"] == 0.60
+        # El tramo "isla central" SE actualiza
+        assert tramos[2]["ancho_m"]["valor"] == 0.60
+        assert tramos[2]["ancho_m"]["status"] == "CONFIRMADO"
+        assert tramos[2]["m2"]["valor"] == round(1.60 * 0.60, 2)  # 0.96
+
+    def test_only_canonical_isla_sector_when_both_present(self):
+        """Si hay sector tipo="isla" Y tramos con "isla" en cocina,
+        actualizamos SOLO el sector isla (evitamos doble update)."""
+        result = {
+            "sectores": [
+                {
+                    "id": "s1", "tipo": "cocina",
+                    "tramos": [
+                        {"id": "t1", "descripcion": "Tramo con Isla en el nombre",
+                         "largo_m": {"valor": 1.00}, "ancho_m": {"valor": 0.90},
+                         "m2": {"valor": 0.90}, "zocalos": []},
+                    ],
+                },
+                {
+                    "id": "s2", "tipo": "isla",
+                    "tramos": [
+                        {"id": "t2", "descripcion": "isla real",
+                         "largo_m": {"valor": 2.00}, "ancho_m": {"valor": 1.20, "status": "DUDOSO"},
+                         "m2": {"valor": 2.40}, "zocalos": []},
+                    ],
+                },
+            ],
+        }
+        apply_answers(result, [{"id": "isla_profundidad", "value": "0.60"}])
+        # Sector isla — actualizado
+        assert result["sectores"][1]["tramos"][0]["ancho_m"]["valor"] == 0.60
+        # Sector cocina con "isla" en descripción — NO tocado
+        assert result["sectores"][0]["tramos"][0]["ancho_m"]["valor"] == 0.90
+
 
 class TestDetectIslaPatas:
     def test_always_emits_when_isla_present(self):
