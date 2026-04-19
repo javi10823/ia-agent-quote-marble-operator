@@ -513,13 +513,32 @@ export async function selectZone(
   bbox: { x1: number; y1: number; x2: number; y2: number },
   pageNum: number = 1,
 ) {
-  const res = await apiFetch(`/api/quotes/${quoteId}/zone-select`, {
+  // Path absoluto con API_BASE — el rewrite de Next.js proxea a Railway pero
+  // no arrastra la cookie (dominio distinto), así que un path relativo devuelve
+  // 401. Tiene que ir cross-origin directo, igual que streamChat / fetchQuote.
+  const res = await apiFetch(`${API_BASE}/api/quotes/${quoteId}/zone-select`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify({ bbox_normalized: bbox, page_num: pageNum }),
   });
   if (!res.ok) throw new Error(`zone-select failed: ${res.status}`);
+  return res.json();
+}
+
+// Retry del dual-read invocando a Opus (más caro, más preciso). Usado cuando
+// las medidas del primer pass no convencen al operador. MISMA regla que
+// selectZone: URL absoluta con API_BASE — el rewrite proxy no pasa la cookie
+// en el setup cross-origin (PR #322), así que un path relativo falla 401.
+export async function dualReadRetry(quoteId: string): Promise<unknown> {
+  const res = await apiFetch(`${API_BASE}/api/quotes/${quoteId}/dual-read-retry`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({} as { detail?: string }));
+    throw new Error((err as { detail?: string }).detail || `HTTP ${res.status}`);
+  }
   return res.json();
 }
 

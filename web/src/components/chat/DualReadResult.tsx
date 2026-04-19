@@ -1,36 +1,41 @@
 "use client";
 import React, { useState } from "react";
 import CopyButton from "./CopyButton";
+import { dualReadRetry as apiDualReadRetry } from "@/lib/api";
 
-// Helpers defensivos: el backend a veces emite `{valor: null}` o
-// `largo_m: null` o `alto_m: null` (ver `dual_reader.py` — `dict.get("k",
-// default)` en Python devuelve None si la key existe con valor null, no
-// el default). Antes de estos helpers, cualquier null detonaba un
-// "Cannot read properties of null (reading 'toFixed')" en pleno click
-// de Confirmar medidas → crash del componente → la app entera muere
-// (error boundary de Next.js).
-const fixed2 = (n: unknown): string => {
-  const num = typeof n === "number" && Number.isFinite(n) ? n : 0;
-  return num.toFixed(2);
-};
+// Helpers:
+// - `safeNum`: para ARITMÉTICA (totales, m² derivado). Convierte null a 0
+//   porque un tramo sin medir contribuye 0 al total — esa es la semántica
+//   correcta del "no sé".
+// - `displayNum`: para DISPLAY. Devuelve "—" si el valor es null/undefined/
+//   NaN. NO sustituye por "0.00" porque "0.00" es MENTIRA para el operador:
+//   el backend dijo "no pude medir esto" (DUDOSO/UNANCHORED) y la UI tiene
+//   que mostrarlo como "falta medida", no como "mide cero". Un 0.00 false
+//   positivo podría hacer que el operador confirme un despiece roto sin
+//   darse cuenta — eso ya pasó una vez, no queremos repetirlo.
+const MISSING = "—";
 const safeNum = (n: unknown): number =>
   typeof n === "number" && Number.isFinite(n) ? n : 0;
+const displayNum = (n: unknown): string =>
+  typeof n === "number" && Number.isFinite(n) ? n.toFixed(2) : MISSING;
 
-// Garantiza un FieldValue con `valor` numérico y `status` string, aunque
-// el backend haya mandado null, undefined, o el objeto entero omitido.
+// Normaliza el shape del payload dual_read: garantiza que sectores/tramos/
+// zocalos sean arrays y que FieldValue no sea null/undefined. Preserva los
+// valores null internos (valor, ml, alto_m) — son señal de "no medí esto"
+// que el display muestra como MISSING.
 const normalizeField = (f: unknown): FieldValue => {
   const obj = (f && typeof f === "object" ? (f as Record<string, unknown>) : {}) as Partial<FieldValue>;
+  const raw = (obj as { valor?: unknown }).valor;
   return {
-    valor: safeNum(obj.valor),
-    status: typeof obj.status === "string" ? obj.status : "CONFIRMADO",
+    valor: typeof raw === "number" && Number.isFinite(raw) ? raw : null,
+    status: typeof obj.status === "string"
+      ? obj.status
+      : ((typeof raw === "number" && Number.isFinite(raw)) ? "CONFIRMADO" : "UNANCHORED"),
     opus: typeof obj.opus === "number" ? obj.opus : null,
     sonnet: typeof obj.sonnet === "number" ? obj.sonnet : null,
   };
 };
 
-// Normaliza el payload dual_read del backend. Cualquier shape inesperado
-// (campos null, arrays faltantes) se completa con defaults seguros para
-// que el render nunca crashee.
 const normalizeDualReadData = (raw: DualReadData): DualReadData => {
   const sectores = Array.isArray(raw?.sectores) ? raw.sectores : [];
   return {
@@ -42,13 +47,17 @@ const normalizeDualReadData = (raw: DualReadData): DualReadData => {
         largo_m: normalizeField(t?.largo_m),
         ancho_m: normalizeField(t?.ancho_m),
         m2: normalizeField(t?.m2),
-        zocalos: (Array.isArray(t?.zocalos) ? t.zocalos : []).map((z) => ({
-          ...z,
-          ml: safeNum(z?.ml),
-          alto_m: safeNum(z?.alto_m),
-          status: typeof z?.status === "string" ? z.status : "CONFIRMADO",
-          lado: typeof z?.lado === "string" ? z.lado : "trasero",
-        })),
+        zocalos: (Array.isArray(t?.zocalos) ? t.zocalos : []).map((z) => {
+          const ml = typeof z?.ml === "number" && Number.isFinite(z.ml) ? z.ml : null;
+          const alto = typeof z?.alto_m === "number" && Number.isFinite(z.alto_m) ? z.alto_m : null;
+          return {
+            ...z,
+            ml,
+            alto_m: alto,
+            status: typeof z?.status === "string" ? z.status : "CONFIRMADO",
+            lado: typeof z?.lado === "string" ? z.lado : "trasero",
+          } as Zocalo;
+        }),
         frentin: Array.isArray(t?.frentin) ? t.frentin : [],
         regrueso: Array.isArray(t?.regrueso) ? t.regrueso : [],
       })),
@@ -60,7 +69,9 @@ const normalizeDualReadData = (raw: DualReadData): DualReadData => {
 interface FieldValue {
   opus?: number | null;
   sonnet?: number | null;
-  valor: number;
+  // `valor: null` = el backend no pudo medir (DUDOSO/UNANCHORED). El display
+  // tiene que mostrar "—" para señalar falta de dato; NO coaccionar a 0.
+  valor: number | null;
   status: string;
 }
 
@@ -68,8 +79,8 @@ interface Zocalo {
   lado: string;
   opus_ml?: number | null;
   sonnet_ml?: number | null;
-  ml: number;
-  alto_m: number;
+  ml: number | null;
+  alto_m: number | null;
   status: string;
   _manual?: boolean;
 }
@@ -256,7 +267,7 @@ function EditableNumber({
     || field.status === "UNANCHORED";
   const [editing, setEditing] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
-  const originalRef = React.useRef<number>(field.valor);
+  const originalRef = React.useRef<number>(safeNum(field.valor));
 
   // PR #69 — tooltip revela Opus/Sonnet originales (cuando hay reconciliación)
   const tooltipParts: string[] = [];
@@ -266,13 +277,16 @@ function EditableNumber({
     ? `Reconciliado — ${tooltipParts.join(" · ")}`
     : "";
 
-  // Modo "siempre input" (legacy / manual / CONFLICTO / DUDOSO)
+  // Modo "siempre input" (legacy / manual / CONFLICTO / DUDOSO / UNANCHORED).
+  // defaultValue undefined para valor null → input arranca vacío, el operador
+  // lo completa. Si pusiéramos 0 quedaría un "0.00" que mentiría como medida.
   if (alwaysEditable) {
     return (
       <input
         type="number"
         step="0.01"
-        defaultValue={field.valor}
+        defaultValue={field.valor ?? undefined}
+        placeholder={field.valor == null ? MISSING : undefined}
         title={reconcileTip || "Valor reconciliado"}
         className="w-16 px-1.5 py-0.5 bg-s1 border border-b2 rounded text-[11px] text-t1 text-right font-mono hover:border-b1/60 focus:border-acc/50 outline-none"
         onChange={(e) => onEdit(parseFloat(e.target.value) || 0)}
@@ -305,7 +319,7 @@ function EditableNumber({
           }}
           type="number"
           step="0.01"
-          defaultValue={field.valor}
+          defaultValue={field.valor ?? undefined}
           onKeyDown={(e) => {
             if (e.key === "Enter") { e.preventDefault(); commit(); }
             else if (e.key === "Escape") { e.preventDefault(); cancel(); }
@@ -316,7 +330,7 @@ function EditableNumber({
       );
     }
 
-    const label = fixed2(field.valor);
+    const label = displayNum(field.valor);
     const title = reconcileTip
       ? `${reconcileTip} · Doble-click para editar`
       : "Doble-click para editar";
@@ -324,7 +338,7 @@ function EditableNumber({
       <span
         onDoubleClick={(e) => {
           e.preventDefault();
-          originalRef.current = field.valor;
+          originalRef.current = safeNum(field.valor);
           setEditing(true);
         }}
         title={title}
@@ -336,7 +350,7 @@ function EditableNumber({
   }
 
   // Default: plain read-only label
-  return <>{fixed2(field.valor)}</>;
+  return <>{displayNum(field.valor)}</>;
 }
 
 function EditableZocalo({
@@ -349,12 +363,12 @@ function EditableZocalo({
   forceEditable?: boolean;
 }) {
   const editable = forceEditable || z.status === "CONFLICTO" || z.status === "DUDOSO";
-  if (!editable) return <>{fixed2(z.ml)}</>;
+  if (!editable) return <>{displayNum(z.ml)}</>;
   return (
     <input
       type="number"
       step="0.01"
-      defaultValue={z.ml}
+      defaultValue={z.ml ?? undefined}
       className="w-16 px-1.5 py-0.5 bg-s1 border border-b2 rounded text-[11px] text-t1 text-right font-mono"
       onChange={(e) => onEdit(parseFloat(e.target.value) || 0)}
     />
@@ -375,15 +389,7 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
     setRetrying(true);
     setRetryError(null);
     try {
-      const res = await fetch(`/api/quotes/${quoteId}/dual-read-retry`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || `HTTP ${res.status}`);
-      }
-      const newData: DualReadData = await res.json();
+      const newData = (await apiDualReadRetry(quoteId)) as DualReadData;
       if (newData.opus_error) {
         // El backend nos devolvió la card previa + un flag de error.
         // No pisamos onRetry (no hay nueva lectura), mostramos el aviso.
@@ -596,22 +602,25 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
       }
       sector.tramos.forEach((tramo) => {
         const desc = tramo.descripcion || tramo.id;
-        const largo = fixed2(tramo.largo_m?.valor);
-        const ancho = fixed2(tramo.ancho_m?.valor);
+        // Display: "—" cuando falta medida. Math: safeNum (contribuye 0 al total).
+        const largo = displayNum(tramo.largo_m?.valor);
+        const ancho = displayNum(tramo.ancho_m?.valor);
         const m2 = safeNum(tramo.m2?.valor);
         total += m2;
-        lines.push(`| ${desc} | ${largo} × ${ancho} | ${fixed2(m2)} |`);
+        const m2Display = tramo.m2?.valor == null ? MISSING : m2.toFixed(2);
+        lines.push(`| ${desc} | ${largo} × ${ancho} | ${m2Display} |`);
         tramo.zocalos.forEach((z) => {
           const ml = safeNum(z.ml);
           if (ml <= 0) return;
           const alto = safeNum(z.alto_m);
           const zm2 = ml * alto;
           total += zm2;
-          lines.push(`| Zóc. ${z.lado} | ${fixed2(ml)} ml × ${fixed2(alto)} | ${fixed2(zm2)} |`);
+          const altoDisplay = z.alto_m == null ? MISSING : alto.toFixed(2);
+          lines.push(`| Zóc. ${z.lado} | ${ml.toFixed(2)} ml × ${altoDisplay} | ${zm2.toFixed(2)} |`);
         });
       });
     });
-    lines.push(`| **Total** | — | **${fixed2(total)}** |`);
+    lines.push(`| **Total** | — | **${total.toFixed(2)}** |`);
     return lines.join("\n");
   })();
   const firstSectorHead = editedData.sectores[0]
@@ -799,17 +808,17 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                             <input
                               type="number"
                               step="0.01"
-                              defaultValue={z.alto_m}
+                              defaultValue={z.alto_m ?? undefined}
                               className="w-16 px-1.5 py-0.5 bg-s1 border border-b2 rounded text-[11px] text-t1 text-right font-mono"
                               onChange={(e) => updateZocaloAlto(si, ti, zi, parseFloat(e.target.value) || 0)}
                             />
                           ) : (
-                            <>{fixed2(z.alto_m)}</>
+                            <>{displayNum(z.alto_m)}</>
                           )}
                           <span className="text-t4 ml-0.5">m</span>
                         </div>
                         <div className="text-t1 font-medium text-right flex items-center justify-end gap-2">
-                          <span>{fixed2(safeNum(z.ml) * safeNum(z.alto_m))}</span>
+                          <span>{(z.ml == null || z.alto_m == null) ? MISSING : (z.ml * z.alto_m).toFixed(2)}</span>
                           {/* PR #61 — botón remover siempre disponible, independiente
                               del status (el operador confirma con el cliente si lleva
                               zócalos o no; Dual Read solo sugiere). Hover aumenta
