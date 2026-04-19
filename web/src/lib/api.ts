@@ -1,5 +1,24 @@
-// Use relative URLs to go through Next.js rewrite proxy (avoids CORS)
-const API_BASE = "";
+// Llamamos DIRECTO al backend (cross-origin) en vez de pasar por el
+// rewrite de Next.js. Motivo: el rewrite con destino externo en Vercel
+// a veces proxyea y a veces redirige (depende del endpoint, headers,
+// etc.) — ingobernable. Con cross-origin explícito + CORS configurado
+// en el backend + SameSite=None en el cookie, todo flow es predecible:
+//   POST /api/auth/login desde vercel.app → railway.app
+//   → Set-Cookie con domain=railway.app, SameSite=None
+//   → subsecuentes fetches desde vercel.app con credentials:"include"
+//     y SameSite=None → cookie viaja → 200
+//
+// `NEXT_PUBLIC_API_URL` debe apuntar a la URL completa del backend
+// (ej: https://ia-agent-quote-marble-operator-production.up.railway.app).
+// En dev lo resolvemos a localhost:8000.
+function resolveApiBase(): string {
+  if (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, "");
+  }
+  return "http://localhost:8000";
+}
+
+const API_BASE = resolveApiBase();
 
 /**
  * Antes: cualquier 401 redirigía automáticamente a /login. Problema: si
