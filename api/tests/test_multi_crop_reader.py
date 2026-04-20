@@ -29,11 +29,13 @@ from app.modules.quote_engine.multi_crop_reader import (
     _has_meaningful_length_candidate,
     _infer_expected_region_count,
     _is_probable_perimeter,
+    _is_semantic_sanity_warning,
     _measure_region,
     _rank_cotas_for_region,
     _rescue_length_ranking,
     _score_cota,
     _semantic_sanity_checks,
+    _SEMANTIC_SANITY_PREFIXES,
     read_plan_multi_crop,
 )
 
@@ -3028,3 +3030,330 @@ class TestSemanticSanityObservabilityLog:
         ]
         for key in expected_keys:
             assert key in log, f"Missing '{key}' in: {log}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PR #351 — Sanity warnings como bullet dedicado en ambigüedades
+#
+# Contexto del bug: post-#349 + #350, el log [semantic-sanity] confirmó que
+# el sanity corre en prod. Pero el operador seguía sin ver el motivo
+# semántico porque:
+#
+#   elif suspicious:
+#       all_ambiguedades.append({
+#           "texto": f"... ({'; '.join(suspicious)[:120]})",  # ← trunca
+#       })
+#
+# Para Bernardi R3, el join era:
+#   "cotas_mode=expanded → cap 0.65; medida tomada con pool...; isla_largo_inusual_..."
+#
+# Los dos primeros ya suman ~115 chars → `[:120]` cortaba el sanity en "isla".
+# El mensaje semántico quedaba invisible para el operador.
+#
+# Fix: separar sanity warnings en bullets dedicados SIN truncar. La
+# ambigüedad general mantiene los otros suspicious truncados.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestIsSemanticSanityWarning:
+    """Helper centralizado para detectar strings que vienen de
+    `_semantic_sanity_checks`. Usado por `_aggregate` para distinguirlos
+    del resto de suspicious_reasons."""
+
+    def test_isla_largo_inusual_prefix_detected(self):
+        # Formato real producido por _semantic_sanity_checks:
+        warn = (
+            "isla_largo_inusual_2.05m_threshold_1.80m — islas residenciales "
+            "típicas 1.0-1.8m, valor mayor probable error de asignación "
+            "bbox↔cota; revisar visualmente"
+        )
+        assert _is_semantic_sanity_warning(warn) is True
+
+    def test_cocina_con_pileta_y_anafe_prefix_detected(self):
+        warn = (
+            "cocina_con_pileta_y_anafe_largo_corto_1.20m_threshold_1.50m "
+            "— un tramo con ambos artefactos típicamente mide ≥1.5m; "
+            "probable cota mal asignada"
+        )
+        assert _is_semantic_sanity_warning(warn) is True
+
+    def test_other_suspicious_not_detected(self):
+        assert _is_semantic_sanity_warning(
+            "cotas_mode=expanded → cap confidence 0.65"
+        ) is False
+        assert _is_semantic_sanity_warning(
+            "medida tomada con pool de cotas expandido (no estricto a esta región)"
+        ) is False
+        assert _is_semantic_sanity_warning(
+            "largo 0.6m < 1.0m — implausible como largo de tramo, invalidado"
+        ) is False
+
+    def test_empty_string_not_detected(self):
+        assert _is_semantic_sanity_warning("") is False
+
+    def test_none_returns_false_no_crash(self):
+        """Defensa: si alguien pasa None por error, no crashea."""
+        assert _is_semantic_sanity_warning(None) is False  # type: ignore[arg-type]
+
+    def test_helper_and_real_output_stay_in_sync(self):
+        """Contrato: todo string que emite `_semantic_sanity_checks` es
+        detectado por `_is_semantic_sanity_warning`. Si este test falla
+        tras agregar una regla nueva al helper → actualizar
+        `_SEMANTIC_SANITY_PREFIXES`."""
+        # Regla 1 — isla:
+        w_isla = _semantic_sanity_checks(
+            sector="isla", largo_m=2.50, ancho_m=0.60, features={},
+        )
+        for w in w_isla:
+            assert _is_semantic_sanity_warning(w), (
+                f"Sanity helper emitió '{w}' pero _is_semantic_sanity_warning "
+                f"no lo reconoce. Actualizá _SEMANTIC_SANITY_PREFIXES."
+            )
+
+        # Regla 2 — cocina:
+        w_cocina = _semantic_sanity_checks(
+            sector="cocina", largo_m=1.20, ancho_m=0.60,
+            features={"sink_simple": True, "cooktop_groups": 1},
+        )
+        for w in w_cocina:
+            assert _is_semantic_sanity_warning(w), (
+                f"Sanity helper emitió '{w}' pero _is_semantic_sanity_warning "
+                f"no lo reconoce."
+            )
+
+    def test_prefixes_constant_is_tuple(self):
+        """El constante expuesto es inmutable. Evita mutación accidental."""
+        assert isinstance(_SEMANTIC_SANITY_PREFIXES, tuple)
+        # Sanity mínima: al menos las 2 reglas que tenemos hoy.
+        assert len(_SEMANTIC_SANITY_PREFIXES) >= 2
+
+
+class TestSanityWarningsCreateDedicatedBullets:
+    """E2E del fix PR #351: sanity warnings van como bullet dedicado
+    sin truncar, separados del bullet general de suspicious normales."""
+
+    def _build_topology(self, regions):
+        return {"view_type": "planta", "regions": regions}
+
+    def _ambig_texts(self, sector: dict) -> list[str]:
+        return [a.get("texto") or "" for a in sector.get("ambiguedades") or []]
+
+    def test_bernardi_sanity_bullet_shows_full_untruncated_text(self):
+        """Caso canónico del bug. R3 con suspicious largos previos +
+        sanity warning → sanity aparece completo, no cortado en 'isla'."""
+        topology = self._build_topology([
+            {
+                "id": "R3",
+                "bbox_rel": {"x": 0.35, "y": 0.45, "w": 0.25, "h": 0.08},
+                "features": {"touches_wall": False, "cooktop_groups": 0},
+            },
+        ])
+        region_results = [{
+            "region_id": "R3",
+            "largo_m": 2.05,
+            "ancho_m": 0.60,
+            "confidence": 0.65,
+            # Suspicious previos que empujaban al sanity warning fuera del
+            # trim de 120 chars en el bullet general:
+            "suspicious_reasons": [
+                "cotas_mode=expanded → cap confidence 0.65",
+                "medida tomada con pool de cotas expandido (no estricto a esta región)",
+            ],
+        }]
+        result = _aggregate(topology, region_results)
+        isla = next(s for s in result["sectores"] if s["tipo"] == "isla")
+        texts = self._ambig_texts(isla)
+
+        # Debe haber al menos 2 bullets: general + sanity dedicado.
+        assert len(texts) >= 2, (
+            f"Esperaba ≥2 bullets, got {len(texts)}: {texts}"
+        )
+
+        # Buscar el bullet del sanity (no truncado).
+        sanity_bullets = [t for t in texts if "isla_largo_inusual" in t]
+        assert len(sanity_bullets) == 1, (
+            f"Esperaba exactamente 1 bullet dedicado del sanity. "
+            f"Got {len(sanity_bullets)}: {sanity_bullets}"
+        )
+        sanity_bullet = sanity_bullets[0]
+
+        # CRÍTICO: el bullet del sanity tiene el TEXTO COMPLETO, no
+        # cortado en "isla". Validamos presencia del mensaje humano
+        # post-prefijo estructurado.
+        assert "islas residenciales típicas" in sanity_bullet, (
+            f"Bullet del sanity truncado. Falta texto humano. Got: {sanity_bullet}"
+        )
+        assert "revisar visualmente" in sanity_bullet, (
+            f"Bullet del sanity truncado. Falta 'revisar visualmente'. Got: {sanity_bullet}"
+        )
+
+    def test_general_bullet_does_not_include_sanity_warning(self):
+        """Evita redundancia tonta: sanity va SOLO en bullet dedicado,
+        no aparece también en el bullet general truncado."""
+        topology = self._build_topology([
+            {
+                "id": "R3",
+                "bbox_rel": {"x": 0.35, "y": 0.45, "w": 0.25, "h": 0.08},
+                "features": {"touches_wall": False, "cooktop_groups": 0},
+            },
+        ])
+        region_results = [{
+            "region_id": "R3",
+            "largo_m": 2.05,
+            "ancho_m": 0.60,
+            "confidence": 0.65,
+            "suspicious_reasons": [
+                "cotas_mode=expanded → cap confidence 0.65",
+                "medida tomada con pool de cotas expandido (no estricto a esta región)",
+            ],
+        }]
+        result = _aggregate(topology, region_results)
+        isla = next(s for s in result["sectores"] if s["tipo"] == "isla")
+        texts = self._ambig_texts(isla)
+
+        general_bullets = [
+            t for t in texts
+            if "medida dudosa" in t and "isla_largo_inusual" not in t
+        ]
+        # Debe existir UN bullet general.
+        assert len(general_bullets) == 1
+        # Y NO incluye el sanity warning (para evitar redundancia).
+        assert "isla_largo_inusual" not in general_bullets[0]
+
+    def test_only_sanity_no_general_bullet(self):
+        """Si los ÚNICOS suspicious son sanity warnings (sin cap confidence
+        ni pool expandido), no emitir bullet general redundante."""
+        topology = self._build_topology([
+            {
+                "id": "R_isla",
+                "bbox_rel": {"x": 0.3, "y": 0.4, "w": 0.2, "h": 0.1},
+                "features": {"touches_wall": False, "cooktop_groups": 0},
+            },
+        ])
+        region_results = [{
+            "region_id": "R_isla",
+            "largo_m": 2.30,
+            "ancho_m": 0.60,
+            "confidence": 0.95,  # alto — no dispara cap ni expanded
+            "suspicious_reasons": [],  # sin suspicious previos
+        }]
+        result = _aggregate(topology, region_results)
+        isla = next(s for s in result["sectores"] if s["tipo"] == "isla")
+        texts = self._ambig_texts(isla)
+
+        # Exactamente 1 bullet: el dedicado del sanity.
+        assert len(texts) == 1
+        assert "isla_largo_inusual" in texts[0]
+        assert "medida dudosa" not in texts[0]  # no bullet general
+
+    def test_no_sanity_warnings_only_general_bullet(self):
+        """No regresión: región con suspicious normales (sin sanity)
+        mantiene el bullet general tradicional (truncado a 120)."""
+        topology = self._build_topology([
+            {
+                "id": "R_cocina",
+                "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.3},
+                "features": {"touches_wall": True, "cooktop_groups": 0},
+            },
+        ])
+        region_results = [{
+            "region_id": "R_cocina",
+            "largo_m": 2.50,
+            "ancho_m": 0.60,
+            "confidence": 0.65,
+            "suspicious_reasons": [
+                "cotas_mode=expanded → cap confidence 0.65",
+                "medida tomada con pool de cotas expandido (no estricto a esta región)",
+            ],
+        }]
+        result = _aggregate(topology, region_results)
+        cocina = next(s for s in result["sectores"] if s["tipo"] == "cocina")
+        texts = self._ambig_texts(cocina)
+        assert len(texts) == 1
+        assert "medida dudosa" in texts[0]
+        assert "isla_largo_inusual" not in texts[0]
+
+    def test_multiple_sanity_warnings_create_multiple_bullets(self):
+        """Defensivo: el aggregador tiene que generar un bullet dedicado
+        por cada warning semántico, aunque venga más de uno en
+        suspicious_reasons. Usamos largo=1.60 para que el sanity REAL
+        no dispare (isla 1.6m es OK) e inyectamos los 2 warnings
+        manualmente — así aislamos la lógica del aggregador sin
+        interferencia del helper semántico."""
+        topology = self._build_topology([
+            {
+                "id": "R_test",
+                "bbox_rel": {"x": 0.35, "y": 0.45, "w": 0.25, "h": 0.08},
+                "features": {"touches_wall": False, "cooktop_groups": 0},
+            },
+        ])
+        region_results = [{
+            "region_id": "R_test",
+            "largo_m": 1.60,  # OK para isla → sanity real NO dispara
+            "ancho_m": 0.60,
+            "confidence": 0.70,
+            # 2 warnings sanity artificiales + 0 otros suspicious:
+            "suspicious_reasons": [
+                "isla_largo_inusual_2.50m_threshold_1.80m — texto humano 1",
+                "cocina_con_pileta_y_anafe_largo_corto_1.20m_threshold_1.50m — texto humano 2",
+            ],
+        }]
+        result = _aggregate(topology, region_results)
+        isla = next(s for s in result["sectores"] if s["tipo"] == "isla")
+        texts = self._ambig_texts(isla)
+
+        # 2 bullets dedicados (uno por warning). 0 general porque solo
+        # los sanity warnings estaban en suspicious_reasons.
+        assert len(texts) == 2, f"Esperaba 2 bullets, got {len(texts)}: {texts}"
+        assert any("isla_largo_inusual" in t for t in texts)
+        assert any("cocina_con_pileta_y_anafe_largo_corto" in t for t in texts)
+
+    def test_error_path_unchanged(self):
+        """No regresión: si hay error (no suspicious), el bullet del
+        error se preserva y no se mezcla con lógica de sanity."""
+        topology = self._build_topology([
+            {
+                "id": "R_err",
+                "bbox_rel": {"x": 0.3, "y": 0.4, "w": 0.2, "h": 0.1},
+                "features": {"touches_wall": False, "cooktop_groups": 0},
+            },
+        ])
+        region_results = [{
+            "region_id": "R_err",
+            "error": "insufficient_local_cotas",
+            "largo_m": None,
+            "ancho_m": None,
+        }]
+        result = _aggregate(topology, region_results)
+        isla = next(s for s in result["sectores"] if s["tipo"] == "isla")
+        texts = self._ambig_texts(isla)
+        assert len(texts) == 1
+        assert "no se pudo medir" in texts[0]
+        assert "insufficient_local_cotas" in texts[0]
+
+    def test_bernardi_bullet_significantly_longer_than_120_chars(self):
+        """Prueba numérica explícita: el bullet dedicado supera la longitud
+        del trim original (120), así confirmamos que ya no se corta."""
+        topology = self._build_topology([
+            {
+                "id": "R3",
+                "bbox_rel": {"x": 0.35, "y": 0.45, "w": 0.25, "h": 0.08},
+                "features": {"touches_wall": False, "cooktop_groups": 0},
+            },
+        ])
+        region_results = [{
+            "region_id": "R3",
+            "largo_m": 2.05,
+            "ancho_m": 0.60,
+            "confidence": 0.65,
+            "suspicious_reasons": [],
+        }]
+        result = _aggregate(topology, region_results)
+        isla = next(s for s in result["sectores"] if s["tipo"] == "isla")
+        sanity_bullet = next(
+            t for t in self._ambig_texts(isla) if "isla_largo_inusual" in t
+        )
+        assert len(sanity_bullet) > 120, (
+            f"Bullet dedicado debería superar 120 chars (texto humano completo). "
+            f"Got {len(sanity_bullet)}: {sanity_bullet}"
+        )
