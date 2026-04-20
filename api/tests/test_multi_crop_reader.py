@@ -7,9 +7,10 @@ LLM calls y PIL image ops se mockean. La idea es verificar:
 - detección de fallback silencioso (largo == ancho, valores no anclados)
 - labels genéricos hasta que PR C defina contrato feature-based
 """
+import io
+import logging
 from unittest.mock import AsyncMock, patch
 
-import io
 import pytest
 from PIL import Image
 
@@ -2876,3 +2877,154 @@ class TestAggregateAppliesSemanticSanityChecks:
         # La razón es el null, NO isla_largo_inusual (porque no aplica con null)
         amb_text = " ".join(a.get("texto") or "" for a in isla["ambiguedades"])
         assert "isla_largo_inusual" not in amb_text
+
+
+class TestSemanticSanityObservabilityLog:
+    """PR #350 — Log estructurado [semantic-sanity] dentro de _aggregate.
+
+    Problema que resuelve: el log [multi-crop/region-detail] se emite
+    antes de _aggregate, entonces nunca mostraba el efecto del sanity
+    check del PR #349. Sin este log, confirmar en prod que el sanity
+    está corriendo requería inspeccionar quote_breakdown.dual_read —
+    invisible al operador y a los logs standard de Railway.
+    """
+
+    def _build_topology(self, regions):
+        return {"view_type": "planta", "regions": regions}
+
+    def test_log_emitted_when_sanity_triggers_bernardi_r3(self, caplog):
+        """Caso canónico Bernardi: R3 isla 2.05 → log con campos completos."""
+        topology = self._build_topology([
+            {
+                "id": "R3",
+                "bbox_rel": {"x": 0.35, "y": 0.45, "w": 0.25, "h": 0.08},
+                "features": {
+                    "touches_wall": False,
+                    "sink_double": False,
+                    "sink_simple": False,
+                    "cooktop_groups": 0,
+                },
+            },
+        ])
+        region_results = [{
+            "region_id": "R3", "largo_m": 2.05, "ancho_m": 0.60,
+            "confidence": 0.65, "suspicious_reasons": [],
+        }]
+
+        with caplog.at_level(logging.INFO,
+                             logger="app.modules.quote_engine.multi_crop_reader"):
+            _aggregate(topology, region_results)
+
+        sanity_logs = [r for r in caplog.records if "[semantic-sanity]" in r.message]
+        assert len(sanity_logs) == 1, f"Expected 1 sanity log, got {len(sanity_logs)}: {[r.message for r in sanity_logs]}"
+        log = sanity_logs[0].message
+        # Campos obligatorios grep-friendly (formato key=value)
+        for key in ("region=R3", "sector=isla", "largo=2.05",
+                    "ancho=0.60", "warnings=", "status_before=",
+                    "status_after=", "status_changed_by_sanity="):
+            assert key in log, f"Missing key '{key}' in log: {log}"
+        # Warning específico debe estar en el array
+        assert "isla_largo_inusual" in log
+
+    def test_log_not_emitted_when_no_warnings(self, caplog):
+        """Isla 1.6m normal → no warnings → no log (evitar ruido)."""
+        topology = self._build_topology([
+            {
+                "id": "R_ok",
+                "bbox_rel": {"x": 0.3, "y": 0.4, "w": 0.2, "h": 0.1},
+                "features": {"touches_wall": False, "cooktop_groups": 0},
+            },
+        ])
+        region_results = [{
+            "region_id": "R_ok", "largo_m": 1.60, "ancho_m": 0.60,
+            "confidence": 0.90, "suspicious_reasons": [],
+        }]
+        with caplog.at_level(logging.INFO,
+                             logger="app.modules.quote_engine.multi_crop_reader"):
+            _aggregate(topology, region_results)
+        sanity_logs = [r for r in caplog.records if "[semantic-sanity]" in r.message]
+        assert sanity_logs == []
+
+    def test_log_status_changed_by_sanity_true_when_upgrades_confirmed_to_dudoso(self, caplog):
+        """Si SIN sanity sería CONFIRMADO, y CON sanity es DUDOSO, el log
+        debe decir status_changed_by_sanity=True. Esto es el caso más
+        valioso a rastrear: el sanity SALVÓ a un operador de confirmar
+        un error silencioso."""
+        topology = self._build_topology([
+            {
+                "id": "R_salvado",
+                "bbox_rel": {"x": 0.35, "y": 0.45, "w": 0.25, "h": 0.08},
+                "features": {"touches_wall": False, "cooktop_groups": 0},
+            },
+        ])
+        # Sin suspicious_reasons preexistentes — SIN sanity sería CONFIRMADO.
+        region_results = [{
+            "region_id": "R_salvado", "largo_m": 2.05, "ancho_m": 0.60,
+            "confidence": 0.95, "suspicious_reasons": [],
+        }]
+        with caplog.at_level(logging.INFO,
+                             logger="app.modules.quote_engine.multi_crop_reader"):
+            _aggregate(topology, region_results)
+        sanity_logs = [r for r in caplog.records if "[semantic-sanity]" in r.message]
+        assert len(sanity_logs) == 1
+        log = sanity_logs[0].message
+        assert "status_before=CONFIRMADO" in log
+        assert "status_after=DUDOSO" in log
+        assert "status_changed_by_sanity=True" in log
+
+    def test_log_status_changed_by_sanity_false_when_already_dudoso(self, caplog):
+        """Bernardi real: ya era DUDOSO por suspicious previos del expanded.
+        El sanity agrega otra razón pero no cambia el status. Log muestra
+        status_changed_by_sanity=False para que se distinga."""
+        topology = self._build_topology([
+            {
+                "id": "R3",
+                "bbox_rel": {"x": 0.35, "y": 0.45, "w": 0.25, "h": 0.08},
+                "features": {"touches_wall": False, "cooktop_groups": 0},
+            },
+        ])
+        region_results = [{
+            "region_id": "R3", "largo_m": 2.05, "ancho_m": 0.60,
+            "confidence": 0.65,
+            # Ya había suspicious previos — status_before_sanity=DUDOSO.
+            "suspicious_reasons": ["cotas_mode=expanded → cap confidence 0.65"],
+        }]
+        with caplog.at_level(logging.INFO,
+                             logger="app.modules.quote_engine.multi_crop_reader"):
+            _aggregate(topology, region_results)
+        sanity_logs = [r for r in caplog.records if "[semantic-sanity]" in r.message]
+        assert len(sanity_logs) == 1
+        log = sanity_logs[0].message
+        assert "status_before=DUDOSO" in log
+        assert "status_after=DUDOSO" in log
+        assert "status_changed_by_sanity=False" in log
+
+    def test_log_format_is_grep_friendly(self, caplog):
+        """El formato debe seguir el patrón key=value como [rescue-check]
+        y [context-reconcile] de PRs anteriores. Todos los keys separados
+        por espacio, sin comas ni JSON embebido."""
+        topology = self._build_topology([
+            {
+                "id": "R3",
+                "bbox_rel": {"x": 0.35, "y": 0.45, "w": 0.25, "h": 0.08},
+                "features": {"touches_wall": False, "cooktop_groups": 0},
+            },
+        ])
+        region_results = [{
+            "region_id": "R3", "largo_m": 2.05, "ancho_m": 0.60,
+            "confidence": 0.65, "suspicious_reasons": [],
+        }]
+        with caplog.at_level(logging.INFO,
+                             logger="app.modules.quote_engine.multi_crop_reader"):
+            _aggregate(topology, region_results)
+        log = [r for r in caplog.records if "[semantic-sanity]" in r.message][0].message
+        # Debe arrancar con el tag
+        assert log.startswith("[semantic-sanity] ")
+        # Cada campo key=value separado por espacio
+        expected_keys = [
+            "region=", "sector=", "largo=", "ancho=",
+            "warnings=", "status_before=", "status_after=",
+            "status_changed_by_sanity=",
+        ]
+        for key in expected_keys:
+            assert key in log, f"Missing '{key}' in: {log}"
