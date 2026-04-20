@@ -5,6 +5,7 @@ import SuggestedCandidates, {
   SuggestedCandidate,
   TramoWithSuggestions,
 } from "./SuggestedCandidates";
+import { applyCandidate } from "@/lib/applyCandidate";
 import { dualReadRetry as apiDualReadRetry } from "@/lib/api";
 
 // Helpers:
@@ -277,7 +278,10 @@ function EditableNumber({
   dblClickEdit = false,
 }: {
   field: FieldValue;
-  onEdit: (v: number) => void;
+  /** PR #357 — ahora acepta `null` para cuando el input queda vacío.
+   *  Antes usábamos `|| 0` que metía un 0 falso cuando el operador
+   *  borraba el valor. El caller maneja null como "sin medida". */
+  onEdit: (v: number | null) => void;
   forceEditable?: boolean;
   /** Si true, el campo arranca como label read-only; doble-click entra en
    *  edit mode. Enter/blur commit (solo si valor válido), Esc cancela. */
@@ -300,18 +304,37 @@ function EditableNumber({
     : "";
 
   // Modo "siempre input" (legacy / manual / CONFLICTO / DUDOSO / UNANCHORED).
-  // defaultValue undefined para valor null → input arranca vacío, el operador
-  // lo completa. Si pusiéramos 0 quedaría un "0.00" que mentiría como medida.
+  //
+  // PR #357 — input CONTROLADO (`value`, no `defaultValue`). Antes usábamos
+  // `defaultValue` (uncontrolled) y eso causaba que cambios externos al
+  // state (ej: click en "Probar como largo" de una candidata sugerida) NO
+  // se reflejaran visualmente en el input — React no re-sincroniza
+  // uncontrolled inputs con props cambiantes. Consecuencia operativa: el
+  // operador clickeaba el botón, el state se actualizaba correctamente,
+  // pero el input seguía vacío y parecía que "el botón no hacía nada".
+  //
+  // Controlled fix:
+  // - `value={field.valor ?? ""}` refleja el state actual siempre.
+  // - onChange pasa `null` cuando el input queda vacío (no `0` — "0" es
+  //   mentira para medidas, "null" es "sin medida").
   if (alwaysEditable) {
     return (
       <input
         type="number"
         step="0.01"
-        defaultValue={field.valor ?? undefined}
+        value={field.valor ?? ""}
         placeholder={field.valor == null ? MISSING : undefined}
         title={reconcileTip || "Valor reconciliado"}
         className="w-16 px-1.5 py-0.5 bg-s1 border border-b2 rounded text-[11px] text-t1 text-right font-mono hover:border-b1/60 focus:border-acc/50 outline-none"
-        onChange={(e) => onEdit(parseFloat(e.target.value) || 0)}
+        onChange={(e) => {
+          const raw = e.target.value;
+          if (raw === "") {
+            onEdit(null);
+            return;
+          }
+          const parsed = parseFloat(raw);
+          onEdit(Number.isFinite(parsed) ? parsed : null);
+        }}
       />
     );
   }
@@ -444,7 +467,14 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
     }
   };
 
-  const updateField = (sectorIdx: number, tramoIdx: number, field: string, val: number) => {
+  // PR #357 — `val` ahora acepta `null` (el input vacío antes se
+  // forzaba a 0 vía `|| 0` que era mentira; ver EditableNumber).
+  const updateField = (
+    sectorIdx: number,
+    tramoIdx: number,
+    field: string,
+    val: number | null,
+  ) => {
     setEditedData((prev) => {
       const next = JSON.parse(JSON.stringify(prev));
       const tramo = next.sectores[sectorIdx].tramos[tramoIdx];
@@ -454,12 +484,16 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
       } else {
         tramo[field].valor = val;
         // Al editar largo o ancho, recalcular m² determinísticamente.
-        // m² queda como valor derivado — no dejamos inconsistencia
-        // largo×ancho≠m² pasar al confirm.
+        // m² queda como valor derivado. Si alguno es null → m² null
+        // (no mentir con 0.00 cuando falta medida).
         if (field === "largo_m" || field === "ancho_m") {
-          const largo = tramo.largo_m.valor || 0;
-          const ancho = tramo.ancho_m.valor || 0;
-          tramo.m2.valor = Math.round(largo * ancho * 100) / 100;
+          const largo = tramo.largo_m.valor;
+          const ancho = tramo.ancho_m.valor;
+          if (typeof largo === "number" && typeof ancho === "number") {
+            tramo.m2.valor = Math.round(largo * ancho * 100) / 100;
+          } else {
+            tramo.m2.valor = null;
+          }
         }
       }
       return next;
@@ -972,34 +1006,40 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
         );
       })()}
 
-      {/* PR #355 — Candidatas sugeridas para revisión. Aparece solo si
-          algún tramo tiene `suggested_candidates` no vacío (el backend
-          controla el trigger). El click copia el valor al input del
-          largo SIN confirmar — el tramo queda DUDOSO hasta confirmación
-          humana explícita. */}
+      {/* PR #355 + #357 — Candidatas sugeridas para revisión. Aparece
+          solo si algún tramo tiene `suggested_candidates` no vacío (el
+          backend controla el trigger). El click aplica el valor al tramo
+          cuyo id === regionId (binding estable, no por índice) vía el
+          helper puro `applyCandidate` de lib/. El tramo queda DUDOSO;
+          el operador confirma explícitamente con "Confirmar medidas". */}
       <SuggestedCandidates
-        tramos={editedData.sectores.flatMap<TramoWithSuggestions>(
-          (s, sectorIdx) =>
-            s.tramos
-              .map((t, tramoIdx) => {
-                const cands = t.suggested_candidates || [];
-                if (cands.length === 0) return null;
-                return {
-                  sectorIdx,
-                  tramoIdx,
-                  regionId: t.id,
-                  tramoDescripcion: t.descripcion,
-                  candidates: cands,
-                } satisfies TramoWithSuggestions;
-              })
-              .filter((x): x is TramoWithSuggestions => x !== null),
+        tramos={editedData.sectores.flatMap<TramoWithSuggestions>((s) =>
+          s.tramos
+            .map((t) => {
+              const cands = t.suggested_candidates || [];
+              if (cands.length === 0) return null;
+              return {
+                regionId: t.id,
+                tramoDescripcion: t.descripcion,
+                candidates: cands,
+              } satisfies TramoWithSuggestions;
+            })
+            .filter((x): x is TramoWithSuggestions => x !== null),
         )}
-        onUseAsLargo={(sectorIdx, tramoIdx, valor) => {
-          // Reusa updateField existente — copia el valor + recalcula m².
-          // NO confirma: el status del tramo queda como estaba (DUDOSO
-          // mientras los suspicious_reasons existan). El operador tiene
-          // que confirmar con "Confirmar medidas" después de verificar.
-          updateField(sectorIdx, tramoIdx, "largo_m", valor);
+        onApply={(regionId, valor) => {
+          setEditedData((prev) => {
+            const result = applyCandidate(prev, regionId, valor);
+            // Logs temporales de verificación (regla 6 del user).
+            // Útiles en prod para confirmar que el regionId del botón
+            // resuelve al tramo correcto y que ningún otro cambia.
+            // eslint-disable-next-line no-console
+            console.log("[candidate-apply]", {
+              regionId,
+              valor,
+              ...result.meta,
+            });
+            return result.state;
+          });
         }}
       />
 

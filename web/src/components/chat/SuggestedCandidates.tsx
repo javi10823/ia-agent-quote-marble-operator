@@ -23,8 +23,10 @@ export interface SuggestedCandidate {
 }
 
 export interface TramoWithSuggestions {
-  sectorIdx: number;
-  tramoIdx: number;
+  // PR #357 — binding estable por `regionId` (tramo.id del backend).
+  // Antes usábamos (sectorIdx, tramoIdx) que dependía del orden del
+  // flatMap y podía mapear mal al tramo equivocado. regionId es único
+  // cross-sector (R1, R2, R3 del topology) y no depende del render.
   regionId: string;
   tramoDescripcion: string;
   candidates: SuggestedCandidate[];
@@ -32,7 +34,10 @@ export interface TramoWithSuggestions {
 
 interface Props {
   tramos: TramoWithSuggestions[];
-  onUseAsLargo: (sectorIdx: number, tramoIdx: number, valor: number) => void;
+  /** Aplica la candidata al tramo cuyo `id === regionId`. El handler
+   *  en el caller es responsable de resolver regionId → tramo y
+   *  ejecutar la mutación (ver `applyCandidate()` en lib/). */
+  onApply: (regionId: string, valor: number) => void;
 }
 
 type LabelMeta = {
@@ -81,7 +86,7 @@ const formatMeters = (v: number): string =>
 
 export default function SuggestedCandidates({
   tramos,
-  onUseAsLargo,
+  onApply,
 }: Props) {
   if (tramos.length === 0) return null;
 
@@ -101,8 +106,9 @@ export default function SuggestedCandidates({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {tramos.map((t) => (
           <div
-            key={`${t.sectorIdx}-${t.tramoIdx}`}
+            key={t.regionId}
             className="p-3.5 rounded-xl border border-b1 bg-[rgba(255,255,255,0.015)]"
+            data-testid={`suggested-card-${t.regionId}`}
           >
             <div className="text-[13px] text-t1 font-medium">
               Región {t.regionId} · {t.tramoDescripcion}
@@ -114,6 +120,13 @@ export default function SuggestedCandidates({
               {t.candidates.map((c, i) => {
                 const meta = LABEL_META[c.label] ?? LABEL_META.baja_confianza;
                 const isLast = i === t.candidates.length - 1;
+                // PR #357 — closure estable sobre regionId y valor de
+                // ESTA iteración. Aunque React normalmente lo hace bien,
+                // lo capturamos explícito en variables locales para
+                // evitar cualquier ambigüedad de scope si el componente
+                // se refactoriza en el futuro.
+                const regionIdForClick = t.regionId;
+                const valorForClick = c.valor;
                 return (
                   <div
                     key={i}
@@ -140,10 +153,9 @@ export default function SuggestedCandidates({
                     )}
                     <button
                       type="button"
-                      onClick={() =>
-                        onUseAsLargo(t.sectorIdx, t.tramoIdx, c.valor)
-                      }
-                      className={`self-start mt-1 px-3 py-1.5 rounded-md text-[12px] font-medium transition ${meta.buttonClass}`}
+                      onClick={() => onApply(regionIdForClick, valorForClick)}
+                      className={`self-start mt-1 px-3 py-1.5 rounded-md text-[12px] font-medium cursor-pointer transition-colors ${meta.buttonClass}`}
+                      data-testid={`apply-${t.regionId}-${c.valor}`}
                     >
                       {meta.buttonText}
                     </button>
