@@ -1693,6 +1693,95 @@ def _detect_region_brief_contradictions(region: dict, brief_text: str) -> list[s
     return contradictions
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PR #349 — Sanity checks semánticos post-measure
+#
+# Motivación: Bernardi R3 midió 2.05 como sector=isla con confidence 0.65
+# → sistema lo promociona a CONFIRMADO. Pero una isla de 2.05m es rara
+# (islas típicas 1.0-1.8m). Sin check semántico, el error "creíble"
+# pasa inadvertido — peor operativamente que un null honesto, porque
+# el operador puede confirmarlo sin revisar.
+#
+# Diseño:
+# - Reglas MÍNIMAS, bien acotadas (solo isla + cocina con pileta+anafe).
+# - NO cambian valor ni confidence. Solo agregan suspicious_reasons.
+# - El aggregator convierte cualquier suspicious_reasons → DUDOSO
+#   automáticamente (lógica preexistente línea ~1740).
+# - Umbrales son configurables como constantes módulo-level; revisar
+#   con data de prod si aparecen falsos positivos sistemáticos.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Islas residenciales típicas 1.0-1.8m. >1.8m es raro y probable error
+# de asignación bbox↔cota (caso Bernardi: R3 isla midió 2.05 que era
+# cota del tramo L vertical).
+_ISLA_LARGO_TIPICO_MAX = 1.80
+
+# Cocina con pileta + anafe necesita espacio físico — tramo corto <1.5m
+# no puede alojar ambos artefactos + ancho útil. Probable mal matching.
+_COCINA_CON_ANAFE_PILETA_LARGO_MIN = 1.50
+
+
+def _semantic_sanity_checks(
+    sector: str,
+    largo_m: Optional[float],
+    ancho_m: Optional[float],
+    features: dict,
+) -> list[str]:
+    """Reglas semánticas post-measure — NO cambian valores, solo flagean.
+
+    Devuelve lista de `suspicious_reasons` (strings) que se agregan a
+    las existentes del measurement. Lista vacía si todo OK.
+
+    Contrato:
+    - Si `largo_m` es None → sin warnings (el null ya será DUDOSO).
+    - Si sector no es reconocido ("cocina" | "isla") → sin warnings.
+    - Los warnings se encadenan (pueden ser >1 si ambas reglas disparan).
+    - El formato del string incluye el valor para debugging + umbral
+      que lo gatilló (`isla_largo_inusual_2.05m_threshold_1.80m`).
+    """
+    warnings: list[str] = []
+
+    if largo_m is None or not isinstance(largo_m, (int, float)):
+        return warnings
+
+    sector_lc = (sector or "").lower().strip()
+    largo_f = float(largo_m)
+
+    # Regla 1: isla con largo >1.8m (caso Bernardi R3).
+    if sector_lc == "isla" and largo_f > _ISLA_LARGO_TIPICO_MAX:
+        warnings.append(
+            f"isla_largo_inusual_{largo_f:.2f}m_threshold_{_ISLA_LARGO_TIPICO_MAX:.2f}m "
+            f"— islas residenciales típicas 1.0-1.8m, valor mayor probable "
+            f"error de asignación bbox↔cota; revisar visualmente"
+        )
+
+    # Regla 2: cocina con pileta + anafe y largo <1.5m (poco espacio para
+    # acomodar ambos artefactos + ancho útil de trabajo).
+    if sector_lc == "cocina":
+        has_sink = bool(
+            features.get("sink_simple")
+            or features.get("sink_double")
+            or features.get("has_pileta")
+        )
+        cooktop = features.get("cooktop_groups") or 0
+        has_anafe = (
+            isinstance(cooktop, (int, float)) and cooktop > 0
+        )
+        if (
+            has_sink
+            and has_anafe
+            and largo_f < _COCINA_CON_ANAFE_PILETA_LARGO_MIN
+        ):
+            warnings.append(
+                f"cocina_con_pileta_y_anafe_largo_corto_{largo_f:.2f}m_"
+                f"threshold_{_COCINA_CON_ANAFE_PILETA_LARGO_MIN:.2f}m "
+                f"— un tramo con ambos artefactos típicamente mide "
+                f"≥{_COCINA_CON_ANAFE_PILETA_LARGO_MIN}m; probable cota mal asignada"
+            )
+
+    return warnings
+
+
 def _aggregate(
     topology: dict,
     region_results: list[dict],
@@ -1736,7 +1825,25 @@ def _aggregate(
             # CONFIRMADO solo si la medición se ancló a las cotas locales y no
             # hay señales de fallback silencioso.
             error = r_result.get("error")
-            suspicious = r_result.get("suspicious_reasons") or []
+            suspicious = list(r_result.get("suspicious_reasons") or [])
+
+            # PR #349 — sanity check semántico post-measure.
+            # Detecta medidas "plausibles geométricamente pero raras
+            # semánticamente" (isla >1.8m, cocina pileta+anafe <1.5m).
+            # NO cambia valores — solo agrega suspicious_reasons para que
+            # el if de abajo promocione a DUDOSO.
+            semantic_warnings = _semantic_sanity_checks(
+                sector=sec_name,
+                largo_m=largo,
+                ancho_m=ancho,
+                features=region.get("features") or {},
+            )
+            if semantic_warnings:
+                suspicious.extend(semantic_warnings)
+                # Propagar al result para que el log region-detail lo muestre
+                # y el caller pueda leer la razón sin rearmar el helper.
+                r_result["suspicious_reasons"] = suspicious
+
             if error or suspicious or largo is None or ancho is None:
                 status = "DUDOSO"
             else:
