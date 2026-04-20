@@ -32,6 +32,7 @@ from app.modules.quote_engine.multi_crop_reader import (
     _rank_cotas_for_region,
     _rescue_length_ranking,
     _score_cota,
+    _semantic_sanity_checks,
     read_plan_multi_crop,
 )
 
@@ -2525,3 +2526,353 @@ class TestRescueSkipReasons:
             None,  # cuando rescue_applied=True
         }
         assert meta.get("rescue_skip_reason") in known_skip_reasons
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PR #349 — Sanity checks semánticos post-measure
+#
+# Reglas mínimas que flagean medidas "plausibles geométricamente pero
+# raras semánticamente". Caso canónico: Bernardi R3 midió 2.05 como
+# sector=isla con confidence 0.65 → sistema lo promocionó a CONFIRMADO.
+# Post #349: se flagea como `isla_largo_inusual` → suspicious_reasons
+# → aggregator marca DUDOSO automáticamente (sin cambiar valor).
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestSemanticSanityChecks:
+    """Unit tests del helper `_semantic_sanity_checks`."""
+
+    # ── Regla 1: isla con largo >1.8m ──────────────────────────────────
+
+    def test_isla_largo_mayor_a_1_8m_flagea(self):
+        """Caso canónico Bernardi: isla midió 2.05m → flag isla_largo_inusual."""
+        warnings = _semantic_sanity_checks(
+            sector="isla", largo_m=2.05, ancho_m=0.60, features={},
+        )
+        assert len(warnings) == 1
+        assert "isla_largo_inusual" in warnings[0]
+        assert "2.05" in warnings[0]
+
+    def test_isla_largo_exactamente_1_8m_no_flagea(self):
+        """Límite estricto: solo >1.8 dispara. 1.8 exacto NO."""
+        warnings = _semantic_sanity_checks(
+            sector="isla", largo_m=1.80, ancho_m=0.60, features={},
+        )
+        assert warnings == []
+
+    def test_isla_largo_tipico_1_6m_no_flagea(self):
+        """Valor dentro de rango esperado (1.0-1.8m) → sin warnings."""
+        warnings = _semantic_sanity_checks(
+            sector="isla", largo_m=1.60, ancho_m=0.60, features={},
+        )
+        assert warnings == []
+
+    def test_isla_largo_null_no_flagea(self):
+        """largo_m=None no aplica reglas — será DUDOSO por null igual."""
+        warnings = _semantic_sanity_checks(
+            sector="isla", largo_m=None, ancho_m=0.60, features={},
+        )
+        assert warnings == []
+
+    # ── Regla 2: cocina con pileta + anafe y largo <1.5m ───────────────
+
+    def test_cocina_con_pileta_y_anafe_largo_corto_flagea(self):
+        """Cocina con ambos artefactos y <1.5m → poco espacio físico."""
+        features = {
+            "sink_simple": True,
+            "cooktop_groups": 1,
+        }
+        warnings = _semantic_sanity_checks(
+            sector="cocina", largo_m=1.20, ancho_m=0.60, features=features,
+        )
+        assert len(warnings) == 1
+        assert "cocina_con_pileta_y_anafe_largo_corto" in warnings[0]
+        assert "1.20" in warnings[0]
+
+    def test_cocina_con_pileta_y_anafe_largo_exactamente_1_5m_no_flagea(self):
+        """Límite estricto: solo <1.5 dispara."""
+        features = {"sink_simple": True, "cooktop_groups": 1}
+        warnings = _semantic_sanity_checks(
+            sector="cocina", largo_m=1.50, ancho_m=0.60, features=features,
+        )
+        assert warnings == []
+
+    def test_cocina_con_solo_pileta_sin_anafe_no_flagea(self):
+        """Regla requiere AMBOS artefactos. Solo pileta con largo chico → OK."""
+        features = {"sink_simple": True, "cooktop_groups": 0}
+        warnings = _semantic_sanity_checks(
+            sector="cocina", largo_m=1.20, ancho_m=0.60, features=features,
+        )
+        assert warnings == []
+
+    def test_cocina_con_solo_anafe_sin_pileta_no_flagea(self):
+        """Regla requiere AMBOS artefactos. Solo anafe con largo chico → OK."""
+        features = {"sink_simple": False, "cooktop_groups": 1}
+        warnings = _semantic_sanity_checks(
+            sector="cocina", largo_m=1.20, ancho_m=0.60, features=features,
+        )
+        assert warnings == []
+
+    def test_cocina_con_pileta_doble_y_anafe_largo_corto_flagea(self):
+        """sink_double también cuenta como pileta."""
+        features = {"sink_double": True, "cooktop_groups": 1}
+        warnings = _semantic_sanity_checks(
+            sector="cocina", largo_m=1.30, ancho_m=0.60, features=features,
+        )
+        assert len(warnings) == 1
+        assert "cocina_con_pileta_y_anafe_largo_corto" in warnings[0]
+
+    def test_cocina_con_has_pileta_generico_cuenta(self):
+        """features.has_pileta (sin tipo específico) también cuenta."""
+        features = {"has_pileta": True, "cooktop_groups": 1}
+        warnings = _semantic_sanity_checks(
+            sector="cocina", largo_m=1.40, ancho_m=0.60, features=features,
+        )
+        assert len(warnings) == 1
+
+    def test_cocina_con_largo_normal_no_flagea(self):
+        """Cocina 2.5m con pileta+anafe → normal, sin warnings."""
+        features = {"sink_simple": True, "cooktop_groups": 1}
+        warnings = _semantic_sanity_checks(
+            sector="cocina", largo_m=2.50, ancho_m=0.60, features=features,
+        )
+        assert warnings == []
+
+    # ── Otros sectores no aplican ──────────────────────────────────────
+
+    def test_baño_no_dispara_reglas(self):
+        """Baño con largo 0.5m (chico típico de vanitory) NO dispara reglas
+        de cocina ni isla."""
+        warnings = _semantic_sanity_checks(
+            sector="baño", largo_m=0.50, ancho_m=0.40, features={},
+        )
+        assert warnings == []
+
+    def test_lavadero_no_dispara_reglas(self):
+        warnings = _semantic_sanity_checks(
+            sector="lavadero", largo_m=3.0, ancho_m=0.60, features={},
+        )
+        assert warnings == []
+
+    def test_sector_vacio_no_dispara(self):
+        warnings = _semantic_sanity_checks(
+            sector="", largo_m=2.50, ancho_m=0.60, features={},
+        )
+        assert warnings == []
+
+    def test_sector_none_no_dispara(self):
+        warnings = _semantic_sanity_checks(
+            sector=None, largo_m=2.50, ancho_m=0.60, features={},
+        )
+        assert warnings == []
+
+    # ── Casos borde ────────────────────────────────────────────────────
+
+    def test_ambas_reglas_pueden_dispararse_simultaneamente(self):
+        """Si un sector fuera clasificable como ambos (hipotético), devolvería
+        ambos warnings. En la práctica sector es uno u otro — test defensivo
+        para futuros agregados."""
+        # No existe sector "isla" Y "cocina" al mismo tiempo, pero verificamos
+        # que los warnings se acumulan en lista y no son exclusivos.
+        features = {"sink_simple": True, "cooktop_groups": 1}
+        warnings_isla = _semantic_sanity_checks(
+            sector="isla", largo_m=2.05, ancho_m=0.60, features=features,
+        )
+        warnings_cocina = _semantic_sanity_checks(
+            sector="cocina", largo_m=1.20, ancho_m=0.60, features=features,
+        )
+        # Cada uno dispara 1 warning
+        assert len(warnings_isla) == 1
+        assert len(warnings_cocina) == 1
+        # Son warnings distintos
+        assert warnings_isla != warnings_cocina
+
+
+class TestAggregateAppliesSemanticSanityChecks:
+    """E2E del sanity check a través de `_aggregate`. Verifica que:
+    - el warning se agrega a suspicious_reasons del tramo,
+    - el status pasa a DUDOSO,
+    - el largo_m NO cambia de valor,
+    - se agrega ambigüedad REVISION al sector."""
+
+    def _build_topology(self, regions):
+        return {"view_type": "planta", "regions": regions}
+
+    def test_bernardi_r3_isla_2_05_pasa_a_dudoso(self):
+        """Caso Bernardi post-#349: R3 mide 2.05 con sector=isla.
+        El status que antes era CONFIRMADO ahora es DUDOSO por sanity check."""
+        topology = self._build_topology([
+            {
+                "id": "R3",
+                "bbox_rel": {"x": 0.35, "y": 0.45, "w": 0.25, "h": 0.08},
+                "features": {
+                    "touches_wall": False,  # → clasifica como isla
+                    "sink_double": False,
+                    "sink_simple": False,
+                    "cooktop_groups": 0,
+                },
+            },
+        ])
+        region_results = [
+            {
+                "region_id": "R3",
+                "largo_m": 2.05,
+                "ancho_m": 0.60,
+                "confidence": 0.65,
+                "suspicious_reasons": [],
+            },
+        ]
+        result = _aggregate(topology, region_results)
+        isla = next(s for s in result["sectores"] if s["tipo"] == "isla")
+        tramo = isla["tramos"][0]
+
+        # Valor no cambia
+        assert tramo["largo_m"]["valor"] == 2.05
+        assert tramo["ancho_m"]["valor"] == 0.60
+        # Status pasa a DUDOSO
+        assert tramo["largo_m"]["status"] == "DUDOSO"
+        assert tramo["ancho_m"]["status"] == "DUDOSO"
+        # Descripción tiene "— revisar" porque DUDOSO (patrón preexistente)
+        assert "revisar" in tramo["descripcion"]
+        # Ambigüedad agregada al sector
+        amb_texts = " ".join(a.get("texto") or "" for a in isla["ambiguedades"])
+        assert "isla_largo_inusual" in amb_texts or "dudosa" in amb_texts
+
+    def test_isla_con_largo_normal_1_6m_sigue_confirmado(self):
+        """No regresión: isla midiendo valor típico 1.6m sigue CONFIRMADO."""
+        topology = self._build_topology([
+            {
+                "id": "R_isla",
+                "bbox_rel": {"x": 0.3, "y": 0.4, "w": 0.2, "h": 0.1},
+                "features": {
+                    "touches_wall": False,
+                    "sink_double": False,
+                    "sink_simple": False,
+                    "cooktop_groups": 0,
+                },
+            },
+        ])
+        region_results = [
+            {
+                "region_id": "R_isla",
+                "largo_m": 1.60,
+                "ancho_m": 0.60,
+                "confidence": 0.90,
+                "suspicious_reasons": [],
+            },
+        ]
+        result = _aggregate(topology, region_results)
+        isla = next(s for s in result["sectores"] if s["tipo"] == "isla")
+        tramo = isla["tramos"][0]
+        assert tramo["largo_m"]["valor"] == 1.60
+        assert tramo["largo_m"]["status"] == "CONFIRMADO"
+
+    def test_cocina_normal_sin_pileta_sigue_confirmado(self):
+        """Cocina largo 1.2m sin artefactos (raro pero no aplica regla)."""
+        topology = self._build_topology([
+            {
+                "id": "R_cocina",
+                "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.3},
+                "features": {
+                    "touches_wall": True,
+                    "sink_simple": False,
+                    "sink_double": False,
+                    "cooktop_groups": 0,
+                },
+            },
+        ])
+        region_results = [
+            {
+                "region_id": "R_cocina",
+                "largo_m": 1.20,
+                "ancho_m": 0.60,
+                "confidence": 0.85,
+                "suspicious_reasons": [],
+            },
+        ]
+        result = _aggregate(topology, region_results)
+        cocina = next(s for s in result["sectores"] if s["tipo"] == "cocina")
+        assert cocina["tramos"][0]["largo_m"]["status"] == "CONFIRMADO"
+
+    def test_cocina_con_pileta_y_anafe_largo_corto_pasa_a_dudoso(self):
+        """Cocina con pileta + anafe + largo 1.2m → DUDOSO por regla 2."""
+        topology = self._build_topology([
+            {
+                "id": "R_cocina",
+                "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.3},
+                "features": {
+                    "touches_wall": True,
+                    "sink_simple": True,
+                    "sink_double": False,
+                    "cooktop_groups": 1,
+                },
+            },
+        ])
+        region_results = [
+            {
+                "region_id": "R_cocina",
+                "largo_m": 1.20,
+                "ancho_m": 0.60,
+                "confidence": 0.80,
+                "suspicious_reasons": [],
+            },
+        ]
+        result = _aggregate(topology, region_results)
+        cocina = next(s for s in result["sectores"] if s["tipo"] == "cocina")
+        tramo = cocina["tramos"][0]
+        assert tramo["largo_m"]["valor"] == 1.20  # valor no cambia
+        assert tramo["largo_m"]["status"] == "DUDOSO"
+
+    def test_suspicious_reasons_preexistentes_se_preservan(self):
+        """Si ya había suspicious del measurement, el sanity check SUMA
+        al stack, no reemplaza."""
+        topology = self._build_topology([
+            {
+                "id": "R_isla",
+                "bbox_rel": {"x": 0.3, "y": 0.4, "w": 0.2, "h": 0.1},
+                "features": {"touches_wall": False, "cooktop_groups": 0},
+            },
+        ])
+        region_results = [
+            {
+                "region_id": "R_isla",
+                "largo_m": 2.30,  # >1.8 → dispara sanity check
+                "ancho_m": 0.60,
+                "confidence": 0.60,
+                "suspicious_reasons": ["cotas_mode=expanded → cap confidence 0.65"],
+            },
+        ]
+        result = _aggregate(topology, region_results)
+        isla = next(s for s in result["sectores"] if s["tipo"] == "isla")
+        amb_text = " ".join(a.get("texto") or "" for a in isla["ambiguedades"])
+        # Ambos motivos aparecen en la ambigüedad
+        assert "cap confidence" in amb_text
+        assert "isla_largo_inusual" in amb_text
+
+    def test_null_largo_no_dispara_sanity_check(self):
+        """Largo null no aplica regla — ya será DUDOSO por null igual,
+        sin necesidad de doblar razones."""
+        topology = self._build_topology([
+            {
+                "id": "R_isla",
+                "bbox_rel": {"x": 0.3, "y": 0.4, "w": 0.2, "h": 0.1},
+                "features": {"touches_wall": False, "cooktop_groups": 0},
+            },
+        ])
+        region_results = [
+            {
+                "region_id": "R_isla",
+                "largo_m": None,  # null
+                "ancho_m": 0.60,
+                "confidence": 0.0,
+                "suspicious_reasons": [],
+            },
+        ]
+        result = _aggregate(topology, region_results)
+        isla = next(s for s in result["sectores"] if s["tipo"] == "isla")
+        tramo = isla["tramos"][0]
+        assert tramo["largo_m"]["valor"] is None
+        assert tramo["largo_m"]["status"] == "DUDOSO"  # por null, no por sanity
+        # La razón es el null, NO isla_largo_inusual (porque no aplica con null)
+        amb_text = " ".join(a.get("texto") or "" for a in isla["ambiguedades"])
+        assert "isla_largo_inusual" not in amb_text
