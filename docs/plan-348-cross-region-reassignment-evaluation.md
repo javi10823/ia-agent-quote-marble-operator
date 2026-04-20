@@ -1,14 +1,17 @@
 # Plan Técnico #348 — Cross-region cota reassignment (evaluación)
 
-> **Status:** NO-GO, evidence-based.
+> **Status:** NO-GO, evidence-based. Experimento 5.2 ejecutado (PR #353) → reencuadrado como insumo para operator-assist UI, NO como auto-fill.
 > **Decision type:** Architectural — do not re-open without new data.
 > **Revisit only if:** `pool_starved_region=true` aparece en >30% de regiones
 > de planos distintos (§6), acumulando ≥10 planos de evidencia en prod.
 > **Superseded by:** —
+> **Updates:** 2026-04-20 (PR #354) — nueva §8 con resultado empírico del experimento 5.2.
 
-**Fecha:** 2026-04-20
+**Fecha original:** 2026-04-20 (mañana).
+**Última actualización:** 2026-04-20 (tarde — post-PR #353).
 **Contexto previo:** PR #344 (Plan B topology cache), #345 (rescue span_based), #346 (orphan trigger + pool_starved), #347 (context reconcile).
-**Artefactos:** sin código producido. Solo análisis + simulación numérica con coordenadas reales de Erica Bernardi.
+**Experimento asociado:** PR #353 (deep expansion +600px — ver §8).
+**Artefactos:** análisis + simulación numérica con coordenadas reales de Erica Bernardi. Código del PR #353 mergeado (activo en main) pero reencuadrado como fuente de candidatas, no como auto-fill.
 
 ---
 
@@ -233,19 +236,23 @@ Regla nueva en `_aggregate`:
 
 Para Bernardi: R3=2.05 con `sector=isla` → DUDOSO con bandera clara al operador.
 
-### 5.2 Expansion pool configurable +600px (~30 LOC)
+### 5.2 Expansion pool configurable +600px (~30 LOC) — ⚠️ EJECUTADO Y DESCARTADO COMO AUTO-FILL
+
+**Status:** Implementado en PR #353 (2026-04-20). **Experimento fallido como auto-fill.** Ver §8 para el análisis completo.
 
 Cambio en `_measure_region`:
 
 - Si `pool_starved_region=true`, hacer un segundo intento con expansion +600px (vs +300 actual).
 - Cap confidence 0.35. `suspicious_reason="deep_expansion"`.
 
-Quick check numérico:
+Quick check numérico (pre-experimento):
 
 - **R1** bbox_expanded (+600): `[737, 1301] × [3977, 3542]`. Cota 2.35 @ (2836, 1458): x ∈ [737, 3977] ✓, y ∈ [1301, 3542] ✓. **Sí entra.**
 - **R2** bbox_expanded (+600): `[3071, 799] × [5268, 4007]`. Cota 2.05 @ (2506, 1875): x=2506 NO ∈ [3071, 5268]. **No entra aún con +600.** R2 seguiría starved.
 
-Esta alternativa resuelve ~50% de Bernardi (R1) con costo/riesgo bajo.
+**Predicción pre-experimento:** *"Esta alternativa resuelve ~50% de Bernardi (R1) con costo/riesgo bajo."*
+
+**Resultado empírico (post-PR #353):** **La predicción se cumplió parcialmente pero con matiz crítico** — el deep_pool de R1 SÍ captura cotas, pero las que captura no pertenecen al tramo de R1. Ver §8 para el detalle. El código quedó mergeado y activo, pero reencuadrado: **aporta candidatas al operador, no resolución automática.**
 
 ### 5.3 Aceptar techo + documentar
 
@@ -267,12 +274,84 @@ Hasta que se cumplan las 3: **no-go mantenido**.
 
 ---
 
-## 7. Recomendación final
+## 7. Recomendación final (original — 2026-04-20 mañana)
 
 - **Hoy:** cerrar el frente cross-region como no-go documentado.
 - **Si se quiere ganancia incremental:** evaluar 5.1 (sanity check semántico) o 5.2 (expansion +600px) en futuras sesiones. Ambos chicos, bajo riesgo, efecto medible.
 - **Rango de semanas:** dejar que `pool_starved_region=true` y el hallazgo `isla_largo_inusual` (si se implementa 5.1) acumulen data en prod. Con 10+ planos de evidencia, revisitar.
 - **Nunca:** implementar cross-region reassignment naive. La simulación con Bernardi real ya probó que no lo resuelve.
+
+*(Ver §8 para la actualización post-experimento 5.2.)*
+
+---
+
+## 8. Resultado del experimento 5.2 (post-PR #353, 2026-04-20 tarde)
+
+El scope 5.2 del §5 fue implementado en PR #353 y probado con una corrida real de Bernardi. Esta sección documenta el resultado y cambia la dirección del frente.
+
+### 8.1 Qué se implementó (PR #353)
+
+Deep expansion +600px como último intento cuando `_rescue_length_ranking` con pool +300 devolvía `[]`. Cap confidence 0.35. Suspicious reason `topology_bbox_undersized_deep_expansion`. Prompt al LLM con warning estricto de "pool viene de zona amplia, puede incluir tramos vecinos".
+
+Detalles del diseño y salvaguardias: ver commit de PR #353.
+
+### 8.2 Qué reveló el experimento
+
+Corrida real de Bernardi (quote nuevo post-merge):
+
+| Región | Deep pool trajo | LLM devolvió | Motivo |
+|--------|-----------------|--------------|--------|
+| R1 | candidata 2.05 | `largo_m=null`, `confidence=0.0` | LLM detectó visualmente que no pertenece al tramo |
+| R2 | candidata 2.95 | `largo_m=null`, `confidence=0.0` | LLM detectó visualmente que no pertenece al tramo |
+| R3 | — (no pasa por deep) | 2.05 con sanity flag | Sin cambio |
+
+**El sistema funcionó correctamente.** Los warnings estrictos del prompt + el LLM viendo el crop visual evitaron que se promueva una candidata ajena a medida final. Fail-loud intacto.
+
+### 8.3 Conclusión: 5.2 descartado como auto-fill
+
+El experimento confirma exactamente el riesgo que el §3 anticipó: **deep expansion captura cotas, pero las que captura pueden pertenecer a tramos vecinos.** Bernardi específicamente:
+
+- R1 esperado = 2.35 (cocina con pileta+anafe). Deep expansion trajo 2.05 (que es del L vertical = R2).
+- R2 esperado = 2.05. Deep expansion trajo 2.95 (cota de otro lugar del plano).
+
+Ambas son cotas legítimas del plano pero **del tramo equivocado**. El sistema no tiene cómo distinguir automáticamente cuál corresponde a cuál — ese es el mismo problema fundamental que el ADR descartó en §1-§4 (cross-region reassignment).
+
+**5.2 como auto-fill queda cerrado.**
+
+### 8.4 Reencuadre: de auto-fill a operator-assist
+
+El PR #353 NO se revierte. El código sigue activo porque:
+
+- Identifica candidatas reales del plano con metadata útil (origen, score).
+- No promueve esas candidatas a medida final (cap 0.35 + LLM viendo crop bloquean el auto-fill).
+- El costo operativo es cero cuando no hay `pool_starved_region`.
+
+**Valor real del PR #353: fuente de sugerencias para revisión asistida del operador.**
+
+La siguiente dirección técnica es **operator-assist UI** — mostrar al operador las candidatas que deep expansion encontró (con warnings visibles) SIN escribirlas al despiece. El operador mira el plano y decide.
+
+### 8.5 Criterio de éxito actualizado
+
+**Criterio descartado** (del PR #353 original):
+> *"R1 pasa de null a valor plausible → GANANCIA."*
+
+Incorrecto: ese "valor plausible" terminaba siendo una cota del tramo vecino. Autofill con cap 0.35 no alcanza.
+
+**Criterio reemplazante** (para futuro PR de UI):
+> *"El operador ve las candidatas con contexto (valor, origen, warning), decide visualmente si aplican, y las usa o descarta. El despiece nunca se completa automáticamente con cotas de origen incierto."*
+
+### 8.6 Próximo frente técnico
+
+- **PR #355 (pending):** Operator-assist UI. Bloque "Candidatas sugeridas del plano" en la card de despiece. Backend expone candidatas rescatadas en el shape del tramo; frontend las muestra con botón "Usar como largo" que completa el input sin marcar CONFIRMADO.
+- **Diseño exacto:** a definir antes de codear (scope controlado por el operador/product, no por el implementador).
+
+### 8.7 Lección arquitectónica
+
+> **Las heurísticas que extraen datos son más útiles como fuente de información para humanos que como decisiones automáticas, cuando los datos tienen ambigüedad de origen.**
+
+Bernardi empuja esta lección al extremo: el plano tiene TODA la información necesaria, pero el mapeo cota ↔ tramo es lo que falla. Deep expansion puede traer la cota correcta — solo que no sabe a cuál tramo corresponde. El humano sí (con el plano delante), el sistema no.
+
+Este patrón probablemente se repita en otros frentes del sistema. La lección queda como precedente: **cuando una heurística produce candidatos de origen ambiguo, primero exponer al operador antes de automatizar.**
 
 ---
 
@@ -342,8 +421,15 @@ Output:
 - **PR #345**: rescue pass `span_based` (caso bbox subdimensionado).
 - **PR #346**: observabilidad + `orphan_region` trigger + `pool_starved_region` flag.
 - **PR #347**: reconciliación brief↔dual_read + Tipo de trabajo en known.
-- **Plan #348** (este doc): cross-region reassignment evaluado. **NO-GO.**
+- **Plan #348** (este doc): cross-region reassignment evaluado. **NO-GO como auto-fill.**
+- **PR #349**: sanity checks semánticos post-measure (scope 5.1).
+- **PR #350**: log `[semantic-sanity]` para observabilidad del #349.
+- **PR #351**: sanity warnings como bullet dedicado sin truncar.
+- **PR #352**: fix wiring ambigüedades cross-sector (ambigüedades de regiones en sector no-primero se perdían).
+- **PR #353**: deep expansion +600px (scope 5.2). **Implementado. Experimento fallido como auto-fill — reencuadrado como fuente de candidatas para operator-assist UI (ver §8).**
+- **PR #354** (este update doc-only): ADR actualizado con resultado del experimento 5.2.
+- **PR #355** (pendiente): operator-assist UI con candidatas sugeridas (diseño en definición).
 
 ---
 
-*Generado con Claude Code tras simulación numérica con coordenadas reales del plano Erica Bernardi. Sin código producido.*
+*Generado con Claude Code tras simulación numérica con coordenadas reales del plano Erica Bernardi. Actualizado post-experimento 5.2 (PR #353) — los hallazgos del experimento reencuadraron el frente de resolución automática a asistencia al operador.*
