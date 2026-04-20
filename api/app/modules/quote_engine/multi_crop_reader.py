@@ -1141,8 +1141,103 @@ def _derive_description(region: dict) -> str:
     return base
 
 
-def _aggregate(topology: dict, region_results: list[dict]) -> dict:
-    """Combina topología global + medidas por región en el schema dual_read."""
+# ─────────────────────────────────────────────────────────────────────────────
+# PR 2c — Brief vs features cross-check (mínimo)
+#
+# Detecta contradicciones obvias entre lo que clasificó el topology LLM y
+# lo que dice el brief del operador. Alcance inicial: SOLO isla + anafe
+# no confirmado por brief. Atacar otros tipos de contradicción en PRs
+# separados si hace falta.
+#
+# Principio: NO mutamos las features del topology — respetamos el output
+# del VLM. Solo HACEMOS VISIBLE la duda vía ambigüedad en el sector +
+# sufijo "a confirmar" en la descripción del tramo.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_BRIEF_MENTIONS_ANAFE = re.compile(
+    r"\b(anafes?|hornallas?|cooktop)\b",
+    re.IGNORECASE,
+)
+_BRIEF_ANAFE_IN_ISLA = re.compile(
+    r"\b(anafes?|hornallas?|cooktop).{0,30}isla|"
+    r"isla.{0,30}(anafes?|hornallas?|cooktop)",
+    re.IGNORECASE | re.DOTALL,
+)
+# Amplía a cooktop / hornallas, no solo "anafe" — el operador puede usar
+# cualquiera de las tres palabras para negarlo.
+_BRIEF_ANAFE_NEGATED = re.compile(
+    r"\b(sin\s+(anafes?|hornallas?|cooktop)|"
+    r"no\s+(lleva|tiene|va|hay)\s+(anafes?|hornallas?|cooktop))\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_region_brief_contradictions(region: dict, brief_text: str) -> list[str]:
+    """Detecta contradicciones entre features del topology y brief.
+
+    Alcance mínimo (PR 2c): isla con anafe no confirmada por el brief.
+
+    Orden de evaluación (importante):
+    1. `brief_places_in_isla` — si el brief asocia anafe con isla explícito,
+       NO hay contradicción aunque haya cooktop_groups. Se chequea PRIMERO
+       para evitar caer en rama genérica cuando el brief sí asocia los dos.
+    2. `brief_negates_anafe` — brief dice "sin anafe" / "sin hornallas":
+       topology se equivocó, contradicción fuerte.
+    3. `brief_has_anafe` pero NO en isla — topology ubica en isla pero
+       brief no asocia isla con anafe: ambiguo.
+    4. Brief no menciona anafe — contradicción suave, confirmar.
+
+    Retorna lista de strings (puede ser vacía). NO muta `region`.
+    """
+    contradictions: list[str] = []
+    features = region.get("features") or {}
+    touches_wall = features.get("touches_wall")
+    cooktop = features.get("cooktop_groups") or 0
+
+    if not (touches_wall is False and cooktop > 0):
+        return contradictions  # no hay escenario isla+anafe para chequear
+
+    brief = brief_text or ""
+    brief_places_in_isla = bool(_BRIEF_ANAFE_IN_ISLA.search(brief))
+    if brief_places_in_isla:
+        return contradictions  # brief confirma isla+anafe, sin contradicción
+
+    brief_negates_anafe = bool(_BRIEF_ANAFE_NEGATED.search(brief))
+    if brief_negates_anafe:
+        contradictions.append(
+            "topology detectó anafe en isla pero el brief dice explícitamente "
+            "que NO lleva anafe — revisar"
+        )
+        return contradictions
+
+    brief_has_anafe = bool(_BRIEF_MENTIONS_ANAFE.search(brief))
+    if brief_has_anafe:
+        contradictions.append(
+            "topology ubica anafe en isla pero el brief no asocia anafe "
+            "con isla — revisar si va en isla o en cocina"
+        )
+    else:
+        contradictions.append(
+            "topology detectó anafe en isla pero el brief no lo menciona "
+            "— puede ser confusión visual (símbolo en cocina contigua), "
+            "confirmar con el operador"
+        )
+    return contradictions
+
+
+def _aggregate(
+    topology: dict,
+    region_results: list[dict],
+    brief_text: str = "",
+) -> dict:
+    """Combina topología global + medidas por región en el schema dual_read.
+
+    PR 2c: `brief_text` se usa para detectar contradicciones obvias entre
+    features del topology y lo que dice el operador (ej: topology marca
+    anafe en isla pero brief no lo confirma). La contradicción se agrega
+    como ambigüedad del sector + sufijo "a confirmar" en la descripción
+    del tramo. NO se muta `region.features` — el output del VLM se respeta.
+    """
     # Agrupar regiones por sector derivado de features (o legacy `sector`).
     # Regiones clasificadas como "descarte" (alacenas superiores) se filtran.
     by_sector: dict[str, list[dict]] = {}
@@ -1179,14 +1274,24 @@ def _aggregate(topology: dict, region_results: list[dict]) -> dict:
             else:
                 status = "CONFIRMADO"
 
+            # PR 2c: contradicciones brief vs features (no mutamos features).
+            contradictions = _detect_region_brief_contradictions(region, brief_text)
+
             # Descripción: deriva de `features` de la región (contrato PR E).
             # No inventamos artefactos — solo los que están en features.
             base_desc = _derive_description(region)
             n = len(tramos) + 1
             if base_desc == "Mesada":
-                desc = f"Mesada {n}" + (" — revisar" if status != "CONFIRMADO" else "")
+                desc = f"Mesada {n}"
             else:
-                desc = base_desc + (" — revisar" if status != "CONFIRMADO" else "")
+                desc = base_desc
+            # Sufijo "— revisar" por status no-CONFIRMADO (preexistente).
+            if status != "CONFIRMADO":
+                desc = f"{desc} — revisar"
+            # PR 2c: sufijo "— a confirmar" por contradicción brief/features.
+            # Si ya dice "— revisar", no duplicamos; si no, lo agregamos.
+            if contradictions and "a confirmar" not in desc and "revisar" not in desc:
+                desc = f"{desc} — a confirmar"
 
             tramo = {
                 "id": rid or f"t{n}",
@@ -1199,6 +1304,8 @@ def _aggregate(topology: dict, region_results: list[dict]) -> dict:
                 "regrueso": [],
                 "features": region.get("features") or {},
             }
+            if contradictions:
+                tramo["_contradictions"] = contradictions
             tramos.append(tramo)
 
             if error:
@@ -1210,6 +1317,13 @@ def _aggregate(topology: dict, region_results: list[dict]) -> dict:
                 all_ambiguedades.append({
                     "tipo": "REVISION",
                     "texto": f"Región {rid}: medida dudosa ({'; '.join(suspicious)[:120]})",
+                })
+
+            # PR 2c: cada contradicción va como bullet REVISION independiente
+            for c_text in contradictions:
+                all_ambiguedades.append({
+                    "tipo": "REVISION",
+                    "texto": f"Región {rid}: {c_text}",
                 })
 
         sectores.append({
@@ -1372,4 +1486,4 @@ async def read_plan_multi_crop(
     except Exception as _e_log:
         logger.warning(f"[multi-crop] region detail log failed: {_e_log}")
 
-    return _aggregate(topology, region_results)
+    return _aggregate(topology, region_results, brief_text=brief_text)
