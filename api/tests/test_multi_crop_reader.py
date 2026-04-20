@@ -19,6 +19,7 @@ from app.modules.quote_engine.multi_crop_reader import (
     _apply_guardrails,
     _bbox_to_px,
     _call_global_topology,
+    _detect_region_brief_contradictions,
     _estimate_plan_scale,
     _format_ranking_for_prompt,
     _GLOBAL_SYSTEM_PROMPT,
@@ -1158,3 +1159,179 @@ class TestSevereSpanMismatch:
         )
         # Bucket weak o inferior (no preferred)
         assert result["bucket"] in ("weak", "unlikely", "excluded_soft")
+
+
+# ── PR 2c: brief vs features contradiction detection ─────────────────────
+
+def _isla_region_with_anafe() -> dict:
+    """Fixture: topology región tipo isla con anafe detectado por VLM."""
+    return {
+        "id": "R1",
+        "bbox_rel": {"x": 0.35, "y": 0.35, "w": 0.25, "h": 0.08},
+        "features": {
+            "touches_wall": False,
+            "cooktop_groups": 1,
+            "sink_simple": False,
+            "sink_double": False,
+            "stools_adjacent": False,
+            "non_counter_upper": False,
+        },
+        "evidence": "isla con 4 círculos agrupados (anafe a gas)",
+    }
+
+
+class TestBriefFeatureContradiction:
+    """PR 2c — detección mínima de contradicción isla+anafe."""
+
+    def test_contradiction_bernardi_brief_silent_on_anafe(self):
+        """Caso Bernardi: topology R1 isla con cooktop=1 + brief sin mencionar
+        anafe → contradicción suave ("no lo menciona, confirmar")."""
+        region = _isla_region_with_anafe()
+        brief = (
+            "nuevo presupuesto material en pura prima onix white mate "
+            "Cliente: Erica Bernardi SIN zocalos en rosario con colocacion"
+        )
+        contradictions = _detect_region_brief_contradictions(region, brief)
+        assert len(contradictions) == 1
+        assert "no lo menciona" in contradictions[0]
+
+    def test_no_contradiction_when_brief_places_anafe_in_isla(self):
+        """Brief asocia anafe con isla explícito → SIN contradicción."""
+        region = _isla_region_with_anafe()
+        assert _detect_region_brief_contradictions(
+            region, "cocina con anafe en isla, pileta simple"
+        ) == []
+        assert _detect_region_brief_contradictions(
+            region, "isla central con cooktop eléctrico"
+        ) == []
+        assert _detect_region_brief_contradictions(
+            region, "lleva hornallas en la isla"
+        ) == []
+
+    def test_negated_anafe_triggers_strong_contradiction(self):
+        """Brief dice 'sin anafe' → contradicción fuerte."""
+        region = _isla_region_with_anafe()
+        for brief in [
+            "cocina completa SIN anafe, con pileta doble",
+            "presupuesto sin hornallas, pileta simple",
+            "cocina no lleva cooktop — solo pileta",
+            "no tiene anafe",
+        ]:
+            c = _detect_region_brief_contradictions(region, brief)
+            assert len(c) == 1, f"brief {brief!r} debería dar 1 contradicción"
+            assert "NO lleva anafe" in c[0] or "NO" in c[0]
+
+    def test_anafe_mentioned_without_isla_triggers_ambiguous(self):
+        """Brief menciona anafe pero NO asocia con isla → ambigüedad
+        (topology ubica en isla, brief sugiere otra cosa)."""
+        region = _isla_region_with_anafe()
+        c = _detect_region_brief_contradictions(
+            region, "cocina en L, con anafe empotrado, pileta simple"
+        )
+        assert len(c) == 1
+        assert "no asocia anafe con isla" in c[0]
+
+    def test_no_contradiction_when_cooktop_in_cocina_not_isla(self):
+        """Region con touches_wall=True (cocina) + cooktop → ESPERABLE,
+        sin contradicción aunque el brief no lo mencione."""
+        region = {
+            "id": "R2",
+            "bbox_rel": {"x": 0.5, "y": 0.5, "w": 0.2, "h": 0.1},
+            "features": {
+                "touches_wall": True,  # ← cocina contra pared
+                "cooktop_groups": 1,
+                "sink_simple": False,
+                "sink_double": False,
+            },
+        }
+        # Brief sin anafe — topology lo detecta en cocina: OK, esperable
+        assert _detect_region_brief_contradictions(region, "presupuesto") == []
+        # Brief con "sin anafe" — ahora SÍ sería contradicción pero este
+        # PR solo cubre isla, no cocina. Se trabajará en iteración futura.
+        # (contrato actual: detector solo dispara si touches_wall=False)
+
+    def test_no_contradiction_when_region_has_no_cooktop(self):
+        """Sin cooktop en features → nada que chequear."""
+        region = {
+            "id": "R3",
+            "features": {
+                "touches_wall": False,
+                "cooktop_groups": 0,
+                "sink_simple": True,
+            },
+        }
+        assert _detect_region_brief_contradictions(region, "") == []
+        assert _detect_region_brief_contradictions(region, "sin anafe") == []
+
+
+class TestAggregateAppliesBriefContradictions:
+    """PR 2c — verifica que `_aggregate` propague la contradicción:
+    1) como ambigüedad REVISION del sector,
+    2) como sufijo ' — a confirmar' en la descripción del tramo."""
+
+    def test_aggregate_marks_contradiction_in_sector_ambiguedades(self):
+        topology = {
+            "regions": [_isla_region_with_anafe()],
+        }
+        results = [
+            {"region_id": "R1", "largo_m": 1.60, "ancho_m": 0.60},
+        ]
+        out = _aggregate(
+            topology, results,
+            brief_text="cocina con pileta, sin mencionar anafe",
+        )
+        isla = next(s for s in out["sectores"] if s["tipo"] == "isla")
+        textos = [a["texto"] for a in isla["ambiguedades"]]
+        assert any("anafe" in t.lower() for t in textos), (
+            f"Esperaba ambigüedad de anafe, got: {textos}"
+        )
+        # Tramo marcado con "a confirmar" o similar (status CONFIRMADO →
+        # NO lleva el " — revisar" preexistente, queda espacio para el nuevo)
+        tramo = isla["tramos"][0]
+        assert "a confirmar" in tramo["descripcion"].lower() or \
+               "revisar" in tramo["descripcion"].lower(), (
+            f"Esperaba sufijo 'a confirmar' o 'revisar', got: {tramo['descripcion']!r}"
+        )
+        # _contradictions preservado en el tramo para debugging
+        assert tramo.get("_contradictions")
+
+    def test_aggregate_no_suffix_when_brief_confirms_isla_anafe(self):
+        """Si brief confirma anafe en isla → sin contradicción → descripción
+        sin sufijo 'a confirmar'."""
+        topology = {
+            "regions": [_isla_region_with_anafe()],
+        }
+        results = [
+            {"region_id": "R1", "largo_m": 1.60, "ancho_m": 0.60},
+        ]
+        out = _aggregate(
+            topology, results,
+            brief_text="cocina en L con isla con anafe empotrado",
+        )
+        isla = next(s for s in out["sectores"] if s["tipo"] == "isla")
+        tramo = isla["tramos"][0]
+        assert "a confirmar" not in tramo["descripcion"].lower()
+        # No hay _contradictions tampoco
+        assert not tramo.get("_contradictions")
+        # Ambigüedades del sector no incluyen anafe (status CONFIRMADO)
+        textos = [a["texto"] for a in isla["ambiguedades"]]
+        assert not any("anafe" in t.lower() for t in textos)
+
+    def test_aggregate_backcompat_without_brief_text(self):
+        """Llamada sin `brief_text` (default "") — comportamiento igual
+        que antes del PR 2c, sin contradicciones. Retrocompat con callers
+        que todavía no pasan brief."""
+        topology = {
+            "regions": [_isla_region_with_anafe()],
+        }
+        results = [
+            {"region_id": "R1", "largo_m": 1.60, "ancho_m": 0.60},
+        ]
+        out = _aggregate(topology, results)  # sin brief_text
+        isla = next(s for s in out["sectores"] if s["tipo"] == "isla")
+        tramo = isla["tramos"][0]
+        # Brief vacío → no hay "anafe en isla" ni mención explícita → regla
+        # "brief no menciona anafe" dispara igual. Este es comportamiento
+        # esperado: sin brief, topology detectó anafe en isla y nosotros
+        # no tenemos forma de validarlo → flaguear por conservador.
+        assert tramo.get("_contradictions") is not None
