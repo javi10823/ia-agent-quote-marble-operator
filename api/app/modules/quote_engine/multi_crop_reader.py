@@ -1721,6 +1721,35 @@ _ISLA_LARGO_TIPICO_MAX = 1.80
 _COCINA_CON_ANAFE_PILETA_LARGO_MIN = 1.50
 
 
+# PR #351 — Prefijos de los suspicious_reasons que emite
+# `_semantic_sanity_checks`. Listar acá cualquier regla nueva que
+# agregues a ese helper para que `_aggregate` pueda distinguir los
+# warnings semánticos del resto y darles un bullet dedicado sin
+# truncar a 120 chars (bug descubierto post-#349: el warning semántico
+# se perdía al final del join y quedaba cortado en "isla").
+#
+# Contrato: cada string producido por `_semantic_sanity_checks` tiene
+# que empezar con uno de estos prefijos. Si cambiás el mensaje del
+# helper, actualizá también el prefijo acá — test
+# `TestIsSemanticSanityWarning` valida la correspondencia.
+_SEMANTIC_SANITY_PREFIXES: tuple[str, ...] = (
+    "isla_largo_inusual",
+    "cocina_con_pileta_y_anafe_largo_corto",
+)
+
+
+def _is_semantic_sanity_warning(warning_text: str) -> bool:
+    """True si el string viene de `_semantic_sanity_checks`.
+
+    El aggregator lo usa para separar sanity warnings del resto de
+    `suspicious_reasons` y darles tratamiento dedicado en la UI
+    (bullet independiente sin truncar, más visible para el operador).
+    """
+    if not isinstance(warning_text, str):
+        return False
+    return any(warning_text.startswith(p) for p in _SEMANTIC_SANITY_PREFIXES)
+
+
 def _semantic_sanity_checks(
     sector: str,
     largo_m: Optional[float],
@@ -1925,10 +1954,43 @@ def _aggregate(
                     "texto": f"Región {rid}: no se pudo medir ({error}) — completá manual",
                 })
             elif suspicious:
-                all_ambiguedades.append({
-                    "tipo": "REVISION",
-                    "texto": f"Región {rid}: medida dudosa ({'; '.join(suspicious)[:120]})",
-                })
+                # PR #351 — Separar sanity warnings (del helper semántico)
+                # del resto de suspicious_reasons. Los semánticos merecen
+                # bullet dedicado SIN truncar porque el operador necesita
+                # el mensaje completo ("isla de 2m es rara → revisá bbox").
+                # El resto (cap confidence, pool expandido) va al bullet
+                # general truncado como antes.
+                #
+                # Antes del fix: el join concatenaba todo y `[:120]`
+                # cortaba el warning semántico en "isla". Operador no
+                # podía ver el motivo real.
+                sanity_warnings = [
+                    w for w in suspicious if _is_semantic_sanity_warning(w)
+                ]
+                other_warnings = [
+                    w for w in suspicious if not _is_semantic_sanity_warning(w)
+                ]
+
+                # Bullet general (sin sanity para evitar redundancia).
+                # Si SOLO hay sanity warnings, no emitir bullet general.
+                if other_warnings:
+                    all_ambiguedades.append({
+                        "tipo": "REVISION",
+                        "texto": (
+                            f"Región {rid}: medida dudosa "
+                            f"({'; '.join(other_warnings)[:120]})"
+                        ),
+                    })
+
+                # Bullets dedicados por cada sanity warning. SIN truncar.
+                # Uno por warning para que cada regla tenga visibilidad
+                # independiente (si hipotéticamente ambas reglas
+                # semánticas dispararan en la misma región).
+                for warn in sanity_warnings:
+                    all_ambiguedades.append({
+                        "tipo": "REVISION",
+                        "texto": f"Región {rid}: {warn}",
+                    })
 
             # PR 2c: cada contradicción va como bullet REVISION independiente
             for c_text in contradictions:
