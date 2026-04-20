@@ -1832,6 +1832,28 @@ def _aggregate(
             # semánticamente" (isla >1.8m, cocina pileta+anafe <1.5m).
             # NO cambia valores — solo agrega suspicious_reasons para que
             # el if de abajo promocione a DUDOSO.
+            #
+            # PR #350 — corrección de doc previa: el log
+            # [multi-crop/region-detail] se emite ANTES de _aggregate
+            # (línea 2369 vs 2373), así que mutar r_result aquí NO
+            # se refleja en ese log. La mutación sirve para que otros
+            # callers que inspeccionen region_results post-aggregate
+            # vean el sanity aplicado. La observabilidad del sanity
+            # vive en el log [semantic-sanity] nuevo (ver abajo).
+            #
+            # Estados:
+            # - status_before_sanity: qué status tendría la región SIN
+            #   aplicar el sanity (solo por error/null/suspicious previos).
+            # - status_after_sanity: estado final después de sumar warnings.
+            # Si son distintos → el sanity es LA razón del DUDOSO. Si son
+            # iguales DUDOSO→DUDOSO, el sanity es adicional; igual vale
+            # loggearlo para auditar que la regla disparó.
+            suspicious_before_sanity = list(suspicious)
+            if error or suspicious_before_sanity or largo is None or ancho is None:
+                status_before_sanity = "DUDOSO"
+            else:
+                status_before_sanity = "CONFIRMADO"
+
             semantic_warnings = _semantic_sanity_checks(
                 sector=sec_name,
                 largo_m=largo,
@@ -1840,9 +1862,23 @@ def _aggregate(
             )
             if semantic_warnings:
                 suspicious.extend(semantic_warnings)
-                # Propagar al result para que el log region-detail lo muestre
-                # y el caller pueda leer la razón sin rearmar el helper.
                 r_result["suspicious_reasons"] = suspicious
+
+                status_after_sanity = "DUDOSO"  # siempre, por definición del helper
+                status_changed_by_sanity = (
+                    status_before_sanity != status_after_sanity
+                )
+                logger.info(
+                    "[semantic-sanity] region=%s sector=%s largo=%s ancho=%s "
+                    "warnings=%s status_before=%s status_after=%s "
+                    "status_changed_by_sanity=%s",
+                    rid, sec_name,
+                    f"{float(largo):.2f}" if isinstance(largo, (int, float)) else largo,
+                    f"{float(ancho):.2f}" if isinstance(ancho, (int, float)) else ancho,
+                    semantic_warnings,
+                    status_before_sanity, status_after_sanity,
+                    status_changed_by_sanity,
+                )
 
             if error or suspicious or largo is None or ancho is None:
                 status = "DUDOSO"
