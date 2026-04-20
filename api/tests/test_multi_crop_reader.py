@@ -1445,3 +1445,331 @@ class TestPromptNullWhenEmptyLengthRanking:
         prompt = _format_ranking_for_prompt(ranking)
         assert "null honestamente" not in prompt.lower()
         assert "no inventes: devolvé" not in prompt.lower()
+
+
+# ── Plan B: cache global por plan_hash + retry condicional + instability ────
+
+class TestStrongContradictionsDetector:
+    """Plan B — el detector de contradicciones FUERTES decide si disparamos
+    retry/bypass del cache. Debe ser estricto: solo count mismatch y
+    negaciones explícitas, nada vago."""
+
+    def test_count_mismatch_with_explicit_brief_triggers(self):
+        from app.modules.quote_engine.multi_crop_reader import detect_strong_contradictions
+        topology = {"regions": [{"id": "R1"}]}  # 1 region
+        brief = "cocina en L + isla"  # esperamos 3
+        contradictions = detect_strong_contradictions(topology, brief)
+        assert len(contradictions) >= 1
+        assert any("count_mismatch" in c for c in contradictions)
+
+    def test_count_match_does_not_trigger(self):
+        from app.modules.quote_engine.multi_crop_reader import detect_strong_contradictions
+        topology = {"regions": [{"id": "R1"}, {"id": "R2"}, {"id": "R3"}]}
+        brief = "cocina en L + isla"  # esperamos 3
+        assert detect_strong_contradictions(topology, brief) == []
+
+    def test_negated_anafe_triggers_when_topology_has_cooktop(self):
+        from app.modules.quote_engine.multi_crop_reader import detect_strong_contradictions
+        topology = {
+            "regions": [{"id": "R1", "features": {"cooktop_groups": 1}}],
+        }
+        brief = "cocina sin anafe"
+        contradictions = detect_strong_contradictions(topology, brief)
+        assert any("anafe" in c.lower() for c in contradictions)
+
+    def test_double_sink_brief_without_match_triggers(self):
+        from app.modules.quote_engine.multi_crop_reader import detect_strong_contradictions
+        topology = {
+            "regions": [{"id": "R1", "features": {"sink_simple": True}}],
+        }
+        brief = "cocina con pileta doble"
+        contradictions = detect_strong_contradictions(topology, brief)
+        assert any("double_sink" in c for c in contradictions)
+
+    def test_vague_brief_does_not_trigger(self):
+        from app.modules.quote_engine.multi_crop_reader import detect_strong_contradictions
+        topology = {"regions": [{"id": "R1"}]}
+        brief = "presupuesto Silestone"  # sin forma, sin features
+        assert detect_strong_contradictions(topology, brief) == []
+
+
+class TestTopologiesDiverge:
+    """IoU < 0.5 O n_regions distinto → divergen."""
+
+    def test_identical_bboxes_do_not_diverge(self):
+        from app.modules.quote_engine.multi_crop_reader import _topologies_diverge
+        t = {"regions": [{"bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.3}}]}
+        assert _topologies_diverge(t, t) is False
+
+    def test_different_n_regions_diverges(self):
+        from app.modules.quote_engine.multi_crop_reader import _topologies_diverge
+        t1 = {"regions": [{"bbox_rel": {"x": 0, "y": 0, "w": 1, "h": 1}}]}
+        t2 = {"regions": [
+            {"bbox_rel": {"x": 0, "y": 0, "w": 0.5, "h": 1}},
+            {"bbox_rel": {"x": 0.5, "y": 0, "w": 0.5, "h": 1}},
+        ]}
+        assert _topologies_diverge(t1, t2) is True
+
+    def test_low_iou_diverges(self):
+        from app.modules.quote_engine.multi_crop_reader import _topologies_diverge
+        t1 = {"regions": [{"bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}}]}
+        t2 = {"regions": [{"bbox_rel": {"x": 0.7, "y": 0.7, "w": 0.2, "h": 0.2}}]}
+        assert _topologies_diverge(t1, t2) is True
+
+    def test_high_iou_no_diverge(self):
+        from app.modules.quote_engine.multi_crop_reader import _topologies_diverge
+        t1 = {"regions": [{"bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.3}}]}
+        t2 = {"regions": [{"bbox_rel": {"x": 0.11, "y": 0.11, "w": 0.3, "h": 0.3}}]}
+        # IoU alto — casi idénticos
+        assert _topologies_diverge(t1, t2) is False
+
+
+class TestTopologyCacheFlow:
+    """Plan B — cache global por plan_hash cross-quote.
+
+    Usamos SQLite in-memory vía fixture db_session. Creamos el cache
+    directamente, mockeamos _call_global_topology para controlar qué
+    devuelve el "VLM".
+    """
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_cross_quote_skips_vlm(self, db_session):
+        """Insertar cache con plan_hash=X + source_quote_id=A. Correr
+        _get_or_build_topology con quote B + mismo hash → cache hit,
+        VLM NO se llama."""
+        from app.models.plan_topology_cache import PlanTopologyCache
+        from app.modules.quote_engine.multi_crop_reader import (
+            _get_or_build_topology,
+        )
+        cached_topology = {
+            "view_type": "planta",
+            "regions": [{"id": "R1", "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.3}, "features": {}}],
+        }
+        cache_row = PlanTopologyCache(
+            plan_hash="hashA",
+            topology_json=cached_topology,
+            stability_status="stable",
+            n_regions=1,
+            divergence_count=0,
+            source_quote_id="quote-source",
+        )
+        db_session.add(cache_row)
+        await db_session.commit()
+
+        vlm_called = {"count": 0}
+
+        async def _spy(*args, **kwargs):
+            vlm_called["count"] += 1
+            return {"view_type": "planta", "regions": []}
+
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader._call_global_topology",
+            side_effect=_spy,
+        ):
+            topology, meta = await _get_or_build_topology(
+                db_session, "hashA", "quote-B", _make_image_bytes(), "", "test",
+            )
+        assert vlm_called["count"] == 0
+        assert meta["from_cache"] is True
+        assert meta["cache_source_quote_id"] == "quote-source"
+        assert topology == cached_topology
+
+    @pytest.mark.asyncio
+    async def test_cache_miss_calls_vlm_and_persists(self, db_session):
+        """Sin cache previo → VLM se llama una vez → resultado se guarda."""
+        from app.models.plan_topology_cache import PlanTopologyCache
+        from app.modules.quote_engine.multi_crop_reader import (
+            _get_or_build_topology,
+        )
+        from sqlalchemy import select
+
+        fresh = {
+            "view_type": "planta",
+            "regions": [{"id": "R1", "bbox_rel": {"x": 0, "y": 0, "w": 0.5, "h": 0.5}, "features": {}}],
+        }
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader._call_global_topology",
+            new=AsyncMock(return_value=fresh),
+        ):
+            topology, meta = await _get_or_build_topology(
+                db_session, "hashMiss", "quote-new", _make_image_bytes(),
+                "", "test",
+            )
+        assert meta["from_cache"] is False
+        assert topology == fresh
+        # Persistido
+        r = await db_session.execute(
+            select(PlanTopologyCache).where(PlanTopologyCache.plan_hash == "hashMiss")
+        )
+        row = r.scalar_one_or_none()
+        assert row is not None
+        assert row.source_quote_id == "quote-new"
+        assert row.n_regions == 1
+        assert row.stability_status == "stable"
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_with_contradiction_bypasses_to_fresh(self, db_session):
+        """Cache tiene 1 region, brief dice "L + isla" (esperar 3).
+        Contradicción fuerte → bypass + fresh retry. Fresh devuelve 3 → gana."""
+        from app.models.plan_topology_cache import PlanTopologyCache
+        from app.modules.quote_engine.multi_crop_reader import (
+            _get_or_build_topology,
+        )
+        from sqlalchemy import select
+        cached_topology = {
+            "view_type": "planta",
+            "regions": [{"id": "R1", "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.3}, "features": {}}],
+        }
+        db_session.add(PlanTopologyCache(
+            plan_hash="hashContra",
+            topology_json=cached_topology,
+            stability_status="stable",
+            n_regions=1,
+            divergence_count=0,
+            source_quote_id="quote-old",
+        ))
+        await db_session.commit()
+
+        fresh = {
+            "view_type": "planta",
+            "regions": [
+                {"id": "R1", "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.05}, "features": {}},
+                {"id": "R2", "bbox_rel": {"x": 0.1, "y": 0.4, "w": 0.3, "h": 0.3}, "features": {}},
+                {"id": "R3", "bbox_rel": {"x": 0.5, "y": 0.4, "w": 0.1, "h": 0.3}, "features": {}},
+            ],
+        }
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader._call_global_topology",
+            new=AsyncMock(return_value=fresh),
+        ):
+            topology, meta = await _get_or_build_topology(
+                db_session, "hashContra", "quote-new", _make_image_bytes(),
+                "cocina en L + isla", "test",
+            )
+        assert meta["from_cache"] is True
+        assert meta["replaced_cache"] is True
+        assert topology["regions"] == fresh["regions"]
+        # Cache fue actualizado
+        r = await db_session.execute(
+            select(PlanTopologyCache).where(PlanTopologyCache.plan_hash == "hashContra")
+        )
+        row = r.scalar_one()
+        assert row.n_regions == 3
+        # Stability status: divergencia (de 1 a 3 regions) → unstable
+        assert row.stability_status == "unstable"
+        assert row.divergence_count == 1
+
+    @pytest.mark.asyncio
+    async def test_unstable_cache_does_not_retry(self, db_session):
+        """Cache ya marcado unstable + brief contradice → NO intentamos retry.
+        Usamos cache + marcamos review."""
+        from app.models.plan_topology_cache import PlanTopologyCache
+        from app.modules.quote_engine.multi_crop_reader import (
+            _get_or_build_topology,
+        )
+        cached_topology = {
+            "view_type": "planta",
+            "regions": [{"id": "R1", "bbox_rel": {"x": 0, "y": 0, "w": 0.5, "h": 0.5}, "features": {}}],
+        }
+        db_session.add(PlanTopologyCache(
+            plan_hash="hashUnstable",
+            topology_json=cached_topology,
+            stability_status="unstable",
+            n_regions=1,
+            divergence_count=1,
+            source_quote_id="quote-old",
+        ))
+        await db_session.commit()
+
+        vlm_calls = {"count": 0}
+
+        async def _spy(*args, **kwargs):
+            vlm_calls["count"] += 1
+            return {"regions": []}
+
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader._call_global_topology",
+            side_effect=_spy,
+        ):
+            topology, meta = await _get_or_build_topology(
+                db_session, "hashUnstable", "quote-B", _make_image_bytes(),
+                "cocina en L + isla", "test",  # contradice fuerte, pero unstable no re-intenta
+            )
+        assert vlm_calls["count"] == 0
+        assert meta["from_cache"] is True
+        assert meta["stability_status"] == "unstable"
+        # No replaced porque ni siquiera hicimos retry
+        assert meta.get("replaced_cache", False) is False
+
+    @pytest.mark.asyncio
+    async def test_retry_failure_keeps_cache_and_flags_review(self, db_session):
+        """Cache + brief contradice → retry dispara → retry timeout/error
+        → mantener cache + meta.retry_failed=True."""
+        from app.models.plan_topology_cache import PlanTopologyCache
+        from app.modules.quote_engine.multi_crop_reader import (
+            _get_or_build_topology,
+        )
+        cached_topology = {
+            "view_type": "planta",
+            "regions": [{"id": "R1", "bbox_rel": {"x": 0, "y": 0, "w": 0.5, "h": 0.5}, "features": {}}],
+        }
+        db_session.add(PlanTopologyCache(
+            plan_hash="hashFail",
+            topology_json=cached_topology,
+            stability_status="stable",
+            n_regions=1,
+            divergence_count=0,
+            source_quote_id="quote-old",
+        ))
+        await db_session.commit()
+
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader._call_global_topology",
+            new=AsyncMock(return_value={"error": "timeout"}),
+        ):
+            topology, meta = await _get_or_build_topology(
+                db_session, "hashFail", "quote-new", _make_image_bytes(),
+                "cocina en L + isla", "test",
+            )
+        assert meta["retry_failed"] is True
+        assert meta["from_cache"] is True
+        # Volvemos al cached_topology
+        assert topology == cached_topology
+
+    @pytest.mark.asyncio
+    async def test_retry_worse_than_cache_keeps_cache(self, db_session):
+        """Cache contradice (1 contradicción). Retry también contradice
+        (2 contradicciones). Mantener cache, no replace."""
+        from app.models.plan_topology_cache import PlanTopologyCache
+        from app.modules.quote_engine.multi_crop_reader import (
+            _get_or_build_topology,
+        )
+        cached_topology = {
+            "view_type": "planta",
+            "regions": [
+                {"id": "R1", "bbox_rel": {"x": 0, "y": 0, "w": 0.5, "h": 0.5}, "features": {}},
+                {"id": "R2", "bbox_rel": {"x": 0.5, "y": 0, "w": 0.5, "h": 0.5}, "features": {}},
+            ],
+        }  # 2 regiones, brief espera 3
+        db_session.add(PlanTopologyCache(
+            plan_hash="hashWorse",
+            topology_json=cached_topology,
+            stability_status="stable",
+            n_regions=2,
+            divergence_count=0,
+            source_quote_id="quote-old",
+        ))
+        await db_session.commit()
+
+        fresh_worse = {"view_type": "planta", "regions": []}  # 0 regiones, peor
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader._call_global_topology",
+            new=AsyncMock(return_value=fresh_worse),
+        ):
+            topology, meta = await _get_or_build_topology(
+                db_session, "hashWorse", "quote-new", _make_image_bytes(),
+                "cocina en L + isla", "test",
+            )
+        # Mantener cache porque fresh es peor
+        assert topology == cached_topology
+        assert meta.get("replaced_cache", False) is False

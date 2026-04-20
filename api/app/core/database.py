@@ -26,7 +26,8 @@ class Base(DeclarativeBase):
 
 async def init_db():
     async with engine.begin() as conn:
-        from app.models import quote, user  # noqa - ensures models are registered
+        # noqa - ensures models are registered in Base.metadata before create_all
+        from app.models import quote, user, plan_topology_cache  # noqa: F401
         await conn.run_sync(Base.metadata.create_all)
 
         # Migrations only needed for PostgreSQL (existing deploys)
