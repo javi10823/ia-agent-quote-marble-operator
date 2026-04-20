@@ -3357,3 +3357,226 @@ class TestSanityWarningsCreateDedicatedBullets:
             f"Bullet dedicado debería superar 120 chars (texto humano completo). "
             f"Got {len(sanity_bullet)}: {sanity_bullet}"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PR #352 — Fix: ambigüedades de regiones en sector NO-primero se perdían
+#
+# Bug descubierto en corrida real Bernardi post-#351: R3 (sector isla)
+# era DUDOSO (visible en la tabla del despiece como "Mesada 1 — revisar"),
+# pero NO aparecía en el bloque "Revisar en plano" de la UI. Solo se
+# veían R1 y R2 (sector cocina).
+#
+# Causa raíz: `_aggregate` asignaba `ambiguedades` dentro del loop de
+# sectores con un snapshot de `all_ambiguedades` que aún no tenía las
+# ambigüedades de sectores posteriores. La primera iteración (cocina)
+# tomaba snapshot con solo R1+R2; después del loop, al procesar isla,
+# R3 se agregaba a `all_ambiguedades` pero ningún sector la recibía
+# (el primer ya fue asignado, el resto recibe []).
+#
+# Fix: asignar ambigüedades POST-loop, cuando ya se procesaron todas
+# las regiones.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestMultiSectorAmbiguedadesPropagation:
+    """Validar que ambigüedades de regiones en sectores no-primeros
+    llegan correctamente al frontend (vía primer sector, por el
+    contrato `flatMap` que hace la UI)."""
+
+    def _build_topology(self, regions):
+        return {"view_type": "planta", "regions": regions}
+
+    def _all_ambig_texts(self, result: dict) -> list[str]:
+        """Simula el `flatMap` que hace el frontend sobre todos los sectores."""
+        texts = []
+        for s in result.get("sectores") or []:
+            for a in s.get("ambiguedades") or []:
+                texts.append(a.get("texto") or "")
+        return texts
+
+    def test_bernardi_real_r3_in_isla_sector_appears_in_ui(self):
+        """Caso canónico del bug. Topology: R1+R2 en cocina, R3 en isla.
+        R3 es DUDOSO con sanity warning. Pre-fix: R3 no aparecía en
+        ambigüedades. Post-fix: aparece."""
+        # R1 y R2 van a sector cocina (touches_wall=True).
+        # R3 va a sector isla (touches_wall=False). SECTOR NO-PRIMERO.
+        topology = self._build_topology([
+            {
+                "id": "R1",
+                "bbox_rel": {"x": 0.35, "y": 0.65, "w": 0.25, "h": 0.08},
+                "features": {"touches_wall": True, "cooktop_groups": 1,
+                             "sink_simple": True},
+            },
+            {
+                "id": "R2",
+                "bbox_rel": {"x": 0.78, "y": 0.45, "w": 0.08, "h": 0.35},
+                "features": {"touches_wall": True, "cooktop_groups": 0},
+            },
+            {
+                "id": "R3",
+                "bbox_rel": {"x": 0.35, "y": 0.45, "w": 0.25, "h": 0.08},
+                "features": {"touches_wall": False, "cooktop_groups": 0},
+            },
+        ])
+        region_results = [
+            {"region_id": "R1", "largo_m": None, "ancho_m": 0.60,
+             "confidence": 0.2,
+             "suspicious_reasons": ["largo 0.6m < 1.0m — invalidado"]},
+            {"region_id": "R2", "largo_m": None, "ancho_m": None,
+             "confidence": 0.0,
+             "suspicious_reasons": ["medida tomada con pool expandido"]},
+            {"region_id": "R3", "largo_m": 2.05, "ancho_m": 0.60,
+             "confidence": 0.65,
+             "suspicious_reasons": ["cotas_mode=expanded → cap confidence 0.65"]},
+        ]
+        result = _aggregate(topology, region_results)
+
+        # El frontend hace flatMap — las 3 ambigüedades DEBEN estar
+        # visibles sin importar en qué sector viven.
+        all_texts = self._all_ambig_texts(result)
+
+        assert any("Región R1" in t for t in all_texts), (
+            f"R1 ambigüedad perdida: {all_texts}"
+        )
+        assert any("Región R2" in t for t in all_texts), (
+            f"R2 ambigüedad perdida: {all_texts}"
+        )
+        # CRÍTICO: el bug que resuelve este PR. R3 (sector isla,
+        # no-primero) debe aparecer.
+        r3_bullets = [t for t in all_texts if "Región R3" in t]
+        assert len(r3_bullets) >= 2, (
+            f"R3 debería tener ≥2 bullets (general + sanity dedicado). "
+            f"Got {len(r3_bullets)}: {r3_bullets}"
+        )
+        # Y el bullet de sanity debe tener el texto completo.
+        assert any("isla_largo_inusual" in t for t in r3_bullets), (
+            f"R3 sanity bullet perdido: {r3_bullets}"
+        )
+
+    def test_single_sector_no_regression(self):
+        """Topology con un solo sector: ambigüedades llegan al primer
+        (único) sector igual que antes del fix. No regresión."""
+        topology = self._build_topology([
+            {
+                "id": "R1",
+                "bbox_rel": {"x": 0.3, "y": 0.3, "w": 0.3, "h": 0.3},
+                "features": {"touches_wall": True, "cooktop_groups": 0},
+            },
+        ])
+        region_results = [{
+            "region_id": "R1", "largo_m": 2.0, "ancho_m": 0.60,
+            "confidence": 0.65,
+            "suspicious_reasons": ["cotas_mode=expanded → cap confidence 0.65"],
+        }]
+        result = _aggregate(topology, region_results)
+        all_texts = self._all_ambig_texts(result)
+        assert len(all_texts) == 1
+        assert "Región R1" in all_texts[0]
+
+    def test_ambiguedades_live_in_first_sector(self):
+        """Post-fix: todas las ambigüedades siguen centralizadas en el
+        primer sector (contrato actual del frontend). Los otros sectores
+        reciben lista vacía."""
+        topology = self._build_topology([
+            {
+                "id": "R1",
+                "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.3},
+                "features": {"touches_wall": True, "cooktop_groups": 0},
+            },
+            {
+                "id": "R3",
+                "bbox_rel": {"x": 0.3, "y": 0.3, "w": 0.2, "h": 0.1},
+                "features": {"touches_wall": False, "cooktop_groups": 0},
+            },
+        ])
+        region_results = [
+            {"region_id": "R1", "largo_m": None, "ancho_m": 0.60,
+             "confidence": 0.2, "suspicious_reasons": ["invalid"]},
+            {"region_id": "R3", "largo_m": 2.5, "ancho_m": 0.60,
+             "confidence": 0.65, "suspicious_reasons": []},
+        ]
+        result = _aggregate(topology, region_results)
+
+        # Primer sector tiene todas las ambigüedades.
+        primero = result["sectores"][0]
+        assert len(primero.get("ambiguedades") or []) >= 2, (
+            f"Primer sector esperaba ≥2 ambigüedades, got: "
+            f"{primero.get('ambiguedades')}"
+        )
+        # Otros sectores reciben []. (Contrato actual — si cambia en
+        # el futuro, actualizar también este assertion.)
+        for s in result["sectores"][1:]:
+            assert s.get("ambiguedades") == [], (
+                f"Sector no-primero debería tener ambiguedades=[], "
+                f"got: {s.get('ambiguedades')}"
+            )
+
+    def test_region_with_error_in_non_first_sector_still_propagates(self):
+        """Variante del bug: no solo suspicious, también error en región
+        de sector no-primero debe llegar al frontend."""
+        topology = self._build_topology([
+            {
+                "id": "R_cocina",
+                "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.3},
+                "features": {"touches_wall": True, "cooktop_groups": 0},
+            },
+            {
+                "id": "R_isla_err",
+                "bbox_rel": {"x": 0.3, "y": 0.3, "w": 0.2, "h": 0.1},
+                "features": {"touches_wall": False, "cooktop_groups": 0},
+            },
+        ])
+        region_results = [
+            {"region_id": "R_cocina", "largo_m": 2.0, "ancho_m": 0.6,
+             "confidence": 0.9, "suspicious_reasons": []},
+            {"region_id": "R_isla_err",
+             "error": "insufficient_local_cotas",
+             "largo_m": None, "ancho_m": None},
+        ]
+        result = _aggregate(topology, region_results)
+        all_texts = self._all_ambig_texts(result)
+        # R_isla_err debe aparecer con mensaje de error.
+        err_bullets = [t for t in all_texts if "R_isla_err" in t]
+        assert len(err_bullets) == 1, (
+            f"Error de R_isla_err (sector no-primero) debería aparecer. "
+            f"Got: {err_bullets}"
+        )
+        assert "no se pudo medir" in err_bullets[0]
+
+    def test_contradictions_in_non_first_sector_still_propagate(self):
+        """PR 2c: contradicciones brief/features también pasan por
+        `all_ambiguedades`. Verificar que tampoco se pierden cuando
+        la región está en sector no-primero."""
+        topology = self._build_topology([
+            {
+                "id": "R1",
+                "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.3},
+                "features": {"touches_wall": True, "cooktop_groups": 0},
+            },
+            {
+                "id": "R3_isla_anafe",
+                "bbox_rel": {"x": 0.3, "y": 0.3, "w": 0.2, "h": 0.1},
+                # Isla con cooktop → dispara PR 2c cuando brief no lo confirma.
+                "features": {"touches_wall": False, "cooktop_groups": 1},
+            },
+        ])
+        region_results = [
+            {"region_id": "R1", "largo_m": 2.0, "ancho_m": 0.6,
+             "confidence": 0.9, "suspicious_reasons": []},
+            {"region_id": "R3_isla_anafe", "largo_m": 1.5, "ancho_m": 0.6,
+             "confidence": 0.85, "suspicious_reasons": []},
+        ]
+        # Brief no menciona anafe — PR 2c detecta contradicción.
+        result = _aggregate(
+            topology, region_results, brief_text="cocina residencial",
+        )
+        all_texts = self._all_ambig_texts(result)
+        contr_bullets = [
+            t for t in all_texts
+            if "R3_isla_anafe" in t and "anafe" in t.lower()
+        ]
+        assert len(contr_bullets) >= 1, (
+            f"Contradicción brief/features de R3_isla_anafe (sector isla, "
+            f"no-primero) debería aparecer. Got all: {all_texts}"
+        )
