@@ -1932,6 +1932,123 @@ def _semantic_sanity_checks(
     return warnings
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PR #355 — Operator-assist: suggested_candidates
+#
+# Contexto: PR #353 agregó deep expansion (+600px) con cap confidence 0.35.
+# El experimento probó (doc: Plan #348 §8) que deep expansion captura cotas
+# legítimas pero del tramo EQUIVOCADO. El LLM correctamente las rechaza
+# (devuelve null), pero las candidatas quedan enterradas en logs.
+#
+# Este módulo expone esas candidatas al operador vía campo nuevo
+# `suggested_candidates` en el tramo. La UI las renderiza como bloque
+# "Candidatas sugeridas para revisión" (ver mockup PR #355). El click
+# en "Usar/Probar como largo" copia el valor al input SIN confirmar
+# (el tramo queda DUDOSO hasta que el operador confirme).
+#
+# Trigger actual (scope mínimo):
+#   largo_m is None AND
+#   (pool_starved_region=True OR deep_expansion_applied=True) AND
+#   hay candidatas en ranking["length"].
+#
+# Shape EXTENSIBLE para futuros triggers (ej: "tramo con warning fuerte
+# aunque haya valor"). El helper acepta `trigger_override` para abrir
+# el trigger sin cambiar el shape.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SUGGESTED_CANDIDATES_MAX = 3
+
+
+def _build_suggested_candidates(
+    r_result: dict,
+    ranking: dict,
+    *,
+    trigger_override: bool = False,
+    max_candidates: int = _SUGGESTED_CANDIDATES_MAX,
+) -> list[dict]:
+    """Construye suggested_candidates para el operator-assist UI.
+
+    Expone top-N candidatas del ranking con metadata de origen
+    (`source`, `label`, `origin_desc`, `warning`) para que el frontend
+    pueda renderizarlas con el treatment visual correcto:
+
+    - `source="expanded_rescue"` + `label="mas_probable"`: del rescue
+      normal (+380px). Verde en UI. Texto: "mejor match con el bbox
+      del tramo detectado".
+    - `source="expanded_deep"` + `label="baja_confianza"`: del deep
+      expansion (+680px). Ámbar en UI. Texto: "pool expandido +600px"
+      + warning "posiblemente de tramo vecino".
+
+    Trigger actual (scope PR #355):
+        largo_m is None AND
+        (pool_starved_region OR deep_expansion_applied) AND
+        ranking["length"] no vacío.
+
+    `trigger_override=True` fuerza la exposición ignorando el trigger
+    actual — reservado para futuros casos (ej: exponer candidatas en
+    tramos con warning fuerte aunque tengan valor). No usar en este PR.
+
+    Retorna `[]` si no aplica o no hay candidatas. Lista de dicts
+    ordenada por score desc, top-N.
+    """
+    if not trigger_override:
+        if r_result.get("largo_m") is not None:
+            return []
+        meta = r_result.get("measurement_meta") or {}
+        trigger_ok = bool(
+            meta.get("pool_starved_region")
+            or meta.get("deep_expansion_applied")
+        )
+        if not trigger_ok:
+            return []
+
+    length_ranking = ranking.get("length") or []
+    if not length_ranking:
+        return []
+
+    cotas_mode = r_result.get("_cotas_mode", "")
+    meta = r_result.get("measurement_meta") or {}
+    deep_applied = bool(meta.get("deep_expansion_applied"))
+
+    # Determinar source/label según contexto de medición.
+    # Prioridad: deep_expansion_applied explícito > cotas_mode.
+    if deep_applied or cotas_mode == "expanded_deep":
+        source = "expanded_deep"
+        label = "baja_confianza"
+        origin_desc = "pool expandido +600px"
+        warning = "posiblemente de tramo vecino"
+    elif cotas_mode == "expanded_rescue":
+        source = "expanded_rescue"
+        label = "mas_probable"
+        origin_desc = "mejor match con el bbox del tramo detectado"
+        warning = None
+    else:
+        # Caso raro: pool_starved sin deep ni rescue aplicado. Conservador:
+        # etiquetar como baja confianza para no vender certeza que no hay.
+        source = "expanded_rescue"
+        label = "baja_confianza"
+        origin_desc = "pool del tramo"
+        warning = "medida no confirmada por el modelo — revisar"
+
+    # Top-N por score. El ranking ya viene ordenado desc desde
+    # _rank_cotas_for_region / _rescue_length_ranking.
+    result: list[dict] = []
+    for entry in length_ranking[:max_candidates]:
+        try:
+            valor = float(entry["value"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        result.append({
+            "valor": round(valor, 2),
+            "source": source,
+            "label": label,
+            "origin_desc": origin_desc,
+            "warning": warning,
+            "score": int(entry.get("score", 0)),
+        })
+    return result
+
+
 def _aggregate(
     topology: dict,
     region_results: list[dict],
@@ -2054,6 +2171,15 @@ def _aggregate(
             if contradictions and "a confirmar" not in desc and "revisar" not in desc:
                 desc = f"{desc} — a confirmar"
 
+            # PR #355 — suggested_candidates para operator-assist UI.
+            # Solo se populan cuando el trigger dispara (ver helper).
+            # Array vacío `[]` cuando no aplica (shape estable para el
+            # frontend — nunca None).
+            suggested = _build_suggested_candidates(
+                r_result,
+                r_result.get("_cota_ranking") or {},
+            )
+
             tramo = {
                 "id": rid or f"t{n}",
                 "descripcion": desc,
@@ -2064,6 +2190,7 @@ def _aggregate(
                 "frentin": [],
                 "regrueso": [],
                 "features": region.get("features") or {},
+                "suggested_candidates": suggested,
             }
             if contradictions:
                 tramo["_contradictions"] = contradictions

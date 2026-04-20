@@ -20,6 +20,7 @@ from app.modules.quote_engine.multi_crop_reader import (
     _apply_guardrails,
     _bbox_to_px,
     _build_rescue_context,
+    _build_suggested_candidates,
     _call_global_topology,
     _detect_region_brief_contradictions,
     _estimate_plan_scale,
@@ -3839,3 +3840,324 @@ class TestDeepExpansionE2EAggregate:
             a.get("texto") or "" for a in cocina.get("ambiguedades") or []
         )
         assert "deep_expansion" in amb_texts or "REVISAR VISUALMENTE" in amb_texts
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PR #355 — Operator-assist UI: suggested_candidates
+#
+# Backend expone candidatas rescatadas en el tramo para que el frontend
+# las renderice como bloque "Candidatas sugeridas para revisión" con
+# botón "Usar/Probar como largo" que copia el valor al input SIN confirmar.
+#
+# Scope mínimo: trigger = largo_m=null AND (pool_starved OR deep_expansion).
+# Shape extensible (parámetro trigger_override para futuros casos).
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestBuildSuggestedCandidates:
+    """Unit tests del helper `_build_suggested_candidates`."""
+
+    # ── Trigger ────────────────────────────────────────────────────────
+
+    def test_largo_not_null_returns_empty(self):
+        """Si largo_m tiene valor, NO se exponen candidatas (operador ya
+        tiene medida, no necesita sugerencias)."""
+        r_result = {
+            "largo_m": 2.05,
+            "ancho_m": 0.60,
+            "measurement_meta": {"pool_starved_region": True},
+        }
+        ranking = {"length": [{"value": 2.35, "score": 50, "bucket": "weak"}]}
+        result = _build_suggested_candidates(r_result, ranking)
+        assert result == []
+
+    def test_neither_pool_starved_nor_deep_returns_empty(self):
+        """Si measurement_meta no tiene pool_starved ni deep_expansion,
+        no se exponen candidatas aunque haya largo=null."""
+        r_result = {
+            "largo_m": None,
+            "measurement_meta": {
+                "pool_starved_region": False,
+                "deep_expansion_applied": False,
+            },
+        }
+        ranking = {"length": [{"value": 2.35, "score": 50, "bucket": "weak"}]}
+        result = _build_suggested_candidates(r_result, ranking)
+        assert result == []
+
+    def test_empty_ranking_returns_empty(self):
+        """pool_starved=True + largo=null + ranking vacío → sin candidatas
+        para mostrar (nada para rescatar)."""
+        r_result = {
+            "largo_m": None,
+            "measurement_meta": {"pool_starved_region": True},
+        }
+        ranking = {"length": []}
+        result = _build_suggested_candidates(r_result, ranking)
+        assert result == []
+
+    def test_trigger_override_bypasses_conditions(self):
+        """trigger_override=True fuerza la exposición (para futuros casos)."""
+        r_result = {
+            "largo_m": 2.05,  # tiene valor
+            "measurement_meta": {},  # sin starved ni deep
+        }
+        ranking = {"length": [{"value": 2.35, "score": 50, "bucket": "weak"}]}
+        result = _build_suggested_candidates(
+            r_result, ranking, trigger_override=True,
+        )
+        assert len(result) == 1
+        assert result[0]["valor"] == 2.35
+
+    # ── Shape y metadata ───────────────────────────────────────────────
+
+    def test_deep_expansion_produces_baja_confianza_label(self):
+        """Cuando deep_expansion_applied=True → label=baja_confianza,
+        warning tramo vecino, origen "pool expandido +600px"."""
+        r_result = {
+            "largo_m": None,
+            "_cotas_mode": "expanded_deep",
+            "measurement_meta": {
+                "deep_expansion_applied": True,
+                "pool_starved_region": False,
+            },
+        }
+        ranking = {"length": [
+            {"value": 2.05, "score": 30, "bucket": "weak"},
+        ]}
+        result = _build_suggested_candidates(r_result, ranking)
+        assert len(result) == 1
+        c = result[0]
+        assert c["valor"] == 2.05
+        assert c["source"] == "expanded_deep"
+        assert c["label"] == "baja_confianza"
+        assert c["origin_desc"] == "pool expandido +600px"
+        assert c["warning"] == "posiblemente de tramo vecino"
+        assert c["score"] == 30
+
+    def test_expanded_rescue_produces_mas_probable_label(self):
+        """Cuando cotas_mode=expanded_rescue (sin deep) → label=mas_probable,
+        sin warning, origen "mejor match con el bbox del tramo detectado"."""
+        r_result = {
+            "largo_m": None,
+            "_cotas_mode": "expanded_rescue",
+            "measurement_meta": {
+                "deep_expansion_applied": False,
+                "pool_starved_region": True,
+            },
+        }
+        ranking = {"length": [
+            {"value": 1.95, "score": 55, "bucket": "weak"},
+        ]}
+        result = _build_suggested_candidates(r_result, ranking)
+        assert len(result) == 1
+        c = result[0]
+        assert c["source"] == "expanded_rescue"
+        assert c["label"] == "mas_probable"
+        assert c["origin_desc"] == "mejor match con el bbox del tramo detectado"
+        assert c["warning"] is None
+
+    # ── Top-N y orden ──────────────────────────────────────────────────
+
+    def test_top_3_preserved_in_score_order(self):
+        """Se exponen las top 3 del ranking (ya viene ordenado desc).
+        Cualquier cantidad mayor se trunca."""
+        r_result = {
+            "largo_m": None,
+            "measurement_meta": {"deep_expansion_applied": True},
+        }
+        # Ranking con 5 entries (pre-ordenado desc por score).
+        ranking = {"length": [
+            {"value": 2.35, "score": 50, "bucket": "weak"},
+            {"value": 2.05, "score": 45, "bucket": "weak"},
+            {"value": 2.75, "score": 40, "bucket": "weak"},
+            {"value": 1.60, "score": 30, "bucket": "unlikely"},
+            {"value": 2.95, "score": 20, "bucket": "unlikely"},
+        ]}
+        result = _build_suggested_candidates(r_result, ranking)
+        assert len(result) == 3
+        assert [c["valor"] for c in result] == [2.35, 2.05, 2.75]
+        assert [c["score"] for c in result] == [50, 45, 40]
+
+    def test_max_candidates_custom_limit(self):
+        """Parámetro max_candidates customizable (1, 2, etc.)."""
+        r_result = {
+            "largo_m": None,
+            "measurement_meta": {"deep_expansion_applied": True},
+        }
+        ranking = {"length": [
+            {"value": 2.35, "score": 50, "bucket": "weak"},
+            {"value": 2.05, "score": 45, "bucket": "weak"},
+        ]}
+        result = _build_suggested_candidates(
+            r_result, ranking, max_candidates=1,
+        )
+        assert len(result) == 1
+        assert result[0]["valor"] == 2.35
+
+    # ── Casos Bernardi reales ──────────────────────────────────────────
+
+    def test_bernardi_r1_deep_expansion_candidates(self):
+        """Caso Bernardi R1 real: deep_expansion_applied, cota 2.05 en el
+        ranking (pescada de tramo vecino según despiece esperado)."""
+        r_result = {
+            "region_id": "R1",
+            "largo_m": None,  # LLM rechazó visualmente
+            "ancho_m": 0.60,
+            "confidence": 0.0,
+            "_cotas_mode": "expanded_deep",
+            "measurement_meta": {
+                "deep_expansion_applied": True,
+                "pool_starved_region": False,
+            },
+        }
+        ranking = {"length": [{"value": 2.05, "score": 35, "bucket": "weak"}]}
+        result = _build_suggested_candidates(r_result, ranking)
+        assert len(result) == 1
+        assert result[0]["valor"] == 2.05
+        assert result[0]["label"] == "baja_confianza"
+        assert result[0]["warning"] == "posiblemente de tramo vecino"
+
+    def test_value_rounding_to_two_decimals(self):
+        """valor se redondea a 2 decimales en el shape del frontend."""
+        r_result = {
+            "largo_m": None,
+            "measurement_meta": {"deep_expansion_applied": True},
+        }
+        ranking = {"length": [
+            {"value": 2.051234, "score": 30, "bucket": "weak"},
+        ]}
+        result = _build_suggested_candidates(r_result, ranking)
+        assert result[0]["valor"] == 2.05
+
+    def test_invalid_value_is_skipped(self):
+        """Si un entry del ranking no tiene 'value' válido, se skipea."""
+        r_result = {
+            "largo_m": None,
+            "measurement_meta": {"deep_expansion_applied": True},
+        }
+        ranking = {"length": [
+            {"score": 30, "bucket": "weak"},  # sin 'value'
+            {"value": "not a number", "score": 25, "bucket": "weak"},  # inválido
+            {"value": 2.35, "score": 20, "bucket": "weak"},  # válido
+        ]}
+        result = _build_suggested_candidates(r_result, ranking)
+        assert len(result) == 1
+        assert result[0]["valor"] == 2.35
+
+
+class TestSuggestedCandidatesE2EAggregate:
+    """E2E: `_aggregate` incluye `suggested_candidates` en el tramo cuando
+    aplica y `[]` cuando no. Contrato estable para el frontend."""
+
+    def _build_topology(self, regions):
+        return {"view_type": "planta", "regions": regions}
+
+    def test_tramo_with_deep_expansion_exposes_candidates(self):
+        topology = self._build_topology([{
+            "id": "R1",
+            "bbox_rel": {"x": 0.2, "y": 0.65, "w": 0.12, "h": 0.05},
+            "features": {"touches_wall": True, "cooktop_groups": 1,
+                         "sink_simple": True},
+        }])
+        region_results = [{
+            "region_id": "R1",
+            "largo_m": None,
+            "ancho_m": 0.60,
+            "confidence": 0.0,
+            "_cotas_mode": "expanded_deep",
+            "measurement_meta": {
+                "deep_expansion_applied": True,
+                "pool_starved_region": False,
+            },
+            "_cota_ranking": {
+                "length": [
+                    {"value": 2.05, "score": 35, "bucket": "weak"},
+                ],
+                "depth": [], "excluded_hard": [],
+                "orientation": "horizontal", "scale_px_per_m": None,
+            },
+            "suspicious_reasons": [],
+        }]
+        result = _aggregate(topology, region_results)
+        cocina = next(s for s in result["sectores"] if s["tipo"] == "cocina")
+        tramo = cocina["tramos"][0]
+
+        assert "suggested_candidates" in tramo
+        assert len(tramo["suggested_candidates"]) == 1
+        c = tramo["suggested_candidates"][0]
+        assert c["valor"] == 2.05
+        assert c["label"] == "baja_confianza"
+
+    def test_tramo_with_valid_measure_has_empty_suggested(self):
+        """Tramo con medida confirmada → suggested_candidates=[]."""
+        topology = self._build_topology([{
+            "id": "R1",
+            "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.3},
+            "features": {"touches_wall": True, "cooktop_groups": 0},
+        }])
+        region_results = [{
+            "region_id": "R1",
+            "largo_m": 2.0,
+            "ancho_m": 0.6,
+            "confidence": 0.9,
+            "suspicious_reasons": [],
+        }]
+        result = _aggregate(topology, region_results)
+        cocina = next(s for s in result["sectores"] if s["tipo"] == "cocina")
+        tramo = cocina["tramos"][0]
+        assert tramo["suggested_candidates"] == []
+
+    def test_pool_starved_exposes_candidates_if_ranking_has_entries(self):
+        """pool_starved=True + ranking con entries → candidatas expuestas.
+        Caso hipotético: el rescue devolvió items pero el LLM los
+        rechazó y no hubo deep expansion activa."""
+        topology = self._build_topology([{
+            "id": "R1",
+            "bbox_rel": {"x": 0.2, "y": 0.65, "w": 0.12, "h": 0.05},
+            "features": {"touches_wall": True, "cooktop_groups": 0},
+        }])
+        region_results = [{
+            "region_id": "R1",
+            "largo_m": None,
+            "ancho_m": None,
+            "confidence": 0.0,
+            "_cotas_mode": "expanded_rescue",
+            "measurement_meta": {
+                "deep_expansion_applied": False,
+                "pool_starved_region": True,
+            },
+            "_cota_ranking": {
+                "length": [
+                    {"value": 1.95, "score": 55, "bucket": "weak"},
+                ],
+                "depth": [], "excluded_hard": [],
+                "orientation": "horizontal", "scale_px_per_m": None,
+            },
+            "suspicious_reasons": [],
+        }]
+        result = _aggregate(topology, region_results)
+        cocina = next(s for s in result["sectores"] if s["tipo"] == "cocina")
+        tramo = cocina["tramos"][0]
+        assert len(tramo["suggested_candidates"]) == 1
+
+    def test_shape_stable_always_array(self):
+        """Contrato: suggested_candidates es SIEMPRE una lista (nunca None).
+        Facilita el frontend — no tiene que chequear null."""
+        topology = self._build_topology([{
+            "id": "R1",
+            "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.3},
+            "features": {"touches_wall": True, "cooktop_groups": 0},
+        }])
+        # Region sin measurement_meta, sin ranking — caso edge.
+        region_results = [{
+            "region_id": "R1",
+            "largo_m": 2.0,
+            "ancho_m": 0.6,
+            "confidence": 0.9,
+        }]
+        result = _aggregate(topology, region_results)
+        cocina = next(s for s in result["sectores"] if s["tipo"] == "cocina")
+        tramo = cocina["tramos"][0]
+        assert isinstance(tramo["suggested_candidates"], list)
+        assert tramo["suggested_candidates"] == []
