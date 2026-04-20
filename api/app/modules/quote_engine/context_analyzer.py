@@ -29,11 +29,123 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# PR #347 — Reconciliación brief ↔ dual_read con observabilidad explícita
+#
+# El brief_analyzer extrae SOLO lo que dice el texto (contrato limpio:
+# extractor textual puro). La reconciliación con el topology/dual_read
+# la hace ESTE módulo vía _detect_* + _reconcile_*.
+#
+# Criterio crítico: cuando brief y dual_read tienen ambos un valor
+# válido pero distintos, NO hacer merge silencioso. Loggear explícitamente
+# `divergent=True` y dejar que el operador lo vea (vía UI fields con
+# source="brief"/"dual_read" + confidence). Esto evita el anti-patrón
+# "el sistema eligió uno de los dos sin avisar".
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _log_reconcile(
+    field: str,
+    brief_value,
+    dual_read_value,
+    final,
+    source: str,  # "brief" | "dual_read" | "default" | "merged"
+    confidence: float | None = None,
+    divergent: bool = False,
+) -> None:
+    """Log estructurado de la decisión de reconciliación brief↔dual_read.
+
+    Formato key=value grep-friendly. `divergent=True` cuando ambas fuentes
+    tenían valores no-null y distintos — señal de inconsistencia real
+    que el operador puede tener que resolver visualmente. No se silencia
+    el merge: se muestra qué ganó y qué se descartó.
+
+    Se emite SIEMPRE, incluso cuando no hay divergencia, para dejar
+    trazabilidad completa de cómo se construyó la card de contexto.
+    """
+    conf_str = f"{confidence:.2f}" if isinstance(confidence, (int, float)) else "None"
+    logger.info(
+        "[context-reconcile] field=%s brief_value=%s dual_read_value=%s "
+        "final=%s source=%s confidence=%s divergent=%s",
+        field, brief_value, dual_read_value, final, source, conf_str, divergent,
+    )
+
+
+def _reconcile_work_types(analysis: dict, dual_result: dict) -> dict:
+    """Merge de work_types: brief textual primero, dual_read.sectores
+    como fallback.
+
+    Caso Bernardi real: brief dice "nuevo presupuesto material en pura
+    prima onix white mate Cliente: Erica Bernardi SIN zocalos en rosario
+    con colocacion" — no menciona "cocina" explícito → analysis.work_types=[].
+    Pero dual_result.sectores tiene ["cocina", "isla"]. Sin este merge
+    "Tipo de trabajo" no aparecía en `data_known`.
+
+    Devuelve dict con: final (list[str]), source (brief|dual_read|default),
+    brief_value, dual_read_value, divergent (set-equality).
+    """
+    brief_wt = list(analysis.get("work_types") or [])
+
+    # Normalizar tipos de sectores a canonical set.
+    _NON_COCINA = {"baño", "banio", "isla", "lavadero"}
+    dr_types: list[str] = []
+    for s in dual_result.get("sectores") or []:
+        t = (s.get("tipo") or "").lower().strip()
+        pretty = t if t in _NON_COCINA else ("cocina" if t else None)
+        if pretty and pretty not in dr_types:
+            dr_types.append(pretty)
+
+    if brief_wt:
+        final = brief_wt
+        source = "brief"
+    elif dr_types:
+        final = dr_types
+        source = "dual_read"
+    else:
+        final = []
+        source = "default"
+
+    # Divergent: ambos no-vacíos Y conjuntos distintos.
+    # Normalizar "banio"→"baño" para comparación canonical.
+    def _canon(lst: list[str]) -> set[str]:
+        return {("baño" if x == "banio" else x) for x in lst}
+    divergent = (
+        bool(brief_wt) and bool(dr_types) and _canon(brief_wt) != _canon(dr_types)
+    )
+
+    _log_reconcile(
+        "work_types",
+        brief_value=brief_wt,
+        dual_read_value=dr_types,
+        final=final,
+        source=source,
+        confidence=None,
+        divergent=divergent,
+    )
+    return {
+        "final": final,
+        "source": source,
+        "brief_value": brief_wt,
+        "dual_read_value": dr_types,
+        "divergent": divergent,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Section builders — usan data extraída por brief_analyzer
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _build_data_known(analysis: dict, quote: dict | None) -> list[dict]:
-    """Datos ciertos del brief/quote. Cada row lleva source explícito."""
+def _build_data_known(
+    analysis: dict,
+    quote: dict | None,
+    dual_result: dict | None = None,
+) -> list[dict]:
+    """Datos ciertos del brief/quote/plano. Cada row lleva source explícito.
+
+    PR #347: `dual_result` es ahora input — permite inferir
+    "Tipo de trabajo" desde los sectores del plano cuando el brief no los
+    menciona textualmente (caso Bernardi: brief sin "cocina", plano con
+    cocina+isla). Default `None` para retrocompat de callers legacy.
+    """
     known: list[dict] = []
 
     # Cliente
@@ -60,11 +172,21 @@ def _build_data_known(analysis: dict, quote: dict | None) -> list[dict]:
         source = "quote" if (quote or {}).get("localidad") else "brief"
         known.append({"field": "Localidad", "value": loc, "source": source})
 
-    # Tipos de trabajo detectados
-    work = analysis.get("work_types") or []
+    # Tipos de trabajo — merge brief ↔ dual_read.sectores.
+    # Antes: solo brief → "Tipo de trabajo" desaparecía cuando brief no
+    # mencionaba explícito. Ahora cae al dual_read. El source del row
+    # refleja de dónde salió (brief|dual_read|brief+dual_read si divergen).
+    reconcile = _reconcile_work_types(analysis, dual_result or {})
+    work = reconcile["final"]
     if work:
         pretty = ", ".join(w.capitalize() for w in work)
-        known.append({"field": "Tipo de trabajo", "value": pretty, "source": "brief"})
+        # Si hubo divergencia, marcar source combinada para trazabilidad
+        # en la card. El log [context-reconcile] ya dice qué ganó.
+        if reconcile["divergent"]:
+            src = "brief+dual_read"
+        else:
+            src = reconcile["source"]
+        known.append({"field": "Tipo de trabajo", "value": pretty, "source": src})
 
     # Descuento si se mencionó
     if analysis.get("descuento_mentioned"):
@@ -313,48 +435,154 @@ _ANAFE_OPTIONS = [
 
 
 def _detect_pileta(analysis: dict, feats: dict) -> dict | None:
-    # Brief explícito domina sobre dual_read
-    if analysis.get("pileta_simple_doble") in ("simple", "doble"):
-        v = analysis["pileta_simple_doble"]
-        return _mk("pileta_simple_doble", "Pileta", v, f"{v.capitalize()} (1 bacha)" if v == "simple" else "Doble (2 bachas)",
-                   _PILETA_OPTIONS, "brief", 0.95)
-    if analysis.get("pileta_mentioned") is False and _has_explicit_no_pileta(analysis):
-        return _mk("pileta_simple_doble", "Pileta", "no", "No lleva", _PILETA_OPTIONS, "brief", 0.95)
-    # Dual_read features
+    # Valor del brief y del dual_read, evaluados antes de decidir para
+    # poder loggear la reconciliación incluyendo divergent flag.
+    brief_v = analysis.get("pileta_simple_doble")  # "simple"|"doble"|None
+    # dual_read_v canónico: "doble" si sink_double, "simple" si sink_simple,
+    # "?" si has_pileta pero sin tipo, None si nada.
     if feats["sink_double"]:
-        return _mk("pileta_simple_doble", "Pileta", "doble", "Doble (2 bachas) — detectada en plano",
-                   _PILETA_OPTIONS, "dual_read", 0.80)
-    if feats["sink_simple"]:
-        return _mk("pileta_simple_doble", "Pileta", "simple", "Simple (1 bacha) — detectada en plano",
-                   _PILETA_OPTIONS, "dual_read", 0.75)
-    if feats["has_pileta"]:
-        # sabemos que hay pileta pero no el tipo
-        return _mk("pileta_simple_doble", "Pileta", None, "Presente — tipo a confirmar",
-                   _PILETA_OPTIONS, "dual_read", 0.55)
-    return None
+        dr_v = "doble"
+    elif feats["sink_simple"]:
+        dr_v = "simple"
+    elif feats["has_pileta"]:
+        dr_v = "present_unknown"
+    else:
+        dr_v = None
+
+    # Caso especial: brief dice "no pileta" explícito.
+    brief_explicit_no = (
+        analysis.get("pileta_mentioned") is False
+        and _has_explicit_no_pileta(analysis)
+    )
+
+    # Divergencia real: ambos con valor válido Y distintos. "present_unknown"
+    # NO se considera divergent contra "simple"/"doble" del brief (el dual_read
+    # confirma presencia sin desmentir el tipo).
+    divergent = False
+    if brief_v in ("simple", "doble") and dr_v in ("simple", "doble"):
+        divergent = brief_v != dr_v
+    elif brief_explicit_no and dr_v in ("simple", "doble", "present_unknown"):
+        divergent = True  # brief dice no, plano detecta → inconsistencia
+
+    # Decisión (precedencia brief > dual_read, como siempre).
+    result: dict | None
+    if brief_v in ("simple", "doble"):
+        final, source, conf = brief_v, "brief", 0.95
+        display = "Simple (1 bacha)" if brief_v == "simple" else "Doble (2 bachas)"
+        result = _mk("pileta_simple_doble", "Pileta", brief_v, display,
+                     _PILETA_OPTIONS, source, conf)
+    elif brief_explicit_no:
+        final, source, conf = "no", "brief", 0.95
+        result = _mk("pileta_simple_doble", "Pileta", "no", "No lleva",
+                     _PILETA_OPTIONS, source, conf)
+    elif dr_v == "doble":
+        final, source, conf = "doble", "dual_read", 0.80
+        result = _mk("pileta_simple_doble", "Pileta", "doble",
+                     "Doble (2 bachas) — detectada en plano",
+                     _PILETA_OPTIONS, source, conf)
+    elif dr_v == "simple":
+        final, source, conf = "simple", "dual_read", 0.75
+        result = _mk("pileta_simple_doble", "Pileta", "simple",
+                     "Simple (1 bacha) — detectada en plano",
+                     _PILETA_OPTIONS, source, conf)
+    elif dr_v == "present_unknown":
+        final, source, conf = None, "dual_read", 0.55
+        result = _mk("pileta_simple_doble", "Pileta", None,
+                     "Presente — tipo a confirmar",
+                     _PILETA_OPTIONS, source, conf)
+    else:
+        final, source, conf = None, "default", None
+        result = None
+
+    _log_reconcile(
+        "pileta_simple_doble",
+        brief_value=brief_v if brief_v is not None else (
+            "explicit_no" if brief_explicit_no else None
+        ),
+        dual_read_value=dr_v,
+        final=final,
+        source=source,
+        confidence=conf,
+        divergent=divergent,
+    )
+    return result
 
 
 def _detect_isla(analysis: dict, feats: dict) -> dict | None:
-    if analysis.get("isla_mentioned"):
-        return _mk("isla_presence", "Isla central", "yes", "Sí — del brief", _ISLA_OPTIONS, "brief", 0.95)
-    if feats["has_isla"]:
-        return _mk("isla_presence", "Isla central", "yes", "Sí — detectada en plano",
-                   _ISLA_OPTIONS, "dual_read", 0.85)
-    return None
+    brief_v = bool(analysis.get("isla_mentioned"))
+    dr_v = bool(feats["has_isla"])
+
+    # Divergent: SOLO cuando brief afirma (isla_mentioned=True) Y plano
+    # niega (has_isla=False). brief=False es "no mencionó", no "dijo que
+    # no hay" — caso habitual (Bernardi) → brief silencio + plano detecta
+    # es fallback natural, no divergencia. Consistente con anafe/pileta.
+    divergent = brief_v is True and dr_v is False
+
+    if brief_v:
+        final, source, conf = True, "brief", 0.95
+        result = _mk("isla_presence", "Isla central", "yes", "Sí — del brief",
+                     _ISLA_OPTIONS, source, conf)
+    elif dr_v:
+        final, source, conf = True, "dual_read", 0.85
+        result = _mk("isla_presence", "Isla central", "yes",
+                     "Sí — detectada en plano", _ISLA_OPTIONS, source, conf)
+    else:
+        final, source, conf = False, "default", None
+        result = None
+
+    _log_reconcile(
+        "isla_presence",
+        brief_value=brief_v,
+        dual_read_value=dr_v,
+        final=final,
+        source=source,
+        confidence=conf,
+        divergent=divergent,
+    )
+    return result
 
 
 def _detect_anafe(analysis: dict, feats: dict) -> dict | None:
-    # Brief explícito primero
     ac = analysis.get("anafe_count")
-    if isinstance(ac, int) and ac >= 0:
-        disp = f"{ac}" if ac != 2 else "2 (gas + eléctrico)" if analysis.get("anafe_gas_y_electrico") else "2"
-        return _mk("anafe_count", "Anafe", str(ac), disp, _ANAFE_OPTIONS, "brief", 0.95)
-    # Dual_read cooktop_groups
     cg = feats["cooktop_groups"]
-    if cg > 0:
-        return _mk("anafe_count", "Anafe", str(cg), f"{cg} — detectado en plano",
-                   _ANAFE_OPTIONS, "dual_read", 0.70)
-    return None
+
+    brief_v = ac if isinstance(ac, int) and ac >= 0 else None
+    dr_v = int(cg) if cg > 0 else None
+
+    # Divergent: brief explícito Y dual_read también Y distintos.
+    # brief=0 y dr>0 también es divergencia (brief dice que no hay).
+    divergent = (
+        brief_v is not None and dr_v is not None and brief_v != dr_v
+    )
+
+    if brief_v is not None:
+        disp = (
+            "2 (gas + eléctrico)"
+            if brief_v == 2 and analysis.get("anafe_gas_y_electrico")
+            else f"{brief_v}"
+        )
+        final, source, conf = brief_v, "brief", 0.95
+        result = _mk("anafe_count", "Anafe", str(brief_v), disp,
+                     _ANAFE_OPTIONS, source, conf)
+    elif dr_v is not None:
+        final, source, conf = dr_v, "dual_read", 0.70
+        result = _mk("anafe_count", "Anafe", str(dr_v),
+                     f"{dr_v} — detectado en plano",
+                     _ANAFE_OPTIONS, source, conf)
+    else:
+        final, source, conf = None, "default", None
+        result = None
+
+    _log_reconcile(
+        "anafe_count",
+        brief_value=brief_v,
+        dual_read_value=dr_v,
+        final=final,
+        source=source,
+        confidence=conf,
+        divergent=divergent,
+    )
+    return result
 
 
 def _has_explicit_no_pileta(analysis: dict) -> bool:
@@ -412,7 +640,7 @@ async def build_context_analysis(
     config_defaults = config_defaults or {}
     analysis = await analyze_brief(brief or "")
 
-    data = _build_data_known(analysis, quote)
+    data = _build_data_known(analysis, quote, dual_result)
     assumptions = _build_assumptions(analysis, quote, dual_result, config_defaults)
     tech_detections = _extract_tech_detections(analysis, dual_result)
 

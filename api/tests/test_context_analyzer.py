@@ -3,12 +3,20 @@
 Patcheamos `analyze_brief` (el LLM call) con el regex fallback determinístico
 para que los tests corran sin pegar a Anthropic y sean reproducibles.
 """
+import logging
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.modules.quote_engine.brief_analyzer import EMPTY_SCHEMA, _analyze_regex_fallback
-from app.modules.quote_engine.context_analyzer import build_context_analysis_sync as build_context_analysis
+from app.modules.quote_engine.context_analyzer import (
+    _build_data_known,
+    _detect_anafe,
+    _detect_isla,
+    _detect_pileta,
+    _reconcile_work_types,
+    build_context_analysis_sync as build_context_analysis,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -339,3 +347,400 @@ class TestContextConfirmationRoundTrip:
         assert isla["tramos"][0]["ancho_m"]["valor"] == 0.60
         assert isla["patas"]["sides"] == ["frontal", "lateral_izq", "lateral_der"]
         assert "pending_questions" not in dual
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PR #347 — Reconciliación brief ↔ dual_read + observabilidad + Tipo de trabajo
+#
+# Scope: inferir work_types desde dual_result.sectores cuando el brief no
+# los trae, y loggear explícitamente la decisión de reconciliación por
+# campo crítico (isla, anafe, pileta, work_types). Criterio: NO merge
+# silencioso — cuando brief y dual_read divergen, `divergent=True` en
+# el log.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _dual_with_sectores(tipos: list[str]) -> dict:
+    """Build a dual_result con los tipos de sectores pedidos. Cada sector
+    es un placeholder mínimo válido."""
+    return {
+        "sectores": [
+            {
+                "id": f"s{i}",
+                "tipo": t,
+                "tramos": [],
+                "ambiguedades": [],
+            }
+            for i, t in enumerate(tipos, 1)
+        ],
+        "source": "MULTI_CROP",
+    }
+
+
+class TestReconcileWorkTypes:
+    """_reconcile_work_types merge brief ↔ dual_result.sectores."""
+
+    def test_brief_empty_falls_back_to_dual_read(self, caplog):
+        """Caso Bernardi real: brief no menciona 'cocina'/'isla' → brief
+        analysis devuelve work_types=[]. El dual_result sí tiene sectores
+        cocina + isla. Merge debe devolver los del dual_read."""
+        analysis = {"work_types": []}
+        dual = _dual_with_sectores(["cocina", "isla"])
+        with caplog.at_level(logging.INFO):
+            out = _reconcile_work_types(analysis, dual)
+        assert out["final"] == ["cocina", "isla"]
+        assert out["source"] == "dual_read"
+        assert out["divergent"] is False
+        assert any("[context-reconcile]" in r.message and "field=work_types" in r.message
+                   for r in caplog.records)
+
+    def test_brief_wins_when_both_agree(self, caplog):
+        analysis = {"work_types": ["cocina"]}
+        dual = _dual_with_sectores(["cocina"])
+        out = _reconcile_work_types(analysis, dual)
+        assert out["final"] == ["cocina"]
+        assert out["source"] == "brief"
+        assert out["divergent"] is False
+
+    def test_divergent_when_brief_and_dual_read_have_different_sets(self, caplog):
+        """brief=['baño'] vs dual=['cocina'] → divergent=True, brief gana
+        por precedencia pero el log deja constancia de la inconsistencia."""
+        analysis = {"work_types": ["baño"]}
+        dual = _dual_with_sectores(["cocina"])
+        with caplog.at_level(logging.INFO):
+            out = _reconcile_work_types(analysis, dual)
+        assert out["final"] == ["baño"]
+        assert out["source"] == "brief"
+        assert out["divergent"] is True
+        log = next(r.message for r in caplog.records
+                   if "[context-reconcile]" in r.message and "field=work_types" in r.message)
+        assert "divergent=True" in log
+
+    def test_divergent_when_brief_subset_of_dual_read(self, caplog):
+        """brief=['cocina'] vs dual=['cocina','isla'] → divergent=True,
+        brief gana pero log lo muestra."""
+        analysis = {"work_types": ["cocina"]}
+        dual = _dual_with_sectores(["cocina", "isla"])
+        out = _reconcile_work_types(analysis, dual)
+        assert out["divergent"] is True
+        assert out["source"] == "brief"
+
+    def test_banio_and_bano_normalized_as_equal(self, caplog):
+        """Brief usa 'baño' unicode, dual_result puede traer 'banio' (ASCII)
+        — no son divergentes en canonical form."""
+        analysis = {"work_types": ["baño"]}
+        dual = _dual_with_sectores(["banio"])
+        out = _reconcile_work_types(analysis, dual)
+        assert out["divergent"] is False
+
+    def test_both_empty_is_not_divergent(self, caplog):
+        analysis = {"work_types": []}
+        dual = _dual_with_sectores([])
+        out = _reconcile_work_types(analysis, dual)
+        assert out["final"] == []
+        assert out["source"] == "default"
+        assert out["divergent"] is False
+
+
+class TestDetectIslaReconciliation:
+    """_detect_isla ahora loguea [context-reconcile] siempre + marca
+    divergent cuando brief y dual_read no coinciden y al menos uno es True."""
+
+    def test_brief_true_dual_false_is_divergent(self, caplog):
+        """Brief dice 'isla' pero plano no la detecta — divergencia real."""
+        analysis = {"isla_mentioned": True}
+        feats = {"has_isla": False, "sink_double": False, "sink_simple": False,
+                 "has_pileta": False, "cooktop_groups": 0}
+        with caplog.at_level(logging.INFO):
+            _detect_isla(analysis, feats)
+        log = next(r.message for r in caplog.records
+                   if "[context-reconcile]" in r.message and "field=isla_presence" in r.message)
+        assert "divergent=True" in log
+        assert "source=brief" in log
+
+    def test_brief_false_dual_true_not_divergent(self, caplog):
+        """Brief no menciona (isla_mentioned=False) pero plano detecta.
+        NO es divergent: brief=False es "no mencionó", no "dijo que NO".
+        Fallback natural al dual_read, consistente con anafe/pileta."""
+        analysis = {"isla_mentioned": False}
+        feats = {"has_isla": True, "sink_double": False, "sink_simple": False,
+                 "has_pileta": False, "cooktop_groups": 0}
+        with caplog.at_level(logging.INFO):
+            _detect_isla(analysis, feats)
+        log = next(r.message for r in caplog.records
+                   if "[context-reconcile]" in r.message and "field=isla_presence" in r.message)
+        assert "divergent=False" in log
+        assert "source=dual_read" in log
+
+    def test_both_false_no_divergence(self, caplog):
+        """Ni brief ni plano mencionan isla → no hay card, no divergent."""
+        analysis = {"isla_mentioned": False}
+        feats = {"has_isla": False, "sink_double": False, "sink_simple": False,
+                 "has_pileta": False, "cooktop_groups": 0}
+        with caplog.at_level(logging.INFO):
+            result = _detect_isla(analysis, feats)
+        assert result is None
+        log = next(r.message for r in caplog.records
+                   if "[context-reconcile]" in r.message and "field=isla_presence" in r.message)
+        assert "divergent=False" in log
+
+    def test_both_true_no_divergence(self, caplog):
+        analysis = {"isla_mentioned": True}
+        feats = {"has_isla": True, "sink_double": False, "sink_simple": False,
+                 "has_pileta": False, "cooktop_groups": 0}
+        with caplog.at_level(logging.INFO):
+            _detect_isla(analysis, feats)
+        log = next(r.message for r in caplog.records
+                   if "[context-reconcile]" in r.message and "field=isla_presence" in r.message)
+        assert "divergent=False" in log
+        assert "source=brief" in log  # brief siempre gana cuando ambos true
+
+
+class TestDetectAnafeReconciliation:
+    def test_brief_count_differs_from_dual_is_divergent(self, caplog):
+        """brief dice 2 anafes, plano detecta 1 → divergencia. Brief gana
+        por precedencia, pero log deja constancia."""
+        analysis = {"anafe_count": 2, "anafe_gas_y_electrico": True}
+        feats = {"has_isla": False, "sink_double": False, "sink_simple": False,
+                 "has_pileta": False, "cooktop_groups": 1}
+        with caplog.at_level(logging.INFO):
+            result = _detect_anafe(analysis, feats)
+        assert result["value"] == "2"
+        log = next(r.message for r in caplog.records
+                   if "[context-reconcile]" in r.message and "field=anafe_count" in r.message)
+        assert "divergent=True" in log
+        assert "source=brief" in log
+
+    def test_brief_none_dual_positive_not_divergent(self, caplog):
+        """Brief sin anafe_count (null), plano con cooktop_groups → fallback
+        dual_read, NO divergent (brief no dijo nada)."""
+        analysis = {"anafe_count": None}
+        feats = {"has_isla": False, "sink_double": False, "sink_simple": False,
+                 "has_pileta": False, "cooktop_groups": 1}
+        with caplog.at_level(logging.INFO):
+            _detect_anafe(analysis, feats)
+        log = next(r.message for r in caplog.records
+                   if "[context-reconcile]" in r.message and "field=anafe_count" in r.message)
+        assert "divergent=False" in log
+        assert "source=dual_read" in log
+
+    def test_brief_zero_dual_positive_is_divergent(self, caplog):
+        """Brief explícito '0 anafes', plano detecta anafe → divergencia
+        real (brief afirma que no hay, plano dice que sí)."""
+        analysis = {"anafe_count": 0}
+        feats = {"has_isla": False, "sink_double": False, "sink_simple": False,
+                 "has_pileta": False, "cooktop_groups": 1}
+        with caplog.at_level(logging.INFO):
+            _detect_anafe(analysis, feats)
+        log = next(r.message for r in caplog.records
+                   if "[context-reconcile]" in r.message and "field=anafe_count" in r.message)
+        assert "divergent=True" in log
+        assert "source=brief" in log
+
+    def test_both_equal_not_divergent(self, caplog):
+        analysis = {"anafe_count": 1}
+        feats = {"has_isla": False, "sink_double": False, "sink_simple": False,
+                 "has_pileta": False, "cooktop_groups": 1}
+        with caplog.at_level(logging.INFO):
+            _detect_anafe(analysis, feats)
+        log = next(r.message for r in caplog.records
+                   if "[context-reconcile]" in r.message and "field=anafe_count" in r.message)
+        assert "divergent=False" in log
+
+
+class TestDetectPiletaReconciliation:
+    def test_brief_simple_dual_double_is_divergent(self, caplog):
+        analysis = {"pileta_simple_doble": "simple", "pileta_mentioned": True}
+        feats = {"has_isla": False, "sink_double": True, "sink_simple": False,
+                 "has_pileta": True, "cooktop_groups": 0}
+        with caplog.at_level(logging.INFO):
+            result = _detect_pileta(analysis, feats)
+        assert result["value"] == "simple"  # brief gana
+        log = next(r.message for r in caplog.records
+                   if "[context-reconcile]" in r.message and "field=pileta_simple_doble" in r.message)
+        assert "divergent=True" in log
+        assert "source=brief" in log
+
+    def test_brief_none_dual_simple_not_divergent(self, caplog):
+        analysis = {"pileta_simple_doble": None, "pileta_mentioned": False,
+                    "raw_notes": ""}
+        feats = {"has_isla": False, "sink_double": False, "sink_simple": True,
+                 "has_pileta": True, "cooktop_groups": 0}
+        with caplog.at_level(logging.INFO):
+            result = _detect_pileta(analysis, feats)
+        assert result["value"] == "simple"
+        log = next(r.message for r in caplog.records
+                   if "[context-reconcile]" in r.message and "field=pileta_simple_doble" in r.message)
+        assert "divergent=False" in log
+        assert "source=dual_read" in log
+
+    def test_brief_explicit_no_vs_dual_detected_is_divergent(self, caplog):
+        """Brief dice 'sin pileta' explícito Y plano detecta pileta → divergencia."""
+        analysis = {"pileta_simple_doble": None, "pileta_mentioned": False,
+                    "raw_notes": "sin pileta en la cocina"}
+        feats = {"has_isla": False, "sink_double": False, "sink_simple": True,
+                 "has_pileta": True, "cooktop_groups": 0}
+        with caplog.at_level(logging.INFO):
+            result = _detect_pileta(analysis, feats)
+        assert result["value"] == "no"  # brief gana
+        log = next(r.message for r in caplog.records
+                   if "[context-reconcile]" in r.message and "field=pileta_simple_doble" in r.message)
+        assert "divergent=True" in log
+        assert "source=brief" in log
+
+    def test_brief_simple_dual_present_unknown_not_divergent(self, caplog):
+        """Brief=simple + plano detecta presencia pero sin tipo → NO es
+        divergent (el plano no contradice, solo es menos específico)."""
+        analysis = {"pileta_simple_doble": "simple", "pileta_mentioned": True}
+        feats = {"has_isla": False, "sink_double": False, "sink_simple": False,
+                 "has_pileta": True, "cooktop_groups": 0}
+        with caplog.at_level(logging.INFO):
+            _detect_pileta(analysis, feats)
+        log = next(r.message for r in caplog.records
+                   if "[context-reconcile]" in r.message and "field=pileta_simple_doble" in r.message)
+        assert "divergent=False" in log
+
+
+class TestBuildDataKnownTipoTrabajo:
+    """_build_data_known debe agregar 'Tipo de trabajo' usando el merge
+    brief ↔ dual_read (el bug visible de Bernardi real)."""
+
+    def test_tipo_trabajo_from_dual_read_when_brief_empty(self):
+        analysis = dict(EMPTY_SCHEMA)  # sin work_types
+        dual = _dual_with_sectores(["cocina", "isla"])
+        known = _build_data_known(analysis, quote=None, dual_result=dual)
+        tipo_row = next((r for r in known if r["field"] == "Tipo de trabajo"), None)
+        assert tipo_row is not None
+        assert "Cocina" in tipo_row["value"]
+        assert "Isla" in tipo_row["value"]
+        assert tipo_row["source"] == "dual_read"
+
+    def test_tipo_trabajo_from_brief_when_brief_has_types(self):
+        analysis = dict(EMPTY_SCHEMA)
+        analysis["work_types"] = ["cocina"]
+        dual = _dual_with_sectores(["cocina"])
+        known = _build_data_known(analysis, quote=None, dual_result=dual)
+        tipo_row = next((r for r in known if r["field"] == "Tipo de trabajo"), None)
+        assert tipo_row is not None
+        assert tipo_row["source"] == "brief"
+
+    def test_tipo_trabajo_marked_divergent_when_brief_and_dual_diverge(self):
+        """Brief=cocina, dual=cocina+isla → source="brief+dual_read" para
+        que la card refleje que hubo merge con divergencia."""
+        analysis = dict(EMPTY_SCHEMA)
+        analysis["work_types"] = ["cocina"]
+        dual = _dual_with_sectores(["cocina", "isla"])
+        known = _build_data_known(analysis, quote=None, dual_result=dual)
+        tipo_row = next((r for r in known if r["field"] == "Tipo de trabajo"), None)
+        assert tipo_row is not None
+        assert tipo_row["source"] == "brief+dual_read"
+
+    def test_no_tipo_trabajo_when_both_empty(self):
+        analysis = dict(EMPTY_SCHEMA)
+        dual = _dual_with_sectores([])
+        known = _build_data_known(analysis, quote=None, dual_result=dual)
+        tipo_row = next((r for r in known if r["field"] == "Tipo de trabajo"), None)
+        assert tipo_row is None
+
+    def test_backwards_compat_without_dual_result(self):
+        """Caller legacy sin dual_result → comportamiento anterior (solo brief)."""
+        analysis = dict(EMPTY_SCHEMA)
+        analysis["work_types"] = ["cocina"]
+        known = _build_data_known(analysis, quote=None)  # sin dual_result
+        tipo_row = next((r for r in known if r["field"] == "Tipo de trabajo"), None)
+        assert tipo_row is not None
+        assert tipo_row["source"] == "brief"
+
+
+class TestBernardiE2ELogging:
+    """E2E con brief real de Bernardi + dual_result Bernardi-like.
+    Valida que los 4 logs [context-reconcile] aparecen con los datos
+    esperados — auditoría de que la observabilidad está completa."""
+
+    def test_bernardi_brief_plus_dual_emits_four_reconcile_logs(self, caplog):
+        brief = (
+            "nuevo presupuesto material en pura prima onix white mate "
+            "Cliente: Erica Bernardi SIN zocalos en rosario con colocacion"
+        )
+        # dual_result Bernardi-like: cocina con pileta simple + anafe,
+        # más sector isla. R1 tiene cooktop + sink_simple.
+        dual = {
+            "sectores": [
+                {
+                    "id": "s_cocina",
+                    "tipo": "cocina",
+                    "tramos": [{
+                        "id": "R1",
+                        "descripcion": "Mesada",
+                        "largo_m": {"valor": None, "status": "DUDOSO"},
+                        "ancho_m": {"valor": 0.6, "status": "DUDOSO"},
+                        "m2": {"valor": None, "status": "DUDOSO"},
+                        "features": {
+                            "sink_simple": True,
+                            "sink_double": False,
+                            "has_pileta": True,
+                            "cooktop_groups": 1,
+                        },
+                        "zocalos": [], "frentin": [], "regrueso": [],
+                    }],
+                    "ambiguedades": [],
+                },
+                {
+                    "id": "s_isla",
+                    "tipo": "isla",
+                    "tramos": [{
+                        "id": "R3",
+                        "descripcion": "Mesada",
+                        "largo_m": {"valor": 2.05, "status": "CONFIRMADO"},
+                        "ancho_m": {"valor": 0.6, "status": "CONFIRMADO"},
+                        "m2": {"valor": 1.23, "status": "CONFIRMADO"},
+                        "features": {},
+                        "zocalos": [], "frentin": [], "regrueso": [],
+                    }],
+                    "ambiguedades": [],
+                },
+            ],
+            "source": "MULTI_CROP",
+        }
+        with caplog.at_level(logging.INFO):
+            out = build_context_analysis(brief, None, dual)
+
+        # Verificamos que los 4 logs aparecen
+        fields_logged = set()
+        for r in caplog.records:
+            if "[context-reconcile]" in r.message:
+                for f in ("work_types", "isla_presence",
+                          "pileta_simple_doble", "anafe_count"):
+                    if f"field={f}" in r.message:
+                        fields_logged.add(f)
+        assert fields_logged == {
+            "work_types", "isla_presence",
+            "pileta_simple_doble", "anafe_count",
+        }, f"Missing reconcile logs for: {{'work_types','isla_presence','pileta_simple_doble','anafe_count'}} - {fields_logged}"
+
+        # Y el known tiene "Tipo de trabajo" con cocina + isla (source=dual_read,
+        # brief vacío de work_types).
+        tipo_row = next(
+            (r for r in out["data_known"] if r["field"] == "Tipo de trabajo"),
+            None,
+        )
+        assert tipo_row is not None
+        assert "Cocina" in tipo_row["value"]
+        assert "Isla" in tipo_row["value"]
+        assert tipo_row["source"] == "dual_read"
+
+
+class TestReconcileLogFormat:
+    """Formato del log debe ser grep-friendly (key=value)."""
+
+    def test_log_format_contains_all_expected_keys(self, caplog):
+        analysis = {"isla_mentioned": True}
+        feats = {"has_isla": False, "sink_double": False, "sink_simple": False,
+                 "has_pileta": False, "cooktop_groups": 0}
+        with caplog.at_level(logging.INFO):
+            _detect_isla(analysis, feats)
+        log = next(r.message for r in caplog.records
+                   if "[context-reconcile]" in r.message)
+        for key in ("field=", "brief_value=", "dual_read_value=", "final=",
+                    "source=", "confidence=", "divergent="):
+            assert key in log, f"Missing key '{key}' in log: {log}"
