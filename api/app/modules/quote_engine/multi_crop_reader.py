@@ -751,6 +751,20 @@ def _format_ranking_for_prompt(ranking: dict) -> str:
         "Usá el ranking como prior. Elegir una DÉBIL o POCO PROBABLE "
         "requiere justificación visual explícita del crop."
     )
+
+    # PR 2b.2 — Instrucción explícita cuando no hay candidatas válidas para
+    # largo. Sin esto, el VLM tiende a "completar" con el valor del ancho
+    # (0.60) o algún default, generando basura tipo 0.60 × 0.60. Mejor null
+    # honesto → operador ve DUDOSO y completa manual.
+    if not ranking.get("length"):
+        lines.append("")
+        lines.append(
+            "**NO hay candidatas válidas para LARGO** (todas fueron excluidas "
+            "por ser perímetro del ambiente o estar fuera de rango razonable). "
+            "En este caso devolvé `largo_m: null` en el JSON. NO uses el ancho "
+            "como largo. NO uses un default estándar. NO inventes: devolvé "
+            "`null` honestamente."
+        )
     return "\n".join(lines)
 
 
@@ -785,6 +799,23 @@ def _apply_guardrails(
     except (TypeError, ValueError):
         confidence = 0.5
     suspicious: list[str] = list(vlm_output.get("suspicious_reasons") or [])
+
+    # PR 2b.2 — Regla dura defensiva contra fallback silencioso del VLM.
+    # Cuando el ranking queda vacío (ej: todas las cotas fueron excluidas
+    # como perímetro), el VLM tiende a "completar" con un valor razonable
+    # — típicamente agarra el ancho 0.60 y lo reporta como largo también.
+    # Eso es basura: un tramo de mesada no tiene largo < 1m.
+    # Preferimos None honesto que número falso con apariencia válida.
+    try:
+        if largo is not None and float(largo) < 1.0:
+            suspicious.append(
+                f"largo {largo}m < 1.0m — implausible como largo de tramo, invalidado"
+            )
+            vlm_output["largo_m"] = None
+            largo = None
+            confidence = min(confidence, 0.2)
+    except (TypeError, ValueError):
+        pass
 
     def _find_match(value, rank_list):
         if value is None:

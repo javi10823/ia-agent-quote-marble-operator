@@ -368,8 +368,15 @@ class TestReadPlanMultiCrop:
             mock_client_instance = mock_anth.return_value
             mock_client_instance.messages.create = AsyncMock(return_value=mock_response)
             result = await _measure_region(image, (1000, 800), region, cotas, model="test")
+        # PR 2b.2 — la regla dura defensiva invalida largo < 1.0m ANTES
+        # que llegue al check "largo == ancho". El valor queda en None
+        # (honesto) con suspicious poblado.
         assert "suspicious_reasons" in result
-        assert any("largo == ancho" in s for s in result["suspicious_reasons"])
+        assert result.get("largo_m") is None
+        assert any(
+            "implausible" in s and "largo" in s.lower()
+            for s in result["suspicious_reasons"]
+        )
 
     @pytest.mark.asyncio
     async def test_bernardi_control_r2_stays_dudoso_without_inventing(self):
@@ -1335,3 +1342,106 @@ class TestAggregateAppliesBriefContradictions:
         # esperado: sin brief, topology detectó anafe en isla y nosotros
         # no tenemos forma de validarlo → flaguear por conservador.
         assert tramo.get("_contradictions") is not None
+
+
+# ── PR 2b.2: anti-fallback silencioso del VLM ────────────────────────────
+
+class TestLargoSubMetroInvalidation:
+    """PR 2b.2 — largo <1.0m es implausible para mesada. La regla dura
+    invalida el valor a None antes de ser aceptado.
+
+    Motivación: VLM hace fallback silencioso a 0.60 (el ancho estándar)
+    cuando no puede medir. En el caso Bernardi R3 el operador veía
+    '0.60 × 0.60' con aire de medida válida. Mejor None honesto →
+    UI muestra '— × —' y el operador edita."""
+
+    def test_largo_below_1m_invalidated_to_none(self):
+        """VLM devolvió 0.60 como largo → invalidar a None con confidence 0.2."""
+        ranking = {
+            "length": [],
+            "depth": [],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 0.60,
+            "ancho_m": 0.60,
+            "confidence": 0.85,
+        }
+        result = _apply_guardrails(vlm_output, ranking, cotas_mode="local")
+        assert result["largo_m"] is None, (
+            f"largo 0.60 debería invalidarse a None; got {result['largo_m']}"
+        )
+        assert result["confidence"] <= 0.2
+        assert any(
+            "implausible" in s and "largo" in s.lower()
+            for s in result["suspicious_reasons"]
+        )
+
+    def test_largo_exactly_1m_is_valid(self):
+        """El umbral es <1.0 estricto: 1.0m justo NO se invalida."""
+        ranking = {
+            "length": [{"value": 1.0, "score": 60, "bucket": "preferred", "reasons": []}],
+            "depth": [{"value": 0.60, "score": 75, "bucket": "preferred", "reasons": []}],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 1.0,
+            "ancho_m": 0.60,
+            "confidence": 0.80,
+        }
+        result = _apply_guardrails(vlm_output, ranking, cotas_mode="local")
+        assert result["largo_m"] == 1.0
+
+    def test_largo_valid_above_1m_preserved(self):
+        """Largos típicos (1.60, 2.35, etc.) no se invalidan."""
+        ranking = {
+            "length": [{"value": 1.60, "score": 80, "bucket": "preferred", "reasons": []}],
+            "depth": [{"value": 0.60, "score": 75, "bucket": "preferred", "reasons": []}],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 1.60,
+            "ancho_m": 0.60,
+            "confidence": 0.85,
+        }
+        result = _apply_guardrails(vlm_output, ranking, cotas_mode="local")
+        assert result["largo_m"] == 1.60
+        assert result["confidence"] == 0.85
+
+
+class TestPromptNullWhenEmptyLengthRanking:
+    """PR 2b.2 — cuando length_top queda vacío, el prompt debe instruir
+    explícitamente al VLM a devolver `largo_m: null` y NO inventar."""
+
+    def test_prompt_shows_null_instruction_when_length_empty(self):
+        ranking = {
+            "length": [],
+            "depth": [{"value": 0.60, "score": 75, "bucket": "preferred", "reasons": []}],
+            "excluded_hard": [{"value": 4.15, "reason": "probable_perimeter"}],
+            "orientation": "vertical",
+            "scale_px_per_m": None,
+        }
+        prompt = _format_ranking_for_prompt(ranking)
+        # Instrucción null presente
+        assert "null" in prompt.lower()
+        assert "no uses el ancho" in prompt.lower() or \
+               "no inventes" in prompt.lower()
+        # El prompt debe decir claramente que devolver null
+        assert any(
+            phrase in prompt.lower()
+            for phrase in ("largo_m: null", "largo_m=null", "null honestamente")
+        )
+
+    def test_prompt_no_null_instruction_when_length_has_candidates(self):
+        """Con length_top poblado, NO se inyecta la instrucción null
+        (habría ruido innecesario)."""
+        ranking = {
+            "length": [{"value": 2.35, "score": 80, "bucket": "preferred", "reasons": []}],
+            "depth": [{"value": 0.60, "score": 75, "bucket": "preferred", "reasons": []}],
+            "excluded_hard": [],
+            "orientation": "vertical",
+            "scale_px_per_m": None,
+        }
+        prompt = _format_ranking_for_prompt(ranking)
+        assert "null honestamente" not in prompt.lower()
+        assert "no inventes: devolvé" not in prompt.lower()
