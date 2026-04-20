@@ -476,6 +476,10 @@ def _score_cota(
     """
     score = 0
     reasons: list[str] = []
+    # PR 2d — Flags estructurados para trigger del rescue pass.
+    # NO parsear `reasons` (strings frágiles) — usar estos bools.
+    span_penalty_applied = False
+    span_penalty_severe = False
 
     # ── Proximidad al bbox ─────────────────────────────────────────────
     # Tres niveles discretos + ajuste continuo cuando está afuera.
@@ -543,12 +547,16 @@ def _score_cota(
             if deviation > 0.50:
                 score -= 50
                 reasons.append(f"severe_span_mismatch_{int(deviation * 100)}pct")
+                span_penalty_applied = True
+                span_penalty_severe = True
             elif deviation > 0.30:
                 score -= 30
                 reasons.append(f"span_mismatch_{int(deviation * 100)}pct")
+                span_penalty_applied = True
             elif deviation > 0.15:
                 score -= 20
                 reasons.append(f"span_deviation_{int(deviation * 100)}pct")
+                span_penalty_applied = True
             else:
                 score += 10
                 reasons.append("span_matches")
@@ -568,6 +576,8 @@ def _score_cota(
         "score": score,
         "bucket": bucket,
         "reasons": reasons,
+        "span_penalty_applied": span_penalty_applied,
+        "span_penalty_severe": span_penalty_severe,
     }
 
 
@@ -613,10 +623,15 @@ def _filter_length_by_geometry(
     for entry in length_ranking:
         value = entry["value"]
         reasons: list[str] = []
+        # PR 2d — Código estructurado + razón textual. El trigger del rescue
+        # pass lee `exclude_code` (no parsea `reason`). Si ambas reglas
+        # disparan, conservamos el primer código y listamos ambas razones.
+        exclude_codes: list[str] = []
 
         # Regla A
         if has_valid_alternative and value > 4.0:
             reasons.append("value_over_4m_with_alternatives_available")
+            exclude_codes.append("value_over_4m_with_alternatives")
 
         # Regla B
         if expected_m and expected_m > 0.5:
@@ -625,16 +640,113 @@ def _filter_length_by_geometry(
                 reasons.append(
                     f"severe_span_incompatibility_{int(deviation * 100)}pct"
                 )
+                exclude_codes.append("severe_span_mismatch")
 
         if reasons:
             excluded_hard.append({
                 "value": value,
                 "reason": "; ".join(reasons),
+                "exclude_code": exclude_codes[0] if exclude_codes else None,
+                "exclude_codes": exclude_codes,
             })
         else:
             keep.append(entry)
 
     return keep
+
+
+def _rescue_length_ranking(
+    expanded_pool: list[Cota],
+    region_bbox_px: dict,
+    orientation: str,
+    image_size: tuple[int, int],
+) -> list[dict]:
+    """Rescue pass — re-rankea length SIN span penalty ni Regla B.
+
+    Disparado desde `_measure_region` cuando `ranking["length"]` quedó
+    vacío Y hubo exclusión por `severe_span_mismatch` (exclude_code
+    estructurado, no string parsing). Caso típico: Bernardi R1/R2, el
+    topology VLM devuelve bbox subdimensionado respecto al tramo real →
+    la cota correcta (2.35 / 1.60) tiene span deviation >60% → Regla B
+    la saca a excluded_hard → ranking vacío → prompt dice "devolvé null"
+    → LLM obedece (a veces) o cae en fallback silencioso con ancho.
+
+    El rescue **NO** es un segundo sistema paralelo. Es un reintento
+    controlado sobre el MISMO expanded_pool con dos ajustes:
+    - `scale=None` en `_score_cota` → sin span penalty (el bbox es
+      sospechoso, no podemos confiar en el span esperado).
+    - Sin Regla B (severe_span_incompatibility).
+
+    Se mantienen: absurd excludes, probable_perimeter, Regla A
+    (value >4m con alternativas en [1.0, 4.0]).
+
+    Ajustes defensivos de output:
+    - Bucket máximo forzado a `weak` (nunca `preferred`) — el LLM ve la
+      cota pero marcada como dudosa, pide evidencia visual.
+    - Solo candidates en rango típico `[1.0, 4.0]` — 0.60 como "largo"
+      rescatado es basura.
+    - Devuelve `[]` si ninguna candidata sobrevive → caller mantiene
+      null honesto.
+
+    El rescue se complementa con:
+    - `cotas_mode = "expanded_rescue"` en el caller.
+    - Cap de confidence 0.5 en `_apply_guardrails`.
+    - `measurement_meta.rescue_applied = True` en el output.
+    - `suspicious_reasons` con `topology_bbox_undersized_rescue`.
+
+    Estos 4 elementos combinados garantizan que el resultado del rescue
+    SIEMPRE cae en DUDOSO (no CONFIRMADO), y el operador lo revisa
+    visualmente antes de aceptarlo.
+    """
+    if not expanded_pool:
+        return []
+
+    # 1. Re-aplicar hard excludes pre-scoring (absurd + perímetro).
+    surviving: list[Cota] = []
+    for cota in expanded_pool:
+        if cota.value < _ABSURD_MIN_M or cota.value > _ABSURD_MAX_M:
+            continue
+        if _is_probable_perimeter(cota, region_bbox_px, image_size):
+            continue
+        surviving.append(cota)
+
+    if not surviving:
+        return []
+
+    # 2. Re-score SIN scale → sin span penalty.
+    rescued: list[dict] = []
+    for cota in surviving:
+        entry = _score_cota(
+            cota,
+            region_bbox_px,
+            orientation,
+            scale=None,  # clave: sin scale, no hay span penalty
+            candidate_for="length",
+        )
+        # Bucket máximo forzado a "weak" — queremos señal al LLM de
+        # "esto es dudoso, usar evidencia visual".
+        if entry["bucket"] == "preferred":
+            entry["bucket"] = "weak"
+            entry["reasons"].append("rescue_mode_capped_to_weak")
+        rescued.append(entry)
+
+    # 3. Re-aplicar Regla A (value >4m con alternativas) — perímetros
+    #    del ambiente se siguen excluyendo incluso en rescue.
+    has_valid_alternative = any(
+        _LENGTH_TYPICAL_RANGE[0] <= c.value <= _LENGTH_TYPICAL_RANGE[1]
+        for c in surviving
+    )
+    if has_valid_alternative:
+        rescued = [r for r in rescued if r["value"] <= 4.0]
+
+    # 4. Filtrar a candidates en rango length típico [1.0, 4.0].
+    #    Sin esto, 0.60 (ancho) podría "rescatarse" como largo — basura.
+    lo, hi = _LENGTH_TYPICAL_RANGE
+    rescued = [r for r in rescued if lo <= r["value"] <= hi]
+
+    # 5. Ordenar desc por score y capear a top 6.
+    rescued.sort(key=lambda r: r["score"], reverse=True)
+    return rescued[:6]
 
 
 def _rank_cotas_for_region(
@@ -669,12 +781,16 @@ def _rank_cotas_for_region(
             excluded_hard.append({
                 "value": cota.value,
                 "reason": "absurd_value",
+                "exclude_code": "absurd_value",
+                "exclude_codes": ["absurd_value"],
             })
             continue
         if _is_probable_perimeter(cota, region_bbox_px, image_size):
             excluded_hard.append({
                 "value": cota.value,
                 "reason": "probable_perimeter",
+                "exclude_code": "probable_perimeter",
+                "exclude_codes": ["probable_perimeter"],
             })
             continue
         surviving_cotas.append(cota)
@@ -740,6 +856,20 @@ def _format_ranking_for_prompt(ranking: dict) -> str:
     lines.append(f"Orientación del tramo: {ranking['orientation']}")
     if ranking.get("scale_px_per_m"):
         lines.append("(escala del plano estimada desde cotas locales)")
+    # PR 2d — Si el rescue se disparó, avisamos al LLM antes del ranking
+    # para que use evidencia visual y no confíe ciegamente en el bucket
+    # weak/unlikely (que por construcción del rescue están ahí).
+    if ranking.get("_rescue_applied"):
+        lines.append("")
+        lines.append(
+            "⚠️ ATENCIÓN: el bbox del topology puede estar SUBDIMENSIONADO "
+            "respecto al tramo real. Las candidatas de abajo fueron "
+            "RESCATADAS — pasaron hard excludes (absurdos, perímetro) "
+            "pero NO el filtro geométrico de span (porque el bbox no es "
+            "confiable). Usá evidencia visual del crop para elegir. Si "
+            "ninguna matchea visualmente al tramo, devolvé null. "
+            "Confidence máxima en este modo: 0.5."
+        )
     lines.append("")
     lines.extend(_format_section("CANDIDATAS PARA LARGO", ranking["length"]))
     lines.append("")
@@ -908,6 +1038,18 @@ def _apply_guardrails(
                     )
                 break  # con que uno dispare alcanza
 
+    # ── Cap por cotas_mode=expanded_rescue ───────────────────────────
+    # Rescue pass activo → bbox del topology sospechoso, ranking
+    # determinístico ya NO es confiable para validar la elección del
+    # VLM. Cap duro a 0.5 sin chequeos adicionales — aggregator lo
+    # marca DUDOSO, operador revisa visualmente.
+    # Es explícitamente MÁS estricto que expanded (0.65) porque la
+    # evidencia es todavía más débil.
+    if cotas_mode == "expanded_rescue":
+        if confidence > 0.5:
+            confidence = 0.5
+            suspicious.append("cotas_mode=expanded_rescue → cap confidence 0.5")
+
     vlm_output["confidence"] = confidence
     if suspicious:
         vlm_output["suspicious_reasons"] = suspicious
@@ -1014,6 +1156,60 @@ async def _measure_region(
     # para obtener más evidencia si otras regiones tienen cotas locales.
     plan_scale = _estimate_plan_scale([region], candidate_cotas, image_size)
     ranking = _rank_cotas_for_region(cotas_for_llm, region, image_size, plan_scale)
+
+    # PR 2d — Rescue pass: topology bbox subdimensionado.
+    # Si ranking["length"] quedó vacío Y fue causado por Regla B
+    # (severe_span_mismatch), re-rankeamos el expanded_pool sin span
+    # penalty. Caso Bernardi R1/R2: el topology VLM devuelve bbox
+    # correcto en forma/posición pero más chico que el tramo real →
+    # cota 2.35 queda excluida por deviation >60% → ranking vacío →
+    # null honesto. Pero la cota SÍ existe y SÍ pertenece al tramo.
+    # El rescue la recupera con cap de confidence 0.5 para que el
+    # aggregator la marque DUDOSO y el operador revise visualmente.
+    #
+    # Trigger estructurado (4 condiciones en AND):
+    #   1. ranking["length"] == [] — sin candidates válidas.
+    #   2. cotas_mode == "expanded" — ya estamos usando pool expandido.
+    #   3. Al menos una exclusión tuvo exclude_code="severe_span_mismatch".
+    #   4. El rescue encuentra al menos 1 candidate en [1.0, 4.0]
+    #      (implícito: si no encuentra, devuelve [] y no mutamos).
+    original_length_candidates_empty = not ranking["length"]
+    rescue_applied = False
+    rescue_recovered_count = 0
+    if (
+        original_length_candidates_empty
+        and cotas_mode == "expanded"
+    ):
+        had_severe_span_mismatch = any(
+            h.get("exclude_code") == "severe_span_mismatch"
+            for h in ranking.get("excluded_hard") or []
+        )
+        if had_severe_span_mismatch:
+            region_bbox_px = _bbox_to_px(
+                region.get("bbox_rel") or {}, image_size
+            )
+            orientation = _tramo_orientation(region_bbox_px)
+            rescued = _rescue_length_ranking(
+                cotas_for_llm, region_bbox_px, orientation, image_size,
+            )
+            if rescued:
+                ranking["length"] = rescued
+                ranking["_rescue_applied"] = True
+                cotas_mode = "expanded_rescue"
+                rescue_applied = True
+                rescue_recovered_count = len(rescued)
+                logger.info(
+                    f"[multi-crop] region {region.get('id')}: rescue pass activated "
+                    f"— recovered {len(rescued)} cotas "
+                    f"(top value {rescued[0]['value']:.2f}m). "
+                    f"topology bbox posiblemente subdimensionado — confidence cap 0.5"
+                )
+            else:
+                logger.info(
+                    f"[multi-crop] region {region.get('id')}: rescue pass attempted "
+                    f"but no candidates in [1.0, 4.0] survived — keeping null honesto"
+                )
+
     ranking_txt = _format_ranking_for_prompt(ranking)
 
     meta_txt = (
@@ -1094,18 +1290,40 @@ async def _measure_region(
     parsed["_local_cotas_count"] = len(local_cotas)
     parsed["_cotas_mode"] = cotas_mode
     parsed["_cota_ranking"] = ranking  # expuesto al log [region-detail]
+    # PR 2d — Meta flag estructurado para auditoría sin parsear logs.
+    # Siempre presente; `rescue_applied=False` es el caso normal.
+    parsed["measurement_meta"] = {
+        "rescue_applied": rescue_applied,
+        "rescue_reason": "topology_bbox_undersized" if rescue_applied else None,
+        "original_length_candidates_empty": original_length_candidates_empty,
+        "recovered_count": rescue_recovered_count,
+    }
 
     # PR 2b — Guardrails post-LLM apoyados en el RANKING determinístico
     # (no en el reasoning del VLM que puede sonar convincente y ser falso).
     # PR 2b.1 — además, cap duro de confidence cuando cotas_mode=expanded.
+    # PR 2d — cap 0.5 cuando cotas_mode=expanded_rescue.
     parsed = _apply_guardrails(parsed, ranking, cotas_mode=cotas_mode)
 
-    # Cuando caímos a fallback expanded, el resultado NUNCA es CONFIRMADO
-    # aunque los números sean plausibles — el operador tiene que revisar
-    # porque el anchoring no fue estricto.
+    # Cuando caímos a fallback expanded (sin rescue), el resultado NUNCA
+    # es CONFIRMADO aunque los números sean plausibles — el operador tiene
+    # que revisar porque el anchoring no fue estricto.
     if cotas_mode == "expanded":
         _susp = list(parsed.get("suspicious_reasons") or [])
         _susp.append("medida tomada con pool de cotas expandido (no estricto a esta región)")
+        parsed["suspicious_reasons"] = _susp
+
+    # PR 2d — Rescue pass: marcador obligatorio para que el aggregator
+    # convierta el resultado en DUDOSO. El cap de confidence en
+    # `_apply_guardrails` ya lo deja en 0.5, esta reason lo hace visible
+    # en el output JSON + UI como bullet "Revisar en plano".
+    if cotas_mode == "expanded_rescue":
+        _susp = list(parsed.get("suspicious_reasons") or [])
+        _susp.append(
+            "topology_bbox_undersized_rescue — bbox del topology "
+            "posiblemente chico; cota recuperada fuera del matching geométrico "
+            "estricto, requiere revisión visual"
+        )
         parsed["suspicious_reasons"] = _susp
 
     # Fallback silencioso típico: el modelo devuelve L==A cuando no puede

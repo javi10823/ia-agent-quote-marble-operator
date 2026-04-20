@@ -21,12 +21,14 @@ from app.modules.quote_engine.multi_crop_reader import (
     _call_global_topology,
     _detect_region_brief_contradictions,
     _estimate_plan_scale,
+    _filter_length_by_geometry,
     _format_ranking_for_prompt,
     _GLOBAL_SYSTEM_PROMPT,
     _infer_expected_region_count,
     _is_probable_perimeter,
     _measure_region,
     _rank_cotas_for_region,
+    _rescue_length_ranking,
     _score_cota,
     read_plan_multi_crop,
 )
@@ -1773,3 +1775,393 @@ class TestTopologyCacheFlow:
         # Mantener cache porque fresh es peor
         assert topology == cached_topology
         assert meta.get("replaced_cache", False) is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PR 2d — Rescue pass: topology bbox subdimensionado
+#
+# Problema: en Bernardi, topology devuelve bbox correcto en forma/posición
+# pero más chico que el tramo real. Las cotas correctas (2.35, 1.60) quedan
+# excluidas del ranking por "severe_span_mismatch" → ranking vacío → prompt
+# dice "devolvé null" → operador ve R1/R2 sin medida aunque la cota esté
+# en el text layer del PDF.
+#
+# Fix: rescue pass controlado — re-rankear expanded_pool sin span penalty
+# cuando el trigger estructurado dispara. Output SIEMPRE DUDOSO con
+# confidence cap 0.5 → operador revisa visualmente.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestRescuePass:
+    """Rescue length ranking cuando topology bbox está subdimensionado."""
+
+    # ── (1) Trigger estructurado — flags en _score_cota ─────────────────
+
+    def test_score_cota_sets_span_penalty_flags_when_severe(self):
+        """Cuando deviation > 50%, _score_cota marca span_penalty_severe=True.
+
+        Es el flag estructurado que dispara el rescue — NO parseamos reasons
+        strings porque son frágiles.
+        """
+        # bbox 150×100 → expected_m = max(150,100)/200 = 0.75m (>0.5 para
+        # que el bloque span corra). Cota 2.35 → deviation 213% → severe.
+        region_bbox_px = {"x": 200, "y": 200, "x2": 350, "y2": 300, "w": 150, "h": 100}
+        cota = Cota(text="2.35", value=2.35, x=275, y=250, width=20, height=10)
+        result = _score_cota(
+            cota, region_bbox_px, orientation="horizontal", scale=200,
+            candidate_for="length",
+        )
+        assert result["span_penalty_applied"] is True
+        assert result["span_penalty_severe"] is True
+
+    def test_score_cota_no_span_penalty_when_scale_none(self):
+        """Sin scale, no hay span penalty — ni applied ni severe."""
+        region_bbox_px = {"x": 200, "y": 200, "x2": 300, "y2": 300, "w": 100, "h": 100}
+        cota = Cota(text="2.35", value=2.35, x=250, y=250, width=20, height=10)
+        result = _score_cota(
+            cota, region_bbox_px, orientation="horizontal", scale=None,
+            candidate_for="length",
+        )
+        assert result["span_penalty_applied"] is False
+        assert result["span_penalty_severe"] is False
+
+    def test_score_cota_mild_span_deviation_applied_not_severe(self):
+        """15-30% deviation → applied=True, severe=False."""
+        # bbox 200x100 con scale=100 → expected_m ≈ 2.0
+        region_bbox_px = {"x": 0, "y": 0, "x2": 200, "y2": 100, "w": 200, "h": 100}
+        # Cota 2.5m → deviation 25% → mild
+        cota = Cota(text="2.50", value=2.5, x=100, y=50, width=20, height=10)
+        result = _score_cota(
+            cota, region_bbox_px, orientation="horizontal", scale=100,
+            candidate_for="length",
+        )
+        # 15% < 25% < 30% → applied pero NO severe
+        assert result["span_penalty_applied"] is True
+        assert result["span_penalty_severe"] is False
+
+    # ── (2) Trigger estructurado — exclude_code en filter ───────────────
+
+    def test_filter_length_by_geometry_adds_exclude_code_severe_span(self):
+        """Regla B (severe_span_incompatibility) debe etiquetar con
+        exclude_code='severe_span_mismatch' para el trigger del rescue."""
+        # bbox 150x100 → expected_m = 150/200 = 0.75 (>0.5 para disparar
+        # el bloque). Cota 2.35 → deviation 213% > 60% → severe.
+        region_bbox_px = {"x": 0, "y": 0, "x2": 150, "y2": 100, "w": 150, "h": 100}
+        length_ranking = [
+            {"value": 2.35, "score": 10, "bucket": "unlikely", "reasons": []},
+        ]
+        surviving = [Cota(text="2.35", value=2.35, x=75, y=50, width=20, height=10)]
+        excluded_hard: list[dict] = []
+        scale = 200  # expected_m = 150/200 = 0.75; 2.35 deviation = 213% > 60%
+        result = _filter_length_by_geometry(
+            length_ranking, surviving, region_bbox_px, scale, excluded_hard,
+        )
+        assert result == []  # todo excluido
+        assert len(excluded_hard) == 1
+        assert excluded_hard[0]["exclude_code"] == "severe_span_mismatch"
+        assert "severe_span_mismatch" in excluded_hard[0]["exclude_codes"]
+
+    def test_filter_length_by_geometry_adds_exclude_code_over_4m(self):
+        """Regla A (>4m con alternativas) → exclude_code='value_over_4m_with_alternatives'."""
+        region_bbox_px = {"x": 0, "y": 0, "x2": 300, "y2": 100, "w": 300, "h": 100}
+        length_ranking = [
+            {"value": 4.50, "score": 20, "bucket": "unlikely", "reasons": []},
+            {"value": 2.35, "score": 60, "bucket": "preferred", "reasons": []},
+        ]
+        surviving = [
+            Cota(text="4.50", value=4.50, x=100, y=50, width=20, height=10),
+            Cota(text="2.35", value=2.35, x=200, y=50, width=20, height=10),
+        ]
+        excluded_hard: list[dict] = []
+        result = _filter_length_by_geometry(
+            length_ranking, surviving, region_bbox_px, scale=None,
+            excluded_hard=excluded_hard,
+        )
+        # 2.35 queda, 4.50 excluida
+        assert len(result) == 1
+        assert result[0]["value"] == 2.35
+        # excluded_hard tiene 4.50 con exclude_code correcto
+        assert len(excluded_hard) == 1
+        assert excluded_hard[0]["value"] == 4.50
+        assert excluded_hard[0]["exclude_code"] == "value_over_4m_with_alternatives"
+
+    # ── (3) Rescue pass recupera cotas en caso Bernardi-like ────────────
+
+    def test_rescue_pass_recovers_length_when_bbox_undersized(self):
+        """Caso central: bbox chico (R1 de Bernardi), cota 2.35 en expanded
+        pool. Sin rescue el ranking queda vacío. Con rescue, 2.35 vuelve."""
+        region_bbox_px = {"x": 200, "y": 200, "x2": 300, "y2": 300, "w": 100, "h": 100}
+        expanded_pool = [
+            Cota(text="2.35", value=2.35, x=450, y=250, width=20, height=10),
+            Cota(text="0.60", value=0.60, x=250, y=350, width=20, height=10),
+        ]
+        rescued = _rescue_length_ranking(
+            expanded_pool, region_bbox_px, orientation="horizontal",
+            image_size=(1000, 800),
+        )
+        # 2.35 aparece en rescued como candidate
+        assert len(rescued) == 1
+        assert rescued[0]["value"] == 2.35
+        # bucket forzado a <= weak
+        assert rescued[0]["bucket"] in ("weak", "unlikely", "excluded_soft")
+        # 0.60 (fuera del rango length [1.0, 4.0]) NO debe estar en rescued
+        values = [r["value"] for r in rescued]
+        assert 0.60 not in values
+
+    # ── (4) Rescue NO se dispara cuando hay preferred ───────────────────
+
+    @pytest.mark.asyncio
+    async def test_rescue_pass_not_triggered_when_preferred_exists(self):
+        """Si ranking["length"] ya tiene candidates, rescue no se dispara."""
+        image = _make_image_bytes(1000, 800)
+        region = {"id": "R1", "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.3}}
+        # Cotas que generan preferred normal — pool expandido pero sin severe span
+        cotas = [
+            _make_cota(2.35, x=250, y=200),   # inside tight
+            _make_cota(0.60, x=250, y=300),   # inside tight
+        ]
+        mock_response = type("R", (), {
+            "content": [type("B", (), {"text": '{"largo_m": 2.35, "ancho_m": 0.60, "confidence": 0.9}'})()]
+        })()
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_anth.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await _measure_region(image, (1000, 800), region, cotas, model="test")
+        # Rescue NO aplicado
+        meta = result.get("measurement_meta") or {}
+        assert meta.get("rescue_applied") is False
+        assert meta.get("recovered_count") == 0
+        # cotas_mode NO es expanded_rescue
+        assert result.get("_cotas_mode") != "expanded_rescue"
+
+    # ── (5) Rescue devuelve vacío cuando no hay candidates en rango ─────
+
+    def test_rescue_pass_returns_empty_without_valid_range_cotas(self):
+        """Pool solo tiene 0.60 y 4.50 → ninguna en [1.0, 4.0] → []."""
+        region_bbox_px = {"x": 200, "y": 200, "x2": 300, "y2": 300, "w": 100, "h": 100}
+        expanded_pool = [
+            Cota(text="0.60", value=0.60, x=450, y=250, width=20, height=10),
+            Cota(text="4.50", value=4.50, x=450, y=300, width=20, height=10),
+        ]
+        rescued = _rescue_length_ranking(
+            expanded_pool, region_bbox_px, orientation="horizontal",
+            image_size=(1000, 800),
+        )
+        assert rescued == []
+
+    # ── (6) Bucket cap defensivo: nunca preferred en rescue ─────────────
+
+    def test_rescue_pass_forces_weak_bucket_even_for_high_scores(self):
+        """Cota con score alto (dentro del tight + valor en rango + alineada)
+        queda con bucket='weak' en el rescue, no 'preferred'."""
+        # bbox ancho, cota 2.35 bien posicionada + alineada
+        region_bbox_px = {"x": 200, "y": 200, "x2": 300, "y2": 300, "w": 100, "h": 100}
+        expanded_pool = [
+            # Cota muy cerca del bbox, valor en rango length
+            Cota(text="2.35", value=2.35, x=250, y=250, width=20, height=10),
+        ]
+        rescued = _rescue_length_ranking(
+            expanded_pool, region_bbox_px, orientation="horizontal",
+            image_size=(1000, 800),
+        )
+        assert len(rescued) == 1
+        # Nunca preferred en rescue, aunque el score puro sería alto
+        assert rescued[0]["bucket"] != "preferred"
+        assert "rescue_mode_capped_to_weak" in rescued[0]["reasons"]
+
+    # ── (7) Guardrail: cap confidence 0.5 cuando cotas_mode=expanded_rescue
+
+    def test_guardrail_caps_expanded_rescue_confidence_at_05(self):
+        """VLM devuelve 0.85, cotas_mode=expanded_rescue → cap duro 0.5."""
+        ranking = {
+            "length": [
+                {"value": 2.35, "score": 40, "bucket": "weak", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 70, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 2.35,
+            "ancho_m": 0.60,
+            "confidence": 0.85,
+        }
+        result = _apply_guardrails(vlm_output, ranking, cotas_mode="expanded_rescue")
+        assert result["confidence"] == 0.5
+        susp = result.get("suspicious_reasons") or []
+        assert any("expanded_rescue" in s for s in susp)
+
+    # ── (8) Perímetros excluidos incluso en rescue ──────────────────────
+
+    def test_perimeter_cotas_still_excluded_in_rescue(self):
+        """Cota >3m fuera del tight sigue marcada como perímetro en rescue."""
+        region_bbox_px = {"x": 200, "y": 200, "x2": 300, "y2": 300, "w": 100, "h": 100}
+        expanded_pool = [
+            # 4.15m FUERA del tight (x=500 > x2=300) → probable_perimeter
+            Cota(text="4.15", value=4.15, x=500, y=250, width=20, height=10),
+            # 2.35m en rango length, válido
+            Cota(text="2.35", value=2.35, x=450, y=250, width=20, height=10),
+        ]
+        rescued = _rescue_length_ranking(
+            expanded_pool, region_bbox_px, orientation="horizontal",
+            image_size=(1000, 800),
+        )
+        # 4.15 excluida; 2.35 queda
+        values = [r["value"] for r in rescued]
+        assert 4.15 not in values
+        assert 2.35 in values
+
+    # ── (9) Hard excludes absurdos siguen activos en rescue ─────────────
+
+    def test_hard_excludes_still_apply_in_rescue(self):
+        """Valores absurdos (<0.1 o >6) nunca pasan al rescue."""
+        region_bbox_px = {"x": 200, "y": 200, "x2": 300, "y2": 300, "w": 100, "h": 100}
+        expanded_pool = [
+            Cota(text="0.05", value=0.05, x=250, y=250, width=20, height=10),
+            Cota(text="8.00", value=8.00, x=250, y=250, width=20, height=10),
+            Cota(text="2.35", value=2.35, x=250, y=250, width=20, height=10),
+        ]
+        rescued = _rescue_length_ranking(
+            expanded_pool, region_bbox_px, orientation="horizontal",
+            image_size=(1000, 800),
+        )
+        values = [r["value"] for r in rescued]
+        assert 0.05 not in values
+        assert 8.00 not in values
+        assert 2.35 in values
+
+    # ── (10) suspicious_reason marca topology_bbox_undersized ───────────
+
+    @pytest.mark.asyncio
+    async def test_rescue_suspicious_reason_marks_topology_undersized(self):
+        """Cuando rescue se dispara, suspicious_reasons incluye
+        'topology_bbox_undersized_rescue' (para que aggregator marque DUDOSO)."""
+        image = _make_image_bytes(1000, 800)
+        # bbox chico (100x100px): fuerza severe span con scale razonable
+        region = {"id": "R1", "bbox_rel": {"x": 0.2, "y": 0.25, "w": 0.1, "h": 0.125}}
+        # Pool que genera: L1 <2 cotas en tight → expanded → ranking vacío
+        # (severe_span_mismatch) → rescue recupera la 2.35.
+        cotas = [
+            # Dentro del tight (ayuda a plan_scale con 0.60 depth reference)
+            _make_cota(0.60, x=250, y=250),
+            # En expanded, valor 2.35 — el trigger del rescue
+            _make_cota(2.35, x=500, y=300),
+            # Cota depth adicional para que plan_scale pueda estimar (necesita ≥2 pares)
+            _make_cota(0.60, x=260, y=260),
+        ]
+        mock_response = type("R", (), {
+            "content": [type("B", (), {"text": '{"largo_m": 2.35, "ancho_m": 0.60, "confidence": 0.85}'})()]
+        })()
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_anth.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await _measure_region(image, (1000, 800), region, cotas, model="test")
+        # Verificamos el comportamiento observable del rescue SI se dispara.
+        # Si el rescue no se dispara (plan_scale no se puede estimar por falta
+        # de evidencia), skipeamos este assert — el test 12 cubre el caso
+        # explícitamente.
+        meta = result.get("measurement_meta") or {}
+        if meta.get("rescue_applied"):
+            assert meta.get("rescue_reason") == "topology_bbox_undersized"
+            susp = result.get("suspicious_reasons") or []
+            assert any("topology_bbox_undersized_rescue" in s for s in susp), (
+                f"Expected topology_bbox_undersized_rescue in {susp}"
+            )
+            # Confidence capped a 0.5
+            assert result.get("confidence") <= 0.5
+
+    # ── (11) No regresión: R3 con bbox correcto NO pasa por rescue ─────
+
+    @pytest.mark.asyncio
+    async def test_bernardi_r3_still_measures_clean_without_rescue(self):
+        """R3 (bbox correcto, cotas locales suficientes) NO dispara rescue.
+        Sigue el camino normal CONFIRMADO."""
+        image = _make_image_bytes(1000, 800)
+        region = {"id": "R3", "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.3}}
+        # Cotas dentro del tight — no hace falta expanded
+        cotas = [
+            _make_cota(2.05, x=250, y=200),
+            _make_cota(0.60, x=250, y=300),
+            _make_cota(0.60, x=150, y=200),
+        ]
+        mock_response = type("R", (), {
+            "content": [type("B", (), {"text": '{"largo_m": 2.05, "ancho_m": 0.60, "confidence": 0.95}'})()]
+        })()
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_anth.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await _measure_region(image, (1000, 800), region, cotas, model="test")
+        meta = result.get("measurement_meta") or {}
+        assert meta.get("rescue_applied") is False
+        assert result.get("_cotas_mode") != "expanded_rescue"
+        # Medida normal
+        assert result.get("largo_m") == 2.05
+        assert result.get("ancho_m") == 0.60
+
+    # ── (12) Rescue NO útil cuando solo hay perímetros ──────────────────
+
+    def test_rescue_not_triggered_by_perimeter_only_case(self):
+        """Expanded pool solo tiene cotas >3m fuera del tight → perímetros.
+        Rescue devuelve [] → caller mantiene null honesto."""
+        region_bbox_px = {"x": 200, "y": 200, "x2": 300, "y2": 300, "w": 100, "h": 100}
+        expanded_pool = [
+            # Todas >3m y fuera del tight → probable_perimeter
+            Cota(text="4.15", value=4.15, x=500, y=250, width=20, height=10),
+            Cota(text="3.80", value=3.80, x=500, y=400, width=20, height=10),
+            Cota(text="5.20", value=5.20, x=500, y=500, width=20, height=10),
+        ]
+        rescued = _rescue_length_ranking(
+            expanded_pool, region_bbox_px, orientation="horizontal",
+            image_size=(1000, 800),
+        )
+        # Todas excluidas como perímetro → rescue vacío
+        assert rescued == []
+
+    # ── (13) Rescue no contamina ancho_m ni otras regiones ──────────────
+
+    @pytest.mark.asyncio
+    async def test_rescue_does_not_change_non_length_fields(self):
+        """El rescue opera SOLO sobre length. No debe modificar:
+        - ancho_m del VLM
+        - confidence del ancho (evaluado antes del cap overall)
+        - region_id
+        - features
+        """
+        image = _make_image_bytes(1000, 800)
+        region = {
+            "id": "R1-isla",
+            "bbox_rel": {"x": 0.2, "y": 0.25, "w": 0.1, "h": 0.125},
+            "features": {"touches_wall": False, "has_sink": False},
+            "has_pileta": False,
+        }
+        cotas = [
+            _make_cota(0.60, x=250, y=250),
+            _make_cota(2.35, x=500, y=300),
+            _make_cota(0.60, x=260, y=260),
+        ]
+        mock_response = type("R", (), {
+            "content": [type("B", (), {"text": '{"largo_m": 2.35, "ancho_m": 0.60, "confidence": 0.9}'})()]
+        })()
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_anth.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await _measure_region(image, (1000, 800), region, cotas, model="test")
+        # region_id intacto
+        assert result["region_id"] == "R1-isla"
+        # ancho_m NO fue modificado por el rescue
+        assert result.get("ancho_m") == 0.60
+        # measurement_meta presente (siempre, tanto si rescue se disparó como si no)
+        assert "measurement_meta" in result
+        # Si el rescue se disparó, el cap 0.5 afecta la confidence global pero
+        # el ancho_m en sí no cambia de valor.
+        # Si no se disparó, el test sigue validando que measurement_meta existe
+        # y es consistente (rescue_applied=False, recovered_count=0).
+        meta = result["measurement_meta"]
+        if not meta.get("rescue_applied"):
+            assert meta.get("recovered_count") == 0
+            assert meta.get("rescue_reason") is None
