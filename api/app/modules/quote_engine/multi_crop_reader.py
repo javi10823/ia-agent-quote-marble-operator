@@ -2003,10 +2003,27 @@ def _aggregate(
             "id": f"sector_{sec_name}",
             "tipo": sec_name,
             "tramos": tramos,
-            # Propagamos las ambigüedades del aggregator al primer sector
-            # (el frontend las rendera como "Revisar en plano" + bullets).
-            "ambiguedades": list(all_ambiguedades) if sec_name == next(iter(by_sector)) else [],
+            # PR #352 — asignamos las ambigüedades POST-loop, no durante.
+            # Bug previo: `list(all_ambiguedades) if primer_sector else []`
+            # snapshot-eaba en la primera iteración del loop, antes de que
+            # los sectores subsiguientes hubieran procesado sus regiones.
+            # Consecuencia: ambigüedades de regiones en sector NO-primero
+            # (ej: R3 en sector isla cuando sector cocina aparece primero)
+            # se agregaban a `all_ambiguedades` pero se perdían — ningún
+            # sector las recibía. Caso Bernardi: R3 DUDOSO con sanity
+            # warning se veía en el despiece como "Mesada 1 — revisar"
+            # pero NO aparecía en el bloque "Revisar en plano" de la UI.
+            "ambiguedades": [],  # placeholder; se completa post-loop
         })
+
+    # Post-loop: asignar todas las ambigüedades al primer sector.
+    # Elección de diseño: mantener el comportamiento actual de "todas
+    # las ambigüedades al primer sector" (el frontend hace flatMap
+    # sobre todos los sectores, así que da igual dónde estén). Si en
+    # el futuro se quiere distribuir ambigüedades por sector origen,
+    # es otro refactor mayor.
+    if sectores:
+        sectores[0]["ambiguedades"] = list(all_ambiguedades)
 
     if not sectores:
         # Edge case: global topology devolvió 0 regiones. Fallback implícito
