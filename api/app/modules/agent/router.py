@@ -1145,6 +1145,68 @@ async def create_quote(
     return {"id": quote.id}
 
 
+# ── ADMIN: Analyze plans vectorality ──────────────────────────────────────────
+
+@router.post("/admin/analyze-plans-vectorality")
+async def analyze_plans_vectorality(
+    limit: int = Query(default=200, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db),
+):
+    """Analiza las últimas N quotes y clasifica cada `source_file` como
+    `vectorial_clean` / `vectorial_and_raster` / `raster_only` / `unknown`.
+
+    Usado para decidir si vale la inversión del fast-path vectorial (2d).
+    Criterios idénticos al pipeline real (agent.py vision detection).
+
+    Autenticado por el middleware JWT global — no requiere rol extra.
+    Lee los archivos desde disco local (OUTPUT_DIR), sin descarga HTTP.
+
+    Respuesta:
+    ```
+    {
+      "total_analyzed": 150,
+      "counts": {"vectorial_clean": 95, "raster_only": 35, ...},
+      "percentages": {"vectorial_clean": 63.3, ...},
+      "recommend_2d": true
+    }
+    ```
+    """
+    from pathlib import Path
+    from app.core.static import OUTPUT_DIR
+    from app.modules.analytics.plans_vectorality import analyze_source_files
+
+    # Últimas N quotes con source_files no vacío
+    result = await db.execute(
+        select(Quote)
+        .where(Quote.source_files.isnot(None))
+        .order_by(Quote.created_at.desc())
+        .limit(limit)
+    )
+    quotes = result.scalars().all()
+
+    items: list[tuple[str, dict]] = []
+    for q in quotes:
+        for sf in (q.source_files or []):
+            items.append((q.id, sf))
+
+    def _fetch_from_disk(quote_id: str, source_file: dict) -> bytes | None:
+        """Intenta leer el PDF del disco local. Archivos viven en
+        `OUTPUT_DIR/{quote_id}/sources/{filename}`."""
+        filename = source_file.get("filename")
+        if not filename:
+            return None
+        path = Path(OUTPUT_DIR) / quote_id / "sources" / filename
+        try:
+            if path.exists() and path.is_file():
+                return path.read_bytes()
+        except Exception:
+            return None
+        return None
+
+    summary = analyze_source_files(items, _fetch_from_disk)
+    return summary
+
+
 # ── ADMIN: Backfill Drive URLs for existing quotes ───────────────────────────
 
 @router.post("/admin/backfill-drive")
