@@ -401,10 +401,26 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const [editedData, setEditedData] = useState<DualReadData>(() => normalizeDualReadData(data));
-  // Respuestas a pending_questions — se arman a medida que el operador
-  // selecciona opciones. Confirmar se bloquea hasta que todas tengan valor.
-  const [pendingAnswers, setPendingAnswers] = useState<Record<string, PendingAnswer>>({});
+  // Respuestas a pending_questions.
+  // PR #356 — pre-cargamos la primera opción "concreta" (no custom) de
+  // cada pregunta como default. Rationale: la primera opción que manda
+  // el backend es típicamente la más común (0.60m estándar residencial,
+  // "Sí frontal + laterales", 0.90m piso-mesada). Menos fricción
+  // operativa. El operador puede cambiar cualquiera antes de confirmar.
+  // `custom` se skippea porque requiere input adicional (detail);
+  // elegirlo automáticamente daría `allQuestionsAnswered=true` sin que
+  // el operador haya escrito el detail, lo cual es mentira.
   const pendingQuestions = data.pending_questions || [];
+  const [pendingAnswers, setPendingAnswers] = useState<Record<string, PendingAnswer>>(() => {
+    const initial: Record<string, PendingAnswer> = {};
+    pendingQuestions.forEach((q) => {
+      const firstConcrete = (q.options || []).find((o) => o.value !== "custom");
+      if (firstConcrete) {
+        initial[q.id] = { id: q.id, value: firstConcrete.value };
+      }
+    });
+    return initial;
+  });
   const allQuestionsAnswered = pendingQuestions.every(q => pendingAnswers[q.id]?.value);
 
   const handleRetry = async () => {
