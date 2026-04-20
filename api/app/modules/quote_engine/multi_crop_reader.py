@@ -655,6 +655,131 @@ def _filter_length_by_geometry(
     return keep
 
 
+# Umbral mínimo para considerar una cota como candidata "útil" de largo.
+# Menores a esto son ancho/zócalo/profundidad, no largo de tramo.
+_MEANINGFUL_LENGTH_MIN_M = 1.0
+
+
+def _has_meaningful_length_candidate(length_ranking: list[dict]) -> bool:
+    """True si el ranking tiene al menos una candidata de largo USABLE.
+
+    "Usable" = valor ≥ 1.0m Y bucket en {preferred, weak}. Cotas sub-1m
+    o buckets unlikely/excluded_soft no cuentan como evidencia real —
+    son el "ruido" que en Bernardi R1 dejaba el ranking no-vacío pero
+    sin largo real (length_top=[0.6, 0.6]).
+
+    Usado por el trigger del rescue para decidir si hay evidencia
+    suficiente. Si no hay candidata meaningful, el rescue puede entrar
+    aunque ranking["length"] tenga entries sub-1m.
+    """
+    for entry in length_ranking or []:
+        try:
+            value = float(entry.get("value", 0))
+        except (TypeError, ValueError):
+            continue
+        bucket = entry.get("bucket")
+        if value >= _MEANINGFUL_LENGTH_MIN_M and bucket in ("preferred", "weak"):
+            return True
+    return False
+
+
+def _build_rescue_context(
+    ranking: dict,
+    local_cotas_count: int,
+    tight_pool: list[Cota],
+    expanded_pool: list[Cota] | None,
+    cotas_mode: str,
+) -> dict:
+    """Evaluación estructurada del trigger del rescue, sin side-effects.
+
+    Centraliza los flags que deciden si el rescue corre, qué camino
+    (span_based | orphan_region), y qué loggear. Se evalúa UNA vez por
+    región y se pasa al logger y al activador — no reimplementamos la
+    lógica dos veces.
+
+    Outputs:
+      - `length_candidates_empty`: ranking["length"] literalmente vacío.
+      - `length_candidates_sub1_only`: no-vacío pero todas <1m o bucket
+        unlikely/excluded_soft. Caso Bernardi R1 (log: [0.6, 0.6]
+        unlikely).
+      - `has_meaningful_length_candidate`: al menos una candidata ≥1m
+        con bucket preferred/weak. Si True, rescue NO corre (R3-like).
+      - `has_severe_span_exclusion`: ≥1 entry en excluded_hard con
+        exclude_code="severe_span_mismatch" (span-based trigger).
+      - `has_severe_span_penalty`: ≥1 entry con span_penalty_severe=True
+        (refuerzo de span_based).
+      - `has_expanded_pool`: cotas_mode == "expanded" (ya estamos usando
+        el pool ampliado — único caso donde tiene sentido rescatar).
+      - `span_based_trigger`: has_severe_span_exclusion OR
+        has_severe_span_penalty.
+      - `orphan_region_trigger`: local_cotas==0 AND (empty OR sub1_only).
+        Cubre el caso Bernardi-like donde el topology puso el bbox
+        totalmente fuera de las cotas escritas — sin scale estimable no
+        hay span_based, pero la región es claramente huérfana.
+      - `will_rescue_try`: flags-only OK (span_based OR orphan_region)
+        + has_expanded_pool + not has_meaningful_length_candidate.
+        El "try" es importante: el rescue puede correr y devolver `[]`
+        si el pool no tiene candidatas en [1.0, 4.0] (pool_starved).
+        Para saber si el rescue REALMENTE recuperó algo hace falta
+        correrlo — eso lo decide el caller.
+    """
+    length_ranking = ranking.get("length") or []
+    excluded_hard = ranking.get("excluded_hard") or []
+
+    length_candidates_empty = len(length_ranking) == 0
+    has_meaningful = _has_meaningful_length_candidate(length_ranking)
+    length_candidates_sub1_only = (
+        not length_candidates_empty and not has_meaningful
+    )
+
+    has_severe_span_exclusion = any(
+        h.get("exclude_code") == "severe_span_mismatch"
+        for h in excluded_hard
+    )
+    # Algún entry del ranking tuvo penalty severa (pero no llegó a exclude_hard).
+    has_severe_span_penalty = any(
+        e.get("span_penalty_severe") is True
+        for e in length_ranking
+    )
+
+    has_expanded_pool = cotas_mode == "expanded"
+
+    span_based_trigger = has_severe_span_exclusion or has_severe_span_penalty
+    orphan_region_trigger = (
+        local_cotas_count == 0
+        and (length_candidates_empty or length_candidates_sub1_only)
+    )
+
+    will_rescue_try = (
+        has_expanded_pool
+        and not has_meaningful
+        and (span_based_trigger or orphan_region_trigger)
+    )
+
+    # Nombre del trigger para logging / measurement_meta. Prioridad:
+    # span_based primero (señal más específica), orphan_region fallback.
+    if will_rescue_try:
+        trigger_name = "span_based" if span_based_trigger else "orphan_region"
+    else:
+        trigger_name = None
+
+    return {
+        "length_candidates_empty": length_candidates_empty,
+        "length_candidates_sub1_only": length_candidates_sub1_only,
+        "has_meaningful_length_candidate": has_meaningful,
+        "has_severe_span_exclusion": has_severe_span_exclusion,
+        "has_severe_span_penalty": has_severe_span_penalty,
+        "has_expanded_pool": has_expanded_pool,
+        "span_based_trigger": span_based_trigger,
+        "orphan_region_trigger": orphan_region_trigger,
+        "will_rescue_try": will_rescue_try,
+        "trigger_name": trigger_name,
+        "tight_pool_count": len(tight_pool or []),
+        "expanded_pool_count": len(expanded_pool or []),
+        "local_cotas_count": local_cotas_count,
+    }
+
+
 def _rescue_length_ranking(
     expanded_pool: list[Cota],
     region_bbox_px: dict,
@@ -1157,58 +1282,137 @@ async def _measure_region(
     plan_scale = _estimate_plan_scale([region], candidate_cotas, image_size)
     ranking = _rank_cotas_for_region(cotas_for_llm, region, image_size, plan_scale)
 
-    # PR 2d — Rescue pass: topology bbox subdimensionado.
-    # Si ranking["length"] quedó vacío Y fue causado por Regla B
-    # (severe_span_mismatch), re-rankeamos el expanded_pool sin span
-    # penalty. Caso Bernardi R1/R2: el topology VLM devuelve bbox
-    # correcto en forma/posición pero más chico que el tramo real →
-    # cota 2.35 queda excluida por deviation >60% → ranking vacío →
-    # null honesto. Pero la cota SÍ existe y SÍ pertenece al tramo.
-    # El rescue la recupera con cap de confidence 0.5 para que el
-    # aggregator la marque DUDOSO y el operador revise visualmente.
+    # PR 2d — Rescue pass: topology bbox subdimensionado o mal ubicado.
     #
-    # Trigger estructurado (4 condiciones en AND):
-    #   1. ranking["length"] == [] — sin candidates válidas.
-    #   2. cotas_mode == "expanded" — ya estamos usando pool expandido.
-    #   3. Al menos una exclusión tuvo exclude_code="severe_span_mismatch".
-    #   4. El rescue encuentra al menos 1 candidate en [1.0, 4.0]
-    #      (implícito: si no encuentra, devuelve [] y no mutamos).
-    original_length_candidates_empty = not ranking["length"]
+    # Dos caminos de activación (OR):
+    #
+    # (A) span_based — bbox subdimensionado (caso sintético del test
+    #     PR #345). El ranker castigó con severe_span_mismatch porque
+    #     la cota correcta en expanded tiene deviation > 60% vs el
+    #     bbox chico. Requiere `scale_px_per_m` estimable.
+    #
+    # (B) orphan_region — bbox mal ubicado o sin scale (caso Bernardi
+    #     real). No hay señal de span porque scale quedó None (R3
+    #     tenía solo 1 cota tight → insuficiente para estimar). La
+    #     región tiene local_cotas=0 y el ranking length quedó vacío
+    #     o solo con entries <1m (basura tipo 0.6).
+    #
+    # Ambos caminos recuperan el expanded_pool con `_rescue_length_ranking`
+    # (sin span penalty, sin Regla B, con hard excludes + perímetro +
+    # Regla A). Cap de confidence 0.5.
+    #
+    # Señal `pool_starved_region`: el trigger disparó pero el rescue
+    # devolvió [] porque el expanded_pool no contenía candidatas en
+    # [1.0, 4.0] (ej: Bernardi R1 pool=[0.6, 0.6], R2 pool=[4.15, 4.15]
+    # → Regla A excluye). Diagnóstico explícito — pasa a
+    # `measurement_meta.pool_starved_region=True`. Sin este flag, la
+    # causa raíz (topology asignó mal las cotas a las regiones) es
+    # invisible en el output.
+    region_bbox_px = _bbox_to_px(region.get("bbox_rel") or {}, image_size)
+    orientation = _tramo_orientation(region_bbox_px)
+
+    rescue_context = _build_rescue_context(
+        ranking,
+        local_cotas_count=len(local_cotas),
+        tight_pool=local_cotas,
+        expanded_pool=cotas_for_llm if cotas_mode == "expanded" else None,
+        cotas_mode=cotas_mode,
+    )
+
+    # Log estructurado: trigger evaluation por región.
+    logger.info(
+        "[multi-crop/rescue-check] region=%s "
+        "length_candidates_empty=%s length_candidates_sub1_only=%s "
+        "has_meaningful_length_candidate=%s "
+        "local_cotas=%s tight_pool_count=%s expanded_pool_count=%s "
+        "has_severe_span_exclusion=%s has_severe_span_penalty=%s "
+        "has_expanded_pool=%s "
+        "span_based_trigger=%s orphan_region_trigger=%s "
+        "will_rescue_try=%s trigger_name=%s",
+        region.get("id"),
+        rescue_context["length_candidates_empty"],
+        rescue_context["length_candidates_sub1_only"],
+        rescue_context["has_meaningful_length_candidate"],
+        rescue_context["local_cotas_count"],
+        rescue_context["tight_pool_count"],
+        rescue_context["expanded_pool_count"],
+        rescue_context["has_severe_span_exclusion"],
+        rescue_context["has_severe_span_penalty"],
+        rescue_context["has_expanded_pool"],
+        rescue_context["span_based_trigger"],
+        rescue_context["orphan_region_trigger"],
+        rescue_context["will_rescue_try"],
+        rescue_context["trigger_name"],
+    )
+
+    # Log estructurado: contenido real del pool. Imprescindible para
+    # diagnosticar pool_starved — sin esto quedás a ciegas de por qué
+    # el rescue corrió pero devolvió [].
+    logger.info(
+        "[multi-crop/rescue-pool] region=%s tight=%s expanded=%s",
+        region.get("id"),
+        sorted([round(c.value, 2) for c in local_cotas]),
+        sorted([round(c.value, 2) for c in cotas_for_llm])
+        if cotas_mode == "expanded" else None,
+    )
+
+    original_length_candidates_empty = rescue_context["length_candidates_empty"]
+    original_length_candidates_sub1_only = rescue_context["length_candidates_sub1_only"]
     rescue_applied = False
     rescue_recovered_count = 0
-    if (
-        original_length_candidates_empty
-        and cotas_mode == "expanded"
-    ):
-        had_severe_span_mismatch = any(
-            h.get("exclude_code") == "severe_span_mismatch"
-            for h in ranking.get("excluded_hard") or []
+    pool_starved_region = False
+    rescue_trigger_used: str | None = None
+    rescue_skip_reason: str | None = None
+
+    if rescue_context["will_rescue_try"]:
+        rescued = _rescue_length_ranking(
+            cotas_for_llm, region_bbox_px, orientation, image_size,
         )
-        if had_severe_span_mismatch:
-            region_bbox_px = _bbox_to_px(
-                region.get("bbox_rel") or {}, image_size
+        if rescued:
+            # Rescue efectivo — hay candidatas en [1.0, 4.0].
+            ranking["length"] = rescued
+            ranking["_rescue_applied"] = True
+            cotas_mode = "expanded_rescue"
+            rescue_applied = True
+            rescue_recovered_count = len(rescued)
+            rescue_trigger_used = rescue_context["trigger_name"]
+            logger.info(
+                "[multi-crop/rescue-result] region=%s status=applied "
+                "trigger=%s recovered=%s top=%.2f mode=expanded_rescue",
+                region.get("id"), rescue_trigger_used,
+                len(rescued), rescued[0]["value"],
             )
-            orientation = _tramo_orientation(region_bbox_px)
-            rescued = _rescue_length_ranking(
-                cotas_for_llm, region_bbox_px, orientation, image_size,
+        else:
+            # Rescue disparó pero pool no tenía materia prima en
+            # [1.0, 4.0]. Este es el caso Bernardi real — diagnóstico
+            # explícito, no "fallo silencioso".
+            pool_starved_region = True
+            rescue_trigger_used = rescue_context["trigger_name"]
+            rescue_skip_reason = "pool_starved_no_valid_range_candidates"
+            logger.info(
+                "[multi-crop/rescue-result] region=%s status=pool_starved "
+                "trigger=%s reason=%s expanded_values=%s — keeping null honesto",
+                region.get("id"), rescue_trigger_used, rescue_skip_reason,
+                sorted([round(c.value, 2) for c in cotas_for_llm])
+                if cotas_mode == "expanded" else None,
             )
-            if rescued:
-                ranking["length"] = rescued
-                ranking["_rescue_applied"] = True
-                cotas_mode = "expanded_rescue"
-                rescue_applied = True
-                rescue_recovered_count = len(rescued)
-                logger.info(
-                    f"[multi-crop] region {region.get('id')}: rescue pass activated "
-                    f"— recovered {len(rescued)} cotas "
-                    f"(top value {rescued[0]['value']:.2f}m). "
-                    f"topology bbox posiblemente subdimensionado — confidence cap 0.5"
-                )
-            else:
-                logger.info(
-                    f"[multi-crop] region {region.get('id')}: rescue pass attempted "
-                    f"but no candidates in [1.0, 4.0] survived — keeping null honesto"
-                )
+    else:
+        # Trigger no disparó — determinar por qué para logs/debug.
+        if rescue_context["has_meaningful_length_candidate"]:
+            rescue_skip_reason = "length_candidates_present"
+        elif not rescue_context["has_expanded_pool"]:
+            rescue_skip_reason = "no_expanded_pool"
+        elif not (
+            rescue_context["span_based_trigger"]
+            or rescue_context["orphan_region_trigger"]
+        ):
+            rescue_skip_reason = "no_rescue_signal"
+        else:
+            rescue_skip_reason = "unknown"
+        logger.info(
+            "[multi-crop/rescue-result] region=%s status=skipped reason=%s",
+            region.get("id"), rescue_skip_reason,
+        )
 
     ranking_txt = _format_ranking_for_prompt(ranking)
 
@@ -1290,13 +1494,22 @@ async def _measure_region(
     parsed["_local_cotas_count"] = len(local_cotas)
     parsed["_cotas_mode"] = cotas_mode
     parsed["_cota_ranking"] = ranking  # expuesto al log [region-detail]
-    # PR 2d — Meta flag estructurado para auditoría sin parsear logs.
-    # Siempre presente; `rescue_applied=False` es el caso normal.
+    # PR #346 — measurement_meta extendido con trazabilidad completa del
+    # rescue. Incluye conteos de pools, trigger usado, y pool_starved
+    # (para diagnosticar el techo del diseño actual: Bernardi real donde
+    # el topology asigna mal las cotas a las regiones).
     parsed["measurement_meta"] = {
         "rescue_applied": rescue_applied,
         "rescue_reason": "topology_bbox_undersized" if rescue_applied else None,
+        "rescue_trigger": rescue_trigger_used,  # "span_based" | "orphan_region" | None
+        "rescue_skip_reason": rescue_skip_reason,  # enum estructurado
         "original_length_candidates_empty": original_length_candidates_empty,
+        "original_length_candidates_sub1_only": original_length_candidates_sub1_only,
+        "has_meaningful_length_candidate": rescue_context["has_meaningful_length_candidate"],
         "recovered_count": rescue_recovered_count,
+        "tight_pool_count": rescue_context["tight_pool_count"],
+        "expanded_pool_count": rescue_context["expanded_pool_count"],
+        "pool_starved_region": pool_starved_region,
     }
 
     # PR 2b — Guardrails post-LLM apoyados en el RANKING determinístico
@@ -2017,6 +2230,11 @@ async def read_plan_multi_crop(
                 "expanded_cotas": r.get("expanded_cotas_count"),
                 "confidence": r.get("confidence"),
                 "suspicious": r.get("suspicious_reasons"),
+                # PR #346 — measurement_meta en el log para diagnóstico en
+                # prod sin tener que ir a la DB. Especialmente importante:
+                # `pool_starved_region` (topology asignó mal las cotas) y
+                # `rescue_trigger` (qué camino disparó el rescue).
+                "measurement_meta": r.get("measurement_meta"),
                 "rejected": [
                     {"v": c.get("value"), "why": (c.get("reason") or "")[:60]}
                     for c in (r.get("rejected_candidates") or [])[:3]

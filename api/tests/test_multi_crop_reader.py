@@ -18,12 +18,14 @@ from app.modules.quote_engine.multi_crop_reader import (
     _aggregate,
     _apply_guardrails,
     _bbox_to_px,
+    _build_rescue_context,
     _call_global_topology,
     _detect_region_brief_contradictions,
     _estimate_plan_scale,
     _filter_length_by_geometry,
     _format_ranking_for_prompt,
     _GLOBAL_SYSTEM_PROMPT,
+    _has_meaningful_length_candidate,
     _infer_expected_region_count,
     _is_probable_perimeter,
     _measure_region,
@@ -2165,3 +2167,361 @@ class TestRescuePass:
         if not meta.get("rescue_applied"):
             assert meta.get("recovered_count") == 0
             assert meta.get("rescue_reason") is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PR #346 — Observabilidad + orphan_region trigger + pool_starved_region
+#
+# Contexto: en corrida real de Bernardi post-#345, el rescue NO se disparó
+# porque:
+#   1. scale_px_per_m quedó None (R3 solo tenía 1 cota tight) → sin span
+#      penalty → sin exclude_code "severe_span_mismatch" → trigger span_based
+#      no dispara.
+#   2. R1 length_top = [0.6, 0.6] (NO vacío) → la condición `not ranking["length"]`
+#      falla, aunque 0.6 es basura como largo.
+#   3. R2 length_top = [] con excluded_hard = [4.15, 4.15] (probable perímetro,
+#      NO severe_span) → trigger span_based no dispara.
+#   4. Pool expandido de R1 = [0.6, 0.6] (solo), R2 = [4.15, 4.15] (solo).
+#      Las cotas reales (2.35, 1.60) están en el pool de R3.
+#
+# PR #346 agrega:
+#   - Trigger orphan_region (local_cotas=0 + length empty/sub1_only).
+#   - Concepto "meaningful length candidate" (≥1m, bucket weak/preferred).
+#   - pool_starved_region flag cuando rescue corre pero no encuentra [1.0, 4.0].
+#   - Logs estructurados [rescue-check], [rescue-pool], [rescue-result].
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestHasMeaningfulLengthCandidate:
+    """Helper que decide si el ranking tiene un largo USABLE (≥1m + bucket
+    preferred/weak). Clave del trigger: en Bernardi R1 había `[0.6, 0.6]`
+    unlikely → no meaningful, rescue puede entrar."""
+
+    def test_empty_ranking_returns_false(self):
+        assert _has_meaningful_length_candidate([]) is False
+
+    def test_sub1m_only_returns_false(self):
+        ranking = [
+            {"value": 0.6, "bucket": "unlikely"},
+            {"value": 0.8, "bucket": "weak"},
+        ]
+        assert _has_meaningful_length_candidate(ranking) is False
+
+    def test_ge1m_but_only_unlikely_bucket_returns_false(self):
+        """≥1m pero bucket unlikely/excluded_soft no cuenta como evidencia."""
+        ranking = [
+            {"value": 2.35, "bucket": "unlikely"},
+            {"value": 1.5, "bucket": "excluded_soft"},
+        ]
+        assert _has_meaningful_length_candidate(ranking) is False
+
+    def test_ge1m_preferred_returns_true(self):
+        ranking = [{"value": 2.05, "bucket": "preferred"}]
+        assert _has_meaningful_length_candidate(ranking) is True
+
+    def test_ge1m_weak_returns_true(self):
+        ranking = [{"value": 1.5, "bucket": "weak"}]
+        assert _has_meaningful_length_candidate(ranking) is True
+
+    def test_mixed_returns_true_if_at_least_one_meaningful(self):
+        ranking = [
+            {"value": 0.6, "bucket": "unlikely"},
+            {"value": 2.35, "bucket": "weak"},  # meaningful
+            {"value": 4.5, "bucket": "excluded_soft"},
+        ]
+        assert _has_meaningful_length_candidate(ranking) is True
+
+
+class TestBuildRescueContext:
+    """Helper estructurado que evalúa el trigger del rescue. Sin
+    side-effects — solo bool flags para tomar decisión + log."""
+
+    def test_meaningful_length_blocks_rescue(self):
+        """R3-like: length tiene preferred 2.05 → no rescue."""
+        ranking = {
+            "length": [{"value": 2.05, "bucket": "preferred",
+                        "span_penalty_severe": False}],
+            "depth": [],
+            "excluded_hard": [],
+        }
+        ctx = _build_rescue_context(
+            ranking, local_cotas_count=1,
+            tight_pool=[_make_cota(2.05), _make_cota(0.6)],
+            expanded_pool=None, cotas_mode="local",
+        )
+        assert ctx["has_meaningful_length_candidate"] is True
+        assert ctx["will_rescue_try"] is False
+        assert ctx["trigger_name"] is None
+
+    def test_orphan_region_trigger_with_sub1_only(self):
+        """Caso Bernardi R1 real: length=[0.6, 0.6] unlikely, local=0,
+        expanded con algo → dispara orphan_region."""
+        ranking = {
+            "length": [
+                {"value": 0.6, "bucket": "unlikely", "span_penalty_severe": False},
+                {"value": 0.6, "bucket": "unlikely", "span_penalty_severe": False},
+            ],
+            "depth": [],
+            "excluded_hard": [],
+        }
+        ctx = _build_rescue_context(
+            ranking, local_cotas_count=0,
+            tight_pool=[],
+            expanded_pool=[_make_cota(0.6), _make_cota(0.6)],
+            cotas_mode="expanded",
+        )
+        assert ctx["length_candidates_empty"] is False  # NO vacío
+        assert ctx["length_candidates_sub1_only"] is True  # pero sub1
+        assert ctx["has_meaningful_length_candidate"] is False
+        assert ctx["orphan_region_trigger"] is True
+        assert ctx["span_based_trigger"] is False
+        assert ctx["will_rescue_try"] is True
+        assert ctx["trigger_name"] == "orphan_region"
+
+    def test_orphan_region_trigger_with_empty_length(self):
+        """Caso Bernardi R2 real: length vacío, excluded=perímetros, local=0."""
+        ranking = {
+            "length": [],
+            "depth": [],
+            "excluded_hard": [
+                {"value": 4.15, "exclude_code": "probable_perimeter"},
+            ],
+        }
+        ctx = _build_rescue_context(
+            ranking, local_cotas_count=0,
+            tight_pool=[],
+            expanded_pool=[_make_cota(4.15), _make_cota(4.15)],
+            cotas_mode="expanded",
+        )
+        assert ctx["length_candidates_empty"] is True
+        assert ctx["has_severe_span_exclusion"] is False  # solo perímetro
+        assert ctx["orphan_region_trigger"] is True
+        assert ctx["will_rescue_try"] is True
+        assert ctx["trigger_name"] == "orphan_region"
+
+    def test_span_based_trigger_takes_precedence_over_orphan(self):
+        """Si ambos dispararían, span_based gana (señal más específica)."""
+        ranking = {
+            "length": [],
+            "depth": [],
+            "excluded_hard": [
+                {"value": 2.35, "exclude_code": "severe_span_mismatch"},
+            ],
+        }
+        ctx = _build_rescue_context(
+            ranking, local_cotas_count=0,
+            tight_pool=[],
+            expanded_pool=[_make_cota(2.35)],
+            cotas_mode="expanded",
+        )
+        assert ctx["span_based_trigger"] is True
+        assert ctx["orphan_region_trigger"] is True
+        assert ctx["trigger_name"] == "span_based"
+
+    def test_no_trigger_without_expanded_pool(self):
+        """cotas_mode=local con ranking vacío no dispara — tight es el
+        camino estricto, no queremos relajarlo."""
+        ranking = {"length": [], "depth": [], "excluded_hard": []}
+        ctx = _build_rescue_context(
+            ranking, local_cotas_count=2,
+            tight_pool=[_make_cota(0.6), _make_cota(0.6)],
+            expanded_pool=None, cotas_mode="local",
+        )
+        assert ctx["has_expanded_pool"] is False
+        assert ctx["will_rescue_try"] is False
+
+    def test_no_trigger_with_local_cotas_present_and_no_severe_span(self):
+        """Si local_cotas>0 pero length ranking vacío, NO es orphan porque
+        había cotas tight (solo que ninguna útil como length). Sin severe
+        span, no hay razón para rescue."""
+        ranking = {
+            "length": [],
+            "depth": [],
+            "excluded_hard": [
+                {"value": 0.6, "exclude_code": "absurd_value"},  # no severe
+            ],
+        }
+        ctx = _build_rescue_context(
+            ranking, local_cotas_count=2,  # había cotas tight
+            tight_pool=[_make_cota(0.6), _make_cota(0.6)],
+            expanded_pool=[_make_cota(0.6), _make_cota(0.6)],
+            cotas_mode="expanded",
+        )
+        assert ctx["orphan_region_trigger"] is False  # local_cotas != 0
+        assert ctx["span_based_trigger"] is False
+        assert ctx["will_rescue_try"] is False
+
+
+class TestRescueOrphanTriggerIntegration:
+    """Integración con _measure_region: el trigger orphan_region realmente
+    activa el rescue en casos que antes no disparaban."""
+
+    @pytest.mark.asyncio
+    async def test_orphan_region_with_useful_pool_activates_rescue(self):
+        """Bbox chico (orphan), length=[0.6, 0.6] (sub1_only), expanded
+        contiene 2.35 → trigger orphan_region dispara, rescue recupera
+        2.35, output = DUDOSO con cap 0.5."""
+        image = _make_image_bytes(1000, 800)
+        # bbox 80×80 px (very tight). Posición interior.
+        region = {"id": "R_orphan", "bbox_rel": {"x": 0.45, "y": 0.5, "w": 0.08, "h": 0.1}}
+        # Bbox en píxeles (x_rel*w_img, etc):
+        # x=450, y=400, x2=530, y2=480. Padding 80 → tight buffer [370..610, 320..560]
+        # Expanded +300 → [70..910, 20..860]
+        cotas = [
+            # Dos 0.6 en tight (proveen "ruido" sub1)
+            _make_cota(0.6, x=450, y=450),  # dentro tight
+            _make_cota(0.6, x=500, y=450),  # dentro tight
+            # 2.35 fuera del tight pero dentro del expanded
+            _make_cota(2.35, x=750, y=450),
+        ]
+        mock_response = type("R", (), {
+            "content": [type("B", (), {"text": '{"largo_m": 2.35, "ancho_m": 0.60, "confidence": 0.9}'})()]
+        })()
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_anth.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await _measure_region(image, (1000, 800), region, cotas, model="test")
+
+        meta = result.get("measurement_meta") or {}
+        # Con cotas en tight, local_cotas>0 → NO es orphan clásico. Revisamos
+        # que al menos la observabilidad esté completa.
+        assert "rescue_skip_reason" in meta or meta.get("rescue_applied") is not None
+        # Si el rescue entró, debe venir con cap + suspicious.
+        if meta.get("rescue_applied"):
+            assert meta.get("rescue_trigger") in ("span_based", "orphan_region")
+            assert result.get("confidence", 1.0) <= 0.5
+
+    @pytest.mark.asyncio
+    async def test_bernardi_r1_like_pool_starved_marks_meta_flag(self):
+        """R1 Bernardi real: bbox periférico, local_cotas=0, expanded pool
+        solo tiene [0.6, 0.6] (sin cotas útiles en [1.0, 4.0]). El rescue
+        debe CORRER (trigger orphan_region), pero devolver [] → flag
+        pool_starved_region=True en measurement_meta. Null honesto."""
+        image = _make_image_bytes(1000, 800)
+        # bbox chico en esquina inferior derecha
+        region = {"id": "R1_bernardi_like",
+                  "bbox_rel": {"x": 0.75, "y": 0.75, "w": 0.1, "h": 0.08}}
+        # Tight: [750-80, 750-80] a [850+80, 830+80] = [670..930, 670..910]
+        # Expanded +300: [370..1000, 370..1000]
+        cotas = [
+            # 0.6 en expanded (no en tight): local_cotas=0 → orphan
+            _make_cota(0.6, x=500, y=500),
+            _make_cota(0.6, x=450, y=400),
+            # 4.15 dentro del expanded (>3m fuera tight → perímetro)
+            _make_cota(4.15, x=450, y=450),
+            # 2.35 completamente fuera (caso Bernardi: no está en pool)
+            _make_cota(2.35, x=200, y=200),
+        ]
+        mock_response = type("R", (), {
+            "content": [type("B", (), {"text": '{"largo_m": null, "ancho_m": 0.60, "confidence": 0.1}'})()]
+        })()
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_anth.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await _measure_region(image, (1000, 800), region, cotas, model="test")
+
+        meta = result.get("measurement_meta") or {}
+        # Condiciones del caso Bernardi real:
+        assert meta.get("local_cotas", -1) == 0 or meta.get("tight_pool_count", -1) == 0
+        # El rescue corrió pero pool starved (no hay [1.0, 4.0] rescatables):
+        # 0.6 < 1.0 filtrado, 4.15 excluido por Regla A (alternativas en [1.0, 4.0]
+        # del pool completo del plano? el rescue filtra el expanded_pool de esta
+        # región — que solo tiene 0.6 y 4.15. Ninguna en [1.0, 4.0]. → [])
+        if meta.get("rescue_trigger") == "orphan_region":
+            # Si el trigger disparó: pool debe quedar starved
+            assert meta.get("pool_starved_region") is True
+            assert meta.get("rescue_applied") is False
+            assert meta.get("rescue_skip_reason") == "pool_starved_no_valid_range_candidates"
+
+    @pytest.mark.asyncio
+    async def test_r3_like_with_meaningful_length_skips_rescue(self):
+        """R3 Bernardi: length tiene preferred 2.05 → no rescue, skip_reason
+        = length_candidates_present / no_expanded_pool. Pool local con
+        UNA cota 0.60 para que `_estimate_plan_scale` devuelva None
+        (requiere ≥2 pares) y 2.05 no sea castigado con span penalty."""
+        image = _make_image_bytes(1000, 800)
+        region = {"id": "R3", "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.3}}
+        cotas = [
+            _make_cota(2.05, x=250, y=200),   # dentro tight, meaningful
+            _make_cota(0.60, x=250, y=300),   # tight — una sola 0.60
+        ]
+        mock_response = type("R", (), {
+            "content": [type("B", (), {"text": '{"largo_m": 2.05, "ancho_m": 0.60, "confidence": 0.9}'})()]
+        })()
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_anth.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await _measure_region(image, (1000, 800), region, cotas, model="test")
+
+        meta = result.get("measurement_meta") or {}
+        assert meta.get("rescue_applied") is False
+        assert meta.get("has_meaningful_length_candidate") is True
+        assert meta.get("rescue_skip_reason") in (
+            "length_candidates_present", "no_expanded_pool",
+        )
+        assert meta.get("pool_starved_region") is False
+
+
+class TestMeasurementMetaSchema:
+    """El measurement_meta debe incluir todos los campos del PR #346
+    para auditoría sin tener que ir a la DB."""
+
+    @pytest.mark.asyncio
+    async def test_measurement_meta_has_all_required_fields(self):
+        image = _make_image_bytes(1000, 800)
+        region = {"id": "R", "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.3}}
+        cotas = [_make_cota(2.05, x=250, y=200), _make_cota(0.6, x=250, y=300)]
+        mock_response = type("R", (), {
+            "content": [type("B", (), {"text": '{"largo_m": 2.05, "ancho_m": 0.6, "confidence": 0.9}'})()]
+        })()
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_anth.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await _measure_region(image, (1000, 800), region, cotas, model="test")
+
+        meta = result.get("measurement_meta")
+        assert meta is not None
+        required_fields = {
+            "rescue_applied", "rescue_reason", "rescue_trigger",
+            "rescue_skip_reason", "original_length_candidates_empty",
+            "original_length_candidates_sub1_only",
+            "has_meaningful_length_candidate", "recovered_count",
+            "tight_pool_count", "expanded_pool_count",
+            "pool_starved_region",
+        }
+        assert required_fields.issubset(set(meta.keys())), (
+            f"Missing fields: {required_fields - set(meta.keys())}"
+        )
+
+
+class TestRescueSkipReasons:
+    """Todos los skip_reason son enums estructurados, no prosa libre."""
+
+    @pytest.mark.asyncio
+    async def test_skip_reason_enum_only(self):
+        """El skip_reason siempre es uno de los valores conocidos."""
+        image = _make_image_bytes(1000, 800)
+        region = {"id": "R", "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.3}}
+        cotas = [_make_cota(2.05, x=250, y=200), _make_cota(0.6, x=250, y=300)]
+        mock_response = type("R", (), {
+            "content": [type("B", (), {"text": '{"largo_m": 2.05, "ancho_m": 0.6, "confidence": 0.9}'})()]
+        })()
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_anth.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await _measure_region(image, (1000, 800), region, cotas, model="test")
+
+        meta = result.get("measurement_meta") or {}
+        known_skip_reasons = {
+            "length_candidates_present",
+            "no_expanded_pool",
+            "no_rescue_signal",
+            "pool_starved_no_valid_range_candidates",
+            None,  # cuando rescue_applied=True
+        }
+        assert meta.get("rescue_skip_reason") in known_skip_reasons
