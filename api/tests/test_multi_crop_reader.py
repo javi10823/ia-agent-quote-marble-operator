@@ -3580,3 +3580,262 @@ class TestMultiSectorAmbiguedadesPropagation:
             f"Contradicción brief/features de R3_isla_anafe (sector isla, "
             f"no-primero) debería aparecer. Got all: {all_texts}"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PR #353 — Deep expansion (+600px) como último intento cuando rescue
+# normal (+300) queda pool_starved
+#
+# Scope 5.2 del ADR #348. Solo dispara DESPUÉS de que _rescue_length_ranking
+# con pool +300 devolvió []. Cap confidence 0.35 (más estricto que rescue
+# normal 0.5). Criterio: mejorar casos tipo Bernardi R1 sin inventar en R2.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestDeepExpansionIntegration:
+    """Integración de deep expansion (+600px) con `_measure_region`."""
+
+    @pytest.mark.asyncio
+    async def test_bernardi_r1_like_deep_expansion_resolves(self):
+        """Caso canónico del ADR #348: bbox chico en zona periférica sin
+        cotas en +300, pero SÍ hay una cota útil en +600. Deep expansion
+        la recupera y marca mode=expanded_deep."""
+        image = _make_image_bytes(1000, 800)
+        # Bbox simula R1 de Bernardi en proporción: pequeño en esquina.
+        # x_rel=0.2, y_rel=0.65, w_rel=0.12, h_rel=0.05
+        # En px: x=200, y=520, x2=320, y2=560 → con padding 80: [120, 440, 400, 640]
+        # Tight pool (con region padding 80) tiene rango x∈[120,400], y∈[440,640]
+        # Expanded +300 → x∈[-180+120, 400+300]=[0, 700], y∈[440-300, 640+300]=[140, 940]
+        # Deep +600 → x∈[0, 1000], y∈[0, 800] (toda la imagen).
+        region = {
+            "id": "R1_bernardi_like",
+            "bbox_rel": {"x": 0.2, "y": 0.65, "w": 0.12, "h": 0.05},
+        }
+        cotas = [
+            # Tight pool: 0 cotas (todas fuera del bbox tight).
+            # Expanded +300: 2 cotas 0.60 (suficiente para entrar al expanded).
+            _make_cota(0.60, x=100, y=600),   # inside expanded, fuera tight
+            _make_cota(0.60, x=680, y=600),   # inside expanded, fuera tight
+            # Cota ÚTIL (2.35) solo en deep pool (+600): fuera de expanded.
+            # x=50 > ex_x=0 pero y=100 < ex_y=140 → fuera expanded.
+            # Con deep +600 (rango y∈[0, 800]): y=100 entra ✓.
+            _make_cota(2.35, x=50, y=100),
+        ]
+        # Mock LLM response — elige la 2.35 rescatada.
+        mock_response = type("R", (), {
+            "content": [type("B", (), {
+                "text": '{"largo_m": 2.35, "ancho_m": 0.60, "confidence": 0.85}'
+            })()]
+        })()
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_anth.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await _measure_region(
+                image, (1000, 800), region, cotas, model="test",
+            )
+
+        meta = result.get("measurement_meta") or {}
+        # Deep expansion APLICÓ — rescue resuelto por +600.
+        if meta.get("deep_expansion_applied"):
+            assert result.get("_cotas_mode") == "expanded_deep"
+            assert meta.get("rescue_applied") is True
+            assert meta.get("rescue_trigger") == "deep_expansion"
+            assert meta.get("pool_starved_region") is False
+            assert meta.get("deep_pool_count", 0) >= 3
+            # Cap 0.35 aplicado.
+            assert result.get("confidence", 1.0) <= 0.35
+            # Suspicious reason específico de deep.
+            susp = result.get("suspicious_reasons") or []
+            assert any("deep_expansion" in s for s in susp), (
+                f"Falta suspicious reason de deep_expansion. Got: {susp}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_bernardi_r2_like_deep_expansion_stays_starved(self):
+        """R2 Bernardi real: expanded_pool=[4.15, 4.15] — perímetros.
+        Incluso con deep +600 no aparecen cotas en [1.0, 4.0] porque
+        las cotas útiles del plano están fuera del rango vertical de
+        R2. Deep expansion corre pero no encuentra nada → pool_starved
+        se mantiene. CRÍTICO: no inventar."""
+        image = _make_image_bytes(1000, 800)
+        # R2 Bernardi-like: bbox vertical en columna derecha.
+        # x=0.78 (px=780) w=0.08 (80px) → x2=860. Con padding 80: [700, 940].
+        # Deep +600 → x∈[100, 1000].
+        region = {
+            "id": "R2_bernardi_like",
+            "bbox_rel": {"x": 0.78, "y": 0.45, "w": 0.08, "h": 0.35},
+        }
+        cotas = [
+            # Solo hay 4.15 en expanded (perímetros). Deep agrega más
+            # cotas pero ninguna útil en [1.0, 4.0].
+            _make_cota(4.15, x=900, y=500),
+            _make_cota(4.15, x=900, y=600),
+            # Una cota fuera de rango deep (no entra ni con +600).
+            _make_cota(2.35, x=50, y=100),  # x=50 < deep_x=100 → fuera.
+        ]
+        mock_response = type("R", (), {
+            "content": [type("B", (), {
+                "text": '{"largo_m": null, "ancho_m": null, "confidence": 0.0}'
+            })()]
+        })()
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_anth.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await _measure_region(
+                image, (1000, 800), region, cotas, model="test",
+            )
+
+        meta = result.get("measurement_meta") or {}
+        # Si el trigger disparó, deep expansion CORRIÓ pero NO resolvió.
+        if meta.get("rescue_trigger") in ("orphan_region", "span_based"):
+            # Deep no se aplicó (no había cotas útiles en deep pool).
+            assert meta.get("deep_expansion_applied") is False
+            # Pool_starved se mantiene.
+            assert meta.get("pool_starved_region") is True
+            # Largo sigue null — no se inventa.
+            assert result.get("largo_m") is None
+            # Mode NO pasa a expanded_deep.
+            assert result.get("_cotas_mode") != "expanded_deep"
+
+    @pytest.mark.asyncio
+    async def test_r3_clean_does_not_trigger_deep_expansion(self):
+        """R3 Bernardi tiene cotas locales — nunca entra al rescue ni
+        al deep expansion. No regresión."""
+        image = _make_image_bytes(1000, 800)
+        region = {
+            "id": "R3_clean",
+            "bbox_rel": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.3},
+        }
+        cotas = [
+            _make_cota(2.05, x=250, y=200),   # dentro tight
+            _make_cota(0.60, x=250, y=300),   # dentro tight
+        ]
+        mock_response = type("R", (), {
+            "content": [type("B", (), {
+                "text": '{"largo_m": 2.05, "ancho_m": 0.60, "confidence": 0.9}'
+            })()]
+        })()
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_anth.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await _measure_region(
+                image, (1000, 800), region, cotas, model="test",
+            )
+
+        meta = result.get("measurement_meta") or {}
+        # NO debe haber deep expansion para regiones sanas.
+        assert meta.get("deep_expansion_applied") is False
+        assert meta.get("rescue_applied") is False
+        assert result.get("_cotas_mode") != "expanded_deep"
+        # La medida sigue normal.
+        assert result.get("largo_m") == 2.05
+
+    def test_guardrail_caps_expanded_deep_confidence_at_035(self):
+        """VLM devuelve 0.80, cotas_mode=expanded_deep → cap duro 0.35
+        (más estricto que rescue normal 0.5)."""
+        ranking = {
+            "length": [
+                {"value": 2.35, "score": 30, "bucket": "weak", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 70, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 2.35,
+            "ancho_m": 0.60,
+            "confidence": 0.80,
+        }
+        result = _apply_guardrails(vlm_output, ranking, cotas_mode="expanded_deep")
+        assert result["confidence"] == 0.35
+        susp = result.get("suspicious_reasons") or []
+        assert any("expanded_deep" in s for s in susp)
+
+    def test_guardrail_expanded_rescue_unchanged(self):
+        """No regresión: cap de expanded_rescue sigue siendo 0.5."""
+        ranking = {
+            "length": [{"value": 2.35, "score": 30, "bucket": "weak",
+                        "reasons": []}],
+            "depth": [{"value": 0.60, "score": 70, "bucket": "preferred",
+                       "reasons": []}],
+            "excluded_hard": [],
+        }
+        vlm_output = {"largo_m": 2.35, "ancho_m": 0.60, "confidence": 0.80}
+        result = _apply_guardrails(vlm_output, ranking, cotas_mode="expanded_rescue")
+        assert result["confidence"] == 0.5
+
+    @pytest.mark.asyncio
+    async def test_deep_pool_same_size_as_prev_skips_rescue(self):
+        """Si deep pool no agrega cotas respecto al pool previo (+300),
+        no se intenta rescue deep — no vale la pena."""
+        image = _make_image_bytes(1000, 800)
+        # Bbox muy chico. Pool expandido +300 = todas las cotas = pool deep.
+        region = {
+            "id": "R_small",
+            "bbox_rel": {"x": 0.4, "y": 0.4, "w": 0.05, "h": 0.05},
+        }
+        cotas = [
+            _make_cota(0.60, x=390, y=390),
+            _make_cota(0.60, x=410, y=410),
+        ]
+        mock_response = type("R", (), {
+            "content": [type("B", (), {
+                "text": '{"largo_m": null, "ancho_m": 0.60, "confidence": 0.0}'
+            })()]
+        })()
+        with patch(
+            "app.modules.quote_engine.multi_crop_reader.anthropic.AsyncAnthropic"
+        ) as mock_anth:
+            mock_anth.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await _measure_region(
+                image, (1000, 800), region, cotas, model="test",
+            )
+        meta = result.get("measurement_meta") or {}
+        # Deep expansion no agregó cotas → skipped.
+        assert meta.get("deep_expansion_applied") is False
+
+
+class TestDeepExpansionE2EAggregate:
+    """E2E via `_aggregate`: resultado con deep_expansion aparece en
+    sectores + ambigüedades correctamente."""
+
+    def test_deep_expansion_region_dudoso_with_specific_suspicious(self):
+        """Región que pasó por deep_expansion tiene suspicious con
+        'deep_expansion' y status DUDOSO (ya que cap 0.35 < confidence
+        umbral)."""
+        topology = {
+            "view_type": "planta",
+            "regions": [{
+                "id": "R1",
+                "bbox_rel": {"x": 0.2, "y": 0.65, "w": 0.12, "h": 0.05},
+                "features": {"touches_wall": True, "cooktop_groups": 1,
+                             "sink_simple": True},
+            }],
+        }
+        region_results = [{
+            "region_id": "R1",
+            "largo_m": 2.35,
+            "ancho_m": 0.60,
+            "confidence": 0.35,
+            "_cotas_mode": "expanded_deep",
+            "suspicious_reasons": [
+                "cotas_mode=expanded_deep → cap confidence 0.35",
+                "topology_bbox_undersized_deep_expansion — bbox del topology muy por fuera del tramo real; cota recuperada con pool +600px (puede pertenecer a tramo vecino). REVISAR VISUALMENTE antes de confirmar.",
+            ],
+        }]
+        result = _aggregate(topology, region_results)
+        cocina = next(s for s in result["sectores"] if s["tipo"] == "cocina")
+        tramo = cocina["tramos"][0]
+        # Valor se preserva.
+        assert tramo["largo_m"]["valor"] == 2.35
+        # Status = DUDOSO porque hay suspicious_reasons.
+        assert tramo["largo_m"]["status"] == "DUDOSO"
+        # En ambigüedades aparece el mensaje de deep_expansion.
+        amb_texts = " ".join(
+            a.get("texto") or "" for a in cocina.get("ambiguedades") or []
+        )
+        assert "deep_expansion" in amb_texts or "REVISAR VISUALMENTE" in amb_texts
