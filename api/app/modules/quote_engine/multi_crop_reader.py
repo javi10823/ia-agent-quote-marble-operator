@@ -986,15 +986,27 @@ def _format_ranking_for_prompt(ranking: dict) -> str:
     # weak/unlikely (que por construcción del rescue están ahí).
     if ranking.get("_rescue_applied"):
         lines.append("")
-        lines.append(
-            "⚠️ ATENCIÓN: el bbox del topology puede estar SUBDIMENSIONADO "
-            "respecto al tramo real. Las candidatas de abajo fueron "
-            "RESCATADAS — pasaron hard excludes (absurdos, perímetro) "
-            "pero NO el filtro geométrico de span (porque el bbox no es "
-            "confiable). Usá evidencia visual del crop para elegir. Si "
-            "ninguna matchea visualmente al tramo, devolvé null. "
-            "Confidence máxima en este modo: 0.5."
-        )
+        if ranking.get("_deep_expansion_applied"):
+            # PR #353 — aviso MÁS estricto que rescue normal. El pool
+            # viene de +600px, aumenta riesgo de cotas de tramo vecino.
+            lines.append(
+                "⚠️ ATENCIÓN: último intento con DEEP EXPANSION (+600px "
+                "respecto al bbox). El pool viene de una zona AMPLIA "
+                "alrededor del tramo — las candidatas pueden pertenecer "
+                "a tramos vecinos. Usá evidencia visual estricta. Si "
+                "ninguna matchea SIN DUDA al tramo del crop, devolvé "
+                "null. Confidence máxima en este modo: 0.35."
+            )
+        else:
+            lines.append(
+                "⚠️ ATENCIÓN: el bbox del topology puede estar SUBDIMENSIONADO "
+                "respecto al tramo real. Las candidatas de abajo fueron "
+                "RESCATADAS — pasaron hard excludes (absurdos, perímetro) "
+                "pero NO el filtro geométrico de span (porque el bbox no es "
+                "confiable). Usá evidencia visual del crop para elegir. Si "
+                "ninguna matchea visualmente al tramo, devolvé null. "
+                "Confidence máxima en este modo: 0.5."
+            )
     lines.append("")
     lines.extend(_format_section("CANDIDATAS PARA LARGO", ranking["length"]))
     lines.append("")
@@ -1174,6 +1186,19 @@ def _apply_guardrails(
         if confidence > 0.5:
             confidence = 0.5
             suspicious.append("cotas_mode=expanded_rescue → cap confidence 0.5")
+
+    # ── Cap por cotas_mode=expanded_deep (PR #353) ───────────────────
+    # Deep expansion +600px. Pool ampliado hasta el último intento —
+    # posibilidad real de capturar cota de otra región cercana. Cap
+    # MÁS estricto aún (0.35) para garantizar que el resultado siempre
+    # cae DUDOSO con señal visible al operador.
+    # Diseño: evitar que deep_expansion se vuelva default silencioso.
+    # Si pasa a ser la norma (no excepción), los logs lo muestran y
+    # podemos revertir sin regresión.
+    if cotas_mode == "expanded_deep":
+        if confidence > 0.35:
+            confidence = 0.35
+            suspicious.append("cotas_mode=expanded_deep → cap confidence 0.35")
 
     vlm_output["confidence"] = confidence
     if suspicious:
@@ -1363,6 +1388,8 @@ async def _measure_region(
     pool_starved_region = False
     rescue_trigger_used: str | None = None
     rescue_skip_reason: str | None = None
+    deep_expansion_applied = False
+    deep_pool_count = 0
 
     if rescue_context["will_rescue_try"]:
         rescued = _rescue_length_ranking(
@@ -1383,19 +1410,90 @@ async def _measure_region(
                 len(rescued), rescued[0]["value"],
             )
         else:
-            # Rescue disparó pero pool no tenía materia prima en
-            # [1.0, 4.0]. Este es el caso Bernardi real — diagnóstico
-            # explícito, no "fallo silencioso".
-            pool_starved_region = True
-            rescue_trigger_used = rescue_context["trigger_name"]
-            rescue_skip_reason = "pool_starved_no_valid_range_candidates"
+            # Rescue con pool +300 no tenía materia prima en [1.0, 4.0].
+            # PR #353 — Intento FINAL con deep expansion (+600px).
+            #
+            # Motivación: ADR #348 (cross-region NO-GO) identificó que el
+            # topology VLM en Bernardi puso bboxes periféricos sin cotas
+            # cerca. Simulación numérica del ADR verificó que R1 Bernardi
+            # (bbox [1737,2280]-[2977,2560]) SÍ captura la cota 2.35 con
+            # expansion +600px (rango y=[1301, 3542]; cota y=1458 entra),
+            # mientras que con +300 quedaba fuera.
+            #
+            # Es scope 5.2 del ADR. Riesgo controlado:
+            # - Solo corre si pool_starved_region=True (último intento).
+            # - Cap confidence 0.35 (más estricto que rescue 0.5).
+            # - Suspicious reason "deep_expansion" → DUDOSO automático.
+            # - Si deep pool tampoco tiene candidatas válidas → mantener
+            #   pool_starved y null honesto (no empeorar).
+            DEEP_EXPAND_PX = 600
+            dx = max(0, x - DEEP_EXPAND_PX)
+            dy = max(0, y - DEEP_EXPAND_PX)
+            dx2 = min(img_w, x2 + DEEP_EXPAND_PX)
+            dy2 = min(img_h, y2 + DEEP_EXPAND_PX)
+            deep_pool: list[Cota] = [
+                c for c in candidate_cotas
+                if dx <= c.x <= dx2 and dy <= c.y <= dy2
+            ]
+            deep_pool_count = len(deep_pool)
+
+            # Log intento: qué pool se formó con +600.
             logger.info(
-                "[multi-crop/rescue-result] region=%s status=pool_starved "
-                "trigger=%s reason=%s expanded_values=%s — keeping null honesto",
-                region.get("id"), rescue_trigger_used, rescue_skip_reason,
-                sorted([round(c.value, 2) for c in cotas_for_llm])
-                if cotas_mode == "expanded" else None,
+                "[multi-crop/deep-expansion] region=%s attempted "
+                "prev_pool_count=%d deep_pool_count=%d deep_values=%s",
+                region.get("id"),
+                len(cotas_for_llm),
+                deep_pool_count,
+                sorted([round(c.value, 2) for c in deep_pool]),
             )
+
+            # Si el deep pool no agrega cotas nuevas respecto al anterior,
+            # no vale la pena intentar (mismo resultado).
+            if deep_pool_count > len(cotas_for_llm):
+                deep_rescued = _rescue_length_ranking(
+                    deep_pool, region_bbox_px, orientation, image_size,
+                )
+            else:
+                deep_rescued = []
+                logger.info(
+                    "[multi-crop/deep-expansion] region=%s skipped — "
+                    "deep pool no agrega cotas (%d == prev %d)",
+                    region.get("id"), deep_pool_count, len(cotas_for_llm),
+                )
+
+            if deep_rescued:
+                # Deep expansion resolvió. Reset pool_starved.
+                ranking["length"] = deep_rescued
+                ranking["_rescue_applied"] = True
+                ranking["_deep_expansion_applied"] = True
+                cotas_mode = "expanded_deep"
+                rescue_applied = True
+                deep_expansion_applied = True
+                rescue_recovered_count = len(deep_rescued)
+                rescue_trigger_used = "deep_expansion"
+                # cotas_for_llm pasa a ser el deep pool — los logs
+                # region-detail y el LLM ven el pool ampliado.
+                cotas_for_llm = deep_pool
+                logger.info(
+                    "[multi-crop/deep-expansion] region=%s status=resolved "
+                    "recovered=%d top=%.2f mode=expanded_deep",
+                    region.get("id"), len(deep_rescued), deep_rescued[0]["value"],
+                )
+            else:
+                # Ni siquiera deep pool tenía candidates válidas —
+                # mantener pool_starved. No inventamos.
+                pool_starved_region = True
+                rescue_trigger_used = rescue_context["trigger_name"]
+                rescue_skip_reason = "pool_starved_no_valid_range_candidates"
+                logger.info(
+                    "[multi-crop/rescue-result] region=%s status=pool_starved "
+                    "trigger=%s reason=%s expanded_values=%s deep_pool_count=%d "
+                    "— keeping null honesto",
+                    region.get("id"), rescue_trigger_used, rescue_skip_reason,
+                    sorted([round(c.value, 2) for c in cotas_for_llm])
+                    if cotas_mode == "expanded" else None,
+                    deep_pool_count,
+                )
     else:
         # Trigger no disparó — determinar por qué para logs/debug.
         if rescue_context["has_meaningful_length_candidate"]:
@@ -1500,8 +1598,12 @@ async def _measure_region(
     # el topology asigna mal las cotas a las regiones).
     parsed["measurement_meta"] = {
         "rescue_applied": rescue_applied,
-        "rescue_reason": "topology_bbox_undersized" if rescue_applied else None,
-        "rescue_trigger": rescue_trigger_used,  # "span_based" | "orphan_region" | None
+        "rescue_reason": (
+            "topology_bbox_undersized_deep_expansion" if deep_expansion_applied
+            else "topology_bbox_undersized" if rescue_applied
+            else None
+        ),
+        "rescue_trigger": rescue_trigger_used,  # "span_based" | "orphan_region" | "deep_expansion" | None
         "rescue_skip_reason": rescue_skip_reason,  # enum estructurado
         "original_length_candidates_empty": original_length_candidates_empty,
         "original_length_candidates_sub1_only": original_length_candidates_sub1_only,
@@ -1510,6 +1612,9 @@ async def _measure_region(
         "tight_pool_count": rescue_context["tight_pool_count"],
         "expanded_pool_count": rescue_context["expanded_pool_count"],
         "pool_starved_region": pool_starved_region,
+        # PR #353 — señales específicas de deep expansion.
+        "deep_expansion_applied": deep_expansion_applied,
+        "deep_pool_count": deep_pool_count,
     }
 
     # PR 2b — Guardrails post-LLM apoyados en el RANKING determinístico
@@ -1536,6 +1641,22 @@ async def _measure_region(
             "topology_bbox_undersized_rescue — bbox del topology "
             "posiblemente chico; cota recuperada fuera del matching geométrico "
             "estricto, requiere revisión visual"
+        )
+        parsed["suspicious_reasons"] = _susp
+
+    # PR #353 — suspicious específico cuando deep_expansion resolvió el
+    # caso. Más grave que rescue normal: pool viene de +600px, puede
+    # tener cotas de tramos vecinos. Nombre del prefijo consistente con
+    # los del `_semantic_sanity_checks` para que el aggregator lo pueda
+    # identificar si se quisiera — por ahora lo dejamos como texto
+    # plano que cae al bullet general del PR #351.
+    if cotas_mode == "expanded_deep":
+        _susp = list(parsed.get("suspicious_reasons") or [])
+        _susp.append(
+            "topology_bbox_undersized_deep_expansion — bbox del topology "
+            "muy por fuera del tramo real; cota recuperada con pool +600px "
+            "(puede pertenecer a tramo vecino). REVISAR VISUALMENTE antes "
+            "de confirmar."
         )
         parsed["suspicious_reasons"] = _susp
 
