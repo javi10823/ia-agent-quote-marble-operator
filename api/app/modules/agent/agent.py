@@ -392,6 +392,9 @@ async def _run_dual_read(
                     draw_bytes,
                     cotas=extracted_cotas or [],
                     brief_text=user_message,
+                    plan_hash=_plan_hash,
+                    quote_id=quote_id,
+                    db=db,
                 )
                 if not _multi_result.get("error"):
                     _dual_result = _multi_result

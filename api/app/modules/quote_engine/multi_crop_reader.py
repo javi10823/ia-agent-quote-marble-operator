@@ -191,7 +191,11 @@ async def _call_global_topology(
     image_bytes: bytes,
     model: str,
     brief_text: str = "",
+    extra_user_text: str = "",
 ) -> dict:
+    """Llama al VLM para obtener topology. `extra_user_text` es usado por
+    el retry cuando el primer topology contradijo el brief — se agrega
+    como bloque adicional para guiar al LLM."""
     client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
     user_blocks = []
     if brief_text and brief_text.strip():
@@ -214,6 +218,8 @@ async def _call_global_topology(
                 f"{hint_text}"
             ),
         })
+    if extra_user_text:
+        user_blocks.append({"type": "text", "text": extra_user_text})
     user_blocks.append({
         "type": "text",
         "text": "Identificá la topología del plano. Devolvé SOLO JSON.",
@@ -1389,6 +1395,300 @@ def _aggregate(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Plan B — Cache global por plan_hash + retry condicional + instability
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Regex reusadas del detector de PR 2c.
+_BRIEF_NEGATES_ANAFE = _BRIEF_ANAFE_NEGATED  # alias, ya está arriba en este módulo
+_BRIEF_DOUBLE_SINK = re.compile(
+    r"\b(doble\s+(bacha|pileta)|2\s+bachas|pileta\s+doble)\b",
+    re.IGNORECASE,
+)
+
+
+def detect_strong_contradictions(topology: dict, brief_text: str) -> list[str]:
+    """Contradicciones FUERTES topology vs brief. Solo estas disparan
+    retry/bypass. Señales débiles quedan como ambigüedades (no pagan
+    tokens extra).
+
+    Reglas:
+    - Count mismatch: brief sugiere N explícito Y topology devolvió < N.
+    - Brief niega anafe/hornallas/cooktop, topology tiene cooktop_groups>0.
+    - Brief dice pileta doble, topology no detectó sink_double en ninguna.
+    """
+    strong: list[str] = []
+    brief = brief_text or ""
+    regions = topology.get("regions") or []
+    n_regions = len(regions)
+
+    # Regla A — count mismatch
+    expected = _infer_expected_region_count(brief)
+    if expected and n_regions < expected["count"]:
+        strong.append(
+            f"count_mismatch: brief sugiere {expected['count']} tramos "
+            f"({expected['description']}), topology devolvió {n_regions}"
+        )
+
+    # Regla B — brief niega anafe explícito pero topology afirma
+    if _BRIEF_NEGATES_ANAFE.search(brief):
+        for r in regions:
+            features = r.get("features") or {}
+            if (features.get("cooktop_groups") or 0) > 0:
+                strong.append(
+                    f"brief_negates_anafe_but_topology_has_cooktop: "
+                    f"region {r.get('id')} cooktop_groups="
+                    f"{features.get('cooktop_groups')}"
+                )
+                break
+
+    # Regla C — brief dice pileta doble, topology no la tiene en ninguna
+    if _BRIEF_DOUBLE_SINK.search(brief):
+        has_double = any(
+            (r.get("features") or {}).get("sink_double") for r in regions
+        )
+        if not has_double:
+            strong.append(
+                "brief_mentions_double_sink_but_topology_has_none"
+            )
+
+    return strong
+
+
+def _iou_bbox_rel(bb1: dict, bb2: dict) -> float:
+    """IoU (intersection over union) de dos bbox_rel {x,y,w,h} normalizados
+    en 0..1. Retorna 0 si alguno está vacío."""
+    if not bb1 or not bb2:
+        return 0.0
+    x1, y1 = bb1.get("x", 0), bb1.get("y", 0)
+    w1, h1 = bb1.get("w", 0), bb1.get("h", 0)
+    x2, y2 = bb2.get("x", 0), bb2.get("y", 0)
+    w2, h2 = bb2.get("w", 0), bb2.get("h", 0)
+    # Intersection
+    ix = max(0.0, min(x1 + w1, x2 + w2) - max(x1, x2))
+    iy = max(0.0, min(y1 + h1, y2 + h2) - max(y1, y2))
+    intersection = ix * iy
+    if intersection <= 0:
+        return 0.0
+    union = (w1 * h1) + (w2 * h2) - intersection
+    return intersection / union if union > 0 else 0.0
+
+
+def _topologies_diverge(
+    t1: dict, t2: dict, iou_threshold: float = 0.5,
+) -> bool:
+    """True si dos topologies del mismo plan_hash difieren materialmente.
+
+    Sin pairing semántico — orden importa. Si el orden cambia, también
+    cuenta como divergencia (útil señal de ruido del VLM)."""
+    r1 = t1.get("regions") or []
+    r2 = t2.get("regions") or []
+    if len(r1) != len(r2):
+        return True
+    for a, b in zip(r1, r2):
+        if _iou_bbox_rel(a.get("bbox_rel") or {}, b.get("bbox_rel") or {}) < iou_threshold:
+            return True
+    return False
+
+
+async def _get_or_build_topology(
+    db,
+    plan_hash: str | None,
+    quote_id: str | None,
+    image_bytes: bytes,
+    brief_text: str,
+    model: str,
+) -> tuple[dict, dict]:
+    """Entry point del cache+retry. Devuelve `(topology, meta)` donde:
+    - topology: el dict a usar para la fase de medición.
+    - meta: info para loggear / persistir en quote_breakdown.topology_cache_meta
+      (from_cache, cache_source_quote_id, replaced_cache, retry_failed,
+       stability_status al terminar).
+
+    Si `db` o `plan_hash` no están disponibles → se saltea cache por
+    completo (fallback a comportamiento previo, una sola llamada).
+
+    Si el cache existente ya está marcado como `unstable`, NO intentamos
+    bypass/retry (evita loop caro). Usamos cache + marcamos review.
+    """
+    from app.models.plan_topology_cache import PlanTopologyCache
+    from sqlalchemy import select as sql_select
+
+    meta: dict = {
+        "plan_hash": plan_hash,
+        "from_cache": False,
+        "cache_source_quote_id": None,
+        "replaced_cache": False,
+        "retry_failed": False,
+        "stability_status": "stable",
+    }
+
+    if not (plan_hash and db):
+        topology = await _call_global_topology(image_bytes, model, brief_text)
+        meta["note"] = "skipped_cache_missing_hash_or_db"
+        return topology, meta
+
+    # ── Lookup cache ────────────────────────────────────────────────
+    cached_row: PlanTopologyCache | None = None
+    try:
+        r = await db.execute(
+            sql_select(PlanTopologyCache).where(
+                PlanTopologyCache.plan_hash == plan_hash
+            )
+        )
+        cached_row = r.scalar_one_or_none()
+    except Exception as e:
+        logger.warning(f"[topology-cache] lookup failed: {e}, proceding without cache")
+        cached_row = None
+
+    if cached_row is not None:
+        cached_topology = dict(cached_row.topology_json or {})
+        cached_status = cached_row.stability_status or "stable"
+        meta["from_cache"] = True
+        meta["cache_source_quote_id"] = cached_row.source_quote_id
+        meta["stability_status"] = cached_status
+        logger.info(
+            f"[topology-cache] HIT plan_hash={plan_hash} "
+            f"source_quote_id={cached_row.source_quote_id} "
+            f"status={cached_status} n_regions={cached_row.n_regions}"
+        )
+
+        # Si el hash ya está marcado como unstable, NO reintentamos —
+        # usamos cache + marcamos review. Evita loop de retry en planos
+        # que ya demostraron ser problemáticos.
+        if cached_status == "unstable":
+            logger.info(
+                f"[topology-cache] hash marked unstable — using cache "
+                "as-is, review flag will be set"
+            )
+            return cached_topology, meta
+
+        # Si el cache contradice fuerte el brief, intentamos un fresh retry.
+        contradictions = detect_strong_contradictions(cached_topology, brief_text)
+        if not contradictions:
+            return cached_topology, meta
+
+        logger.info(
+            f"[topology-cache] hit but contradicts brief "
+            f"({len(contradictions)} issues) — bypass cache for fresh retry: "
+            f"{contradictions[0][:80]}"
+        )
+        retry_hint = (
+            "Tu respuesta cacheada anterior contradijo el brief del operador: "
+            + "; ".join(contradictions[:2])
+            + ". Revisá la segmentación teniendo eso en cuenta."
+        )
+        try:
+            fresh = await _call_global_topology(
+                image_bytes, model, brief_text, extra_user_text=retry_hint,
+            )
+        except Exception as e:
+            logger.warning(f"[topology-cache] fresh retry raised: {e}")
+            fresh = {"error": f"retry_exception: {e}"}
+
+        if fresh.get("error"):
+            # Retry falló — usar cache pero marcar explícito.
+            meta["retry_failed"] = True
+            logger.warning(
+                f"[topology-cache] retry_failed=true reason={fresh['error']} "
+                f"fallback_to=cache"
+            )
+            return cached_topology, meta
+
+        # Evaluar cuál es mejor: el que tiene menos contradicciones fuertes.
+        contradictions_fresh = detect_strong_contradictions(fresh, brief_text)
+        if len(contradictions_fresh) >= len(contradictions):
+            logger.info(
+                f"[topology-cache] fresh retry also contradicts "
+                f"({len(contradictions_fresh)} vs {len(contradictions)}) "
+                "— keep cache"
+            )
+            meta["retry_failed"] = False  # funcionó técnicamente, solo no mejoró
+            return cached_topology, meta
+
+        # Fresh gana. Actualizar cache global (posible marcar unstable si
+        # divergió materialmente del cached).
+        meta["replaced_cache"] = True
+        diverges = _topologies_diverge(cached_topology, fresh)
+        new_status = "unstable" if diverges else "stable"
+        meta["stability_status"] = new_status
+        await _persist_cache(
+            db, plan_hash, fresh, quote_id or cached_row.source_quote_id,
+            diverged=diverges, prev_row=cached_row,
+        )
+        # Incluir metadata al snapshot perdedor en quote_breakdown (caller)
+        meta["alternate_topology_loser"] = cached_topology
+        return fresh, meta
+
+    # ── Cache miss: fresh call + persistir ───────────────────────────
+    logger.info(f"[topology-cache] MISS plan_hash={plan_hash} — fresh call")
+    fresh = await _call_global_topology(image_bytes, model, brief_text)
+    if fresh.get("error"):
+        return fresh, meta
+
+    meta["from_cache"] = False
+    # Persistir nuevo cache (stable por default cuando no había anterior)
+    if quote_id:
+        await _persist_cache(
+            db, plan_hash, fresh, quote_id, diverged=False, prev_row=None,
+        )
+    return fresh, meta
+
+
+async def _persist_cache(
+    db,
+    plan_hash: str,
+    topology: dict,
+    source_quote_id: str,
+    *,
+    diverged: bool,
+    prev_row,
+) -> None:
+    """Upsert del cache. Si prev_row existe, actualiza in-place. Si diverged,
+    marca stability_status=unstable y bump divergence_count."""
+    from app.models.plan_topology_cache import PlanTopologyCache
+    from sqlalchemy import update as sql_update
+    n_regions = len(topology.get("regions") or [])
+    try:
+        if prev_row is None:
+            new_row = PlanTopologyCache(
+                plan_hash=plan_hash,
+                topology_json=topology,
+                stability_status="stable",
+                n_regions=n_regions,
+                divergence_count=0,
+                source_quote_id=source_quote_id,
+            )
+            db.add(new_row)
+            await db.commit()
+            logger.info(
+                f"[topology-cache] persisted new plan_hash={plan_hash} "
+                f"source_quote_id={source_quote_id} n_regions={n_regions}"
+            )
+            return
+        # Update existing row
+        new_status = "unstable" if diverged else prev_row.stability_status
+        new_divergence = (prev_row.divergence_count or 0) + (1 if diverged else 0)
+        await db.execute(
+            sql_update(PlanTopologyCache)
+            .where(PlanTopologyCache.plan_hash == plan_hash)
+            .values(
+                topology_json=topology,
+                stability_status=new_status,
+                n_regions=n_regions,
+                divergence_count=new_divergence,
+                source_quote_id=source_quote_id,
+            )
+        )
+        await db.commit()
+        logger.info(
+            f"[topology-cache] updated plan_hash={plan_hash} "
+            f"status={new_status} divergence_count={new_divergence}"
+        )
+    except Exception as e:
+        logger.warning(f"[topology-cache] persist failed: {e}, non-blocking")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1397,11 +1697,19 @@ async def read_plan_multi_crop(
     cotas: list[Cota],
     brief_text: str = "",
     model: str = None,
+    *,
+    plan_hash: str | None = None,
+    quote_id: str | None = None,
+    db=None,
 ) -> dict:
     """Drop-in replacement de `dual_read_crop` con pipeline multi-crop.
 
-    Retorna el mismo shape JSON. Si falla la fase global, devuelve
-    `{"error": ...}` y el caller debería caer al pipeline legacy.
+    PR Plan B: si `plan_hash` + `db` están presentes, usa cache global
+    (tabla `plan_topology_cache`) para reusar topology entre quotes.
+    Sin esos params funciona como antes (sin cache).
+
+    Retorna el mismo shape JSON + `topology_cache_meta` para que el caller
+    lo guarde en `quote_breakdown` como traza.
     """
     _model = model or settings.ANTHROPIC_MODEL
 
@@ -1416,8 +1724,10 @@ async def read_plan_multi_crop(
 
     logger.info(f"[multi-crop] starting — image {img_size}, {len(cotas)} cotas")
 
-    # Fase 1: topología
-    topology = await _call_global_topology(image_bytes, _model, brief_text)
+    # Fase 1: topología (con cache/retry de Plan B)
+    topology, topology_meta = await _get_or_build_topology(
+        db, plan_hash, quote_id, image_bytes, brief_text, _model,
+    )
     if topology.get("error"):
         logger.warning(f"[multi-crop] global topology failed: {topology['error']}")
         return {"error": topology["error"]}
@@ -1517,4 +1827,35 @@ async def read_plan_multi_crop(
     except Exception as _e_log:
         logger.warning(f"[multi-crop] region detail log failed: {_e_log}")
 
-    return _aggregate(topology, region_results, brief_text=brief_text)
+    result = _aggregate(topology, region_results, brief_text=brief_text)
+
+    # Plan B — anexar topology_cache_meta + flags de review si aplica
+    if result and not result.get("error"):
+        result["topology_cache_meta"] = topology_meta
+        # Promote requires_human_review si retry falló o el cache es unstable.
+        if topology_meta.get("retry_failed") or topology_meta.get("stability_status") == "unstable":
+            result["requires_human_review"] = True
+            # Inject ambiguedad explícita en primer sector para que la UI
+            # la muestre como bullet "Revisar en plano" (patrón ya existente).
+            sectores = result.get("sectores") or []
+            if sectores:
+                amb_list = list(sectores[0].get("ambiguedades") or [])
+                if topology_meta.get("retry_failed"):
+                    amb_list.append({
+                        "tipo": "REVISION",
+                        "texto": (
+                            "No se pudo validar el topology contra el brief "
+                            "(retry LLM falló) — revisá las medidas con cuidado."
+                        ),
+                    })
+                if topology_meta.get("stability_status") == "unstable":
+                    amb_list.append({
+                        "tipo": "REVISION",
+                        "texto": (
+                            "Topology inestable — dos lecturas del mismo "
+                            "plano divergieron. Revisá medidas con cuidado."
+                        ),
+                    })
+                sectores[0]["ambiguedades"] = amb_list
+
+    return result
