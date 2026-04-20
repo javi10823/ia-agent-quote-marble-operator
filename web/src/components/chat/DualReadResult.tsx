@@ -1,6 +1,10 @@
 "use client";
 import React, { useState } from "react";
 import CopyButton from "./CopyButton";
+import SuggestedCandidates, {
+  SuggestedCandidate,
+  TramoWithSuggestions,
+} from "./SuggestedCandidates";
 import { dualReadRetry as apiDualReadRetry } from "@/lib/api";
 
 // Helpers:
@@ -60,6 +64,20 @@ const normalizeDualReadData = (raw: DualReadData): DualReadData => {
         }),
         frentin: Array.isArray(t?.frentin) ? t.frentin : [],
         regrueso: Array.isArray(t?.regrueso) ? t.regrueso : [],
+        // PR #355 — normalizar suggested_candidates a lista (shape estable).
+        // Filtramos objetos sin el mínimo shape esperado por el componente.
+        suggested_candidates: Array.isArray(t?.suggested_candidates)
+          ? t.suggested_candidates
+              .filter(
+                (c: unknown): c is SuggestedCandidate =>
+                  typeof c === "object" &&
+                  c !== null &&
+                  typeof (c as SuggestedCandidate).valor === "number" &&
+                  Number.isFinite((c as SuggestedCandidate).valor) &&
+                  ((c as SuggestedCandidate).label === "mas_probable" ||
+                    (c as SuggestedCandidate).label === "baja_confianza"),
+              )
+          : [],
       })),
       ambiguedades: Array.isArray(s?.ambiguedades) ? s.ambiguedades : [],
     })),
@@ -94,6 +112,10 @@ interface Tramo {
   zocalos: Zocalo[];
   frentin: unknown[];
   regrueso: unknown[];
+  // PR #355 — operator-assist. Se popula solo cuando el backend rescató
+  // candidatas del pool pero el LLM las rechazó visualmente (`largo_m=null`).
+  // Array estable — siempre list, nunca null.
+  suggested_candidates?: SuggestedCandidate[];
   _manual?: boolean;
 }
 
@@ -933,6 +955,37 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
           </div>
         );
       })()}
+
+      {/* PR #355 — Candidatas sugeridas para revisión. Aparece solo si
+          algún tramo tiene `suggested_candidates` no vacío (el backend
+          controla el trigger). El click copia el valor al input del
+          largo SIN confirmar — el tramo queda DUDOSO hasta confirmación
+          humana explícita. */}
+      <SuggestedCandidates
+        tramos={editedData.sectores.flatMap<TramoWithSuggestions>(
+          (s, sectorIdx) =>
+            s.tramos
+              .map((t, tramoIdx) => {
+                const cands = t.suggested_candidates || [];
+                if (cands.length === 0) return null;
+                return {
+                  sectorIdx,
+                  tramoIdx,
+                  regionId: t.id,
+                  tramoDescripcion: t.descripcion,
+                  candidates: cands,
+                } satisfies TramoWithSuggestions;
+              })
+              .filter((x): x is TramoWithSuggestions => x !== null),
+        )}
+        onUseAsLargo={(sectorIdx, tramoIdx, valor) => {
+          // Reusa updateField existente — copia el valor + recalcula m².
+          // NO confirma: el status del tramo queda como estaba (DUDOSO
+          // mientras los suspicious_reasons existan). El operador tiene
+          // que confirmar con "Confirmar medidas" después de verificar.
+          updateField(sectorIdx, tramoIdx, "largo_m", valor);
+        }}
+      />
 
       {/* Retry if needed */}
       {data.source !== "DUAL" && !data._retry && (
