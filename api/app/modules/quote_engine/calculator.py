@@ -1171,7 +1171,13 @@ def build_deterministic_paso2(calc: dict) -> str:
     for p in pieces:
         if p.get("_is_frentin"):
             continue
-        desc = p.get("description", "")
+        desc = p.get("description", "") or ""
+        # Alzadas: colapsar a "Alzada" — el detalle del operador
+        # (ej: "corrida (fondo completo sin heladera)") agrega ruido en la
+        # tabla de Paso 2 y es inconsistente con el label del PDF (PR #359).
+        # Mesadas/placas mantienen su descripción completa.
+        if desc.lower().lstrip().startswith("alzada"):
+            desc = "Alzada"
         largo = p.get("largo", 0)
         dim2 = p.get("dim2", p.get("prof", 0))
         qty = p.get("quantity", 1) or 1

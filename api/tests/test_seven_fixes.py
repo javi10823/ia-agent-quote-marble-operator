@@ -208,6 +208,33 @@ class TestDeterministicPaso2:
         assert "5%" in paso2
         assert "DESCUENTO" in paso2
 
+    def test_paso2_alzada_description_collapsed(self):
+        """Alzada en Paso 2 debe renderizarse como 'Alzada' — sin el detalle
+        del operador (ej: 'corrida (fondo completo sin heladera)'). Consistente
+        con el PDF (PR #359) y con el Dual Read del frontend."""
+        from app.modules.quote_engine.calculator import calculate_quote, build_deterministic_paso2
+        result = calculate_quote({
+            "client_name": "Luciana Villagra", "project": "Cocina",
+            "material": "Blanco Nube", "catalog": "materials-purastone", "sku": "BLANCO_NUBE",
+            "pieces": [
+                {"largo": 2.03, "prof": 0.60, "description": "Placa tramo derecho"},
+                {"largo": 3.01, "prof": 0.60,
+                 "description": "Alzada corrida (fondo completo sin heladera)"},
+            ],
+            "localidad": "Rosario", "colocacion": True,
+            "pileta": "empotrada_cliente",
+            "plazo": "30 dias",
+        })
+        assert result["ok"]
+        paso2 = build_deterministic_paso2(result)
+        # El detalle extra del operador NO debe aparecer en la tabla
+        assert "fondo completo sin heladera" not in paso2
+        assert "corrida" not in paso2
+        # La fila de Alzada existe con el nombre colapsado
+        assert "| Alzada |" in paso2
+        # Las placas mantienen su descripción completa
+        assert "| Placa tramo derecho |" in paso2
+
     def test_paso2_delivery_matches_config(self):
         """Paso 2 delivery days must match what calculator returns."""
         from app.modules.quote_engine.calculator import calculate_quote, build_deterministic_paso2
