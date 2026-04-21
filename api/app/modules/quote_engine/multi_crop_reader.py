@@ -349,6 +349,43 @@ _BUCKET_WEAK = 40
 _BUCKET_UNLIKELY = 20
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Prior semántico por tipo de región (Bernardi fix — ranking/ownership)
+#
+# Modula (NO reemplaza) el score base del ranking de LARGO según el rango
+# típico de cada tipo de región. Ajuste aditivo, acotado, auditable.
+#
+# Motivación (caso Bernardi):
+#   R3 (isla) tenía tight=[2.05] expanded=[..., 1.60, ...]
+#   Score base: 2.05 = 80 (tight+40, length_range+15, align+25) → preferred
+#                1.60 = 55 (expanded+15, length_range+15, align+25) → weak
+#   El LLM elegía 2.05 y rechazaba 1.60 aunque 2.05 pertenece físicamente
+#   a la mesada vecina y el bbox de la isla estaba mal calibrado.
+#
+#   Con prior: 2.05 = 80-25 = 55, 1.60 = 55+25 = 80 → LLM elige 1.60. ✓
+#
+# Diseño:
+# - Ajuste acotado ±25 puntos sobre el score 0..100 (ni binario ni drástico).
+# - SOLO se aplica al scoring de "length" — los anchos ya tienen su rango
+#   típico en _DEPTH_TYPICAL_RANGE.
+# - `None` o region_type no listado → sin prior (comportamiento legacy).
+# - Islas atípicas reales >1.8m quedan degradadas a weak → el sanity check
+#   post-medición ya existente las marca dudosas → operator las revisa.
+#   Mismo resultado final que hoy, sólo la intervención humana ocurre antes.
+# - Tie-breaker: si tras el prior top1 - top2 ≤ TIE_THRESHOLD, degradar
+#   top1 de preferred → weak. No fabricamos certeza cuando el ranking
+#   queda parejo.
+_SEMANTIC_PRIOR_LENGTH_RANGES: dict[str, tuple[float, float]] = {
+    "isla": (1.0, 1.8),
+    "cocina": (1.0, 3.5),
+    "baño": (0.8, 2.0),
+    "lavadero": (0.8, 2.0),
+}
+_SEMANTIC_PRIOR_BONUS = 25   # Sumado si la cota está en rango típico
+_SEMANTIC_PRIOR_PENALTY = 25  # Restado si la cota está fuera (magnitud)
+_SEMANTIC_PRIOR_TIE_THRESHOLD = 10  # top1 - top2 ≤ este valor → degradar top1
+
+
 def _bbox_to_px(bbox: dict, image_size: tuple[int, int]) -> dict:
     """Convierte bbox_rel {x,y,w,h} 0..1 → coords absolutas px."""
     img_w, img_h = image_size
@@ -578,6 +615,64 @@ def _score_cota(
         "reasons": reasons,
         "span_penalty_applied": span_penalty_applied,
         "span_penalty_severe": span_penalty_severe,
+    }
+
+
+def _rebucket(score: int) -> str:
+    """Mapea score 0..100 al bucket correspondiente. Reutilizado por el
+    prior semántico al mutar scores post-hoc."""
+    if score >= _BUCKET_PREFERRED:
+        return "preferred"
+    if score >= _BUCKET_WEAK:
+        return "weak"
+    if score >= _BUCKET_UNLIKELY:
+        return "unlikely"
+    return "excluded_soft"
+
+
+def _apply_semantic_prior(
+    entry: dict, region_type: str, candidate_for: str,
+) -> Optional[dict]:
+    """Muta `entry` sumando/restando un modifier acotado según rango típico
+    del tipo de región. Solo se aplica a `candidate_for == 'length'`.
+
+    Re-buckea tras el ajuste (un weak puede subir a preferred o bajar).
+
+    Devuelve dict con campos auditables para el log `[semantic-prior]`:
+        {region_type, candidate, base_score, modifier, final_score, range}
+    o None si no se aplicó (candidate_for != length, o region_type no
+    listado en _SEMANTIC_PRIOR_LENGTH_RANGES).
+
+    Diseño aditivo y acotado — ver constantes arriba para motivación.
+    """
+    if candidate_for != "length":
+        return None
+    rng = _SEMANTIC_PRIOR_LENGTH_RANGES.get(region_type)
+    if rng is None:
+        return None
+    lo, hi = rng
+    base_score = entry["score"]
+    value = entry["value"]
+    if lo <= value <= hi:
+        modifier = _SEMANTIC_PRIOR_BONUS
+        entry["reasons"].append(
+            f"semantic_prior_in_range_{region_type}_+{modifier}"
+        )
+    else:
+        modifier = -_SEMANTIC_PRIOR_PENALTY
+        entry["reasons"].append(
+            f"semantic_prior_out_of_range_{region_type}_{modifier}"
+        )
+    new_score = max(0, min(100, base_score + modifier))
+    entry["score"] = new_score
+    entry["bucket"] = _rebucket(new_score)
+    return {
+        "region_type": region_type,
+        "candidate": value,
+        "base_score": base_score,
+        "modifier": modifier,
+        "final_score": new_score,
+        "range": [lo, hi],
     }
 
 
@@ -932,9 +1027,43 @@ def _rank_cotas_for_region(
         length_ranking, surviving_cotas, region_bbox_px, scale, excluded_hard,
     )
 
-    # Ordenar desc por score
+    # ── Prior semántico (solo length) ──────────────────────────────────
+    # Modula el score base con un ajuste acotado según el rango típico
+    # del tipo de región. Ver constantes _SEMANTIC_PRIOR_* para detalle.
+    # Aplicado DESPUÉS del filtro geométrico — no debemos boostear cotas
+    # ya rechazadas como perímetro / incompatibles con el span.
+    region_type = _classify_region(region)
+    prior_applied: list[dict] = []
+    for entry in length_ranking:
+        audit = _apply_semantic_prior(entry, region_type, "length")
+        if audit is not None:
+            prior_applied.append(audit)
+
+    # Ordenar desc por score (tras el prior, el ranking puede reordenarse).
     length_ranking.sort(key=lambda r: r["score"], reverse=True)
     depth_ranking.sort(key=lambda r: r["score"], reverse=True)
+
+    # Tie-breaker post-prior: si el top queda muy parejo con el segundo,
+    # degradar top1 de preferred → weak. Evitamos fabricar certeza cuando
+    # el ranking es ambiguo tras aplicar el ajuste.
+    if len(length_ranking) >= 2 and prior_applied:
+        top = length_ranking[0]
+        second = length_ranking[1]
+        if (
+            top["bucket"] == "preferred"
+            and (top["score"] - second["score"]) <= _SEMANTIC_PRIOR_TIE_THRESHOLD
+        ):
+            top["bucket"] = "weak"
+            top["reasons"].append("semantic_prior_tie_demoted_preferred_to_weak")
+
+    if prior_applied:
+        logger.info(
+            "[semantic-prior] region=%s type=%s n_candidates=%d adjustments=%s",
+            region.get("id"),
+            region_type,
+            len(prior_applied),
+            json.dumps(prior_applied),
+        )
 
     return {
         "length": length_ranking,

@@ -4161,3 +4161,258 @@ class TestSuggestedCandidatesE2EAggregate:
         tramo = cocina["tramos"][0]
         assert isinstance(tramo["suggested_candidates"], list)
         assert tramo["suggested_candidates"] == []
+
+
+class TestSemanticPriorRanking:
+    """Prior semántico por tipo de región — Bernardi fix.
+
+    Datos reales tomados del log de Railway para el quote
+    `20b929fb-e583-47bd-bf6c-af6e70fd4f38` (corrida del 2026-04-21 14:07):
+
+    - Image: (4963, 3509) — DPI 300, una página
+    - 13 cotas extraídas: 1.20, 0.60, 1.60, 4.15, 4.15, 2.75, 2.75,
+      2.35, 2.35, 2.95, 2.05, 0.60, 0.60
+    - Topology cacheado para este plano (3 regiones):
+        R1 (mesada con pileta+anafe): bbox_rel horizontal, touches_wall=True
+        R2 (mesada vertical):          bbox_rel vertical,   touches_wall=True
+        R3 (isla central):             bbox_rel horizontal, touches_wall=False
+    - Ground truth (confirmado por operador):
+        R1 largo = 2.05 m   (tramo de pileta+anafe)
+        R2 largo = 2.95 m   (tramo vertical con anafes)
+        R3 largo = 1.60 m   (isla)
+
+    Bug que el prior resuelve: el bbox de R3 capturaba la cota 2.05 como
+    tight (score base 80 preferred) y dejaba 1.60 en expanded (score base
+    55 weak). El LLM elegía 2.05 incorrectamente.
+
+    Con prior semántico (isla = 1.0-1.8m típico): 2.05 queda fuera de
+    rango (−25 → 55 weak), 1.60 dentro (+25 → 80 preferred). Se invierte
+    el ranking. El 2.05 sigue disponible en el ranking para que downstream
+    (R1 deep expansion) pueda elegirlo como candidata válida.
+    """
+
+    # Image size real del log
+    IMAGE_SIZE = (4963, 3509)
+
+    # Bboxes reales del topology-cache HIT en el log
+    # R3 = isla, bbox horizontal, features sin touches_wall → classify = "isla"
+    R3_BBOX = {"x": 0.35, "y": 0.45, "w": 0.25, "h": 0.08}
+    R3_FEATURES = {
+        "touches_wall": False,
+        "stools_adjacent": False,
+        "cooktop_groups": 0,
+        "sink_double": False,
+        "sink_simple": False,
+        "non_counter_upper": False,
+    }
+
+    def _r3_region(self) -> dict:
+        return {
+            "id": "R3",
+            "bbox_rel": self.R3_BBOX,
+            "features": self.R3_FEATURES,
+            "evidence": "masa gris horizontal central - isla",
+        }
+
+    def _r3_cotas_bernardi(self) -> list:
+        """Posiciones en píxeles elegidas para reproducir el scoring real:
+
+        R3 bbox px → x=[1737..2977], y=[1579..1859]
+        Tight pad 80 → x=[1657..3057], y=[1499..1939]
+        Expanded pad 380 → x=[1357..3357], y=[1199..2239]
+
+        Reproducimos el scenario exacto del log:
+        - 2.05 DENTRO del tight bbox (base score 80, preferred)
+        - 1.60 en expanded (NO tight) (base score 55, weak)
+        - 2.35, 2.75 también expanded weak
+        """
+        return [
+            # 2.05 cae tight (posición dentro del bbox de R3). La cota real
+            # en el plano de Bernardi está entre la isla y la mesada inferior,
+            # pero el bbox mal calibrado de R3 la captura como suya.
+            Cota(text="2,05", value=2.05, x=2400, y=1700, width=40, height=20),
+            # 1.60 arriba del bbox de R3 (la cota real de la isla), queda
+            # en el pool expandido porque y=1400 < 1499 (tight bottom).
+            Cota(text="1,60", value=1.60, x=2400, y=1400, width=40, height=20),
+            # 2.35 y 2.75 en expanded también — cotas del plano que no son
+            # del largo de la isla, quedan weak.
+            Cota(text="2,35", value=2.35, x=2400, y=1400, width=40, height=20),
+            Cota(text="2,75", value=2.75, x=2400, y=1400, width=40, height=20),
+            # Cotas de ancho (no compiten por length).
+            Cota(text="0,60", value=0.60, x=2400, y=1700, width=40, height=20),
+        ]
+
+    def test_r3_isla_elige_1_60_sobre_2_05_con_prior(self):
+        """Caso central: sin el prior, R3 elegiría 2.05 (preferred 80).
+        Con el prior, 1.60 gana a 2.05 porque 2.05 > 1.8m (fuera de rango
+        típico de isla) y se le resta 25 puntos."""
+        region = self._r3_region()
+        cotas = self._r3_cotas_bernardi()
+
+        ranking = _rank_cotas_for_region(cotas, region, self.IMAGE_SIZE, scale=None)
+        length = ranking["length"]
+
+        top_value = length[0]["value"]
+        assert top_value == 1.60, (
+            f"R3 (isla) debe elegir 1.60 con prior, no {top_value}. "
+            f"Ranking: {[(r['value'], r['score'], r['bucket']) for r in length]}"
+        )
+
+    def test_r3_conserva_2_05_en_ranking_no_lo_elimina(self):
+        """El prior degrada 2.05 pero NO lo elimina. Downstream (R1 deep
+        expansion) necesita verlo como candidata para su tramo real."""
+        region = self._r3_region()
+        cotas = self._r3_cotas_bernardi()
+
+        ranking = _rank_cotas_for_region(cotas, region, self.IMAGE_SIZE, scale=None)
+        length_values = [r["value"] for r in ranking["length"]]
+
+        assert 2.05 in length_values, (
+            f"2.05 debe seguir en el ranking de R3, aunque degradado "
+            f"(necesario para que R1 la vea como candidata via pool compartido). "
+            f"Got: {length_values}"
+        )
+
+    def test_r3_prior_degrada_2_05_a_weak_o_peor(self):
+        """Verificación explícita: el 2.05 que antes era preferred (80),
+        post-prior queda ≤ weak."""
+        region = self._r3_region()
+        cotas = self._r3_cotas_bernardi()
+
+        ranking = _rank_cotas_for_region(cotas, region, self.IMAGE_SIZE, scale=None)
+        entry_205 = next(r for r in ranking["length"] if r["value"] == 2.05)
+
+        assert entry_205["bucket"] in ("weak", "unlikely", "excluded_soft"), (
+            f"2.05 en isla debe degradar de preferred. Got bucket={entry_205['bucket']} "
+            f"score={entry_205['score']}"
+        )
+        assert any("semantic_prior_out_of_range_isla" in r for r in entry_205["reasons"]), (
+            f"2.05 debe tener razón semantic_prior registrada. "
+            f"Reasons: {entry_205['reasons']}"
+        )
+
+    def test_r3_prior_sube_1_60_a_preferred(self):
+        """1.60 estaba en expanded (base 55 weak). Con +25 → 80 preferred."""
+        region = self._r3_region()
+        cotas = self._r3_cotas_bernardi()
+
+        ranking = _rank_cotas_for_region(cotas, region, self.IMAGE_SIZE, scale=None)
+        entry_160 = next(r for r in ranking["length"] if r["value"] == 1.60)
+
+        assert entry_160["bucket"] == "preferred", (
+            f"1.60 en isla debe subir a preferred con el prior. "
+            f"Got bucket={entry_160['bucket']} score={entry_160['score']}"
+        )
+        assert any("semantic_prior_in_range_isla" in r for r in entry_160["reasons"]), (
+            f"1.60 debe tener razón semantic_prior registrada. "
+            f"Reasons: {entry_160['reasons']}"
+        )
+
+    def test_prior_no_se_aplica_a_ancho(self):
+        """El prior solo afecta length. El depth ranking debe quedar igual."""
+        region = self._r3_region()
+        cotas = self._r3_cotas_bernardi()
+
+        ranking = _rank_cotas_for_region(cotas, region, self.IMAGE_SIZE, scale=None)
+        for entry in ranking["depth"]:
+            assert not any("semantic_prior" in r for r in entry["reasons"]), (
+                f"depth ranking NO debe tener modifier semántico. "
+                f"Entry: {entry}"
+            )
+
+    def test_prior_aplica_a_cocina_con_rango_mas_amplio(self):
+        """Las mesadas de cocina tienen rango más amplio (1.0-3.5m). Un
+        tramo como R1 de Bernardi (mesada con pileta, largo real 2.05m)
+        debe tener 2.05 BOOSTEADA por el prior."""
+        r1_region = {
+            "id": "R1",
+            "bbox_rel": {"x": 0.35, "y": 0.65, "w": 0.25, "h": 0.08},
+            "features": {
+                "touches_wall": True,  # mesada contra pared → cocina
+                "stools_adjacent": False,
+                "cooktop_groups": 1,
+                "sink_simple": True,
+            },
+        }
+        # Cota 2.05 dentro del bbox de R1
+        cotas = [
+            Cota(text="2,05", value=2.05, x=2400, y=2400, width=40, height=20),
+            Cota(text="0,60", value=0.60, x=2400, y=2400, width=40, height=20),
+        ]
+        ranking = _rank_cotas_for_region(cotas, r1_region, self.IMAGE_SIZE, scale=None)
+        entry_205 = next(r for r in ranking["length"] if r["value"] == 2.05)
+
+        # 2.05 está dentro del rango cocina [1.0, 3.5] → bonus
+        assert any("semantic_prior_in_range_cocina" in r for r in entry_205["reasons"]), (
+            f"2.05 en cocina debe recibir bonus. Reasons: {entry_205['reasons']}"
+        )
+
+    def test_prior_no_se_aplica_a_tipos_no_listados(self):
+        """Si la región se clasifica como tipo no listado en las ranges,
+        el prior no se aplica (comportamiento legacy)."""
+        # Región de tipo "descarte" (non_counter_upper=True)
+        region = {
+            "id": "Rx",
+            "bbox_rel": self.R3_BBOX,
+            "features": {**self.R3_FEATURES, "non_counter_upper": True},
+        }
+        cotas = self._r3_cotas_bernardi()
+
+        ranking = _rank_cotas_for_region(cotas, region, self.IMAGE_SIZE, scale=None)
+        # Ningún length entry debe tener reason semantic_prior_*
+        for entry in ranking["length"]:
+            assert not any("semantic_prior" in r for r in entry["reasons"]), (
+                f"Tipo no listado ('descarte') NO debe recibir prior. "
+                f"Entry: {entry}"
+            )
+
+    def test_log_semantic_prior_emitido_con_campos_auditables(self, caplog):
+        """El log [semantic-prior] debe salir con campos auditables:
+        region_id, region_type, candidate, base_score, modifier, final_score, range.
+        """
+        import logging as _logging
+        region = self._r3_region()
+        cotas = self._r3_cotas_bernardi()
+
+        with caplog.at_level(_logging.INFO, logger="app.modules.quote_engine.multi_crop_reader"):
+            _rank_cotas_for_region(cotas, region, self.IMAGE_SIZE, scale=None)
+
+        prior_logs = [r for r in caplog.records if "[semantic-prior]" in r.getMessage()]
+        assert len(prior_logs) >= 1, (
+            f"Debe haber al menos 1 log [semantic-prior]. Got messages: "
+            f"{[r.getMessage() for r in caplog.records]}"
+        )
+        msg = prior_logs[0].getMessage()
+        # Campos que deben estar en el JSON embebido
+        for field in ("region_type", "candidate", "base_score", "modifier", "final_score", "range"):
+            assert field in msg, f"Log debe incluir campo '{field}'. Got: {msg}"
+        assert "type=isla" in msg, f"Log debe identificar region_type=isla. Got: {msg}"
+
+    def test_tie_breaker_degrada_preferred_en_empate(self):
+        """Si tras el prior top1 - top2 ≤ TIE_THRESHOLD, top1 preferred
+        debe degradar a weak. Evitamos fabricar certeza en ranking ambiguo.
+
+        Caso: dos cotas ambas in-range de isla muy cerca en score.
+        """
+        region = self._r3_region()
+        # Dos cotas in-range casi iguales: 1.50 y 1.60 ambas tight.
+        cotas = [
+            Cota(text="1,50", value=1.50, x=2400, y=1700, width=40, height=20),
+            Cota(text="1,60", value=1.60, x=2400, y=1700, width=40, height=20),
+            Cota(text="0,60", value=0.60, x=2400, y=1700, width=40, height=20),
+        ]
+        ranking = _rank_cotas_for_region(cotas, region, self.IMAGE_SIZE, scale=None)
+        length = ranking["length"]
+
+        # Ambas tight + in range → score base 80, post-prior 100 (clamped).
+        # Empatan exactamente → tie breaker degrada top1.
+        top = length[0]
+        second = length[1] if len(length) > 1 else None
+        if second and (top["score"] - second["score"]) <= 10:
+            assert top["bucket"] == "weak", (
+                f"Empate debe degradar top preferred → weak. "
+                f"Top={top}, second={second}"
+            )
+            assert any("semantic_prior_tie_demoted" in r for r in top["reasons"]), (
+                f"Reason tie_demoted debe estar presente. Reasons: {top['reasons']}"
+            )
