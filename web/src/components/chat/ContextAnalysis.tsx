@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import CopyButton from "./CopyButton";
+import { pickDefaultOption } from "@/lib/pickDefaultOption";
 
 interface DataRow {
   field: string;
@@ -83,7 +84,21 @@ function SourceBadge({ source }: { source: string }) {
 }
 
 export default function ContextAnalysis({ data, onConfirm }: Props) {
-  const [answers, setAnswers] = useState<Record<string, PendingAnswer>>({});
+  // Preselección de defaults comunes en preguntas bloqueantes — el
+  // operador no tiene que tocar radios para los casos residenciales
+  // típicos. Heurística en `pickDefaultOption`: opción con "estándar"
+  // gana; si no hay, primera no-custom. El operador siempre puede
+  // cambiar la opción antes de confirmar.
+  const [answers, setAnswers] = useState<Record<string, PendingAnswer>>(() => {
+    const init: Record<string, PendingAnswer> = {};
+    for (const q of data.pending_questions || []) {
+      const defaultValue = pickDefaultOption(q.options);
+      if (defaultValue !== null) {
+        init[q.id] = { id: q.id, value: defaultValue };
+      }
+    }
+    return init;
+  });
   const [corrections, setCorrections] = useState<Record<string, string>>({});
   const [editingField, setEditingField] = useState<string | null>(null);
 
