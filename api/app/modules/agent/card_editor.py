@@ -439,6 +439,182 @@ def is_paso2_confirmed(quote_breakdown: dict | None) -> bool:
     )
 
 
+# ─────────────────────────────────────────────────────────────────────
+# PR #380 — Rehydrate de historial de chat (para quotes legacy)
+#
+# PR #379 arregló la persistencia hacia adelante: los quotes nuevos
+# guardan en `Quote.messages` el JSON real de las cards en lugar de
+# placeholders `_SHOWN_`, no arrastran el bloque "[TEXTO EXTRAÍDO DEL
+# PDF]" al content del user turn, y no persisten el fake user
+# "(contexto confirmado)".
+#
+# Este helper ataca lo opuesto: quotes VIEJOS que ya quedaron con
+# historial contaminado en DB. Aplica el mismo criterio de "reconstruir
+# estado real" sobre los messages persistidos, usando el `quote_breakdown`
+# como fuente de verdad para rehidratar las cards cuando sea posible.
+#
+# Reglas de diseño (condiciones del operador):
+# - **Idempotente**: correrlo N veces devuelve siempre el mismo shape.
+#   Si no hay nada que reconstruir, devuelve (messages_in, False).
+# - **No inventar**: si falta la data fuente (ej: no hay
+#   `dual_read_result` cacheado), se descarta el marker en lugar de
+#   rellenar con un placeholder falso.
+# - **No tocar cálculo**: el `quote_breakdown` se LEE pero no se
+#   modifica. Totales, MO, material — intactos.
+# - **Preservar mensajes legítimos**: brief del operador (truncado si
+#   estaba contaminado), Paso 2 markdown, turns user reales, cards
+#   ya en formato correcto — todos intactos.
+# - **No empeorar quotes sanos**: si el historial ya no tiene markers
+#   legacy, el helper devuelve changed=False y el caller skipea el
+#   UPDATE.
+# ─────────────────────────────────────────────────────────────────────
+
+
+# Patrones prohibidos que el helper detecta en el content de un user
+# turn para limpieza (el bloque va solo a Claude, no al historial).
+_CONTAMINATION_PREFIXES = (
+    "[TEXTO EXTRAÍDO DEL PDF",
+    "[SISTEMA",
+)
+
+
+def _content_to_text(content) -> str:
+    """Flatten content (string o lista de blocks) a un solo string.
+
+    El shape de `Quote.messages[i].content` puede ser:
+    - string (turns simples, el path común post-#379)
+    - list[{"type": "text", "text": "..."}] (bloques, pre-#379 casi
+      siempre para user turns con plan_image + text).
+
+    Para las comparaciones de patrón necesitamos un string canónico.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text") or "")
+        return "".join(parts)
+    return ""
+
+
+def _strip_contamination(text: str) -> str:
+    """Corta el text al primer marker de contaminación interna.
+
+    Un user turn pre-#379 podía ser "cotizar cocina X [TEXTO EXTRAÍDO
+    DEL PDF — DATOS EXACTOS]... dump completo...". Queremos conservar
+    la parte real ("cotizar cocina X") y descartar el resto.
+    """
+    first_marker = -1
+    for marker in _CONTAMINATION_PREFIXES:
+        idx = text.find(marker)
+        if idx != -1 and (first_marker == -1 or idx < first_marker):
+            first_marker = idx
+    if first_marker == -1:
+        return text
+    return text[:first_marker]
+
+
+def rehydrate_messages(
+    messages: list[dict] | None,
+    quote_breakdown: dict | None,
+) -> tuple[list[dict], bool]:
+    """Reconstruye el historial de chat para un quote legacy.
+
+    Detección + transformación en un solo pase:
+
+    1. Marker `__DUAL_READ_CARD_SHOWN__` (assistant) →
+       - Si `breakdown.dual_read_result` existe: reemplazar por
+         `__DUAL_READ__{json}` con el JSON real. Frontend lo renderiza
+         como card.
+       - Si no: descartar el turn (no reconstruible, no inventamos).
+
+    2. Marker `__CONTEXT_ANALYSIS_SHOWN__` (assistant) →
+       - Si `breakdown.context_analysis_pending` existe (pre-confirm):
+         reemplazar por `__CONTEXT_ANALYSIS__{json}`.
+       - Si no (post-confirm poppea ese campo): descartar. La
+         información sigue viva en `verified_context_analysis` y se
+         usa downstream; la card visual se pierde — aceptado.
+
+    3. User turn "(contexto confirmado)" → descartar. Era un fake
+       separador visual. El `[CONTEXT_CONFIRMED]<json>` real que
+       confirma el contexto ya existe como turn previo y el frontend
+       lo renderiza como pill.
+
+    4. User turn con `[TEXTO EXTRAÍDO DEL PDF` o `[SISTEMA` en el
+       content → truncar al primer marker. Si queda algo después del
+       trim, mantener ese text como el content real del turn. Si queda
+       vacío, reemplazar por "(adjunto plano)".
+
+    5. Cualquier otro turn → preservar tal cual.
+
+    Returns:
+        (new_messages, changed) — changed=True si el helper hizo algún
+        cambio, False si el historial ya estaba limpio (idempotencia).
+    """
+    if not messages:
+        return (list(messages or []), False)
+
+    quote_breakdown = quote_breakdown or {}
+    dual_read = quote_breakdown.get("dual_read_result")
+    context_pending = quote_breakdown.get("context_analysis_pending")
+
+    new_messages: list[dict] = []
+    changed = False
+
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content")
+        text = _content_to_text(content).strip()
+
+        # Rule 3 — fake user turn "(contexto confirmado)"
+        if role == "user" and text == "(contexto confirmado)":
+            changed = True
+            continue
+
+        # Rule 1 — __DUAL_READ_CARD_SHOWN__
+        if role == "assistant" and text == "__DUAL_READ_CARD_SHOWN__":
+            changed = True
+            if dual_read:
+                new_content = (
+                    "__DUAL_READ__"
+                    + json.dumps(dual_read, ensure_ascii=False)
+                )
+                new_messages.append({**msg, "content": new_content})
+            # Else: descartar (no reconstruible)
+            continue
+
+        # Rule 2 — __CONTEXT_ANALYSIS_SHOWN__
+        if role == "assistant" and text == "__CONTEXT_ANALYSIS_SHOWN__":
+            changed = True
+            if context_pending:
+                new_content = (
+                    "__CONTEXT_ANALYSIS__"
+                    + json.dumps(context_pending, ensure_ascii=False)
+                )
+                new_messages.append({**msg, "content": new_content})
+            # Else: descartar (no reconstruible post-confirmación)
+            continue
+
+        # Rule 4 — user turn contaminado con bloques internos
+        if role == "user" and any(
+            prefix in text for prefix in _CONTAMINATION_PREFIXES
+        ):
+            cleaned = _strip_contamination(text).strip()
+            changed = True
+            if not cleaned:
+                cleaned = "(adjunto plano)"
+            # Normalizamos content como string puro post-#379.
+            new_messages.append({**msg, "content": cleaned})
+            continue
+
+        # Preservar el turn legítimo.
+        new_messages.append(msg)
+
+    return (new_messages, changed)
+
+
 def reset_quote_to_paso1(
     quote_breakdown: dict | None,
     *,
