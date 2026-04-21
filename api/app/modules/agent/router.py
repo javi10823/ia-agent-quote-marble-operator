@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 import json
 import logging
+import re
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -469,6 +470,49 @@ async def validate_quote(
 #   - Solo actualiza las URLs de archivos (pdf_url, excel_url, drive_url,
 #     drive_file_id) y appendea un entry a change_history para auditoría.
 
+_ALZADA_LABEL_RE = re.compile(
+    r"^(?P<dim>\d+[.,]\d+\s*[×xX]\s*\d+[.,]\d+)\s+Alzada\b.*$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_piece_labels(sectors: list) -> list:
+    """Rewrite cached piece labels so that Alzadas render as '{L} × {D} Alzada'.
+
+    /regenerate no recalcula — usa el `quote_breakdown.sectors` guardado. Los
+    quotes viejos tienen labels tipo "3.01 × 0.60 Alzada corrida (fondo
+    completo sin heladera) (SE REALIZA EN 2 TRAMOS)" que quedaron pegados.
+    Acá los colapsamos in-memory sin tocar la DB. Preserva sufijos ' *' del
+    override de m² (ver calculator.py).
+    """
+    if not isinstance(sectors, list):
+        return sectors
+    out = []
+    for sec in sectors:
+        if not isinstance(sec, dict):
+            out.append(sec)
+            continue
+        pieces = sec.get("pieces")
+        if not isinstance(pieces, list):
+            out.append(sec)
+            continue
+        new_pieces = []
+        for p in pieces:
+            if isinstance(p, str):
+                base, star = (p[:-2], " *") if p.rstrip().endswith(" *") else (p, "")
+                m = _ALZADA_LABEL_RE.match(base.strip())
+                if m:
+                    new_pieces.append(f"{m.group('dim')} Alzada{star}")
+                else:
+                    new_pieces.append(p)
+            else:
+                new_pieces.append(p)
+        new_sec = dict(sec)
+        new_sec["pieces"] = new_pieces
+        out.append(new_sec)
+    return out
+
+
 def _build_regenerate_doc_data(quote: Quote, bd: dict) -> dict:
     """Prep doc_data for /regenerate: start from the cached breakdown and
     override the fields that the operator can edit manually (no recalc).
@@ -489,6 +533,7 @@ def _build_regenerate_doc_data(quote: Quote, bd: dict) -> dict:
     doc_data.setdefault("discount_pct", 0)
     doc_data.setdefault("sectors", [])
     doc_data.setdefault("mo_items", [])
+    doc_data["sectors"] = _normalize_piece_labels(doc_data["sectors"])
     return doc_data
 
 
