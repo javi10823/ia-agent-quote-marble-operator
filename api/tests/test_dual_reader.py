@@ -594,3 +594,331 @@ class TestBernardiEndToEndTruthfulness:
             line for line in ctx.splitlines() if "pileta_simple_doble: doble" in line
         )
         assert "confirmado por operador" in pileta_line
+
+
+# ═══════════════════════════════════════════════════════
+# PR #377 — build_derived_isla_pieces (bug Bernardi: laterales 0.90×0.90)
+# ═══════════════════════════════════════════════════════
+
+from app.modules.quote_engine.dual_reader import (  # noqa: E402
+    build_derived_isla_pieces,
+)
+
+
+def _bernardi_measurements(largo_isla=1.60):
+    """Medidas verificadas típicas de Bernardi: cocina con 2 mesadas
+    + 1 sector isla con largo confirmado por el operador."""
+    return {
+        "sectores": [
+            {
+                "id": "cocina", "tipo": "cocina",
+                "tramos": [
+                    {"id": "t1", "descripcion": "Mesada con pileta",
+                     "largo_m": {"valor": 2.05}, "ancho_m": {"valor": 0.60},
+                     "m2": {"valor": 1.23}},
+                    {"id": "t2", "descripcion": "Mesada 2",
+                     "largo_m": {"valor": 2.95}, "ancho_m": {"valor": 0.60},
+                     "m2": {"valor": 1.77}},
+                ],
+            },
+            {
+                "id": "isla", "tipo": "isla",
+                "tramos": [
+                    {"id": "t3", "descripcion": "Tapa isla",
+                     "largo_m": {"valor": largo_isla},
+                     "ancho_m": {"valor": 0.60},
+                     "m2": {"valor": round(largo_isla * 0.60, 2)}},
+                ],
+            },
+        ],
+    }
+
+
+class TestBuildDerivedIslaPiecesBernardi:
+    """Caso central del bug: operador confirmó patas solo_laterales,
+    alto 0.90, prof isla 0.60. El LLM en Paso 1 emitía
+        'Pata lateral isla izq | 0.90 × 0.90'
+    cuando debería ser
+        'Pata lateral isla izq | 0.60 × 0.90'.
+
+    El helper determinístico resuelve esto calculando en backend:
+    pata lateral = prof_isla × alto_patas.
+    """
+
+    def test_bernardi_solo_laterales_exact(self):
+        """Caso EXACTO del bug — laterales deben salir 0.60 × 0.90."""
+        pieces, warnings = build_derived_isla_pieces(
+            operator_answers=[
+                {"id": "isla_patas", "value": "solo_laterales"},
+                {"id": "isla_patas_alto", "value": "0.90"},
+                {"id": "isla_profundidad", "value": "0.60"},
+            ],
+            verified_measurements=_bernardi_measurements(),
+        )
+        assert warnings == []
+        assert len(pieces) == 2
+        izq = next(p for p in pieces if "izq" in p["description"].lower())
+        der = next(p for p in pieces if "der" in p["description"].lower())
+        assert izq["largo"] == 0.60 and izq["prof"] == 0.90
+        assert der["largo"] == 0.60 and der["prof"] == 0.90
+        assert izq["m2"] == 0.54
+        assert der["m2"] == 0.54
+        # Nunca 0.90×0.90
+        assert not any(p["largo"] == 0.90 and p["prof"] == 0.90 for p in pieces)
+
+    def test_frontal_y_ambos_laterales_emits_three(self):
+        """Frontal usa largo_isla; laterales usan prof_isla."""
+        pieces, warnings = build_derived_isla_pieces(
+            operator_answers=[
+                {"id": "isla_patas", "value": "frontal_y_ambos_laterales"},
+                {"id": "isla_patas_alto", "value": "0.90"},
+                {"id": "isla_profundidad", "value": "0.60"},
+            ],
+            verified_measurements=_bernardi_measurements(largo_isla=1.60),
+        )
+        assert warnings == []
+        assert len(pieces) == 3
+        frontal = next(p for p in pieces if "frontal" in p["description"].lower())
+        # Frontal = largo_isla × alto
+        assert frontal["largo"] == 1.60 and frontal["prof"] == 0.90
+        assert frontal["m2"] == 1.44
+        # Laterales = prof_isla × alto
+        laterales = [p for p in pieces if "lateral" in p["description"].lower()]
+        assert len(laterales) == 2
+        for lat in laterales:
+            assert lat["largo"] == 0.60 and lat["prof"] == 0.90
+            assert lat["m2"] == 0.54
+
+    def test_solo_frontal_emits_one(self):
+        pieces, _ = build_derived_isla_pieces(
+            operator_answers=[
+                {"id": "isla_patas", "value": "solo_frontal"},
+                {"id": "isla_patas_alto", "value": "0.90"},
+                # prof no es necesaria si solo hay frontal
+            ],
+            verified_measurements=_bernardi_measurements(largo_isla=2.40),
+        )
+        assert len(pieces) == 1
+        assert pieces[0]["description"].lower().startswith("pata frontal")
+        assert pieces[0]["largo"] == 2.40
+        assert pieces[0]["prof"] == 0.90
+
+    def test_solo_frontal_does_not_require_profundidad(self):
+        """Si solo hay frontal, la profundidad de la isla no se usa →
+        debe poder emitir la pieza sin isla_profundidad."""
+        pieces, warnings = build_derived_isla_pieces(
+            operator_answers=[
+                {"id": "isla_patas", "value": "solo_frontal"},
+                {"id": "isla_patas_alto", "value": "0.90"},
+            ],
+            verified_measurements=_bernardi_measurements(),
+        )
+        assert warnings == []
+        assert len(pieces) == 1
+
+    def test_patas_no_emits_nothing(self):
+        """'No lleva patas' → 0 piezas, sin warnings (es una respuesta
+        válida, no una omisión)."""
+        pieces, warnings = build_derived_isla_pieces(
+            operator_answers=[
+                {"id": "isla_patas", "value": "no"},
+                {"id": "isla_patas_alto", "value": "0.90"},
+                {"id": "isla_profundidad", "value": "0.60"},
+            ],
+            verified_measurements=_bernardi_measurements(),
+        )
+        assert pieces == []
+        assert warnings == []
+
+    def test_missing_alto_emits_warning_no_pieces(self):
+        """Falta isla_patas_alto → no emitir, warning claro."""
+        pieces, warnings = build_derived_isla_pieces(
+            operator_answers=[
+                {"id": "isla_patas", "value": "frontal_y_ambos_laterales"},
+                {"id": "isla_profundidad", "value": "0.60"},
+                # isla_patas_alto ausente
+            ],
+            verified_measurements=_bernardi_measurements(),
+        )
+        assert pieces == []
+        assert len(warnings) == 1
+        assert "isla_patas_alto" in warnings[0]
+
+    def test_missing_prof_emits_warning_only_when_laterales(self):
+        """Falta isla_profundidad pero solo hay frontal → NO es warning
+        (no se usa la prof). Falta prof + hay laterales → SÍ warning."""
+        # Solo frontal → sin warning, se emite la pieza
+        pieces_ok, warns_ok = build_derived_isla_pieces(
+            operator_answers=[
+                {"id": "isla_patas", "value": "solo_frontal"},
+                {"id": "isla_patas_alto", "value": "0.90"},
+            ],
+            verified_measurements=_bernardi_measurements(),
+        )
+        assert len(pieces_ok) == 1
+        assert warns_ok == []
+
+        # Con laterales y sin prof → no emitir, warning
+        pieces_miss, warns_miss = build_derived_isla_pieces(
+            operator_answers=[
+                {"id": "isla_patas", "value": "solo_laterales"},
+                {"id": "isla_patas_alto", "value": "0.90"},
+            ],
+            verified_measurements=_bernardi_measurements(),
+        )
+        assert pieces_miss == []
+        assert len(warns_miss) == 1
+        assert "isla_profundidad" in warns_miss[0]
+
+    def test_missing_largo_isla_warning_only_when_frontal(self):
+        """Si no hay sector isla en las medidas pero el operador pidió
+        frontal → warning. Si pidió solo laterales → sin warning (frontal
+        no se usa)."""
+        measurements_no_isla = {"sectores": [{"tipo": "cocina", "tramos": []}]}
+
+        # Frontal sin largo_isla → warning
+        _, warns = build_derived_isla_pieces(
+            operator_answers=[
+                {"id": "isla_patas", "value": "frontal_y_ambos_laterales"},
+                {"id": "isla_patas_alto", "value": "0.90"},
+                {"id": "isla_profundidad", "value": "0.60"},
+            ],
+            verified_measurements=measurements_no_isla,
+        )
+        assert len(warns) == 1
+        assert "largo_isla" in warns[0]
+
+        # Solo laterales sin largo_isla → OK, no lo necesita
+        pieces_lat, warns_lat = build_derived_isla_pieces(
+            operator_answers=[
+                {"id": "isla_patas", "value": "solo_laterales"},
+                {"id": "isla_patas_alto", "value": "0.90"},
+                {"id": "isla_profundidad", "value": "0.60"},
+            ],
+            verified_measurements=measurements_no_isla,
+        )
+        assert len(pieces_lat) == 2
+        assert warns_lat == []
+
+    def test_custom_value_does_not_invent_pieces(self):
+        """isla_patas='custom' — el LLM debe preguntar al operador.
+        Helper devuelve warning, NO inventa piezas."""
+        pieces, warnings = build_derived_isla_pieces(
+            operator_answers=[
+                {"id": "isla_patas", "value": "custom",
+                 "detail": "solo una pata detrás"},
+                {"id": "isla_patas_alto", "value": "0.90"},
+                {"id": "isla_profundidad", "value": "0.60"},
+            ],
+            verified_measurements=_bernardi_measurements(),
+        )
+        assert pieces == []
+        assert len(warnings) == 1
+        assert "custom" in warnings[0]
+
+    def test_empty_inputs_return_empty(self):
+        pieces, warnings = build_derived_isla_pieces(
+            operator_answers=None, verified_measurements=None,
+        )
+        assert pieces == []
+        assert warnings == []
+        pieces, warnings = build_derived_isla_pieces(
+            operator_answers=[], verified_measurements={},
+        )
+        assert pieces == []
+        assert warnings == []
+
+    def test_no_isla_patas_answer_returns_empty_no_warning(self):
+        """Operador no respondió la pregunta de patas (ej: no hay isla).
+        Sin warnings ni piezas — no es una omisión real."""
+        pieces, warnings = build_derived_isla_pieces(
+            operator_answers=[
+                {"id": "alzada", "value": "no"},
+                {"id": "isla_patas_alto", "value": "0.90"},
+            ],
+            verified_measurements=_bernardi_measurements(),
+        )
+        assert pieces == []
+        assert warnings == []
+
+    def test_custom_detail_parseable_alto(self):
+        """isla_patas_alto='custom' con detail='0.75' → se parsea."""
+        pieces, warnings = build_derived_isla_pieces(
+            operator_answers=[
+                {"id": "isla_patas", "value": "solo_frontal"},
+                {"id": "isla_patas_alto", "value": "custom", "detail": "0.75"},
+            ],
+            verified_measurements=_bernardi_measurements(),
+        )
+        assert warnings == []
+        assert len(pieces) == 1
+        assert pieces[0]["prof"] == 0.75
+
+    def test_comma_decimal_accepted(self):
+        """El operador puede ingresar '0,75' (coma) en el detail."""
+        pieces, _ = build_derived_isla_pieces(
+            operator_answers=[
+                {"id": "isla_patas", "value": "solo_frontal"},
+                {"id": "isla_patas_alto", "value": "custom", "detail": "0,75 m"},
+            ],
+            verified_measurements=_bernardi_measurements(),
+        )
+        assert len(pieces) == 1
+        assert pieces[0]["prof"] == 0.75
+
+    def test_pieces_include_source_marker(self):
+        """Cada pieza derivada debe marcarse con source para auditoría."""
+        pieces, _ = build_derived_isla_pieces(
+            operator_answers=[
+                {"id": "isla_patas", "value": "solo_frontal"},
+                {"id": "isla_patas_alto", "value": "0.90"},
+            ],
+            verified_measurements=_bernardi_measurements(),
+        )
+        assert all(p.get("source") == "derived_from_operator_answers" for p in pieces)
+
+
+class TestVerifiedContextEmitsDerivedPiecesBlock:
+    """El bloque 'PIEZAS DERIVADAS' debe aparecer en el texto del
+    verified_context cuando hay piezas, con instrucciones imperativas
+    de copiar literal. Y debe estar SEPARADO del bloque de atributos."""
+
+    def _min_confirmed(self) -> dict:
+        return {"sectores": [{"id": "cocina", "tramos": [{
+            "id": "t1", "descripcion": "Mesada",
+            "largo_m": {"valor": 2.0}, "ancho_m": {"valor": 0.60},
+            "m2": {"valor": 1.20}, "zocalos": [],
+        }]}]}
+
+    def test_no_derived_block_when_empty(self):
+        ctx = build_verified_context(self._min_confirmed(), derived_pieces=None)
+        assert "PIEZAS DERIVADAS" not in ctx
+
+    def test_derived_block_present_with_pieces(self):
+        pieces = [
+            {"description": "Pata lateral isla izq", "largo": 0.60, "prof": 0.90, "m2": 0.54},
+            {"description": "Pata lateral isla der", "largo": 0.60, "prof": 0.90, "m2": 0.54},
+        ]
+        ctx = build_verified_context(self._min_confirmed(), derived_pieces=pieces)
+        assert "PIEZAS DERIVADAS" in ctx
+        assert "COPIALAS LITERAL" in ctx.upper() or "copialas literal" in ctx.lower()
+        assert "NO recalcular" in ctx
+        # Las dimensiones deben aparecer exactamente
+        assert "0.6 × 0.9 = 0.54 m²" in ctx
+
+    def test_separated_from_commercial_attrs_block(self):
+        pieces = [
+            {"description": "Pata frontal isla", "largo": 1.60, "prof": 0.90, "m2": 1.44},
+        ]
+        ctx = build_verified_context(
+            self._min_confirmed(),
+            commercial_attrs={"anafe_count": {"value": 1, "source": "dual_read"}},
+            derived_pieces=pieces,
+        )
+        # Ambos bloques presentes
+        assert "ATRIBUTOS COMERCIALES" in ctx
+        assert "PIEZAS DERIVADAS" in ctx
+        # Y separados: el de derivadas aparece después del de atributos
+        # (orden estable para que el LLM los lea en secuencia natural:
+        #  medidas → atributos → piezas derivadas).
+        assert ctx.index("ATRIBUTOS COMERCIALES") < ctx.index("PIEZAS DERIVADAS")

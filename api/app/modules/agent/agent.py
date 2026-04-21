@@ -1551,6 +1551,7 @@ class AgentService:
                 from app.modules.quote_engine.dual_reader import (
                     build_verified_context,
                     build_commercial_attrs,
+                    build_derived_isla_pieces,
                 )
                 # PR #374 — Juntar atributos comerciales con precedencia
                 # explícita (operator_answer > brief > dual_read > default)
@@ -1578,8 +1579,20 @@ class AgentService:
                     dual_result=_saved_dual,
                     operator_answers=_op_answers,
                 )
+                # PR #377 — Piezas derivadas determinísticas desde las
+                # respuestas del operador (ej: patas de isla). Evita
+                # que el LLM calcule dimensiones a ojo y emita 0.90×0.90
+                # en una pata lateral que debería ser 0.60×0.90.
+                _derived_pieces, _derived_warnings = build_derived_isla_pieces(
+                    operator_answers=_op_answers,
+                    verified_measurements=_confirmed_json,
+                )
+                for _w in _derived_warnings:
+                    logging.info(f"[derived-pieces] {_w}")
                 _verified_ctx = build_verified_context(
-                    _confirmed_json, commercial_attrs=_commercial_attrs,
+                    _confirmed_json,
+                    commercial_attrs=_commercial_attrs,
+                    derived_pieces=_derived_pieces or None,
                 )
                 if _q0:
                     _bd0["verified_measurements"] = _confirmed_json
@@ -1587,6 +1600,11 @@ class AgentService:
                     # Guardar también los commercial_attrs estructurados
                     # para auditoría y uso futuro (ej: templates de docs).
                     _bd0["verified_commercial_attrs"] = _commercial_attrs
+                    # PR #377 — piezas derivadas disponibles para auditoría
+                    # y para que consumers downstream (ej: templates de
+                    # docs) no re-calculen.
+                    if _derived_pieces:
+                        _bd0["verified_derived_pieces"] = _derived_pieces
                     await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd0))
                     await db.commit()
                 logging.info(
