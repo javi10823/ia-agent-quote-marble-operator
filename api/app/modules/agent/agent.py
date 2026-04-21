@@ -1656,23 +1656,109 @@ class AgentService:
                     _text_card = None
 
                 if _text_card:
-                    # Guardar card + metadata extraída + turno en historial
+                    # Apply metadata hints to Quote columns
+                    _persist_update = {}
+                    if _info_hint.get("client_name") and not _tp_quote.client_name:
+                        _persist_update["client_name"] = _info_hint["client_name"]
+                    if _info_hint.get("project") and not _tp_quote.project:
+                        _persist_update["project"] = _info_hint["project"]
+                    if _info_hint.get("material") and not _tp_quote.material:
+                        _persist_update["material"] = _info_hint["material"]
+
+                    # PR G (parity) — mismo gate que el flujo de plano: si no
+                    # hay verified_context_analysis, emitir primero la card
+                    # de contexto (datos detectados + asunciones + preguntas
+                    # bloqueantes) y persistir el dual_read_result en DB para
+                    # levantarlo cuando el operador confirme.
+                    _context_already_confirmed_tp = bool(
+                        _tp_bd.get("verified_context_analysis")
+                    )
+                    if not _context_already_confirmed_tp:
+                        try:
+                            from app.modules.quote_engine.context_analyzer import (
+                                build_context_analysis,
+                            )
+                            from app.modules.agent.tools.catalog_tool import (
+                                get_ai_config as _get_ai_tp,
+                            )
+                            _cfg_tp = {
+                                "default_zocalo_height": (_get_ai_tp() or {}).get(
+                                    "default_zocalo_height", 0.07
+                                ),
+                                "default_payment": "Contado",
+                                "default_delivery_days": "30 días",
+                            }
+                            _ctx_quote_tp = {
+                                "client_name": _persist_update.get("client_name")
+                                    or _tp_quote.client_name,
+                                "project": _persist_update.get("project")
+                                    or _tp_quote.project,
+                                "material": _persist_update.get("material")
+                                    or _tp_quote.material,
+                                "localidad": getattr(_tp_quote, "localidad", None),
+                                "is_building": getattr(_tp_quote, "is_building", False),
+                            }
+                            _context_tp = await build_context_analysis(
+                                user_message or "", _ctx_quote_tp, _text_card, _cfg_tp
+                            )
+                        except Exception as _e_ctx_tp:
+                            logging.warning(
+                                f"[text-parse] build_context_analysis failed: {_e_ctx_tp}"
+                            )
+                            _context_tp = None
+
+                        if _context_tp:
+                            try:
+                                _persist_bd = dict(_tp_bd)
+                                _persist_bd["dual_read_result"] = _text_card
+                                _persist_bd["context_analysis_pending"] = _context_tp
+                                _persist_update["quote_breakdown"] = _persist_bd
+                                _persist_update["messages"] = list(
+                                    _tp_quote.messages or []
+                                ) + [
+                                    {
+                                        "role": "user",
+                                        "content": [
+                                            {"type": "text", "text": user_message}
+                                        ],
+                                    },
+                                    {
+                                        "role": "assistant",
+                                        "content": "__CONTEXT_ANALYSIS_SHOWN__",
+                                    },
+                                ]
+                                await db.execute(
+                                    update(Quote)
+                                    .where(Quote.id == quote_id)
+                                    .values(**_persist_update)
+                                )
+                                await db.commit()
+                            except Exception as _e_pp_ctx:
+                                logging.warning(
+                                    f"[text-parse] persist context failed: {_e_pp_ctx}"
+                                )
+                            logging.info(
+                                f"[text-parse] emitted context_analysis for {quote_id}"
+                            )
+                            yield {
+                                "type": "context_analysis",
+                                "content": json.dumps(_context_tp, ensure_ascii=False),
+                            }
+                            yield {"type": "done", "content": ""}
+                            return
+
+                    # Flujo legacy / fallback — sin context_analysis:
+                    # emitimos el dual_read_result directo (igual que antes).
                     try:
                         _persist_bd = dict(_tp_bd)
                         _persist_bd["dual_read_result"] = _text_card
-                        _update_values = {"quote_breakdown": _persist_bd}
-                        if _info_hint.get("client_name") and not _tp_quote.client_name:
-                            _update_values["client_name"] = _info_hint["client_name"]
-                        if _info_hint.get("project") and not _tp_quote.project:
-                            _update_values["project"] = _info_hint["project"]
-                        if _info_hint.get("material") and not _tp_quote.material:
-                            _update_values["material"] = _info_hint["material"]
-                        _update_values["messages"] = list(_tp_quote.messages or []) + [
+                        _persist_update["quote_breakdown"] = _persist_bd
+                        _persist_update["messages"] = list(_tp_quote.messages or []) + [
                             {"role": "user", "content": [{"type": "text", "text": user_message}]},
                             {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"},
                         ]
                         await db.execute(
-                            update(Quote).where(Quote.id == quote_id).values(**_update_values)
+                            update(Quote).where(Quote.id == quote_id).values(**_persist_update)
                         )
                         await db.commit()
                     except Exception as _e_pp:
