@@ -305,6 +305,26 @@ def _find_flete(localidad: str) -> dict:
     return {"found": False, "error": f"Zona '{localidad}' no encontrada en zone_aliases de config.json. Agregar alias en config.json → zone_aliases."}
 
 
+def _has_alzada_piece(pieces: list) -> bool:
+    """True si el despiece contiene al menos una pieza de alzada.
+
+    PR #376 — Usado como gate de `Agujero toma corriente`: el agujero se
+    realiza físicamente EN LA ALZADA, por lo tanto sin alzada no hay
+    dónde agujerear. Este helper deduplica la heurística de detección
+    que ya usa el renderer (`is_alzada = desc_lower.startswith("alzada")`
+    en list_pieces, línea 431, 998).
+
+    Se acepta tanto dict como ORM-model-dumped (patrón de este módulo,
+    ver `calculate_quote` donde se normaliza cada p).
+    """
+    for p in pieces or []:
+        pd = p if isinstance(p, dict) else p.model_dump()
+        desc = (pd.get("description") or "").lower().lstrip()
+        if desc.startswith("alzada"):
+            return True
+    return False
+
+
 def _get_mo_price(sku: str) -> tuple:
     """Get MO price with IVA and base price from labor.json.
     Returns (price_with_iva, price_base).
@@ -860,33 +880,47 @@ def calculate_quote(input_data: dict) -> dict:
             warnings.append(f"⚠️ FLETE NO INCLUIDO: zona '{localidad}' no encontrada ni con fallback Rosario. El presupuesto NO tiene flete.")
             logging.warning(f"Flete not found for '{localidad}' (even after fallback)")
 
-    # Toma de corriente — si algún zócalo tiene alto > 10cm O hay revestimiento de pared
-    has_tall_zocalo = any(
-        (p.get("alto") or 0) > cfg("measurements.tall_zocalo_threshold", 0.10)
-        for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
-    )
-    has_revestimiento = any(
-        "revestimiento" in (p.get("description") or "").lower()
-        for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
-    )
-    # `tomas_qty` override: operador pide "Agujero de toma × N" en el brief.
-    # Mantiene compatibilidad con el auto-detect de zócalo alto/revestimiento:
-    # si no se pasa el override, se sigue aplicando la regla heurística.
+    # Agujero toma corriente — enforcement duro por alzada (PR #376).
+    # ANTES: se auto-agregaba 1 toma si había zócalo alto (>10cm) O
+    # revestimiento. Esa heurística era inferencia comercial inválida:
+    # correlacional (a veces aparecían juntos) pero no causal. El agujero
+    # de toma se hace físicamente EN LA ALZADA — si no hay alzada, no hay
+    # dónde agujerear. Anafe eléctrico tampoco implica toma
+    # (caso Bernardi: cocina con anafe eléctrico pero sin alzada → el LLM
+    # inferencia `tomas_qty=1`, el calculator lo agregaba sin validar).
+    #
+    # REGLA ACTUAL:
+    #   - Sin alzada → NO agregar toma, nunca, por ningún path.
+    #   - Con alzada + `tomas_qty` explícito → agregar.
+    #   - Con alzada sin `tomas_qty` → no agregar (no inferir).
+    #   - Si `tomas_qty > 0` pero no hay alzada → ignorar + warning fuerte
+    #     de inconsistencia para revisión manual (no romper el cálculo).
+    has_alzada = _has_alzada_piece(pieces)
     tomas_qty = input_data.get("tomas_qty")
-    if tomas_qty and tomas_qty > 0:
-        sku = "TOMASDEKTON/NEO" if is_sint else "TOMAS"
-        price, base = _get_mo_price(sku)
-        mo_items.append({
-            "description": "Agujero toma corriente",
-            "quantity": int(tomas_qty),
-            "unit_price": price,
-            "base_price": base,
-            "total": round(price * int(tomas_qty)),
-        })
-    elif has_tall_zocalo or has_revestimiento:
-        sku = "TOMASDEKTON/NEO" if is_sint else "TOMAS"
-        price, base = _get_mo_price(sku)
-        mo_items.append({"description": "Agujero toma corriente", "quantity": 1, "unit_price": price, "base_price": base, "total": price})
+    if tomas_qty and int(tomas_qty) > 0:
+        if has_alzada:
+            sku = "TOMASDEKTON/NEO" if is_sint else "TOMAS"
+            price, base = _get_mo_price(sku)
+            mo_items.append({
+                "description": "Agujero toma corriente",
+                "quantity": int(tomas_qty),
+                "unit_price": price,
+                "base_price": base,
+                "total": round(price * int(tomas_qty)),
+            })
+        else:
+            msg = (
+                f"⚠️ Inconsistencia: tomas_qty={tomas_qty} pero no hay alzada "
+                f"en el despiece. No se agrega 'Agujero toma corriente' "
+                f"(el agujero se hace físicamente en la alzada). Si la alzada "
+                f"existe pero no está en el despiece, agregala y reprocesá. "
+                f"Si es error del asistente al inferir, confirmá sin toma."
+            )
+            warnings.append(msg)
+            logging.warning(
+                "[calc] toma corriente ignorado — no hay alzada (tomas_qty=%s)",
+                tomas_qty,
+            )
 
     # Sink product (physical sink, not just labor)
     sinks = []

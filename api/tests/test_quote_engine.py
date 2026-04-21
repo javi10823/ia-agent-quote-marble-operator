@@ -319,22 +319,27 @@ class TestCalculateQuote:
         assert not any("pileta" in d.lower() for d in descriptions)
         assert not any("anafe" in d.lower() for d in descriptions)
 
-    def test_tall_zocalo_adds_toma(self):
-        """Zócalo > 10cm alto should auto-add 1 TOMAS to MO."""
+    def test_tall_zocalo_no_longer_adds_toma_without_alzada(self):
+        """PR #376: eliminada la heurística zócalo alto → toma corriente.
+        El agujero se hace EN la alzada, no en el zócalo. Un zócalo de
+        15cm de alto ya no dispara toma automáticamente — requiere alzada
+        explícita en el despiece + `tomas_qty`."""
         result = calculate_quote({
             "client_name": "Test",
             "project": "Cocina",
             "material": "Silestone Blanco Norte",
             "pieces": [
                 {"description": "Mesada", "largo": 2.0, "prof": 0.6},
-                {"description": "Zócalo", "largo": 2.0, "alto": 0.15},  # 15cm > 10cm
+                {"description": "Zócalo", "largo": 2.0, "alto": 0.15},
             ],
             "localidad": "Rosario",
             "plazo": "30 días",
         })
         assert result["ok"] is True
         descriptions = [mo["description"].lower() for mo in result["mo_items"]]
-        assert any("toma corriente" in d for d in descriptions), f"TOMAS not found in MO: {descriptions}"
+        assert not any("toma corriente" in d for d in descriptions), (
+            f"Zócalo alto ya NO agrega toma automática (PR #376). Got MO: {descriptions}"
+        )
 
     def test_short_zocalo_no_toma(self):
         """Zócalo <= 10cm should NOT add TOMAS."""
