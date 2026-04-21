@@ -117,6 +117,10 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
+    # Regex se suma (OR) a allow_origins — cualquiera de las dos matchea.
+    # Vacío por configuración → FastAPI lo ignora. Ver config.py para el
+    # default (previews de Vercel del proyecto/team actual).
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
