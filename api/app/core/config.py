@@ -15,6 +15,19 @@ class Settings(BaseSettings):
     # override a "development" y el cookie sale SameSite=Lax + no Secure.
     APP_ENV: str = "production"
     CORS_ORIGINS: List[str] = ["http://localhost:3000"]
+    # Regex de orígenes permitidos — complementa (no reemplaza) CORS_ORIGINS.
+    # Uso principal: preview URLs de Vercel, que tienen un subdominio único
+    # por commit (`<project>-git-<hash>-<team>.vercel.app`) y no se pueden
+    # listar explícitamente. El default cubre las previews del team actual
+    # sin requerir tocar env vars en Railway para cada deploy.
+    #
+    # Patrón: cualquier URL que empiece con el nombre del proyecto, tenga
+    # algo en el medio, y termine con `-<team>-projects.vercel.app`. No
+    # matchea proyectos ajenos (evita que una URL arbitraria con "vercel.app"
+    # al final sirva para CSRF contra este backend).
+    CORS_ORIGIN_REGEX: str = (
+        r"^https://ia-agent-quote-marble-operator-.+-javi10824s-projects\.vercel\.app$"
+    )
     SECRET_KEY: str
     QUOTE_API_KEY: str = ""
     OPERATOR_EMAIL: str = ""
