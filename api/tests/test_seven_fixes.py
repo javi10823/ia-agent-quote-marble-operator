@@ -235,6 +235,30 @@ class TestDeterministicPaso2:
         # Las placas mantienen su descripción completa
         assert "| Placa tramo derecho |" in paso2
 
+    def test_paso2_shows_merma_no_aplica_with_motivo(self):
+        """Cuando merma no aplica (ej: Negro Brasil), Paso 2 debe renderizar
+        **MERMA — NO APLICA** + motivo. Paridad con el bloque DESCUENTOS.
+        Antes quedaba una sección en blanco y el operador no sabía si el
+        cálculo había corrido o estaba pendiente."""
+        from app.modules.quote_engine.calculator import calculate_quote, build_deterministic_paso2
+        result = calculate_quote({
+            "client_name": "Test", "project": "Cocina",
+            "material": "Negro Brasil", "catalog": "materials-granito-importado",
+            "sku": "NEGRO_BRASIL",
+            "pieces": [{"largo": 2.0, "prof": 0.6, "description": "Mesada"}],
+            "localidad": "Rosario", "colocacion": True,
+            "pileta": "empotrada_cliente",
+            "plazo": "30 dias",
+        })
+        assert result["ok"]
+        assert result["merma"]["aplica"] is False
+        paso2 = build_deterministic_paso2(result)
+        assert "**MERMA — NO APLICA**" in paso2, (
+            "Paso 2 debe mostrar MERMA — NO APLICA cuando no aplica"
+        )
+        # El motivo de Negro Brasil debe figurar como contexto
+        assert "Negro Brasil" in paso2
+
     def test_paso2_delivery_matches_config(self):
         """Paso 2 delivery days must match what calculator returns."""
         from app.modules.quote_engine.calculator import calculate_quote, build_deterministic_paso2
