@@ -70,6 +70,43 @@ class TestListQuotes:
         assert resp.status_code == 200
         assert len(resp.json()) == 2
 
+    @pytest.mark.asyncio
+    async def test_quote_becomes_visible_when_client_name_set(self, client):
+        """PR #375 — regresión: un quote recién creado (empty draft)
+        NO aparece en el listado. Apenas se setea `client_name`
+        (ej: desde _run_dual_read al emitir la card de análisis), el
+        quote se hace visible en el dashboard desde ese turno.
+
+        Antes, con _extract_quote_info corriendo sólo al final del while
+        loop de Claude (que nunca se alcanza cuando _run_dual_read hace
+        return early con la card), la columna client_name quedaba vacía
+        y el filtro del listado trataba el quote como empty draft aunque
+        tuviera plano + mensajes + datos en el breakdown.
+        """
+        create = await client.post("/api/quotes")
+        qid = create.json()["id"]
+
+        # Paso 1: quote recién creado, todavía sin client_name → NO en lista.
+        listing_before = await client.get("/api/quotes")
+        assert listing_before.status_code == 200
+        ids_before = {q["id"] for q in listing_before.json()}
+        assert qid not in ids_before, (
+            "Quote con client_name vacío debería estar oculto del listado"
+        )
+
+        # Paso 2: _run_dual_read simula setear client_name desde el brief.
+        # Usamos PATCH como proxy — es la misma columna que updatearía el
+        # helper _extract_column_updates_from_analysis.
+        await client.patch(f"/api/quotes/{qid}", json={"client_name": "Erica Bernardi"})
+
+        # Paso 3: ahora SÍ debe aparecer en el listado.
+        listing_after = await client.get("/api/quotes")
+        ids_after = {q["id"] for q in listing_after.json()}
+        assert qid in ids_after, (
+            "Quote con client_name seteado debe aparecer en el listado desde "
+            "ese turno (no esperar a confirmación de medidas)"
+        )
+
 
 # ── GET /api/quotes/:id — detail ─────────────────────────────────────────────
 
