@@ -3950,6 +3950,7 @@ class AgentService:
             # Process tool calls
             tool_results = []
             _gen_docs_result: dict | None = None
+            _paso2_rendered_out: str | None = None
             for tool_use in tool_use_blocks:
                 if tool_use.name == "list_pieces":
                     _list_pieces_called = True
@@ -4011,6 +4012,19 @@ class AgentService:
                         "content": result,
                     })
                 else:
+                    # Capture calculate_quote's deterministic Paso 2 and strip
+                    # it from what Claude sees. Si queda dentro del tool_result
+                    # JSON el modelo lo parafrasea con precios alucinados
+                    # (Bug G: USD 337 vs el catálogo USD 363). Lo emitimos
+                    # verbatim al stream más abajo.
+                    if (
+                        tool_use.name == "calculate_quote"
+                        and isinstance(result, dict)
+                        and result.get("ok")
+                        and result.get("_paso2_rendered")
+                    ):
+                        _paso2_rendered_out = result["_paso2_rendered"]
+                        result = {k: v for k, v in result.items() if k != "_paso2_rendered"}
                     try:
                         result_json = json.dumps(result, ensure_ascii=False)
                     except (TypeError, ValueError) as e:
@@ -4029,6 +4043,23 @@ class AgentService:
 
             assistant_messages.append({"role": "assistant", "content": _serialize_content(final_message.content)})
             assistant_messages.append({"role": "user", "content": tool_results})
+
+            # ── PASO 2 short-circuit ────────────────────────────────────────
+            # Avoid letting Valentina paraphrase _paso2_rendered. El texto
+            # determinístico lee el catálogo directo (fuente de verdad); el
+            # LLM tiende a reescribirlo alucinando base prices (Bug G: ponía
+            # USD 337 vs USD 363 del catálogo). Emitimos verbatim y cerramos
+            # el turno — mismo patrón que el PASO 3 short-circuit más abajo.
+            if _paso2_rendered_out:
+                try:
+                    yield {"type": "text", "content": _paso2_rendered_out}
+                    assistant_messages.append({
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": _paso2_rendered_out}],
+                    })
+                    break
+                except Exception as _e:
+                    logging.warning(f"paso2 short-circuit failed, falling back to LLM: {_e}")
 
             # ── PASO 3 short-circuit (single-material flow) ─────────────────
             # Avoid letting Valentina paraphrase generate_documents output
