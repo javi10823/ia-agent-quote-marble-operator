@@ -539,7 +539,40 @@ async def _run_dual_read(
                     _brief_raw = _context.get("_brief_analysis_raw")
                     if _brief_raw:
                         _bd2["brief_analysis"] = _brief_raw
-                    await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd2))
+                    # PR #375 — Persistir temprano client_name / project /
+                    # material / localidad en las columnas dedicadas de Quote
+                    # para que el quote aparezca en el listado del dashboard
+                    # desde el turno 1 (sin esperar al while loop de Claude).
+                    # Antes: _run_dual_read hace return early con la card
+                    # emitida, nunca llega al save del while loop donde
+                    # corría `_extract_quote_info` — la columna `client_name`
+                    # quedaba vacía aunque el breakdown tuviera el valor, y
+                    # el filtro del listado (que consulta la columna) lo
+                    # trataba como empty draft.
+                    #
+                    # Reglas:
+                    # - Sólo completar columnas que están vacías ("" o None).
+                    #   NO pisar valores previos del operador.
+                    # - Sanitizar (trim, strip markdown, truncate 450 chars).
+                    # - Tolerante a fallos: si `analysis` o `quote` no están,
+                    #   se sigue igual (el comportamiento pre-#375).
+                    _col_updates = _extract_column_updates_from_analysis(
+                        _brief_raw or {}, _ck_quote,
+                    )
+                    if _col_updates:
+                        await db.execute(
+                            update(Quote)
+                            .where(Quote.id == quote_id)
+                            .values(quote_breakdown=_bd2, **_col_updates)
+                        )
+                        logging.info(
+                            f"[context-analysis] early column persist for "
+                            f"{quote_id}: fields={list(_col_updates.keys())}"
+                        )
+                    else:
+                        await db.execute(
+                            update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd2)
+                        )
                     await db.commit()
                 except Exception as _e_px:
                     logging.warning(f"[context-analysis] persist pending failed: {_e_px}")
@@ -1139,6 +1172,69 @@ TOOLS = [
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
+
+def _extract_column_updates_from_analysis(
+    analysis: dict, current_quote,
+) -> dict:
+    """PR #375 — Arma el dict de update() para columnas dedicadas de Quote
+    (client_name, project, material, localidad) desde el análisis del brief,
+    respetando lo que ya existe.
+
+    Usado por `_run_dual_read` para que el quote quede visible en el
+    listado del dashboard desde el turno 1 (sin esperar a que el while
+    loop de Claude corra `_extract_quote_info` — ese punto nunca se
+    alcanza si el flujo emite `context_analysis` y hace return early).
+
+    Reglas:
+    - Sólo propone columnas que están vacías en el quote actual
+      (`""` o `None`). NO pisa valores previos del operador.
+    - Sanitiza: strip whitespace, remueve markdown bold (\\*\\*), y
+      trunca a 450 chars (DB columns son VARCHAR(500)).
+    - Si `analysis` es None/empty o `current_quote` es None, devuelve {}.
+    - Si el `analysis` no tiene un campo, ese no se toca.
+
+    Args:
+        analysis: dict del brief_analyzer (puede contener client_name,
+                  project, material, localidad como strings o None).
+        current_quote: ORM Quote object con los valores actuales en DB.
+                       Si es None, no se puede comparar → devuelve {}.
+
+    Returns:
+        Dict con las columnas a updatear (mapeable directo a values() del
+        update). Vacío si no hay nada que actualizar.
+    """
+    import re as _re
+    if not current_quote or not analysis:
+        return {}
+    _MAX_FIELD = 450
+
+    def _clean(s) -> str:
+        if not s or not isinstance(s, str):
+            return ""
+        s = _re.sub(r"[\r\n]+", " ", s)
+        s = _re.sub(r"\*+", "", s)
+        return s.strip()[:_MAX_FIELD]
+
+    updates: dict = {}
+    # Sólo tocamos columnas vacías. "" y None se consideran vacías.
+    def _is_empty(v) -> bool:
+        return v is None or v == ""
+
+    candidates = [
+        ("client_name", analysis.get("client_name")),
+        ("project", analysis.get("project")),
+        ("material", analysis.get("material")),
+        ("localidad", analysis.get("localidad")),
+    ]
+    for field, raw_value in candidates:
+        if not _is_empty(getattr(current_quote, field, None)):
+            # Operador o flujo anterior ya seteó valor — no pisar.
+            continue
+        cleaned = _clean(raw_value)
+        if cleaned:
+            updates[field] = cleaned
+    return updates
+
 
 def _extract_quote_info(user_message: str) -> dict:
     """Extract client name, project (obra) and material from user message.
