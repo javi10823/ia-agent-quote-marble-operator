@@ -41,15 +41,40 @@ function handleAuthError(_res: Response): void {
 }
 
 /**
+ * Inyecta `Authorization: Bearer <token>` si hay token en localStorage.
+ * Exportado para usar en flows que no pasan por apiFetch (SSE con fetch
+ * directo, principalmente `streamChat`). Si ya viene un header Authorization
+ * en `init.headers`, NO lo sobreescribe.
+ */
+export function withAuthHeader(init?: RequestInit): RequestInit {
+  if (typeof window === "undefined") return init || {};
+  let token: string | null = null;
+  try { token = localStorage.getItem("dangelo:token"); } catch {}
+  if (!token) return init || {};
+
+  // Normalizar headers a un objeto mutable sin perder los headers originales.
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  return { ...init, headers };
+}
+
+/**
  * Wrap `fetch()` → si tira TypeError "Failed to fetch" (red caída / CORS /
  * backend inalcanzable), el browser muestra un mensaje crudo horrible en
  * los toasts. Lo traducimos a algo accionable.
+ *
+ * También inyecta el header `Authorization: Bearer <token>` cuando hay un
+ * JWT en localStorage — fallback para clientes donde la cookie cross-origin
+ * no viaja (iOS Safari con ITP). En desktop el backend prefiere la cookie
+ * igual, así que el header es redundancia inofensiva.
  *
  * Uso: `apiFetch(url, init)` en lugar de `fetch(url, init)`.
  */
 export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   try {
-    return await fetch(input, init);
+    return await fetch(input, withAuthHeader(init));
   } catch (err: any) {
     // TypeError: Failed to fetch (Chrome/Safari) / NetworkError (Firefox)
     if (err instanceof TypeError || err?.name === "NetworkError") {
@@ -565,12 +590,15 @@ export async function* streamChat(
 
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}/api/quotes/${quoteId}/chat`, {
+    // withAuthHeader inyecta Authorization: Bearer <token> si hay sesión en
+    // localStorage — imprescindible en iOS Safari (la cookie cross-origin
+    // no viaja), inofensivo en desktop (cookie tiene precedencia server-side).
+    res = await fetch(`${API_BASE}/api/quotes/${quoteId}/chat`, withAuthHeader({
       method: "POST",
       body: formData,
       credentials: "include",
       signal: controller.signal,
-    });
+    }));
   } catch (e: any) {
     clearTimeout(connectTimeout);
     if (e.name === "AbortError") {
