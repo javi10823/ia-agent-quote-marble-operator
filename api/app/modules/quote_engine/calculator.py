@@ -1206,6 +1206,9 @@ def build_deterministic_paso2(calc: dict) -> str:
     # Merma — se COBRA como línea separada (regla calculation-formulas.md:
     # "Grand total suma principal + sobrante"). Antes se mostraba como info
     # sin sumar al total; ahora explicitamos que va al grand total.
+    # Siempre se renderiza el estado (APLICA / NO APLICA) con motivo —
+    # paridad con el bloque de DESCUENTOS más abajo. Si aplica=False sin
+    # estado, el operador no sabe si falta calcular o si no corresponde.
     if merma.get("aplica"):
         lines.append("**MERMA — APLICA**")
         lines.append(f"- {merma.get('motivo', '')}")
@@ -1214,6 +1217,11 @@ def build_deterministic_paso2(calc: dict) -> str:
             sob_total = round(sob_m2 * price_unit)
             _fmt_sob = fmt_usd(sob_total) if currency == "USD" else fmt_ars(sob_total)
             lines.append(f"- Sobrante facturable: **{sob_m2:.2f} m² × {fmt_usd(price_unit) if currency == 'USD' else fmt_ars(price_unit)} = {_fmt_sob}** (se suma al total)".replace(".", ","))
+    else:
+        lines.append("**MERMA — NO APLICA**")
+        _motivo_nm = (merma.get("motivo") or "").strip()
+        if _motivo_nm:
+            lines.append(f"- {_motivo_nm}")
     lines.append("")
 
     # Descuento
