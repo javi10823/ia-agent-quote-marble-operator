@@ -199,3 +199,130 @@ class TestFormatPatchSummary:
     def test_empty_both(self):
         s = format_patch_summary([], [])
         assert "detallar" in s
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PR #378 — reset_quote_to_paso1 + is_paso2_confirmed helpers
+# ═══════════════════════════════════════════════════════════════════════
+
+from app.modules.agent.card_editor import (  # noqa: E402
+    reset_quote_to_paso1,
+    is_paso2_confirmed,
+    _PASO2_DERIVED_KEYS,
+)
+
+
+def _full_paso2_breakdown() -> dict:
+    """Breakdown de un quote post Paso 2 — todos los campos derivados
+    llenos. Usado para validar que el reset los limpia todos."""
+    return {
+        # Campos que DEBEN preservarse (Paso 1 + metadata)
+        "dual_read_result": {"sectores": [{"tipo": "cocina", "tramos": [{"id": "t1"}]}]},
+        "dual_read_plan_hash": "abc123",
+        "brief_analysis": {"client_name": "Erica Bernardi"},
+        "context_analysis_pending": {"tech_detections": []},
+        "verified_context_analysis": {"answers": []},
+        # Campos de Paso 2 — TODOS deben limpiarse
+        "verified_context": "[MEDIDAS VERIFICADAS...]",
+        "verified_measurements": {"sectores": []},
+        "measurements_confirmed": True,  # legacy
+        "verified_commercial_attrs": {"anafe_count": {"value": 1}},
+        "verified_derived_pieces": [{"description": "Pata frontal"}],
+        "material_name": "PURASTONE",
+        "material_m2": 6.48,
+        "material_price_unit": 527,
+        "material_currency": "USD",
+        "discount_amount": 0,
+        "discount_pct": 0,
+        "total_ars": 797177,
+        "total_usd": 4128,
+        "total_mo_ars": 797177,
+        "mo_items": [{"description": "Colocación"}],
+        "sectors": [{"label": "COCINA"}],
+        "sinks": [],
+        "piece_details": [{"description": "Mesada"}],
+        "mo_discount_amount": 0,
+        "mo_discount_pct": 0,
+        "sobrante_m2": 0,
+        "sobrante_total": 0,
+        "paso1_pieces": [],
+        "paso1_total_m2": 6.48,
+    }
+
+
+class TestIsPaso2Confirmed:
+    def test_none_is_false(self):
+        assert is_paso2_confirmed(None) is False
+
+    def test_empty_is_false(self):
+        assert is_paso2_confirmed({}) is False
+
+    def test_verified_context_marker(self):
+        assert is_paso2_confirmed({"verified_context": "X"}) is True
+
+    def test_measurements_confirmed_legacy_marker(self):
+        assert is_paso2_confirmed({"measurements_confirmed": True}) is True
+
+    def test_only_dual_read_result_is_not_confirmed(self):
+        """Quote en Paso 1 con card emitida pero sin confirmar → no bloqueado."""
+        bd = {"dual_read_result": {"sectores": []}}
+        assert is_paso2_confirmed(bd) is False
+
+
+class TestResetQuoteToPaso1:
+    """El helper deja el breakdown en estado 'Paso 1 editable', preservando
+    metadata (brief_analysis, dual_read_result, client context)."""
+
+    def test_removes_all_paso2_derived_keys(self):
+        bd = _full_paso2_breakdown()
+        reset = reset_quote_to_paso1(bd)
+        for key in _PASO2_DERIVED_KEYS:
+            assert key not in reset, f"{key} no se limpió"
+
+    def test_preserves_dual_read_result_by_default(self):
+        bd = _full_paso2_breakdown()
+        reset = reset_quote_to_paso1(bd)
+        assert "dual_read_result" in reset
+        assert reset["dual_read_result"] == bd["dual_read_result"]
+
+    def test_preserves_brief_analysis_and_metadata(self):
+        bd = _full_paso2_breakdown()
+        reset = reset_quote_to_paso1(bd)
+        assert reset.get("brief_analysis") == {"client_name": "Erica Bernardi"}
+        assert reset.get("dual_read_plan_hash") == "abc123"
+        assert "context_analysis_pending" in reset
+        assert "verified_context_analysis" in reset
+
+    def test_preserve_dual_read_result_false_removes_it(self):
+        bd = _full_paso2_breakdown()
+        reset = reset_quote_to_paso1(bd, preserve_dual_read_result=False)
+        assert "dual_read_result" not in reset
+
+    def test_idempotent_on_empty_breakdown(self):
+        assert reset_quote_to_paso1({}) == {}
+        assert reset_quote_to_paso1(None) == {}
+
+    def test_idempotent_second_call(self):
+        """Aplicar reset dos veces == aplicarlo una vez. No falla."""
+        bd = _full_paso2_breakdown()
+        once = reset_quote_to_paso1(bd)
+        twice = reset_quote_to_paso1(once)
+        assert once == twice
+
+    def test_does_not_mutate_input(self):
+        """Funcional puro — el dict original queda intacto."""
+        bd = _full_paso2_breakdown()
+        bd_snapshot = dict(bd)
+        _ = reset_quote_to_paso1(bd)
+        assert bd == bd_snapshot
+
+    def test_handles_partial_paso2_state(self):
+        """Si solo algunos campos de Paso 2 están presentes, limpia los que
+        hay sin romper por los que faltan."""
+        bd = {
+            "dual_read_result": {"x": 1},
+            "verified_context": "texto",
+            "material_name": "X",
+        }
+        reset = reset_quote_to_paso1(bd)
+        assert reset == {"dual_read_result": {"x": 1}}

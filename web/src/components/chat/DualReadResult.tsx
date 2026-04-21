@@ -213,6 +213,13 @@ interface Props {
   quoteId: string;
   onConfirm: (verified: DualReadData) => void;
   onRetry?: (newData: DualReadData) => void;
+  /** PR #378 — Cuando true, el despiece se muestra en modo read-only:
+   *  inputs deshabilitados, CTA "Confirmar medidas" oculto. Usado
+   *  cuando el quote ya tiene `verified_context` (ya se confirmó y
+   *  ahora se está en Paso 2). Para editar, operador aprieta
+   *  "Editar despiece" afuera de esta card → endpoint reopen limpia
+   *  Paso 2 → re-render desbloqueado. */
+  locked?: boolean;
 }
 
 type IconStyle = { cls: string; char: string };
@@ -277,6 +284,7 @@ function EditableNumber({
   onEdit,
   forceEditable = false,
   dblClickEdit = false,
+  locked = false,
 }: {
   field: FieldValue;
   /** PR #357 — ahora acepta `null` para cuando el input queda vacío.
@@ -287,14 +295,37 @@ function EditableNumber({
   /** Si true, el campo arranca como label read-only; doble-click entra en
    *  edit mode. Enter/blur commit (solo si valor válido), Esc cancela. */
   dblClickEdit?: boolean;
+  /** PR #378 — Lock post-confirmación. Cuando true fuerza modo read-only
+   *  suprimiendo forceEditable/dblClickEdit/status=DUDOSO. La UI ya no
+   *  permite edits sin antes "Reabrir edición" (endpoint
+   *  /reopen-measurements), que limpia Paso 2 y desbloquea. Evita el
+   *  estado ambiguo "edité pero no se persiste ni reconfirma".
+   */
+  locked?: boolean;
 }) {
+  // Hooks SIEMPRE al tope (rules-of-hooks). El early return por `locked`
+  // va después. No usamos los refs/state cuando locked pero es barato
+  // mantenerlos allocados — render cost es mínimo y no hay leak.
+  const [editing, setEditing] = React.useState(false);
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const originalRef = React.useRef<number>(safeNum(field.valor));
+
+  // Lock tiene precedencia absoluta — no hay edit mode mientras esté on.
+  // El tooltip explica al operador por qué no puede editar.
+  if (locked) {
+    return (
+      <span
+        className="text-t2 select-none cursor-not-allowed"
+        title="Confirmado — usá 'Editar despiece' para modificar"
+      >
+        {displayNum(field.valor)}
+      </span>
+    );
+  }
   const alwaysEditable = forceEditable
     || field.status === "CONFLICTO"
     || field.status === "DUDOSO"
     || field.status === "UNANCHORED";
-  const [editing, setEditing] = React.useState(false);
-  const inputRef = React.useRef<HTMLInputElement | null>(null);
-  const originalRef = React.useRef<number>(safeNum(field.valor));
 
   // PR #69 — tooltip revela Opus/Sonnet originales (cuando hay reconciliación)
   const tooltipParts: string[] = [];
@@ -421,7 +452,7 @@ function EditableZocalo({
   );
 }
 
-export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Props) {
+export default function DualReadResult({ data, quoteId, onConfirm, onRetry, locked = false }: Props) {
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const [editedData, setEditedData] = useState<DualReadData>(() => normalizeDualReadData(data));
@@ -819,6 +850,7 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                         onEdit={(v) => updateField(si, ti, "largo_m", v)}
                         forceEditable={tramo._manual}
                         dblClickEdit
+                        locked={locked}
                       />
                       <span className="text-t4 ml-0.5">m</span>
                     </div>
@@ -828,6 +860,7 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                         onEdit={(v) => updateField(si, ti, "ancho_m", v)}
                         forceEditable={tramo._manual}
                         dblClickEdit
+                        locked={locked}
                       />
                       <span className="text-t4 ml-0.5">m</span>
                     </div>
@@ -840,6 +873,7 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
                         field={tramo.m2}
                         onEdit={(v) => updateField(si, ti, "m2", v)}
                         forceEditable={tramo._manual}
+                        locked={locked}
                       />
                       {/* PR #68 — botón × también en mesadas para remover duplicados
                           / piezas ajenas (heladera, bajo mesada) que el dual_read
@@ -1199,22 +1233,32 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
 
       {/* Actions */}
       <div className="flex gap-2 px-5 py-4 border-t border-b1 bg-s2">
-        <button
-          className="flex-1 py-2.5 px-4 rounded-xl text-[13px] font-semibold bg-acc hover:bg-acc-hover text-white transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-acc"
-          onClick={() => {
-            const payload = {
-              ...editedData,
-              pending_answers: Object.values(pendingAnswers),
-            };
-            onConfirm(payload as DualReadData);
-          }}
-          disabled={!allQuestionsAnswered}
-          title={!allQuestionsAnswered ? "Respondé las preguntas pendientes primero" : undefined}
-        >
-          {allQuestionsAnswered
-            ? `Confirmar medidas · ${totalM2.toFixed(2)} m²`
-            : `Respondé ${pendingQuestions.length - Object.values(pendingAnswers).filter(a => a.value).length} pregunta(s) pendiente(s)`}
-        </button>
+        {locked ? (
+          // PR #378 — Despiece ya confirmado. El CTA original queda
+          // reemplazado por un banner explicando el estado. El botón
+          // "Editar despiece" vive en el layout del chat (afuera de
+          // esta card) y llama al endpoint /reopen-measurements.
+          <div className="flex-1 py-2.5 px-4 rounded-xl text-[13px] font-medium bg-grn-bg text-grn border border-grn/30 text-center">
+            ✓ Medidas confirmadas — usá &ldquo;Editar despiece&rdquo; para modificar
+          </div>
+        ) : (
+          <button
+            className="flex-1 py-2.5 px-4 rounded-xl text-[13px] font-semibold bg-acc hover:bg-acc-hover text-white transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-acc"
+            onClick={() => {
+              const payload = {
+                ...editedData,
+                pending_answers: Object.values(pendingAnswers),
+              };
+              onConfirm(payload as DualReadData);
+            }}
+            disabled={!allQuestionsAnswered}
+            title={!allQuestionsAnswered ? "Respondé las preguntas pendientes primero" : undefined}
+          >
+            {allQuestionsAnswered
+              ? `Confirmar medidas · ${totalM2.toFixed(2)} m²`
+              : `Respondé ${pendingQuestions.length - Object.values(pendingAnswers).filter(a => a.value).length} pregunta(s) pendiente(s)`}
+          </button>
+        )}
       </div>
     </div>
   );

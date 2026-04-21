@@ -753,3 +753,138 @@ class TestQuoteEngine:
         qid = resp.json()["quotes"][0]["quote_id"]
         detail = (await client.get(f"/api/quotes/{qid}")).json()
         assert detail["source"] == "web"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PR #378 — Endpoint POST /api/quotes/:id/reopen-measurements
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestReopenMeasurements:
+    """Endpoint que permite al operador reabrir edición después de haber
+    confirmado medidas. Invalida el Paso 2 (material + MO + totales) y
+    deja el quote en 'Paso 1 editable'."""
+
+    async def _make_paso2_quote(self, client, db_session) -> str:
+        """Helper: crea quote y lo pone en estado post-Paso 2 (con
+        verified_context + material + totales)."""
+        from app.models.quote import Quote
+        from sqlalchemy import select, update
+        create = await client.post("/api/quotes")
+        qid = create.json()["id"]
+        # Parchear el breakdown directo en DB para simular Paso 2 completo.
+        bd = {
+            "dual_read_result": {"sectores": [{"tipo": "cocina"}]},
+            "brief_analysis": {"client_name": "Erica Bernardi"},
+            "verified_context": "[MEDIDAS VERIFICADAS...]",
+            "verified_measurements": {"sectores": []},
+            "verified_commercial_attrs": {"anafe_count": {"value": 1}},
+            "material_name": "PURASTONE",
+            "total_ars": 797177,
+            "total_usd": 4128,
+            "mo_items": [{"description": "Colocación"}],
+            "sectors": [{"label": "COCINA"}],
+        }
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(
+                quote_breakdown=bd,
+                total_ars=797177,
+                total_usd=4128,
+            )
+        )
+        await db_session.commit()
+        return qid
+
+    @pytest.mark.asyncio
+    async def test_reopen_clears_paso2_state(self, client, db_session):
+        """Post-reopen: verified_context, material, totales, mo_items desaparecen;
+        dual_read_result y brief_analysis se preservan."""
+        qid = await self._make_paso2_quote(client, db_session)
+
+        resp = await client.post(f"/api/quotes/{qid}/reopen-measurements")
+        assert resp.status_code == 200, resp.text
+
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        bd = detail["quote_breakdown"] or {}
+        # Paso 2 limpio
+        assert "verified_context" not in bd
+        assert "verified_measurements" not in bd
+        assert "verified_commercial_attrs" not in bd
+        assert "material_name" not in bd
+        assert "mo_items" not in bd
+        assert "sectors" not in bd
+        # Paso 1 preservado
+        assert "dual_read_result" in bd
+        assert bd.get("brief_analysis", {}).get("client_name") == "Erica Bernardi"
+        # Totales de la tabla también limpios
+        assert detail["total_ars"] is None
+        assert detail["total_usd"] is None
+
+    @pytest.mark.asyncio
+    async def test_reopen_404_for_nonexistent_quote(self, client):
+        resp = await client.post("/api/quotes/00000000-0000-0000-0000-000000000000/reopen-measurements")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_reopen_400_when_no_confirmation_yet(self, client):
+        """Quote nuevo (sin Paso 2) — no hay nada que reabrir → 400."""
+        create = await client.post("/api/quotes")
+        qid = create.json()["id"]
+        resp = await client.post(f"/api/quotes/{qid}/reopen-measurements")
+        assert resp.status_code == 400
+        assert "confirmaci" in resp.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_reopen_409_when_validated(self, client, db_session):
+        """Status=validated → 409 (PDF ya generado, no se reabre)."""
+        from app.models.quote import Quote, QuoteStatus
+        from sqlalchemy import update
+        qid = await self._make_paso2_quote(client, db_session)
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(status=QuoteStatus.VALIDATED)
+        )
+        await db_session.commit()
+
+        resp = await client.post(f"/api/quotes/{qid}/reopen-measurements")
+        assert resp.status_code == 409
+        assert "validated" in resp.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_reopen_409_when_sent(self, client, db_session):
+        from app.models.quote import Quote, QuoteStatus
+        from sqlalchemy import update
+        qid = await self._make_paso2_quote(client, db_session)
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(status=QuoteStatus.SENT)
+        )
+        await db_session.commit()
+
+        resp = await client.post(f"/api/quotes/{qid}/reopen-measurements")
+        assert resp.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_reopen_idempotent_second_call_returns_400(self, client, db_session):
+        """Después del primer reopen el quote ya no tiene verified_context;
+        el segundo reopen devuelve 400 (nada que reabrir)."""
+        qid = await self._make_paso2_quote(client, db_session)
+        r1 = await client.post(f"/api/quotes/{qid}/reopen-measurements")
+        assert r1.status_code == 200
+        r2 = await client.post(f"/api/quotes/{qid}/reopen-measurements")
+        assert r2.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_reopen_preserves_client_name_column(self, client, db_session):
+        """La columna Quote.client_name NO se pisa — es trabajo real persistido
+        y reabrir medidas no debería perderlo (el cliente sigue siendo el mismo)."""
+        qid = await self._make_paso2_quote(client, db_session)
+        from app.models.quote import Quote
+        from sqlalchemy import update
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(
+                client_name="Erica Bernardi",
+            )
+        )
+        await db_session.commit()
+
+        await client.post(f"/api/quotes/{qid}/reopen-measurements")
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["client_name"] == "Erica Bernardi"

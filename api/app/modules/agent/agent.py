@@ -1707,25 +1707,16 @@ class AgentService:
                         dict(_existing_card), _ops
                     )
                     # Guardar el card patcheado + limpiar Paso 2 state si
-                    # estamos revirtiendo.
+                    # estamos revirtiendo. PR #378 — la lista de campos
+                    # limpiar vive en `card_editor.reset_quote_to_paso1`
+                    # (reutilizada por el endpoint reopen-measurements).
                     try:
-                        _cm_bd_new = dict(_cm_bd)
-                        _cm_bd_new["dual_read_result"] = _patched_card
                         if _reverting_from_paso2:
-                            # Limpiar todo el state post-confirmación para
-                            # que el flujo vuelva a Paso 1.
-                            for _stale in (
-                                "verified_context", "verified_measurements",
-                                "measurements_confirmed", "material_name",
-                                "material_m2", "material_price_unit",
-                                "material_currency", "discount_amount",
-                                "discount_pct", "total_ars", "total_usd",
-                                "mo_items", "sectors", "sinks", "piece_details",
-                                "mo_discount_amount", "mo_discount_pct",
-                                "total_mo_ars", "sobrante_m2", "sobrante_total",
-                                "paso1_pieces", "paso1_total_m2",
-                            ):
-                                _cm_bd_new.pop(_stale, None)
+                            from app.modules.agent.card_editor import reset_quote_to_paso1
+                            _cm_bd_new = reset_quote_to_paso1(_cm_bd)
+                        else:
+                            _cm_bd_new = dict(_cm_bd)
+                        _cm_bd_new["dual_read_result"] = _patched_card
                         await db.execute(
                             update(Quote).where(Quote.id == quote_id).values(
                                 quote_breakdown=_cm_bd_new,
