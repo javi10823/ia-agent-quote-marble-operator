@@ -532,6 +532,13 @@ async def _run_dual_read(
                     _bd2["dual_read_planilla_m2"] = planilla_m2
                     _bd2["dual_read_crop_label"] = crop_label
                     _bd2["context_analysis_pending"] = _context
+                    # PR #374 — Persistir análisis crudo del brief para que
+                    # el handler DUAL_READ_CONFIRMED arme commercial_attrs
+                    # con precedencia brief > dual_read (sin re-correr
+                    # analyze_brief que es una llamada LLM extra).
+                    _brief_raw = _context.get("_brief_analysis_raw")
+                    if _brief_raw:
+                        _bd2["brief_analysis"] = _brief_raw
                     await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd2))
                     await db.commit()
                 except Exception as _e_px:
@@ -1445,17 +1452,52 @@ class AgentService:
                         )
                 except Exception as _e_ans:
                     logging.warning(f"[pending-questions] apply_answers failed: {_e_ans}")
-                from app.modules.quote_engine.dual_reader import build_verified_context
-                _verified_ctx = build_verified_context(_confirmed_json)
+                from app.modules.quote_engine.dual_reader import (
+                    build_verified_context,
+                    build_commercial_attrs,
+                )
+                # PR #374 — Juntar atributos comerciales con precedencia
+                # explícita (operator_answer > brief > dual_read > default)
+                # para que el verified_context le diga al LLM qué wording
+                # usar ("confirmado" solo si source=operator_answer). Antes
+                # el LLM re-leía el plano y sobreafirmaba ("2 anafes
+                # confirmados" cuando dual_read había detectado 1).
                 _qr0 = await db.execute(select(Quote).where(Quote.id == quote_id))
                 _q0 = _qr0.scalar_one_or_none()
+                _bd0 = dict(_q0.quote_breakdown or {}) if _q0 else {}
+                _saved_dual = _bd0.get("dual_read_result") or {}
+                # Reconstruir el analysis del brief (si está cacheado).
+                # Fallback: diccionario vacío → reconcile se cae al dual_read.
+                _ctx_analysis = _bd0.get("brief_analysis") or {}
+                # Respuestas del operador a la card de contexto
+                # (verified_context_analysis guarda `{"answers": [...]}`).
+                _vca = _bd0.get("verified_context_analysis") or {}
+                _op_answers_ctx = _vca.get("answers") or []
+                # Sumar también las pending_answers aplicadas en este turno
+                # (frontend las manda dentro del _confirmed_json).
+                _op_answers_turn = _confirmed_json.get("pending_answers") or []
+                _op_answers = list(_op_answers_ctx) + list(_op_answers_turn)
+                _commercial_attrs = build_commercial_attrs(
+                    analysis=_ctx_analysis,
+                    dual_result=_saved_dual,
+                    operator_answers=_op_answers,
+                )
+                _verified_ctx = build_verified_context(
+                    _confirmed_json, commercial_attrs=_commercial_attrs,
+                )
                 if _q0:
-                    _bd0 = dict(_q0.quote_breakdown or {})
                     _bd0["verified_measurements"] = _confirmed_json
                     _bd0["verified_context"] = _verified_ctx
+                    # Guardar también los commercial_attrs estructurados
+                    # para auditoría y uso futuro (ej: templates de docs).
+                    _bd0["verified_commercial_attrs"] = _commercial_attrs
                     await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd0))
                     await db.commit()
-                logging.info(f"[dual-read] Verified measurements saved for {quote_id} (early handler)")
+                logging.info(
+                    f"[dual-read] Verified measurements + commercial attrs "
+                    f"saved for {quote_id} (early handler). "
+                    f"attrs_keys={list(_commercial_attrs.keys())}"
+                )
                 # Reemplazar el mensaje por un prompt que Claude entienda.
                 # El verified_context entra al system prompt via build_system_prompt.
                 # PR #75 — evitar que el regex de _extract_quote_info matchee
