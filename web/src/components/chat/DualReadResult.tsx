@@ -646,12 +646,15 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
   // Totals
   let mesadasM2 = 0;
   let zocalosM2 = 0;
-  let piecesCount = 0;
+  let mesadasCount = 0;
+  let alzadasCount = 0;
   let zocalosCount = 0;
   editedData.sectores.forEach((s) =>
     s.tramos.forEach((t) => {
       mesadasM2 += safeNum(t.m2?.valor);
-      piecesCount += 1;
+      const isAlzada = (t.descripcion || "").toLowerCase().trimStart().startsWith("alzada");
+      if (isAlzada) alzadasCount += 1;
+      else mesadasCount += 1;
       t.zocalos.forEach((z) => {
         const ml = safeNum(z.ml);
         if (ml > 0) {
@@ -737,8 +740,11 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
         })()}
         <h3 className="font-serif italic text-[19px] font-medium text-t1 -tracking-[0.01em] leading-tight">{firstSectorHead || title}</h3>
         <span className="ml-auto text-[12px] text-t3 font-mono hidden md:inline tabular-nums">
-          {piecesCount} {piecesCount === 1 ? "mesada" : "mesadas"} · {zocalosCount}{" "}
-          {zocalosCount === 1 ? "zócalo" : "zócalos"}
+          {mesadasCount} {mesadasCount === 1 ? "mesada" : "mesadas"}
+          {alzadasCount > 0 && (
+            <> · {alzadasCount} {alzadasCount === 1 ? "alzada" : "alzadas"}</>
+          )}
+          {" · "}{zocalosCount} {zocalosCount === 1 ? "zócalo" : "zócalos"}
         </span>
         <CopyButton
           text={despieceMarkdown}
@@ -973,7 +979,12 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
           </div>
           <div className="mt-4 grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-[12px] font-mono tabular-nums">
             <span className="text-t3 font-sans">
-              Mesadas <span className="text-t4">({piecesCount})</span>
+              Mesadas <span className="text-t4">({mesadasCount})</span>
+              {alzadasCount > 0 && (
+                <>
+                  {" "}· Alzadas <span className="text-t4">({alzadasCount})</span>
+                </>
+              )}
             </span>
             <span className="text-t1 text-right">{mesadasM2.toFixed(2)} m²</span>
             <span className="text-t3 font-sans">
