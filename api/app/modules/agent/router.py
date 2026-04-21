@@ -460,6 +460,61 @@ async def reopen_measurements(
     return q
 
 
+# ── REHYDRATE LEGACY CHAT HISTORY (non-destructive) ─────────────────────────
+#
+# PR #380 — Repara quotes viejos cuyo `Quote.messages` quedó con placeholders
+# `_SHOWN_` vacíos, bloques internos del system prompt pegados al user
+# turn, o fake turns "(contexto confirmado)". El helper puro
+# `rehydrate_messages` reconstruye el historial usando `quote_breakdown`
+# como fuente de verdad (dual_read_result, context_analysis_pending)
+# sin inventar data ausente.
+#
+# Idempotente: si el historial ya está limpio, `changed=False` y no hay
+# UPDATE a DB. No toca cálculo, totales ni pricing — solo `messages`.
+#
+# Uso típico: operador abre un quote viejo, ve markers crudos, llama
+# este endpoint (manualmente o vía UI futura). También usable desde
+# un script de migration one-shot.
+
+@router.post("/quotes/{quote_id}/rehydrate-history")
+async def rehydrate_history(
+    quote_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Reconstruye el historial de chat desde `quote_breakdown` si hay
+    markers legacy. No modifica nada del cálculo.
+
+    Codes:
+        200 con {changed: bool, quote_id} — idempotente si changed=False.
+        404 — quote no existe.
+    """
+    from app.modules.agent.card_editor import rehydrate_messages
+
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+
+    new_messages, changed = rehydrate_messages(
+        list(quote.messages or []), quote.quote_breakdown or {},
+    )
+
+    if not changed:
+        return {"changed": False, "quote_id": quote_id}
+
+    await db.execute(
+        update(Quote)
+        .where(Quote.id == quote_id)
+        .values(messages=new_messages)
+    )
+    await db.commit()
+    logger.info(
+        f"[rehydrate] quote {quote_id} messages updated: "
+        f"{len(quote.messages or [])} → {len(new_messages)} turns"
+    )
+    return {"changed": True, "quote_id": quote_id, "turn_count": len(new_messages)}
+
+
 # ── VALIDATE QUOTE (generate docs + change status) ──────────────────────────
 
 @router.post("/quotes/{quote_id}/validate")

@@ -326,3 +326,275 @@ class TestResetQuoteToPaso1:
         }
         reset = reset_quote_to_paso1(bd)
         assert reset == {"dual_read_result": {"x": 1}}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PR #380 — rehydrate_messages helper (historial legacy)
+# ═══════════════════════════════════════════════════════════════════════
+
+import json  # noqa: E402
+from app.modules.agent.card_editor import rehydrate_messages  # noqa: E402
+
+
+def _legacy_bernardi_messages() -> list[dict]:
+    """Historial real de un quote pre-#379 — con todos los patrones
+    contaminados que el helper debe limpiar."""
+    return [
+        # Brief del operador con el bloque PDF pegado (bug copy.deepcopy)
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        "nuevo presupuesto material en pura prima onix white mate "
+                        "Cliente: Erica Bernardi SIN zocalos en rosario\n\n"
+                        "[TEXTO EXTRAÍDO DEL PDF — DATOS EXACTOS]\n"
+                        "⛔ Extraído con precisión 100%...\n"
+                        "Tabla 3 (página 1) --- 1,60 ---\n"
+                        "[SISTEMA — EDICIÓN LIBRE]\n"
+                        "Este presupuesto tiene un cálculo previo..."
+                    ),
+                }
+            ],
+        },
+        # Marker placeholder — reemplazable si hay context_analysis_pending
+        {"role": "assistant", "content": "__CONTEXT_ANALYSIS_SHOWN__"},
+        # Turn real de confirmación de contexto (frontend lo marca como pill)
+        {"role": "user", "content": '[CONTEXT_CONFIRMED]{"answers":[]}'},
+        # Fake user turn — descartable
+        {"role": "user", "content": "(contexto confirmado)"},
+        # Marker del despiece — reemplazable si hay dual_read_result
+        {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"},
+        # Turn de confirmación de medidas (pill)
+        {"role": "user", "content": '[DUAL_READ_CONFIRMED]{"sectores":[]}'},
+        # Paso 2 assistant markdown legítimo
+        {"role": "assistant", "content": "## PASO 2 — Validación ..."},
+        # Final user turn legítimo
+        {"role": "user", "content": "Confirmo"},
+    ]
+
+
+def _bernardi_breakdown(with_context_pending: bool = True) -> dict:
+    """Breakdown con data mínima para reconstruir las cards."""
+    bd = {
+        "dual_read_result": {
+            "sectores": [{"id": "cocina", "tipo": "cocina", "tramos": []}],
+        },
+    }
+    if with_context_pending:
+        bd["context_analysis_pending"] = {
+            "data_known": [{"field": "Cliente", "value": "Erica Bernardi", "source": "brief"}],
+            "assumptions": [],
+            "pending_questions": [],
+        }
+    return bd
+
+
+class TestRehydrateMessagesBernardi:
+    """Caso central: el historial Bernardi-shape con todos los patrones
+    contaminados se transforma al shape post-#379 usando el breakdown
+    como fuente de verdad."""
+
+    def test_bernardi_full_rehydrate(self):
+        msgs = _legacy_bernardi_messages()
+        bd = _bernardi_breakdown()
+        new_msgs, changed = rehydrate_messages(msgs, bd)
+        assert changed is True
+
+        # Brief del operador: truncado al marker [TEXTO EXTRAÍDO
+        brief = new_msgs[0]
+        assert brief["role"] == "user"
+        brief_text = brief["content"] if isinstance(brief["content"], str) else "".join(
+            b.get("text", "") for b in brief["content"] if b.get("type") == "text"
+        )
+        assert "pura prima onix" in brief_text.lower()
+        assert "TEXTO EXTRAÍDO" not in brief_text
+        assert "[SISTEMA" not in brief_text
+
+        # __CONTEXT_ANALYSIS_SHOWN__ → __CONTEXT_ANALYSIS__<json>
+        ctx_turn = new_msgs[1]
+        assert ctx_turn["role"] == "assistant"
+        assert ctx_turn["content"].startswith("__CONTEXT_ANALYSIS__")
+        ctx_json = json.loads(ctx_turn["content"].replace("__CONTEXT_ANALYSIS__", "", 1))
+        assert any(
+            r.get("field") == "Cliente" and r.get("value") == "Erica Bernardi"
+            for r in ctx_json.get("data_known", [])
+        )
+
+        # [CONTEXT_CONFIRMED] preservado
+        assert new_msgs[2]["content"].startswith("[CONTEXT_CONFIRMED]")
+
+        # (contexto confirmado) descartado → el siguiente es el DUAL_READ
+        dual_turn = new_msgs[3]
+        assert dual_turn["role"] == "assistant"
+        assert dual_turn["content"].startswith("__DUAL_READ__")
+        dual_json = json.loads(dual_turn["content"].replace("__DUAL_READ__", "", 1))
+        assert dual_json["sectores"][0]["tipo"] == "cocina"
+
+        # [DUAL_READ_CONFIRMED] preservado
+        assert new_msgs[4]["content"].startswith("[DUAL_READ_CONFIRMED]")
+
+        # Paso 2 preservado
+        assert new_msgs[5]["content"].startswith("## PASO 2")
+
+        # "Confirmo" preservado
+        assert new_msgs[6]["content"] == "Confirmo"
+
+        # Total: 8 originales → 7 (se descartó "(contexto confirmado)")
+        assert len(new_msgs) == 7
+
+    def test_idempotent_second_call_returns_unchanged(self):
+        """Idempotencia — condición del PR: correr 2 veces da el mismo
+        resultado y la segunda marca changed=False."""
+        msgs = _legacy_bernardi_messages()
+        bd = _bernardi_breakdown()
+        once, changed1 = rehydrate_messages(msgs, bd)
+        assert changed1 is True
+        twice, changed2 = rehydrate_messages(once, bd)
+        assert changed2 is False
+        assert once == twice
+
+    def test_no_invention_when_dual_read_missing(self):
+        """Si no hay `dual_read_result` en el breakdown, el marker
+        __DUAL_READ_CARD_SHOWN__ se descarta en lugar de fabricar data."""
+        msgs = [
+            {"role": "user", "content": "brief"},
+            {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"},
+        ]
+        new_msgs, changed = rehydrate_messages(msgs, {})
+        assert changed is True
+        assert len(new_msgs) == 1  # marker descartado
+        assert new_msgs[0]["content"] == "brief"
+
+    def test_no_invention_when_context_pending_missing(self):
+        """Mismo criterio para context_analysis — post-confirmación
+        `context_analysis_pending` se poppea del breakdown. El helper no
+        reconstruye la card (acepta perderla) en lugar de fabricar."""
+        msgs = [
+            {"role": "user", "content": "brief"},
+            {"role": "assistant", "content": "__CONTEXT_ANALYSIS_SHOWN__"},
+        ]
+        new_msgs, changed = rehydrate_messages(msgs, {"dual_read_result": {}})
+        assert changed is True
+        assert len(new_msgs) == 1
+        assert new_msgs[0]["content"] == "brief"
+
+
+class TestRehydrateMessagesIdempotence:
+    """Condición explícita: quotes sanos quedan intactos."""
+
+    def test_clean_history_is_noop(self):
+        """Historial ya limpio (post-#379) → changed=False, identity."""
+        msgs = [
+            {"role": "user", "content": "cotizar cocina"},
+            {
+                "role": "assistant",
+                "content": '__CONTEXT_ANALYSIS__{"data_known":[]}',
+            },
+            {"role": "user", "content": '[CONTEXT_CONFIRMED]{"answers":[]}'},
+            {
+                "role": "assistant",
+                "content": '__DUAL_READ__{"sectores":[]}',
+            },
+            {"role": "user", "content": '[DUAL_READ_CONFIRMED]{"sectores":[]}'},
+            {"role": "assistant", "content": "## PASO 2"},
+            {"role": "user", "content": "Confirmo"},
+        ]
+        new_msgs, changed = rehydrate_messages(msgs, {"dual_read_result": {}})
+        assert changed is False
+        assert new_msgs == msgs
+
+    def test_empty_messages(self):
+        assert rehydrate_messages([], {}) == ([], False)
+        assert rehydrate_messages(None, {}) == ([], False)
+
+    def test_none_breakdown_still_cleans_contamination(self):
+        """Aun sin breakdown: `(contexto confirmado)` y `[TEXTO
+        EXTRAÍDO]` se limpian. Los markers `_SHOWN_` se descartan
+        (sin data para rehidratar)."""
+        msgs = [
+            {"role": "user", "content": [{"type": "text", "text": "brief\n[TEXTO EXTRAÍDO DEL PDF]\ndump"}]},
+            {"role": "user", "content": "(contexto confirmado)"},
+            {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"},
+        ]
+        new_msgs, changed = rehydrate_messages(msgs, None)
+        assert changed is True
+        # Brief truncado + fake user descartado + marker descartado
+        assert len(new_msgs) == 1
+        brief_text = new_msgs[0]["content"]
+        assert "brief" in brief_text
+        assert "TEXTO EXTRAÍDO" not in brief_text
+
+
+class TestRehydrateContentShape:
+    """Tests de edge cases del shape de `content`: string vs list vs
+    mixed."""
+
+    def test_content_list_with_text_block_truncated(self):
+        msgs = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "cotizar [TEXTO EXTRAÍDO DEL PDF] dump"},
+                ],
+            }
+        ]
+        new_msgs, changed = rehydrate_messages(msgs, {})
+        assert changed is True
+        # Se normaliza a string
+        assert new_msgs[0]["content"] == "cotizar"
+
+    def test_content_fully_contaminated_falls_back_to_placeholder(self):
+        """Si todo el content es contaminación, queda placeholder."""
+        msgs = [
+            {
+                "role": "user",
+                "content": "[TEXTO EXTRAÍDO DEL PDF]\n dump completo sin brief",
+            }
+        ]
+        new_msgs, changed = rehydrate_messages(msgs, {})
+        assert changed is True
+        assert new_msgs[0]["content"] == "(adjunto plano)"
+
+    def test_content_with_multiple_markers_truncates_at_first(self):
+        """Si aparecen ambos markers, corta en el que esté primero."""
+        msgs = [
+            {
+                "role": "user",
+                "content": (
+                    "cotizar la cocina"
+                    "\n[SISTEMA — EDICIÓN LIBRE]\nhint"
+                    "\n[TEXTO EXTRAÍDO DEL PDF]\ndump"
+                ),
+            }
+        ]
+        new_msgs, changed = rehydrate_messages(msgs, {})
+        assert changed is True
+        assert new_msgs[0]["content"] == "cotizar la cocina"
+
+    def test_ignores_legitimate_brackets_in_content(self):
+        """Un texto con corchetes que no son markers internos (ej: el
+        operador escribe '[x2]') no se toca."""
+        msgs = [
+            {
+                "role": "user",
+                "content": "necesito [x2] mesadas iguales",
+            }
+        ]
+        new_msgs, changed = rehydrate_messages(msgs, {})
+        assert changed is False
+        assert new_msgs == msgs
+
+
+class TestRehydrateDoesNotTouchBreakdown:
+    """Condición del PR: el cálculo/totales no se tocan."""
+
+    def test_breakdown_is_read_not_mutated(self):
+        bd = _bernardi_breakdown()
+        bd_snapshot = json.loads(json.dumps(bd))
+        msgs = _legacy_bernardi_messages()
+        rehydrate_messages(msgs, bd)
+        # El breakdown no cambia
+        assert bd == bd_snapshot
+

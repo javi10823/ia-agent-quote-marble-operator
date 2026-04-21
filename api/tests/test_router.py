@@ -888,3 +888,169 @@ class TestReopenMeasurements:
         await client.post(f"/api/quotes/{qid}/reopen-measurements")
         detail = (await client.get(f"/api/quotes/{qid}")).json()
         assert detail["client_name"] == "Erica Bernardi"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PR #380 — Endpoint rehydrate-history
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestRehydrateHistoryEndpoint:
+    """Endpoint que limpia historial legacy usando el breakdown como
+    fuente de verdad. Idempotente y no destructivo."""
+
+    @pytest.mark.asyncio
+    async def test_404_for_nonexistent_quote(self, client):
+        resp = await client.post(
+            "/api/quotes/00000000-0000-0000-0000-000000000000/rehydrate-history"
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_200_changed_false_on_clean_quote(self, client, db_session):
+        """Quote sin markers legacy → changed=False, no UPDATE."""
+        from app.models.quote import Quote
+        from sqlalchemy import update
+        create = await client.post("/api/quotes")
+        qid = create.json()["id"]
+        clean_msgs = [
+            {"role": "user", "content": "cotizar cocina"},
+            {"role": "assistant", "content": "## PASO 2"},
+        ]
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(messages=clean_msgs)
+        )
+        await db_session.commit()
+
+        resp = await client.post(f"/api/quotes/{qid}/rehydrate-history")
+        assert resp.status_code == 200
+        assert resp.json()["changed"] is False
+        # Los messages no cambiaron
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert len(detail["messages"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_200_rehydrates_legacy_bernardi_shape(self, client, db_session):
+        """Historial legacy con placeholders → se reconstruye usando el
+        dual_read_result del breakdown."""
+        from app.models.quote import Quote
+        from sqlalchemy import update
+        create = await client.post("/api/quotes")
+        qid = create.json()["id"]
+        legacy_msgs = [
+            {"role": "user", "content": "brief con [TEXTO EXTRAÍDO DEL PDF] dump"},
+            {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"},
+            {"role": "user", "content": "(contexto confirmado)"},
+        ]
+        bd = {"dual_read_result": {"sectores": [{"tipo": "cocina"}]}}
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(
+                messages=legacy_msgs, quote_breakdown=bd,
+            )
+        )
+        await db_session.commit()
+
+        resp = await client.post(f"/api/quotes/{qid}/rehydrate-history")
+        assert resp.status_code == 200
+        assert resp.json()["changed"] is True
+
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        msgs = detail["messages"]
+        # Brief limpio
+        brief = msgs[0]["content"]
+        brief_text = brief if isinstance(brief, str) else "".join(
+            b.get("text", "") for b in brief if b.get("type") == "text"
+        )
+        assert "TEXTO EXTRAÍDO" not in brief_text
+        # Card de despiece reconstruida
+        assert msgs[1]["content"].startswith("__DUAL_READ__")
+        # Fake (contexto confirmado) descartado
+        assert len(msgs) == 2
+
+    @pytest.mark.asyncio
+    async def test_idempotent_second_call(self, client, db_session):
+        from app.models.quote import Quote
+        from sqlalchemy import update
+        create = await client.post("/api/quotes")
+        qid = create.json()["id"]
+        legacy_msgs = [
+            {"role": "user", "content": "brief"},
+            {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"},
+        ]
+        bd = {"dual_read_result": {"sectores": []}}
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(
+                messages=legacy_msgs, quote_breakdown=bd,
+            )
+        )
+        await db_session.commit()
+
+        r1 = await client.post(f"/api/quotes/{qid}/rehydrate-history")
+        assert r1.json()["changed"] is True
+        r2 = await client.post(f"/api/quotes/{qid}/rehydrate-history")
+        assert r2.json()["changed"] is False
+
+    @pytest.mark.asyncio
+    async def test_does_not_modify_breakdown_or_status(self, client, db_session):
+        """Condición del PR: no toca cálculo. Verificamos que breakdown,
+        total_ars, total_usd y status quedan intactos."""
+        from app.models.quote import Quote
+        from sqlalchemy import update
+        create = await client.post("/api/quotes")
+        qid = create.json()["id"]
+        legacy_msgs = [
+            {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"},
+        ]
+        bd = {
+            "dual_read_result": {"sectores": []},
+            "material_name": "PURASTONE",
+            "total_ars": 797177,
+            "total_usd": 4128,
+        }
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(
+                messages=legacy_msgs,
+                quote_breakdown=bd,
+                total_ars=797177,
+                total_usd=4128,
+            )
+        )
+        await db_session.commit()
+
+        await client.post(f"/api/quotes/{qid}/rehydrate-history")
+
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        assert detail["total_ars"] == 797177
+        assert detail["total_usd"] == 4128
+        assert detail["quote_breakdown"]["material_name"] == "PURASTONE"
+        assert detail["quote_breakdown"]["total_ars"] == 797177
+
+    @pytest.mark.asyncio
+    async def test_preserves_clean_messages_between_legacy(self, client, db_session):
+        """Si en el medio hay mensajes legítimos (ej: Paso 2 markdown),
+        se preservan tal cual mientras los adyacentes se rehidratan."""
+        from app.models.quote import Quote
+        from sqlalchemy import update
+        create = await client.post("/api/quotes")
+        qid = create.json()["id"]
+        legacy_msgs = [
+            {"role": "user", "content": "brief"},
+            {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"},
+            {"role": "assistant", "content": "## PASO 2 — Validación\n\nmateriales y precios"},
+            {"role": "user", "content": "Confirmo"},
+        ]
+        bd = {"dual_read_result": {"sectores": []}}
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(
+                messages=legacy_msgs, quote_breakdown=bd,
+            )
+        )
+        await db_session.commit()
+
+        await client.post(f"/api/quotes/{qid}/rehydrate-history")
+
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        msgs = detail["messages"]
+        assert len(msgs) == 4
+        assert msgs[1]["content"].startswith("__DUAL_READ__")
+        assert msgs[2]["content"].startswith("## PASO 2")
+        assert msgs[3]["content"] == "Confirmo"
