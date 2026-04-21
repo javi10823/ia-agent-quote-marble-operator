@@ -335,7 +335,14 @@ async def _run_dual_read(
                         "text": (user_message or "").strip() or f"(adjuntó plano: {plan_filename})",
                     }],
                 }
-                _asst_entry = {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"}
+                # PR #379 — Persistir el JSON real de la card (no un marker
+                # vacío). El frontend ya sabe renderizar `__DUAL_READ__<json>`
+                # como card. Así al reabrir el quote el chat reconstruye el
+                # estado real — no quedan placeholders crudos `_SHOWN_`.
+                _asst_entry = {
+                    "role": "assistant",
+                    "content": f"__DUAL_READ__{_json.dumps(_existing_dr, ensure_ascii=False)}",
+                }
                 await db.execute(
                     update(Quote)
                     .where(Quote.id == quote_id)
@@ -592,7 +599,12 @@ async def _run_dual_read(
                             "text": (user_message or "").strip() or f"(adjuntó plano: {plan_filename})",
                         }],
                     }
-                    _asst_entry = {"role": "assistant", "content": "__CONTEXT_ANALYSIS_SHOWN__"}
+                    # PR #379 — JSON real en el content (no `_SHOWN_` marker)
+                    # para que el chat se reconstruya al reabrir el quote.
+                    _asst_entry = {
+                        "role": "assistant",
+                        "content": f"__CONTEXT_ANALYSIS__{_json.dumps(_context, ensure_ascii=False)}",
+                    }
                     if _ck_quote:
                         await db.execute(
                             update(Quote).where(Quote.id == quote_id).values(
@@ -650,7 +662,11 @@ async def _run_dual_read(
                         "text": (user_message or "").strip() or f"(adjuntó plano: {plan_filename})",
                     }],
                 }
-                _asst_entry2 = {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"}
+                # PR #379 — JSON real en lugar de marker `_SHOWN_` vacío.
+                _asst_entry2 = {
+                    "role": "assistant",
+                    "content": f"__DUAL_READ__{_json.dumps(_dual_result, ensure_ascii=False)}",
+                }
                 await db.execute(
                     update(Quote)
                     .where(Quote.id == quote_id)
@@ -1502,11 +1518,24 @@ class AgentService:
                 )
                 yield {"type": "dual_read_result", "content": json.dumps(_saved_dual, ensure_ascii=False)}
                 yield {"type": "done", "content": ""}
-                # Persist assistant entry en historial
+                # PR #379 — Persistir el flujo real al DB:
+                # - user turn: el `[CONTEXT_CONFIRMED]<json>` que mandó el
+                #   frontend (el frontend lo detecta y renderiza como
+                #   pill "Contexto confirmado ✅").
+                # - assistant: `__DUAL_READ__<json>` con la card real.
+                # Antes persistíamos un fake user "(contexto confirmado)"
+                # + marker `_SHOWN_` sin data — ambos quedaban como texto
+                # crudo al reabrir el quote.
                 try:
                     _turn = [
-                        {"role": "user", "content": [{"type": "text", "text": "(contexto confirmado)"}]},
-                        {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"},
+                        {
+                            "role": "user",
+                            "content": [{"type": "text", "text": user_message}],
+                        },
+                        {
+                            "role": "assistant",
+                            "content": f"__DUAL_READ__{json.dumps(_saved_dual, ensure_ascii=False)}",
+                        },
                     ]
                     if _q_ctx:
                         await db.execute(
@@ -1868,6 +1897,8 @@ class AgentService:
                                 _persist_bd["dual_read_result"] = _text_card
                                 _persist_bd["context_analysis_pending"] = _context_tp
                                 _persist_update["quote_breakdown"] = _persist_bd
+                                # PR #379 — JSON real en content para que el
+                                # chat reconstruya la card al reabrir.
                                 _persist_update["messages"] = list(
                                     _tp_quote.messages or []
                                 ) + [
@@ -1879,7 +1910,7 @@ class AgentService:
                                     },
                                     {
                                         "role": "assistant",
-                                        "content": "__CONTEXT_ANALYSIS_SHOWN__",
+                                        "content": f"__CONTEXT_ANALYSIS__{json.dumps(_context_tp, ensure_ascii=False)}",
                                     },
                                 ]
                                 await db.execute(
@@ -1908,9 +1939,14 @@ class AgentService:
                         _persist_bd = dict(_tp_bd)
                         _persist_bd["dual_read_result"] = _text_card
                         _persist_update["quote_breakdown"] = _persist_bd
+                        # PR #379 — JSON real de la card para reconstrucción
+                        # al reabrir el quote.
                         _persist_update["messages"] = list(_tp_quote.messages or []) + [
                             {"role": "user", "content": [{"type": "text", "text": user_message}]},
-                            {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"},
+                            {
+                                "role": "assistant",
+                                "content": f"__DUAL_READ__{json.dumps(_text_card, ensure_ascii=False)}",
+                            },
                         ]
                         await db.execute(
                             update(Quote).where(Quote.id == quote_id).values(**_persist_update)
@@ -3252,9 +3288,23 @@ class AgentService:
             else:
                 clean_messages.append(msg)
 
-        # Save clean content before injection
-        import copy
-        clean_user_content = copy.deepcopy(content)
+        # PR #379 — `clean_user_content` es lo que persiste en DB como user
+        # turn. Antes era `copy.deepcopy(content)` que arrastraba TODO lo
+        # que va a Claude: el plan image binary, el bloque "[TEXTO
+        # EXTRAÍDO DEL PDF — DATOS EXACTOS]..." con el dump completo del
+        # PDF, y los bloques "[SISTEMA — ...]" que se inyectan más abajo.
+        # Ese payload no pertenece al historial de chat del operador — es
+        # input interno para Claude. Al reabrir el quote se mostraba como
+        # si el operador hubiera escrito todo eso.
+        #
+        # Ahora: el user turn en DB es SOLO el texto que escribió el
+        # operador (o un placeholder "(adjuntó plano: X)" si subió un
+        # plano sin texto). El content completo sigue yendo a Claude
+        # intacto — esto afecta solo la persistencia.
+        _text_for_db = (user_message or "").strip() or (
+            f"(adjuntó plano: {plan_filename})" if plan_filename else "(adjunto plano)"
+        )
+        clean_user_content = [{"type": "text", "text": _text_for_db}]
 
         # Inject context hint based on quote state
         try:

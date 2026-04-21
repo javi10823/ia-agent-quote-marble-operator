@@ -72,6 +72,20 @@ function buildFullSnapshot(quote: QuoteDetail | null, messages: UIMessage[]): st
     if (content.startsWith("__CONTEXT_ANALYSIS__")) return;
     if (content.startsWith("[SYSTEM_TRIGGER")) return;
     if (content.startsWith("[CONTEXT_CONFIRMED]")) return;
+    // PR #379 — Filtros defensivos para quotes viejos que quedaron con
+    // placeholders en DB (pre-#379 el backend persistía markers `_SHOWN_`
+    // vacíos y un fake user turn "(contexto confirmado)"). En quotes
+    // nuevos estos ya no aparecen — el backend persiste el JSON real de
+    // la card. Estos filtros evitan el leak visual para el historial
+    // legacy hasta que se corra un PR de rehydrate aparte.
+    if (content === "__DUAL_READ_CARD_SHOWN__") return;
+    if (content === "__CONTEXT_ANALYSIS_SHOWN__") return;
+    if (content === "(contexto confirmado)") return;
+    // También filtramos bloques internos del system prompt que pre-#379
+    // se persistían como user turn (TEXTO EXTRAÍDO DEL PDF + hints de
+    // SISTEMA) vía copy.deepcopy(content).
+    if (content.startsWith("[TEXTO EXTRAÍDO DEL PDF")) return;
+    if (content.startsWith("[SISTEMA")) return;
 
     if (content.startsWith("[DUAL_READ_CONFIRMED]")) {
       parts.push("**Operador:** \u2705 Medidas verificadas", "");
@@ -608,6 +622,29 @@ export default function QuotePage() {
               // Hide ghost messages (dots from sanitization)
               const isDot = msg.content.trim() === "." || msg.content.trim() === "..";
               if (isDot) return null;
+
+              // PR #379 — Filtros defensivos para quotes legacy cuyo historial
+              // en DB quedó con placeholders vacíos o texto interno leakeado.
+              // En quotes nuevos el backend ya persiste el JSON real de las
+              // cards → estos strings no deberían aparecer. Dejamos el filtro
+              // defensivo hasta que se corra un PR de rehydrate de quotes
+              // viejos aparte.
+              const trimmedContent = msg.content.trim();
+              if (trimmedContent === "__DUAL_READ_CARD_SHOWN__") return null;
+              if (trimmedContent === "__CONTEXT_ANALYSIS_SHOWN__") return null;
+              // Fake user turn "(contexto confirmado)" persistido pre-#379
+              // cuando el operador confirmaba el contexto. Ahora se usa
+              // el [CONTEXT_CONFIRMED]<json> real que el frontend detecta
+              // como pill.
+              if (msg.role === "user" && trimmedContent === "(contexto confirmado)") return null;
+              // Bloques internos del system prompt que pre-#379 se
+              // persistían como user turn por un copy.deepcopy del
+              // content completo (con el text extraído del PDF y hints
+              // inyectados al LLM).
+              if (msg.role === "user" && (
+                trimmedContent.startsWith("[TEXTO EXTRAÍDO DEL PDF") ||
+                trimmedContent.startsWith("[SISTEMA")
+              )) return null;
 
               return (
                 <div key={msg.id}>
