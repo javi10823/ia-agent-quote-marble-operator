@@ -4416,3 +4416,253 @@ class TestSemanticPriorRanking:
             assert any("semantic_prior_tie_demoted" in r for r in top["reasons"]), (
                 f"Reason tie_demoted debe estar presente. Reasons: {top['reasons']}"
             )
+
+
+class TestGuardrailOverride:
+    """Override post-LLM cuando el ranking es muy autoritativo — PR #372.
+
+    Contexto: tras el prior semántico (PR #371), el ranking de Bernardi quedó
+    invertido correctamente (1.60 preferred, 2.05 weak). PERO el VLM de
+    measurement seguía eligiendo 2.05, con el sistema marcando DUDOSO sin
+    corregir el valor. Con gap de score grande (≥20), el ranking es
+    suficientemente autoritativo como para sobreescribir la elección del VLM.
+
+    El status queda DUDOSO — no fabricamos certeza aunque overrideemos.
+    """
+
+    def test_bernardi_r3_override_largo_a_1_60_cuando_vlm_eligio_2_05(self):
+        """Caso Bernardi end-to-end:
+        - Ranking post-prior tiene 1.60 preferred (score 80), 2.05 weak (55).
+        - VLM eligió 2.05 desobedeciendo el ranking.
+        - Gap = 80 - 55 = 25 ≥ 20 → override al preferred.
+        - Resultado: largo_m = 1.60.
+        """
+        ranking = {
+            "length": [
+                {"value": 1.60, "score": 80, "bucket": "preferred", "reasons": ["semantic_prior_in_range_isla_+25"]},
+                {"value": 2.05, "score": 55, "bucket": "weak", "reasons": ["semantic_prior_out_of_range_isla_-25"]},
+                {"value": 2.35, "score": 30, "bucket": "unlikely", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 75, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 2.05,  # VLM eligió la weak
+            "ancho_m": 0.60,
+            "confidence": 0.8,
+            "reasoning": "la cota 2.05 parece ser del largo visible",
+        }
+        result = _apply_guardrails(vlm_output, ranking, region_id="R3")
+
+        # REQUISITO CENTRAL: valor overrideado al preferred.
+        assert result["largo_m"] == 1.60, (
+            f"largo_m debe ser 1.60 (preferred) post-override, got {result['largo_m']}. "
+            f"Este es el fix central de Bernardi."
+        )
+        # Status DUDOSO — confidence queda ≤ 0.5 (no vendemos certeza).
+        assert result["confidence"] <= 0.5
+
+        # Suspicious debe mencionar override.
+        reasons = result.get("suspicious_reasons") or []
+        assert any("override" in s for s in reasons), (
+            f"Suspicious debe mencionar override. Got: {reasons}"
+        )
+
+    def test_no_override_si_gap_menor_a_threshold(self):
+        """Gap de 15 (< 20) → NO override. Solo DUDOSO como hoy."""
+        ranking = {
+            "length": [
+                {"value": 2.35, "score": 65, "bucket": "preferred", "reasons": []},
+                {"value": 2.95, "score": 50, "bucket": "weak", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 75, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 2.95,  # weak, gap=15
+            "ancho_m": 0.60,
+            "confidence": 0.80,
+        }
+        result = _apply_guardrails(vlm_output, ranking, region_id="R1")
+
+        # NO override — valor queda en 2.95.
+        assert result["largo_m"] == 2.95, (
+            f"gap={65-50}=15 < 20 → NO debería hacer override. "
+            f"largo_m debería quedar 2.95, got {result['largo_m']}"
+        )
+        # DUDOSO (cap 0.5) sí se aplica.
+        assert result["confidence"] <= 0.5
+
+    def test_override_con_gap_exacto_en_threshold(self):
+        """Gap = 20 exacto → override (comparación ≥)."""
+        ranking = {
+            "length": [
+                {"value": 1.60, "score": 70, "bucket": "preferred", "reasons": []},
+                {"value": 2.05, "score": 50, "bucket": "weak", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 75, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 2.05,
+            "ancho_m": 0.60,
+            "confidence": 0.80,
+        }
+        result = _apply_guardrails(vlm_output, ranking, region_id="R3")
+        assert result["largo_m"] == 1.60, (
+            f"gap=20 EXACTO debe gatillar override. Got {result['largo_m']}"
+        )
+
+    def test_no_override_si_no_hay_preferred(self):
+        """VLM eligió weak y no hay preferred — weak puede ser lo mejor.
+        Sin preferred, nada que comparar → no override."""
+        ranking = {
+            "length": [
+                {"value": 2.05, "score": 50, "bucket": "weak", "reasons": []},
+                {"value": 2.95, "score": 45, "bucket": "weak", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 75, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 2.05,
+            "ancho_m": 0.60,
+            "confidence": 0.80,
+        }
+        result = _apply_guardrails(vlm_output, ranking)
+        # Sin preferred → sin suspicious (el guardrail sigue respetando la
+        # lógica existente "no castigamos weak si no hay preferred").
+        assert result["largo_m"] == 2.05
+
+    def test_no_override_cuando_vlm_eligio_el_preferred(self):
+        """VLM eligió el preferred directamente → no hay nada que overridear."""
+        ranking = {
+            "length": [
+                {"value": 1.60, "score": 80, "bucket": "preferred", "reasons": []},
+                {"value": 2.05, "score": 55, "bucket": "weak", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 75, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 1.60,  # VLM eligió el preferred
+            "ancho_m": 0.60,
+            "confidence": 0.85,
+        }
+        result = _apply_guardrails(vlm_output, ranking)
+        assert result["largo_m"] == 1.60
+
+    def test_override_aplica_a_ancho_tambien(self):
+        """Simetría: si el VLM eligió ancho weak habiendo preferred con
+        gap grande, override al preferred también en depth."""
+        ranking = {
+            "length": [
+                {"value": 2.00, "score": 80, "bucket": "preferred", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 80, "bucket": "preferred", "reasons": []},
+                {"value": 0.80, "score": 55, "bucket": "weak", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 2.00,
+            "ancho_m": 0.80,  # VLM eligió weak de ancho
+            "confidence": 0.80,
+        }
+        result = _apply_guardrails(vlm_output, ranking, region_id="R1")
+        assert result["ancho_m"] == 0.60, (
+            f"ancho también debe overridear cuando el gap es grande. "
+            f"Got {result['ancho_m']}"
+        )
+
+    def test_override_no_cambia_ancho_cuando_solo_largo_aplica(self):
+        """Override en largo no debe mutar ancho aunque ambos pasen por
+        el loop."""
+        ranking = {
+            "length": [
+                {"value": 1.60, "score": 80, "bucket": "preferred", "reasons": []},
+                {"value": 2.05, "score": 55, "bucket": "weak", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 80, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 2.05,  # será overrideado
+            "ancho_m": 0.60,  # coincide con preferred — no cambia
+            "confidence": 0.80,
+        }
+        result = _apply_guardrails(vlm_output, ranking, region_id="R3")
+        assert result["largo_m"] == 1.60
+        assert result["ancho_m"] == 0.60
+
+    def test_log_guardrail_override_estructurado(self, caplog):
+        """Log [guardrail-override] con los 7 campos auditables."""
+        import logging as _logging
+        ranking = {
+            "length": [
+                {"value": 1.60, "score": 80, "bucket": "preferred", "reasons": []},
+                {"value": 2.05, "score": 55, "bucket": "weak", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 80, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 2.05,
+            "ancho_m": 0.60,
+            "confidence": 0.80,
+        }
+
+        with caplog.at_level(_logging.INFO, logger="app.modules.quote_engine.multi_crop_reader"):
+            _apply_guardrails(vlm_output, ranking, region_id="R3")
+
+        override_logs = [r for r in caplog.records if "[guardrail-override]" in r.getMessage()]
+        assert len(override_logs) == 1, (
+            f"Debe haber exactamente 1 log [guardrail-override]. "
+            f"Got {len(override_logs)}: {[r.getMessage() for r in caplog.records]}"
+        )
+        msg = override_logs[0].getMessage()
+        for field in ("region=R3", "field=largo", "llm_choice=2.05", "preferred_choice=1.6",
+                      "llm_score=55", "preferred_score=80", "gap=25",
+                      "reason=weak_chosen_over_strong_preferred"):
+            assert field in msg, f"Log debe contener '{field}'. Got: {msg}"
+
+    def test_override_mantiene_status_dudoso_no_confirmado(self):
+        """Diseño explícito: el override sobreescribe el valor pero NO
+        sube la confidence. El resultado queda DUDOSO — no CONFIRMADO."""
+        ranking = {
+            "length": [
+                {"value": 1.60, "score": 80, "bucket": "preferred", "reasons": []},
+                {"value": 2.05, "score": 55, "bucket": "weak", "reasons": []},
+            ],
+            "depth": [
+                {"value": 0.60, "score": 80, "bucket": "preferred", "reasons": []},
+            ],
+            "excluded_hard": [],
+        }
+        vlm_output = {
+            "largo_m": 2.05,
+            "ancho_m": 0.60,
+            "confidence": 0.95,  # VLM súper confiado
+        }
+        result = _apply_guardrails(vlm_output, ranking, region_id="R3")
+        # Aunque el override sobreescriba al valor correcto, no premiamos
+        # confidence — quedamos en DUDOSO (≤ 0.5).
+        assert result["confidence"] <= 0.5, (
+            f"Post-override confidence debe quedar ≤ 0.5 (DUDOSO). "
+            f"Got {result['confidence']}"
+        )
