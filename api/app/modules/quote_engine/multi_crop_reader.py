@@ -386,6 +386,32 @@ _SEMANTIC_PRIOR_PENALTY = 25  # Restado si la cota está fuera (magnitud)
 _SEMANTIC_PRIOR_TIE_THRESHOLD = 10  # top1 - top2 ≤ este valor → degradar top1
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Guardrail override — autoridad del ranking sobre la elección del VLM
+#
+# Después del prior semántico (PR #371), había casos donde el ranking invertía
+# correctamente (1.60 preferred, 2.05 weak) pero el VLM de measurement seguía
+# eligiendo 2.05 — desobedeciendo el ranking. El guardrail existente detectaba
+# la anomalía ("VLM eligió weak habiendo preferred") y marcaba DUDOSO, pero
+# mantenía el valor incorrecto.
+#
+# Este override le da dientes al guardrail: cuando el gap de score entre el
+# preferred y la elección del VLM es lo suficientemente grande, sobreescribe
+# el valor al preferred. El status queda DUDOSO (no se fabrica certeza).
+#
+# Umbral por gap — calibrado para Bernardi (gap=25 supera 20):
+#   gap ≥ 20 → override automático (señal de ranking muy fuerte)
+#   10 < gap < 20 → sin override, DUDOSO como hoy (ranking no es autoritario)
+#   gap ≤ 10 → ya degradado a weak por _SEMANTIC_PRIOR_TIE_THRESHOLD
+#
+# Restricciones de seguridad:
+# - Solo override si el preferred existe como candidata válida (no viene de
+#   excluded_hard/perímetro — esto está implícito porque tomamos el preferred
+#   del length_ranking que ya pasó todos los filtros).
+# - Status queda DUDOSO — no fabricamos certeza aunque overrideemos.
+_GUARDRAIL_OVERRIDE_GAP_THRESHOLD = 20
+
+
 def _bbox_to_px(bbox: dict, image_size: tuple[int, int]) -> dict:
     """Convierte bbox_rel {x,y,w,h} 0..1 → coords absolutas px."""
     img_w, img_h = image_size
@@ -1172,6 +1198,7 @@ def _format_ranking_for_prompt(ranking: dict) -> str:
 
 def _apply_guardrails(
     vlm_output: dict, ranking: dict, cotas_mode: str = "local",
+    *, region_id: Optional[str] = None,
 ) -> dict:
     """Post-LLM: valida elección del VLM contra el ranking determinístico
     y baja confidence cuando la elección es sospechosa.
@@ -1186,7 +1213,10 @@ def _apply_guardrails(
          un valor estándar razonable sin cota explícita — aceptable.
        - Fuera del rango típico → halucinación dura, cap 0.3.
     2. Valor en ranking pero bucket weak/unlikely habiendo preferred →
-       cap 0.5, suspicious con detalle.
+       cap 0.5, suspicious con detalle. **Override**: si el gap de score
+       con el preferred es ≥ _GUARDRAIL_OVERRIDE_GAP_THRESHOLD, se
+       sobreescribe el valor al preferred. Status queda DUDOSO
+       (no fabricamos certeza aunque overrideemos).
     3. cotas_mode == "expanded":
        - Cap duro de confidence 0.65 (evidencia ambigua por naturaleza).
        - Si además eligió valor distinto al top-ranked para largo **O**
@@ -1271,6 +1301,44 @@ def _apply_guardrails(
                     f"{top_preferred['score']}) disponible"
                 )
                 confidence = min(confidence, 0.5)
+
+                # ── Override por gap de score ──────────────────────────
+                # El ranking determinístico es más autoritativo cuando la
+                # diferencia de score con lo que eligió el VLM es grande.
+                # Gap ≥ 20 → sobreescribir al preferred. Status queda DUDOSO
+                # (el cap de confidence 0.5 de arriba + el cap de cotas_mode
+                # abajo se encargan de eso).
+                gap = int(top_preferred["score"]) - int(chosen["score"])
+                if gap >= _GUARDRAIL_OVERRIDE_GAP_THRESHOLD:
+                    preferred_value = top_preferred["value"]
+                    field_key = f"{field_name}_m"
+                    vlm_output[field_key] = preferred_value
+                    # Refrescamos la var local para que los caps posteriores
+                    # (cotas_mode=expanded chequea top con el valor actual)
+                    # vean el valor ya overrideado.
+                    if field_name == "largo":
+                        largo = preferred_value
+                    else:
+                        ancho = preferred_value
+                    suspicious.append(
+                        f"{field_name} override: VLM eligió {chosen['value']}m "
+                        f"(score {chosen['score']}) pero ranking tenía preferred "
+                        f"{preferred_value}m (score {top_preferred['score']}, "
+                        f"gap {gap} ≥ {_GUARDRAIL_OVERRIDE_GAP_THRESHOLD}) → "
+                        f"override al preferred, status DUDOSO"
+                    )
+                    logger.info(
+                        "[guardrail-override] region=%s field=%s "
+                        "llm_choice=%s preferred_choice=%s llm_score=%s "
+                        "preferred_score=%s gap=%s reason=weak_chosen_over_strong_preferred",
+                        region_id,
+                        field_name,
+                        chosen["value"],
+                        preferred_value,
+                        chosen["score"],
+                        top_preferred["score"],
+                        gap,
+                    )
             # Si no hay preferred, weak puede ser lo mejor — no castigamos
 
     # ── Cap duro por cotas_mode=expanded ─────────────────────────────
@@ -1750,7 +1818,10 @@ async def _measure_region(
     # (no en el reasoning del VLM que puede sonar convincente y ser falso).
     # PR 2b.1 — además, cap duro de confidence cuando cotas_mode=expanded.
     # PR 2d — cap 0.5 cuando cotas_mode=expanded_rescue.
-    parsed = _apply_guardrails(parsed, ranking, cotas_mode=cotas_mode)
+    # PR #372 — region_id para el log [guardrail-override].
+    parsed = _apply_guardrails(
+        parsed, ranking, cotas_mode=cotas_mode, region_id=region.get("id"),
+    )
 
     # Cuando caímos a fallback expanded (sin rescue), el resultado NUNCA
     # es CONFIRMADO aunque los números sean plausibles — el operador tiene
