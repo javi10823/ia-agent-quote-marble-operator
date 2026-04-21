@@ -744,3 +744,175 @@ class TestReconcileLogFormat:
         for key in ("field=", "brief_value=", "dual_read_value=", "final=",
                     "source=", "confidence=", "divergent="):
             assert key in log, f"Missing key '{key}' in log: {log}"
+
+
+# ═══════════════════════════════════════════════════════
+# PR #374 — Reconcile puros + assumptions con fallback brief→dual_read
+# ═══════════════════════════════════════════════════════
+
+from app.modules.quote_engine.context_analyzer import (  # noqa: E402
+    reconcile_anafe_count,
+    reconcile_pileta_simple_doble,
+    _build_assumptions,
+)
+
+
+class TestReconcileAnafePure:
+    """Helper puro exportable — no depende del schema de tech_detection.
+
+    Bernardi real: brief sin mención de anafe + dual_read detectó 1 anafe
+    (cooktop_groups=1). El reconcile debe devolver final=1 source=dual_read
+    para que el assumptions layer pueda surface-ar el valor.
+    """
+
+    def test_bernardi_brief_silent_dual_read_detected(self):
+        analysis = {"anafe_count": None}
+        feats = {"cooktop_groups": 1, "sink_double": False, "sink_simple": True,
+                 "has_pileta": True, "has_isla": True}
+        rec = reconcile_anafe_count(analysis, feats)
+        assert rec["final"] == 1
+        assert rec["source"] == "dual_read"
+        assert rec["divergent"] is False
+
+    def test_brief_wins_over_dual_read(self):
+        analysis = {"anafe_count": 2, "anafe_gas_y_electrico": True}
+        feats = {"cooktop_groups": 1, "sink_double": False, "sink_simple": False,
+                 "has_pileta": False, "has_isla": False}
+        rec = reconcile_anafe_count(analysis, feats)
+        assert rec["final"] == 2
+        assert rec["source"] == "brief"
+        assert rec["divergent"] is True
+
+    def test_neither_returns_none(self):
+        rec = reconcile_anafe_count({}, {"cooktop_groups": 0})
+        assert rec["final"] is None
+        assert rec["source"] == "default"
+
+
+class TestReconcilePiletaPure:
+    def test_bernardi_brief_silent_dual_read_simple(self):
+        """Bernardi: brief sin mención de pileta tipo, dual_read detectó
+        pileta simple → fallback a dual_read."""
+        analysis = {"pileta_simple_doble": None, "pileta_mentioned": True}
+        feats = {"cooktop_groups": 1, "sink_double": False, "sink_simple": True,
+                 "has_pileta": True, "has_isla": True}
+        rec = reconcile_pileta_simple_doble(analysis, feats)
+        assert rec["final"] == "simple"
+        assert rec["source"] == "dual_read"
+
+    def test_bernardi_operator_corrects_to_doble(self):
+        """Caso Javi: el operador respondió 'es 1 anafe y 1 pileta doble'
+        contradiciendo el dual_read que dijo 'simple'. En el layer de
+        `_build_assumptions` esto todavía no se ve (solo brief/dual_read);
+        el operator_answer entra en build_commercial_attrs más arriba."""
+        analysis = {"pileta_simple_doble": "doble", "pileta_mentioned": True}
+        feats = {"cooktop_groups": 1, "sink_double": False, "sink_simple": True,
+                 "has_pileta": True, "has_isla": True}
+        rec = reconcile_pileta_simple_doble(analysis, feats)
+        assert rec["final"] == "doble"
+        assert rec["source"] == "brief"
+        assert rec["divergent"] is True
+
+
+class TestAssumptionsFallbackToDualRead:
+    """Regresión Bernardi: brief silencioso + dual_read con anafe/pileta →
+    assumption DEBE aparecer con source=dual_read. Antes desaparecía."""
+
+    def _bernardi_dual(self):
+        """Dual_read idéntico al log real de Bernardi: cocina con 1 anafe,
+        pileta simple + isla sin artefactos."""
+        return {
+            "sectores": [
+                {
+                    "id": "cocina",
+                    "tipo": "cocina",
+                    "tramos": [{
+                        "id": "t1",
+                        "descripcion": "Mesada con pileta y anafe",
+                        "largo_m": {"valor": 2.05, "status": "CONFIRMADO"},
+                        "ancho_m": {"valor": 0.60, "status": "CONFIRMADO"},
+                        "m2": {"valor": 1.23, "status": "CONFIRMADO"},
+                        "zocalos": [],
+                        "features": {
+                            "cooktop_groups": 1,
+                            "sink_simple": True,
+                            "sink_double": False,
+                            "has_pileta": True,
+                            "has_isla": False,
+                        },
+                    }],
+                },
+                {
+                    "id": "isla",
+                    "tipo": "isla",
+                    "tramos": [{
+                        "id": "t2",
+                        "descripcion": "Isla",
+                        "largo_m": {"valor": 1.60, "status": "DUDOSO"},
+                        "ancho_m": {"valor": 0.60, "status": "DUDOSO"},
+                        "m2": {"valor": 0.96, "status": "DUDOSO"},
+                        "zocalos": [],
+                        "features": {},
+                    }],
+                },
+            ],
+        }
+
+    def test_anafe_assumption_falls_back_to_dual_read_when_brief_silent(self):
+        """Brief Bernardi: 'pura prima onix white mate Erica Bernardi SIN
+        zocalos en rosario con colocacion' — NO menciona anafe. Dual read
+        tiene cooktop_groups=1. Antes: assumption desaparecía → LLM
+        re-contaba desde imagen y decía '2 anafes'. Ahora: assumption
+        con source=dual_read.
+        """
+        analysis = {"anafe_count": None}  # brief no menciona
+        dual = self._bernardi_dual()
+        assumps = _build_assumptions(analysis, None, dual, config_defaults={})
+        anafe = next((a for a in assumps if a["field"] == "Anafe — cantidad"), None)
+        assert anafe is not None, (
+            "Anafe assumption debe aparecer aunque el brief no lo mencione "
+            "(fallback a dual_read)"
+        )
+        assert "1 anafe" in anafe["value"]
+        assert anafe["source"] == "dual_read"
+        assert "detectado en plano" in anafe["value"]
+
+    def test_pileta_assumption_falls_back_to_dual_read(self):
+        analysis = {"pileta_simple_doble": None, "pileta_mentioned": False}
+        dual = self._bernardi_dual()
+        assumps = _build_assumptions(analysis, None, dual, config_defaults={})
+        pileta = next((a for a in assumps if a["field"] == "Pileta — bachas"), None)
+        assert pileta is not None
+        assert pileta["source"] == "dual_read"
+        assert "detectada en plano" in pileta["value"]
+
+    def test_brief_gas_electrico_still_wins_with_note(self):
+        """Si brief dice '2 anafes (gas + electrico)' pero dual_read solo
+        detectó 1: brief gana por precedencia y note marca divergencia."""
+        analysis = {
+            "anafe_count": 2, "anafe_gas_y_electrico": True,
+            "pileta_simple_doble": None, "pileta_mentioned": False,
+        }
+        dual = self._bernardi_dual()
+        assumps = _build_assumptions(analysis, None, dual, config_defaults={})
+        anafe = next(a for a in assumps if a["field"] == "Anafe — cantidad")
+        assert "2 anafes" in anafe["value"]
+        assert anafe["source"] == "brief"
+        assert anafe["note"] is not None
+        assert "divergencia" in anafe["note"].lower()
+
+    def test_no_anafe_no_pileta_when_neither_source_has_them(self):
+        """Dual read sin anafe/pileta + brief sin mencionar → no emitir
+        assumption vacía. El resumen no debe mencionar anafes."""
+        analysis = {"anafe_count": None}
+        dual = {"sectores": [{
+            "id": "cocina", "tipo": "cocina",
+            "tramos": [{
+                "id": "t1", "descripcion": "Mesada",
+                "largo_m": {"valor": 2.0}, "ancho_m": {"valor": 0.6},
+                "m2": {"valor": 1.2}, "zocalos": [], "features": {},
+            }],
+        }]}
+        assumps = _build_assumptions(analysis, None, dual, config_defaults={})
+        assert not any("Anafe" in a["field"] for a in assumps)
+        assert not any("bachas" in a.get("field", "").lower() for a in assumps)

@@ -836,23 +836,36 @@ def _check_m2(result: dict, planilla_m2: Optional[float]) -> Optional[str]:
 # Context injection
 # ═══════════════════════════════════════════════════════
 
-def build_verified_context(confirmed_data: dict) -> str:
-    """Build injection text from operator-confirmed measurements.
+def build_verified_context(
+    confirmed_data: dict,
+    commercial_attrs: dict | None = None,
+) -> str:
+    """Build injection text from operator-confirmed measurements + commercial
+    attributes with authority/precedence annotations.
 
     PR #80: el despiece confirmado es INMUTABLE desde el punto de vista
-    de Valentina. No se emiten warnings ni se piden aclaraciones sobre
-    piezas con status CONFLICTO o zócalos con ml=0 — se asume que el
-    operador intencionalmente confirmó esa configuración (ya sea
-    clickeando × para remover, editando inputs, o con + Agregar).
+    de Valentina.
 
-    Si el operador detecta un error post-confirmación, el flujo es:
-    reabrir Paso 1 (ver card_editor handler en agent.py), editar, y
-    re-confirmar. El Paso 2 se regenera recién con el nuevo despiece.
+    PR #374: atributos comerciales (anafe_count, pileta_simple_doble, etc.)
+    también se inyectan con su source y wording escalonado. Esto impide
+    que el LLM re-lea la imagen post-confirmación y sobreafirme hechos
+    (ej: "2 anafes confirmados" cuando el dual_read detectó 1). Si vos
+    eres el LLM leyendo esto: **usá estos valores. NO re-contés desde
+    la imagen.** El wording que uses en el resumen debe respetar el
+    source: "confirmado" solo si source=operator_answer.
 
-    Esta función antes (PR #59) surface-ba "pending_questions" para
-    zócalos CONFLICTO sin resolver → resultaba en ruido (Valentina
-    preguntaba de vuelta cosas que el operador ya había decidido). La
-    regla nueva es: confirmado es confirmado.
+    `commercial_attrs` shape esperado:
+        {
+          "anafe_count": {"value": int, "source": str},
+          "pileta_simple_doble": {"value": str, "source": str},
+          "isla_presence": {"value": bool, "source": str},
+          "operator_answers": [{"id": str, "value": str, "label": str}],
+          "divergences": [{"field": str, "brief_value": ..., "dual_read_value": ...}]
+        }
+    Todos los campos son opcionales — solo se emite lo que venga.
+
+    Precedencia (autoridad) canónica:
+        operator_answer > brief > dual_read > default
     """
     lines = [
         "[MEDIDAS VERIFICADAS POR DOBLE LECTURA + OPERADOR — FUENTE DE VERDAD]",
@@ -884,4 +897,197 @@ def build_verified_context(confirmed_data: dict) -> str:
                 # ml=0 → ignorado (operador lo descartó intencionalmente)
         lines.append("")
 
+    # ── Atributos comerciales con precedencia explícita ──────────────
+    if commercial_attrs:
+        lines.extend(_format_commercial_attrs_block(commercial_attrs))
+
     return "\n".join(lines)
+
+
+# Wording según source — determinístico, no dejarlo al LLM.
+# Precedencia: operator_answer > brief > dual_read > default.
+_SOURCE_WORDING = {
+    "operator_answer": "confirmado por operador",
+    "operator": "confirmado por operador",  # alias
+    "brief": "del brief",
+    "dual_read": "detectado en plano",
+    "default": "asumido (revisar)",
+}
+
+
+def _source_wording(source: str | None) -> str:
+    """Mapea un source a un fragmento de texto con certeza apropiada.
+
+    Regla central del PR: "confirmado" solo cuando source=operator_answer.
+    Si el LLM en el resumen quiere decir "X confirmado", tiene que venir
+    de acá. Para otros sources el wording degrada a "del brief" /
+    "detectado en plano" / "asumido (revisar)".
+    """
+    if not source:
+        return "asumido (revisar)"
+    return _SOURCE_WORDING.get(source, "asumido (revisar)")
+
+
+def _format_commercial_attrs_block(attrs: dict) -> list[str]:
+    """Construye las líneas del bloque "ATRIBUTOS COMERCIALES" del
+    verified_context. Cada campo lleva su source explícito. El LLM debe
+    respetar esos sources al generar el resumen — no usar wording de
+    certeza ("confirmado") salvo cuando source=operator_answer.
+    """
+    lines: list[str] = [
+        "[ATRIBUTOS COMERCIALES — FUENTE DE VERDAD POR CAMPO]",
+        "⛔ USÁ SOLO ESTOS VALORES. NO re-cuentes desde la imagen.",
+        "⛔ Wording del resumen: 'confirmado' SOLO si source=operator_answer.",
+        "   brief → 'del brief'. dual_read → 'detectado en plano'.",
+        "   default → 'asumido (revisar)'. Si no está listado → 'pendiente'.",
+        "",
+    ]
+    had_any = False
+
+    def _emit(field: str, value, source: str | None) -> None:
+        nonlocal had_any
+        wording = _source_wording(source)
+        lines.append(f"  {field}: {value}  [source={source or 'default'} — {wording}]")
+        had_any = True
+
+    anafe = attrs.get("anafe_count")
+    if anafe and anafe.get("value") is not None:
+        _emit("anafe_count", anafe["value"], anafe.get("source"))
+
+    pileta = attrs.get("pileta_simple_doble")
+    if pileta and pileta.get("value") is not None:
+        _emit("pileta_simple_doble", pileta["value"], pileta.get("source"))
+
+    isla = attrs.get("isla_presence")
+    if isla and isla.get("value") is not None:
+        _emit("isla_presence", "sí" if isla["value"] else "no", isla.get("source"))
+
+    # Respuestas del operador a pending_questions (profundidad isla,
+    # patas, alto patas, alzada, etc). Son autoridad máxima: el operador
+    # las respondió explícitamente.
+    op_answers = attrs.get("operator_answers") or []
+    if op_answers:
+        lines.append("")
+        lines.append("  Respuestas del operador (source=operator_answer — CONFIRMADAS):")
+        for a in op_answers:
+            qid = a.get("id", "?")
+            val = a.get("label") or a.get("value") or "?"
+            lines.append(f"    - {qid}: {val}")
+        had_any = True
+
+    # Divergencias explícitas — para que el LLM NO las esconda.
+    divs = attrs.get("divergences") or []
+    if divs:
+        lines.append("")
+        lines.append("  ⚠ DIVERGENCIAS entre fuentes (flag 'revisar' en el resumen):")
+        for d in divs:
+            field = d.get("field", "?")
+            bv = d.get("brief_value")
+            dv = d.get("dual_read_value")
+            lines.append(f"    - {field}: brief={bv} vs plano={dv}")
+        had_any = True
+
+    lines.append("")
+    if not had_any:
+        # No hubo ningún atributo estructurado — bloque vacío pero aún así
+        # emitido para que el LLM vea que "no hay nada confirmado" y
+        # evite inventar.
+        lines.append("  (ningún atributo comercial con valor estructurado — pedí al operador)")
+        lines.append("")
+    return lines
+
+
+def build_commercial_attrs(
+    analysis: dict | None,
+    dual_result: dict | None,
+    operator_answers: list | None = None,
+) -> dict:
+    """Orquesta la reconciliación de atributos comerciales para el
+    verified_context. Usa la capa pura de reconcile_* de context_analyzer
+    (no duplica lógica).
+
+    Precedencia aplicada:
+    - Si operator_answers incluye un answer para anafe_count / pileta_*,
+      ese gana (source=operator_answer).
+    - Sino, reconcile_* decide entre brief y dual_read.
+
+    Devuelve dict compatible con `build_verified_context(commercial_attrs=)`.
+    """
+    # Lazy import para evitar dependencia circular dual_reader ↔ context_analyzer.
+    from app.modules.quote_engine.context_analyzer import (
+        reconcile_anafe_count,
+        reconcile_pileta_simple_doble,
+        _scan_features,
+    )
+
+    analysis = analysis or {}
+    dual_result = dual_result or {}
+    feats = _scan_features(dual_result)
+
+    # Operator answers → índice por field id (los ids coinciden con el
+    # campo canónico: "anafe_count", "pileta_simple_doble", etc.)
+    op_by_field: dict[str, dict] = {}
+    for a in operator_answers or []:
+        fid = a.get("id")
+        if fid:
+            op_by_field[fid] = a
+
+    out: dict = {}
+
+    # anafe_count
+    if "anafe_count" in op_by_field:
+        a = op_by_field["anafe_count"]
+        try:
+            val = int(a.get("value"))
+            out["anafe_count"] = {"value": val, "source": "operator_answer"}
+        except (TypeError, ValueError):
+            pass
+    else:
+        rec = reconcile_anafe_count(analysis, feats)
+        if rec["final"] is not None:
+            out["anafe_count"] = {"value": rec["final"], "source": rec["source"]}
+        if rec["divergent"]:
+            out.setdefault("divergences", []).append({
+                "field": "anafe_count",
+                "brief_value": rec["brief_value"],
+                "dual_read_value": rec["dual_read_value"],
+            })
+
+    # pileta_simple_doble
+    if "pileta_simple_doble" in op_by_field:
+        a = op_by_field["pileta_simple_doble"]
+        val = a.get("value")
+        if val:
+            out["pileta_simple_doble"] = {"value": val, "source": "operator_answer"}
+    else:
+        rec = reconcile_pileta_simple_doble(analysis, feats)
+        if rec["final"] is not None:
+            out["pileta_simple_doble"] = {
+                "value": rec["final"], "source": rec["source"],
+            }
+        if rec["divergent"]:
+            out.setdefault("divergences", []).append({
+                "field": "pileta_simple_doble",
+                "brief_value": rec["brief_value"],
+                "dual_read_value": rec["dual_read_value"],
+            })
+
+    # isla_presence — derivable de feats/analysis.
+    isla_brief = bool(analysis.get("isla_mentioned"))
+    isla_dr = bool(feats.get("has_isla"))
+    if "isla_presence" in op_by_field:
+        val = op_by_field["isla_presence"].get("value")
+        if val in ("yes", "no"):
+            out["isla_presence"] = {"value": val == "yes", "source": "operator_answer"}
+    elif isla_brief:
+        out["isla_presence"] = {"value": True, "source": "brief"}
+    elif isla_dr:
+        out["isla_presence"] = {"value": True, "source": "dual_read"}
+
+    # Todas las respuestas del operador, para que el LLM las vea como
+    # "confirmadas" aunque no estén en los campos canónicos (ej:
+    # isla_profundidad, isla_patas, alzada).
+    if operator_answers:
+        out["operator_answers"] = list(operator_answers)
+
+    return out
