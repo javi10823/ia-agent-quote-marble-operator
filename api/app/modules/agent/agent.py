@@ -1142,12 +1142,18 @@ def _extract_quote_info(user_message: str) -> dict:
       - "Munge / A1335"               (separador simple cliente/obra)
       - "Pérez — obra Casa Laprida"   (dash)
       - "cliente X proyecto Y material Z"
+      - "**CLIENTE:** X **OBRA:** Y"   (brief con Markdown bold)
     """
     import re
     info = {}
     msg = (user_message or "").strip()
     if not msg:
         return info
+    # Strip Markdown bold/italic antes de regex-extraer. El operador a veces
+    # pega un brief formateado ("**CLIENTE:** Luciana") y los asteriscos se
+    # colaban dentro de los valores capturados ("** Luciana" en vez de
+    # "Luciana"), además de romper el slicing del extractor de material.
+    msg = re.sub(r"\*{1,3}", "", msg)
 
     # Delimitadores que señalan fin del nombre. "obra" y "proyecto" son
     # límite válido para cortar el nombre del cliente cuando vienen juntos.
@@ -1197,33 +1203,35 @@ def _extract_quote_info(user_message: str) -> dict:
             info["client_name"] = m2.group(1).strip().title()
             info["project"] = m2.group(2).strip().title()
 
-    # Try to find material name
+    # Try to find material name — opera sobre `msg` (ya sin Markdown bold)
+    # para que briefs formateados con "**MATERIAL:** Purastone..." extraigan
+    # "Purastone Blanco Nube" limpio en vez de "TERIAL:** Purastone...".
     material_keywords = [
         "silestone", "dekton", "neolith", "purastone", "puraprima",
         "laminatto", "negro brasil", "blanco norte", "granito",
         "mármol", "marmol",
     ]
-    msg_lower = user_message.lower()
+    msg_lower = msg.lower()
     for kw in material_keywords:
         if kw in msg_lower:
             # Find the full material name around the keyword
             idx = msg_lower.index(kw)
             # Grab surrounding words for context. Hard-cap both sides to
             # prevent runaway extraction when message has no comma/space.
-            start = max(0, user_message.rfind(" ", 0, max(0, idx - 1)) + 1)
+            start = max(0, msg.rfind(" ", 0, idx) + 1)
             # Limit start to at most 10 chars before idx (avoid capturing
             # markdown headers like "**MATERIAL:**" or prior lines).
             start = max(start, idx - 10)
             # End: prefer newline/comma/" con ", fallback to +40 chars
             candidates = []
             for delim in ["\n", "\r", ",", " con ", " — ", " - "]:
-                p = user_message.find(delim, idx)
+                p = msg.find(delim, idx)
                 if p != -1:
                     candidates.append(p)
-            end = min(candidates) if candidates else min(len(user_message), idx + 40)
+            end = min(candidates) if candidates else min(len(msg), idx + 40)
             # Hard cap: material name never > 100 chars
             end = min(end, idx + 100)
-            info["material"] = user_message[start:end].strip()
+            info["material"] = msg[start:end].strip()
             break
 
     return info
