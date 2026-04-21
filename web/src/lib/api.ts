@@ -164,6 +164,10 @@ export interface QuoteBreakdown {
   mo_items?: MOItem[];
   total_ars?: number;
   total_usd?: number;
+  /** PR #378 — Presente cuando el operador ya confirmó medidas (Paso 2).
+   *  Usado por el frontend como flag para lockear edits inline del
+   *  despiece y mostrar el botón "Editar despiece". */
+  verified_context?: string;
 }
 
 export interface QuoteDetail extends Quote {
@@ -474,6 +478,29 @@ export async function validateQuote(id: string): Promise<{ ok: boolean; pdf_url?
     throw new Error(err.detail || "Error al validar presupuesto");
   }
   return res.json();
+}
+
+/**
+ * PR #378 — Reabre la edición del despiece después de haber confirmado
+ * medidas. Limpia el Paso 2 (material + MO + totales + contexto verificado)
+ * y deja el quote en estado Paso 1 editable. El operador corrige,
+ * reconfirma, y Valentina regenera Paso 2 limpio.
+ *
+ * Errores:
+ *  - 404: quote no existe.
+ *  - 409: status es `validated` o `sent` (PDF ya entregado, no se reabre).
+ *  - 400: no había confirmación previa (nada que reabrir).
+ */
+export async function reopenMeasurements(id: string): Promise<void> {
+  const res = await apiFetch(
+    `${API_BASE}/api/quotes/${id}/reopen-measurements`,
+    { method: "POST", credentials: "include" },
+  );
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al reabrir edición del despiece");
+  }
 }
 
 /**

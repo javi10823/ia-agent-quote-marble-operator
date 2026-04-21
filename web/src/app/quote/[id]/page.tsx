@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { fetchQuote, streamChat, markQuoteAsRead, validateQuote, updateQuote, type QuoteDetail, type QuoteEditablePatch } from "@/lib/api";
+import { fetchQuote, streamChat, markQuoteAsRead, validateQuote, updateQuote, reopenMeasurements, type QuoteDetail, type QuoteEditablePatch } from "@/lib/api";
 import { useQuotes } from "@/lib/quotes-context";
 import MessageBubble from "@/components/chat/MessageBubble";
 import CopyButton from "@/components/chat/CopyButton";
@@ -15,6 +15,7 @@ import RegenerateButton from "@/components/quote/RegenerateButton";
 import EditableField from "@/components/quote/EditableField";
 import ContextAnalysis from "@/components/chat/ContextAnalysis";
 import HomeHero from "@/components/chat/HomeHero";
+import { useToast } from "@/lib/toast-context";
 import clsx from "clsx";
 import { A, I, O, N, DOT, SUP2, DASH, ITEM, WARN, CIRCLE, ARROW, XMARK, CLOUD, WAVE, PAGE, PICTURE, CLIP, RULER, TAG, FOLDER, CHART } from "@/lib/chars";
 import { VALID_FILE_TYPES as PARENT_VALID_TYPES, MAX_FILE_SIZE as PARENT_MAX_SIZE, MAX_FILES as PARENT_MAX_FILES } from "@/lib/constants";
@@ -128,6 +129,7 @@ export default function QuotePage() {
   const router = useRouter();
   const params = useParams();
   const quoteId = params.id as string;
+  const toast = useToast();
 
   const [quote, setQuote] = useState<QuoteDetail | null>(null);
   const [messages, setMessages] = useState<UIMessage[]>([]);
@@ -675,12 +677,17 @@ export default function QuotePage() {
                       try {
                         const DualReadResult = require("@/components/chat/DualReadResult").default;
                         const dualData = JSON.parse(msg.content.replace("__DUAL_READ__", ""));
+                        // PR #378 — lock si el quote ya tiene verified_context
+                        // (ya se confirmó). Para editar hay que apretar
+                        // "Editar despiece" que llama a /reopen-measurements.
+                        const isLocked = !!quote?.quote_breakdown?.verified_context;
                         return (
                           <div className="msg-anim flex gap-3 items-start">
                             <div className="max-w-full">
                               <DualReadResult
                                 data={dualData}
                                 quoteId={quoteId}
+                                locked={isLocked}
                                 onConfirm={(verified: unknown) => {
                                   send(`[DUAL_READ_CONFIRMED]${JSON.stringify(verified)}`);
                                 }}
@@ -720,6 +727,41 @@ export default function QuotePage() {
                           Corregir
                         </button>
                       </div>
+                      {/* PR #378 — "Editar despiece" cuando el quote ya
+                          tiene verified_context (Paso 2 calculado). Llama
+                          al endpoint /reopen-measurements que limpia Paso 2
+                          y deja el despiece editable otra vez. Confirmación
+                          obligatoria porque es destructivo: se pierde el
+                          cálculo actual y el operador tiene que re-confirmar
+                          medidas antes de generar PDF. */}
+                      {quote?.quote_breakdown?.verified_context && (
+                        <div className="mt-2 ml-[42px]">
+                          <button
+                            onClick={async () => {
+                              const ok = window.confirm(
+                                "Vas a invalidar el cálculo actual y volver a edición del despiece. " +
+                                "Vas a tener que reconfirmar las medidas para regenerar el presupuesto. " +
+                                "\n\n¿Continuar?"
+                              );
+                              if (!ok) return;
+                              try {
+                                await reopenMeasurements(quoteId);
+                                toast("Despiece reabierto. Editá las medidas y volvé a confirmar.", "success");
+                                // Refresh quote para que el frontend re-renderee
+                                // DualReadResult en modo editable (locked=false).
+                                const fresh = await fetchQuote(quoteId);
+                                setQuote(fresh);
+                              } catch (err) {
+                                const msg = err instanceof Error ? err.message : "Error al reabrir edición";
+                                toast(msg, "error");
+                              }
+                            }}
+                            className="w-full px-4 py-2 rounded-lg text-[12px] font-medium bg-transparent border border-amb/40 text-amb cursor-pointer hover:bg-amb/10 transition"
+                          >
+                            ↩ Editar despiece (invalida el cálculo actual)
+                          </button>
+                        </div>
+                      )}
                     </>
                   )}
                   {isLastReal && lastFailedMsg && !msg.isStreaming && !sending && msg.content.includes(WARN) && (

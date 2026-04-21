@@ -371,6 +371,95 @@ async def update_status(
     return {"ok": True}
 
 
+# ── REOPEN MEASUREMENTS (unlock post-confirmation editing) ─────────────────
+#
+# PR #378 — El operador aprieta "Editar despiece" en la UI cuando quiere
+# corregir medidas/piezas después de haber confirmado. Este endpoint
+# invalida el Paso 2 (borra material + MO + totales + commercial_attrs
+# + derived_pieces) y deja el quote en estado "Paso 1 editable" — el
+# operador corrige, reconfirma, Valentina regenera Paso 2 limpio.
+#
+# Alternativa que usábamos antes: el operador escribía "agregá zócalo..."
+# en el chat y card_editor detectaba keywords para hacer lo mismo. Sigue
+# funcionando (mismo helper `reset_quote_to_paso1`), pero este endpoint
+# es explícito: un click, no-chat-prompt.
+#
+# Prohibido en quotes con status {validated, sent} — ya se generó PDF
+# al cliente. Si el operador necesita rearmar, hay que duplicar el quote
+# (separate flow) o cambiar status manualmente.
+
+@router.post("/quotes/{quote_id}/reopen-measurements")
+async def reopen_measurements(
+    quote_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Resetea el quote a Paso 1 para permitir edición post-confirmación.
+
+    Returns the updated quote (con Paso 2 state ya limpiado).
+
+    Codes:
+        200 — reopen aplicado, breakdown con Paso 2 limpio.
+        404 — quote no existe.
+        409 — status no permite reopen (validated/sent).
+        400 — no había confirmación previa (nada que reabrir).
+    """
+    from app.modules.agent.card_editor import (
+        reset_quote_to_paso1,
+        is_paso2_confirmed,
+    )
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+
+    # Status gate: validated/sent no se reabre (PDF ya entregado).
+    status_value = quote.status.value if hasattr(quote.status, "value") else str(quote.status)
+    if status_value in ("validated", "sent"):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"El presupuesto está en estado '{status_value}'. No se puede "
+                "reabrir edición — el PDF ya fue generado/enviado. Duplicá el "
+                "quote si necesitás rearmar."
+            ),
+        )
+
+    bd = quote.quote_breakdown or {}
+    if not is_paso2_confirmed(bd):
+        # Idempotencia + claridad: si no hay nada que reabrir (el quote
+        # sigue en Paso 1 o es nuevo), devolvemos 400 para que la UI
+        # sepa que el botón está en un estado inconsistente. El caso
+        # normal es que la UI solo muestre el botón si is_paso2_confirmed
+        # es true (el breakdown trae verified_context).
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No hay confirmación de medidas que reabrir. El quote ya "
+                "está en Paso 1 editable."
+            ),
+        )
+
+    new_bd = reset_quote_to_paso1(bd)
+    # También limpiamos total_ars / total_usd en la tabla (reflejan lo
+    # calculado en Paso 2). brief_analysis y client_name se preservan.
+    await db.execute(
+        update(Quote)
+        .where(Quote.id == quote_id)
+        .values(
+            quote_breakdown=new_bd,
+            total_ars=None,
+            total_usd=None,
+        )
+    )
+    await db.commit()
+
+    # Refetch para devolver shape consistente con el listado.
+    refreshed = await db.execute(select(Quote).where(Quote.id == quote_id))
+    q = refreshed.scalar_one()
+    logger.info(f"[reopen] quote {quote_id} reset to Paso 1")
+    return q
+
+
 # ── VALIDATE QUOTE (generate docs + change status) ──────────────────────────
 
 @router.post("/quotes/{quote_id}/validate")

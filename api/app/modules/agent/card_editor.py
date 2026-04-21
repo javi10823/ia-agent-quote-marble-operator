@@ -364,3 +364,109 @@ def format_patch_summary(applied: list[str], errors: list[str]) -> str:
             "(zócalo/mesada/sector) y qué medidas?"
         )
     return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# PR #378 — Lock post-confirmación y reopen explícito
+#
+# Helper reutilizable para resetear un quote de Paso 2 → Paso 1.
+# Consumidores:
+#   1. El revert automático del card_editor cuando detecta una
+#      modificación desde el chat post-confirmación.
+#   2. El endpoint POST /api/quotes/:id/reopen-measurements que usa el
+#      frontend cuando el operador aprieta "Editar despiece".
+#
+# Antes este bloque de limpieza estaba inline en agent.py (líneas
+# ~1715-1728). Lo centralizamos acá para una sola fuente de verdad —
+# si mañana se agrega un nuevo campo derivado de Paso 2 (ej:
+# verified_derived_pieces en PR #377, verified_commercial_attrs en
+# #374), este helper lo cubre y no hay que cambiar 2 lugares.
+# ─────────────────────────────────────────────────────────────────────
+
+
+# Lista canónica de keys de `quote_breakdown` que representan estado
+# derivado de Paso 2 (material + MO + totales + contexto confirmado).
+# Al resetear a Paso 1 se quitan todas. `dual_read_result` NO está acá
+# — ese es el despiece, se preserva (eventualmente con patch aplicado
+# por el caller antes del reset).
+_PASO2_DERIVED_KEYS = (
+    # Confirmación de medidas
+    "verified_context",
+    "verified_measurements",
+    "measurements_confirmed",  # campo legacy — se limpia por defensa
+    "verified_commercial_attrs",  # PR #374
+    "verified_derived_pieces",  # PR #377
+    # Material + pricing
+    "material_name",
+    "material_m2",
+    "material_price_unit",
+    "material_currency",
+    "discount_amount",
+    "discount_pct",
+    # Totales
+    "total_ars",
+    "total_usd",
+    "total_mo_ars",
+    # MO + sectores + piezas detalladas
+    "mo_items",
+    "sectors",
+    "sinks",
+    "piece_details",
+    "mo_discount_amount",
+    "mo_discount_pct",
+    # Merma / sobrante
+    "sobrante_m2",
+    "sobrante_total",
+    # Paso 1 snapshots
+    "paso1_pieces",
+    "paso1_total_m2",
+)
+
+
+def is_paso2_confirmed(quote_breakdown: dict | None) -> bool:
+    """True si el quote ya pasó por la confirmación de medidas
+    (`verified_context` existe).
+
+    Usado tanto por el endpoint reopen como por el frontend
+    (indirectamente via el breakdown que trae GET /quotes/:id) para
+    decidir si mostrar los inputs lockeados + el botón "Editar despiece".
+    """
+    if not quote_breakdown:
+        return False
+    return bool(
+        quote_breakdown.get("verified_context")
+        or quote_breakdown.get("measurements_confirmed")
+    )
+
+
+def reset_quote_to_paso1(
+    quote_breakdown: dict | None,
+    *,
+    preserve_dual_read_result: bool = True,
+) -> dict:
+    """Devuelve un breakdown nuevo con todos los campos de Paso 2 limpios
+    — lleva al quote al estado "Paso 1 en edición".
+
+    No muta el input. No accede a DB (mantener el helper puro).
+
+    Args:
+        quote_breakdown: el dict actual (puede ser None o {}).
+        preserve_dual_read_result: si True (default), el despiece en
+            `dual_read_result` se preserva — el operador lo edita desde
+            ahí. Si el caller quiere reemplazarlo (ej: patch aplicado
+            antes del reset), lo sobrescribe en el breakdown que
+            devuelva este helper.
+
+    Returns:
+        Nuevo dict con las keys de Paso 2 removidas. El resto del
+        breakdown (brief_analysis, dual_read_plan_hash, context_analysis_pending,
+        verified_context_analysis, y cualquier metadata) se preserva.
+    """
+    if not quote_breakdown:
+        return {}
+    new_bd = dict(quote_breakdown)
+    for key in _PASO2_DERIVED_KEYS:
+        new_bd.pop(key, None)
+    if not preserve_dual_read_result:
+        new_bd.pop("dual_read_result", None)
+    return new_bd
