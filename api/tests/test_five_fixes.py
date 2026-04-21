@@ -88,6 +88,43 @@ class TestZocaloFormat:
         assert not any("2 TRAMOS" in p["label"] for p in res_edif["pieces"])
 
 
+class TestAlzadaFormat:
+    def test_alzada_renders_short_label(self):
+        """Alzada description must collapse to '{largo} × {dim2} Alzada' — the
+        operator's extra detail (ej: 'corrida (fondo completo sin heladera)')
+        debe descartarse en el render del presupuesto."""
+        result = calculate_quote(_base_input(
+            pieces=[
+                {"description": "Mesada", "largo": 2.0, "prof": 0.6},
+                {"description": "Alzada corrida (fondo completo sin heladera)",
+                 "largo": 3.01, "prof": 0.60},
+            ]
+        ))
+        assert result["ok"]
+        labels = result["sectors"][0]["pieces"]
+        alzada = next((l for l in labels if "Alzada" in l), None)
+        assert alzada is not None, f"expected Alzada row, got {labels}"
+        assert alzada.rstrip(" *") == "3.01 × 0.60 Alzada", (
+            f"Alzada label debe ser '3.01 × 0.60 Alzada', got: {alzada!r}"
+        )
+        assert "fondo completo" not in alzada
+        assert "2 TRAMOS" not in alzada
+
+    def test_alzada_no_2_tramos_even_over_3m(self):
+        """Alzada largo ≥ 3m NO debe recibir la leyenda '(SE REALIZA EN 2 TRAMOS)'."""
+        result = calculate_quote(_base_input(
+            pieces=[
+                {"description": "Mesada", "largo": 2.0, "prof": 0.6},
+                {"description": "Alzada", "largo": 3.50, "prof": 0.60},
+            ]
+        ))
+        assert result["ok"]
+        labels = result["sectors"][0]["pieces"]
+        alzada = next((l for l in labels if "Alzada" in l), None)
+        assert alzada is not None
+        assert "2 TRAMOS" not in alzada
+
+
 # ── Fix 2: Delivery days tiers ──────────────────────────────────────────────
 
 class TestDeliveryTiers:

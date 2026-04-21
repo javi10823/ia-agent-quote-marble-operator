@@ -426,10 +426,15 @@ def list_pieces(pieces: list, is_edificio: bool = False) -> dict:
             or desc_lower.startswith("zocalo")
             or desc_lower.startswith("zoc ")
         )
+        # Alzada: render simple "L × D Alzada" — sin detalle del operador
+        # ni leyenda TRAMOS. Las alzadas no se parten en 2 tramos como mesadas.
+        is_alzada = desc_lower.startswith("alzada")
         qty = pd.get("quantity", 1)
 
         if is_zocalo:
             label = f"{pd['largo']:.2f}ML X {pd['dim2']:.2f} ZOC"
+        elif is_alzada:
+            label = f"{pd['largo']:.2f} × {pd['dim2']:.2f} Alzada"
         elif pd.get("_is_frentin"):
             # Faldón/frentín: solo se contabiliza como MO (armado × ml).
             # NO sumar m² al material. Render con ml para que el operador
@@ -987,8 +992,14 @@ def calculate_quote(input_data: dict) -> dict:
                 or desc_lower.startswith("zocalo")
                 or desc_lower.startswith("zoc ")
             )
+            # Alzada: formato simple "L × D Alzada" — descarta detalle del
+            # operador (ej: "corrida (fondo completo sin heladera)") y la
+            # leyenda TRAMOS. Las alzadas no se listan como mesadas partidas.
+            is_alzada = desc_lower.startswith("alzada")
             if is_zocalo:
                 label = f'{pd["largo"]:.2f}ML X {pd["dim2"]:.2f} ZOC'
+            elif is_alzada:
+                label = f'{pd["largo"]:.2f} × {pd["dim2"]:.2f} Alzada'
             else:
                 dim2_label = f'{pd["largo"]:.2f} × {pd["dim2"]:.2f}'
                 # PR #48 — strip defensivo: si Valentina metió las dimensiones
