@@ -839,6 +839,7 @@ def _check_m2(result: dict, planilla_m2: Optional[float]) -> Optional[str]:
 def build_verified_context(
     confirmed_data: dict,
     commercial_attrs: dict | None = None,
+    derived_pieces: list[dict] | None = None,
 ) -> str:
     """Build injection text from operator-confirmed measurements + commercial
     attributes with authority/precedence annotations.
@@ -901,7 +902,45 @@ def build_verified_context(
     if commercial_attrs:
         lines.extend(_format_commercial_attrs_block(commercial_attrs))
 
+    # ── Piezas derivadas determinísticamente (PR #377) ───────────────
+    # Separadas de los atributos — el LLM copia literal estas piezas en
+    # el Paso 1. Backend arma las dimensiones; el LLM no las calcula.
+    if derived_pieces:
+        lines.extend(_format_derived_pieces_block(derived_pieces))
+
     return "\n".join(lines)
+
+
+def _format_derived_pieces_block(pieces: list[dict]) -> list[str]:
+    """Bloque imperativo con piezas ya calculadas desde respuestas del
+    operador. El LLM debe copiarlas literal en el Paso 1.
+
+    PR #377 — resuelve bug Bernardi 22/04/2026 donde el LLM calculaba
+    mal patas laterales de isla (emitía 0.90×0.90 en vez de 0.60×0.90)
+    porque el prompt le pasaba los atributos del operador como etiquetas
+    planas sin instrucción de combinar dimensiones.
+
+    Ahora el backend calcula las piezas (Pata lateral = prof×alto,
+    Pata frontal = largo×alto) y se las pasa ya listas al LLM.
+    """
+    lines: list[str] = [
+        "[PIEZAS DERIVADAS DE RESPUESTAS DEL OPERADOR — DETERMINÍSTICAS]",
+        "⛔ Estas piezas están CALCULADAS por el backend desde los datos",
+        "   confirmados por el operador. Copialas LITERAL en el Paso 1.",
+        "⛔ NO recalcular dimensiones. NO cambiar el orden. NO omitir.",
+        "⛔ Si pensás que hay un error, volvé al operador — no las editues.",
+        "",
+    ]
+    for p in pieces:
+        desc = p.get("description", "?")
+        largo = p.get("largo")
+        prof = p.get("prof")
+        m2 = p.get("m2")
+        lines.append(
+            f"  {desc}: {largo} × {prof} = {m2} m²"
+        )
+    lines.append("")
+    return lines
 
 
 # Wording según source — determinístico, no dejarlo al LLM.
@@ -995,6 +1034,173 @@ def _format_commercial_attrs_block(attrs: dict) -> list[str]:
         lines.append("  (ningún atributo comercial con valor estructurado — pedí al operador)")
         lines.append("")
     return lines
+
+
+def _parse_float_answer(a: dict | None) -> float | None:
+    """Convierte una operator_answer del tipo radio-with-detail a float.
+
+    La UI guarda los values como strings ("0.60", "0.90"). Cuando el
+    operador elige "custom" puede haber un detail con el número en texto.
+    Devuelve None si no parsea — señal de "dato faltante" río abajo.
+    """
+    if not a:
+        return None
+    for key in ("value", "detail"):
+        raw = a.get(key)
+        if raw is None:
+            continue
+        try:
+            if isinstance(raw, (int, float)):
+                f = float(raw)
+                if f > 0:
+                    return f
+                continue
+            s = str(raw).strip().replace(",", ".")
+            # remueve sufijo "m" si está
+            s = re.sub(r"m\s*$", "", s, flags=re.IGNORECASE).strip()
+            f = float(s)
+            if f > 0:
+                return f
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+# Mapeo explícito de `isla_patas.value` → lista de lados activos. Centralizado
+# para que si el schema de la pregunta cambia (ver pending_questions.py), el
+# helper siga alineado. Si el value no está acá → no se emite nada (fallback
+# seguro, no inventar).
+_ISLA_PATAS_SIDES = {
+    "frontal_y_ambos_laterales": ["frontal", "lateral_izq", "lateral_der"],
+    # alias histórico más corto que apareció en algunas cards
+    "frontal_y_laterales": ["frontal", "lateral_izq", "lateral_der"],
+    "solo_frontal": ["frontal"],
+    "solo_laterales": ["lateral_izq", "lateral_der"],
+    "no": [],
+    # "custom" → sin mapping determinístico; el LLM debe preguntar al
+    # operador cuáles lados. NO emitir piezas automáticas.
+}
+
+
+def build_derived_isla_pieces(
+    operator_answers: list | None,
+    verified_measurements: dict | None,
+) -> tuple[list[dict], list[str]]:
+    """Expande las respuestas confirmadas del operador sobre patas de isla
+    a piezas físicas ya calculadas. Scope SOLO patas de isla (frontal /
+    laterales) — no extrapola a frentines, zócalos ni otros derivados.
+
+    Regla de dimensiones (alineada con quote-033 y la regla física):
+      - Pata frontal  = `largo_isla × alto_patas`
+      - Pata lateral  = `profundidad_isla × alto_patas`
+
+    Datos base requeridos (TODOS). Si falta alguno → devolvemos
+    lista vacía + warning. NO inventar dimensiones.
+      - operator_answer `isla_patas` con value reconocido (distinto de
+        "custom" y "no"-con-patas).
+      - operator_answer `isla_patas_alto` con valor numérico parseable.
+      - operator_answer `isla_profundidad` con valor numérico parseable.
+      - `verified_measurements` con un sector tipo "isla" y largo > 0.
+
+    Returns:
+        (pieces, warnings)
+        pieces: list[{description, largo, prof, m2, source}] determinísticas
+        warnings: list de strings explicando por qué no se emitió (si aplica)
+    """
+    warnings: list[str] = []
+    if not operator_answers:
+        return [], []
+
+    by_id: dict[str, dict] = {}
+    for a in operator_answers:
+        fid = a.get("id") if isinstance(a, dict) else None
+        if fid:
+            by_id[fid] = a
+
+    patas_ans = by_id.get("isla_patas")
+    if not patas_ans:
+        # No se preguntó / no se respondió. No es error — simplemente no
+        # hay derivadas que emitir.
+        return [], []
+
+    patas_value = patas_ans.get("value")
+    sides = _ISLA_PATAS_SIDES.get(patas_value)
+    if sides is None:
+        # value="custom" u otro no mapeable. El LLM debe preguntar.
+        warnings.append(
+            f"isla_patas={patas_value!r} no se puede expandir automáticamente "
+            f"(ej: 'custom'). No se emiten piezas derivadas."
+        )
+        return [], warnings
+    if not sides:
+        # "no" → no hay patas. Nada que emitir, sin warning.
+        return [], []
+
+    # Datos base — todos obligatorios para emitir piezas.
+    alto = _parse_float_answer(by_id.get("isla_patas_alto"))
+    prof = _parse_float_answer(by_id.get("isla_profundidad"))
+
+    # largo_isla viene de las medidas verificadas (sector tipo="isla").
+    largo_isla: float | None = None
+    for sector in (verified_measurements or {}).get("sectores", []) or []:
+        if (sector.get("tipo") or "").lower() != "isla":
+            continue
+        for tramo in sector.get("tramos", []) or []:
+            largo_field = tramo.get("largo_m")
+            if isinstance(largo_field, dict):
+                v = largo_field.get("valor")
+            else:
+                v = largo_field
+            try:
+                if v is not None and float(v) > 0:
+                    largo_isla = float(v)
+                    break
+            except (TypeError, ValueError):
+                continue
+        if largo_isla:
+            break
+
+    missing: list[str] = []
+    if alto is None:
+        missing.append("isla_patas_alto")
+    if prof is None and any(s.startswith("lateral") for s in sides):
+        missing.append("isla_profundidad")
+    if largo_isla is None and "frontal" in sides:
+        missing.append("largo_isla (de medidas verificadas)")
+    if missing:
+        warnings.append(
+            f"No se emiten piezas derivadas de patas isla — faltan datos "
+            f"base: {', '.join(missing)}. El LLM debe preguntar al operador "
+            f"o resolver antes de listar patas."
+        )
+        return [], warnings
+
+    def _mk_piece(desc: str, largo_v: float, prof_v: float) -> dict:
+        return {
+            "description": desc,
+            "largo": round(float(largo_v), 2),
+            "prof": round(float(prof_v), 2),
+            "m2": round(float(largo_v) * float(prof_v), 2),
+            "source": "derived_from_operator_answers",
+        }
+
+    pieces: list[dict] = []
+    # Orden: frontal primero, luego laterales (izq, der). Match con cómo
+    # lo escribe el LLM en ejemplos válidos (quote-033).
+    if "frontal" in sides:
+        pieces.append(_mk_piece(
+            "Pata frontal isla", largo_isla, alto,
+        ))
+    if "lateral_izq" in sides:
+        pieces.append(_mk_piece(
+            "Pata lateral isla izq", prof, alto,
+        ))
+    if "lateral_der" in sides:
+        pieces.append(_mk_piece(
+            "Pata lateral isla der", prof, alto,
+        ))
+
+    return pieces, warnings
 
 
 def build_commercial_attrs(
