@@ -13,6 +13,7 @@ from app.core.auth import (
     set_auth_cookie,
     clear_auth_cookie,
     decode_token,
+    extract_token_from_request,
     COOKIE_NAME,
 )
 from app.models.user import User
@@ -33,6 +34,13 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     ok: bool
     username: str
+    # JWT en el body — fallback para clientes donde la cookie cross-origin
+    # no viaja (ej: iOS Safari con ITP bloqueando third-party cookies). El
+    # cliente lo guarda en localStorage y lo manda como
+    # `Authorization: Bearer <token>` en requests subsecuentes. En desktop
+    # la cookie sigue funcionando y el header queda como redundancia
+    # inofensiva (cookie tiene precedencia en el backend).
+    token: str
 
 
 class CreateUserRequest(BaseModel):
@@ -49,7 +57,7 @@ async def login(body: LoginRequest, response: Response, db: AsyncSession = Depen
     token = create_token(body.username)
     set_auth_cookie(response, token)
 
-    return LoginResponse(ok=True, username=body.username)
+    return LoginResponse(ok=True, username=body.username, token=token)
 
 
 @router.post("/logout")
@@ -70,8 +78,10 @@ async def create_user_endpoint(body: CreateUserRequest, request: Request, db: As
     count = await db.scalar(select(func.count()).select_from(User))
 
     if count > 0:
-        # Not initial setup — require valid JWT cookie
-        token = request.cookies.get(COOKIE_NAME)
+        # Not initial setup — require valid JWT (cookie o Authorization
+        # header). Usamos el mismo helper que el middleware para mantener
+        # una sola fuente de verdad sobre dónde puede venir el token.
+        token = extract_token_from_request(request)
         if not token:
             raise HTTPException(status_code=401, detail="No autenticado")
         payload = decode_token(token)

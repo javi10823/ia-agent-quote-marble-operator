@@ -1,5 +1,6 @@
 """Tests for auth endpoints — create-user protection, username strip."""
 
+import os
 import pytest
 from app.core.auth import create_token, COOKIE_NAME
 
@@ -66,6 +67,234 @@ class TestLoginUsernameStrip:
             "password": "password123",
         })
         assert res.status_code == 200
+
+
+class TestAuthHeaderFallback:
+    """
+    Auth vía `Authorization: Bearer <jwt>` header — fallback para clientes
+    que no pueden usar cookies cross-origin (iOS Safari con ITP).
+
+    El backend acepta el token desde dos fuentes:
+    1. Cookie `auth_token` (primary — desktop).
+    2. Header `Authorization: Bearer <token>` (fallback — mobile).
+
+    Cookie tiene precedencia si ambos están presentes (ver
+    `test_cookie_precedence_over_header`).
+    """
+
+    @pytest.mark.asyncio
+    async def test_login_returns_token_in_body(self, client_no_auth):
+        """Login debe devolver el JWT en el body además de setear la cookie.
+
+        Esto es lo que permite al cliente guardarlo en localStorage y mandarlo
+        por header en requests subsecuentes cuando la cookie no viaja.
+        """
+        await client_no_auth.post("/api/auth/create-user", json={
+            "username": "admin",
+            "password": "password123",
+        })
+        res = await client_no_auth.post("/api/auth/login", json={
+            "username": "admin",
+            "password": "password123",
+        })
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["username"] == "admin"
+        # Nuevo: token emitido en el body.
+        assert "token" in data
+        assert isinstance(data["token"], str)
+        assert len(data["token"]) > 20  # JWTs son largos
+
+        # Sanity: además de en el body, también debe estar en la cookie (el
+        # cliente desktop sigue usando ese path sin cambios).
+        assert COOKIE_NAME in res.cookies
+
+    @pytest.mark.asyncio
+    async def test_header_auth_accepted(self, client_no_auth):
+        """Request con Authorization: Bearer <token> y sin cookie debe pasar."""
+        token = create_token("test@test.com")
+        res = await client_no_auth.get(
+            "/api/quotes",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        # Si el header funcionó, el middleware lo deja pasar → no es 401.
+        # (puede ser 200 con [] si no hay quotes — depende de fixtures — pero
+        # definitivamente no 401).
+        assert res.status_code != 401
+
+    @pytest.mark.asyncio
+    async def test_header_auth_case_insensitive_scheme(self, client_no_auth):
+        """Scheme 'bearer' (lowercase) también debe ser aceptado."""
+        token = create_token("test@test.com")
+        res = await client_no_auth.get(
+            "/api/quotes",
+            headers={"Authorization": f"bearer {token}"},
+        )
+        assert res.status_code != 401
+
+    @pytest.mark.asyncio
+    async def test_header_auth_with_invalid_token(self, client_no_auth):
+        """Authorization con JWT inválido debe devolver 401."""
+        res = await client_no_auth.get(
+            "/api/quotes",
+            headers={"Authorization": "Bearer not-a-real-jwt"},
+        )
+        assert res.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_header_auth_malformed_no_bearer_prefix(self, client_no_auth):
+        """Header sin prefijo 'Bearer ' no se toma como token válido."""
+        token = create_token("test@test.com")
+        # Token sin prefijo → no matchea, cae a fallback → 401.
+        res = await client_no_auth.get(
+            "/api/quotes",
+            headers={"Authorization": token},
+        )
+        assert res.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_cookie_precedence_over_header(self, client_no_auth):
+        """Si cookie y header están presentes, prevalece la cookie.
+
+        Caso raro pero posible: cliente que deja el header por sticky config
+        mientras recibe una nueva cookie. Si son distintos, el backend usa
+        la cookie (la fuente más reciente / más segura — httpOnly).
+        """
+        valid_cookie_token = create_token("cookie@test.com")
+        valid_header_token = create_token("header@test.com")
+
+        # Cookie válida + header con token CORRUPTO → si el middleware usara
+        # el header por error, fallaría. Si usa la cookie, pasa.
+        res_cookie_wins = await client_no_auth.get(
+            "/api/quotes",
+            headers={"Authorization": "Bearer bogus.token.value"},
+            cookies={COOKIE_NAME: valid_cookie_token},
+        )
+        assert res_cookie_wins.status_code != 401, (
+            "Cookie válida debe ganar sobre header inválido"
+        )
+
+        # Sanity inversa: cookie corrupta + header válido → 401 (cookie gana,
+        # pero está rota → no cae al header como fallback).
+        res_cookie_loses = await client_no_auth.get(
+            "/api/quotes",
+            headers={"Authorization": f"Bearer {valid_header_token}"},
+            cookies={COOKIE_NAME: "not-a-jwt"},
+        )
+        assert res_cookie_loses.status_code == 401, (
+            "Cookie corrupta toma precedencia aunque header sea válido "
+            "(evita que un header stale enmascare una sesión inválida)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_auth_returns_401(self, client_no_auth):
+        """Sin cookie ni header → 401 claro."""
+        res = await client_no_auth.get("/api/quotes")
+        assert res.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_x_api_key_fallback_still_works(self, client_no_auth, monkeypatch):
+        """El fallback X-API-Key (web chatbot público) sigue funcionando
+        después de agregar el Authorization header fallback."""
+        # Set QUOTE_API_KEY en settings
+        from app.core import auth as auth_mod
+        monkeypatch.setattr(auth_mod.settings, "QUOTE_API_KEY", "test-api-key-xyz")
+
+        res = await client_no_auth.get(
+            "/api/quotes",
+            headers={"x-api-key": "test-api-key-xyz"},
+        )
+        assert res.status_code != 401
+
+    @pytest.mark.asyncio
+    async def test_create_user_accepts_header_auth(self, client_no_auth):
+        """El endpoint create-user también debe aceptar Authorization header
+        (además de cookie), ya que usa el mismo helper."""
+        # Crear primer user sin auth (initial setup).
+        res1 = await client_no_auth.post("/api/auth/create-user", json={
+            "username": "admin",
+            "password": "password123",
+        })
+        assert res1.status_code == 200
+
+        # Segundo user: usar token por header (sin cookie).
+        token = create_token("admin")
+        res2 = await client_no_auth.post(
+            "/api/auth/create-user",
+            json={"username": "operator", "password": "password123"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert res2.status_code == 200
+
+
+class TestExtractTokenHelper:
+    """
+    Unit tests del helper extract_token_from_request — aislado del resto del
+    middleware para documentar claramente las reglas de parsing.
+    """
+
+    def _make_request(self, cookies=None, headers=None):
+        """Construye un Request-like object mínimo para el helper."""
+        from starlette.requests import Request
+
+        headers_list = []
+        if headers:
+            for k, v in headers.items():
+                headers_list.append((k.lower().encode(), v.encode()))
+        if cookies:
+            cookie_str = "; ".join(f"{k}={v}" for k, v in cookies.items())
+            headers_list.append((b"cookie", cookie_str.encode()))
+
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": headers_list,
+        }
+        return Request(scope)
+
+    def test_cookie_only(self):
+        from app.core.auth import extract_token_from_request
+        req = self._make_request(cookies={COOKIE_NAME: "cookie-token-abc"})
+        assert extract_token_from_request(req) == "cookie-token-abc"
+
+    def test_header_only(self):
+        from app.core.auth import extract_token_from_request
+        req = self._make_request(headers={"authorization": "Bearer header-token-xyz"})
+        assert extract_token_from_request(req) == "header-token-xyz"
+
+    def test_cookie_wins_over_header(self):
+        from app.core.auth import extract_token_from_request
+        req = self._make_request(
+            cookies={COOKIE_NAME: "cookie-token"},
+            headers={"authorization": "Bearer header-token"},
+        )
+        assert extract_token_from_request(req) == "cookie-token"
+
+    def test_empty_returns_none(self):
+        from app.core.auth import extract_token_from_request
+        req = self._make_request()
+        assert extract_token_from_request(req) is None
+
+    def test_malformed_header_returns_none(self):
+        from app.core.auth import extract_token_from_request
+        # "Basic foo" → no es Bearer → ignorar.
+        req = self._make_request(headers={"authorization": "Basic dXNlcjpwYXNz"})
+        assert extract_token_from_request(req) is None
+
+    def test_bearer_without_token_returns_none(self):
+        from app.core.auth import extract_token_from_request
+        # "Bearer " sin token → ignorar.
+        req = self._make_request(headers={"authorization": "Bearer "})
+        assert extract_token_from_request(req) is None
+
+    def test_bearer_case_insensitive(self):
+        from app.core.auth import extract_token_from_request
+        # "bearer", "BEARER", "Bearer" todos válidos.
+        for scheme in ("bearer", "BEARER", "Bearer", "BeArEr"):
+            req = self._make_request(headers={"authorization": f"{scheme} tok123"})
+            assert extract_token_from_request(req) == "tok123", scheme
 
 
 class TestStatusTransitions:

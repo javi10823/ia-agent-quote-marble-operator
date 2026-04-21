@@ -143,6 +143,54 @@ def clear_auth_cookie(response: Response):
     response.delete_cookie(key=COOKIE_NAME, path="/")
 
 
+# ── Token Extraction ────────────────────────────────────────────────────────
+
+def extract_token_from_request(request: Request) -> Optional[str]:
+    """Extrae el JWT de la request. Dos fuentes, en orden de preferencia:
+
+    1. Cookie `auth_token` (path principal — desktop browsers con cookies
+       cross-origin funcionando).
+    2. Header `Authorization: Bearer <token>` (fallback — clientes donde
+       el browser bloquea la cookie cross-origin, típicamente iOS Safari
+       con ITP bloqueando third-party cookies).
+
+    Cookie tiene precedencia: si ambos están presentes y distintos (caso
+    raro — ej: dos sesiones superpuestas), usar la cookie. El header queda
+    como fallback natural para cuando la cookie no viaja.
+
+    Por qué cookie primero:
+    - httpOnly → no expuesta a JS → no vulnerable a XSS.
+    - Fue el camino original (PR #322) y sigue funcionando en desktop sin
+      cambio alguno.
+
+    Por qué permitir el header:
+    - iOS Safari con "Prevent Cross-Site Tracking" bloquea cookies third-
+      party aunque tengan SameSite=None+Secure. Sin el header, móvil no
+      puede autenticar.
+    - JWT en Authorization header no depende de cookie politics del
+      browser — funciona en cualquier cliente.
+
+    Retorna el token string o None si no se encuentra.
+    """
+    # 1. Cookie path (primary).
+    cookie_token = request.cookies.get(COOKIE_NAME)
+    if cookie_token:
+        return cookie_token
+
+    # 2. Authorization header fallback.
+    auth_header = request.headers.get("authorization") or request.headers.get("Authorization")
+    if auth_header:
+        # Format estricto: "Bearer <token>". Case-insensitive en el scheme
+        # ("bearer", "Bearer", "BEARER" todos válidos). Trim del espacio
+        # entre scheme y token — algunos clientes agregan múltiples.
+        parts = auth_header.strip().split(None, 1)
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            token = parts[1].strip()
+            if token:
+                return token
+    return None
+
+
 # ── User Validation ─────────────────────────────────────────────────────────
 
 async def validate_credentials(username: str, password: str, db: AsyncSession) -> bool:
@@ -201,8 +249,9 @@ async def auth_middleware(request: Request, call_next):
     if path in PUBLIC_ROUTES or path.startswith(PUBLIC_PREFIXES):
         return await call_next(request)
 
-    # Check cookie
-    token = request.cookies.get(COOKIE_NAME)
+    # Extract JWT: cookie primero, Authorization header como fallback para
+    # clientes que no pueden usar cookies cross-origin (iOS Safari ITP).
+    token = extract_token_from_request(request)
     if not token:
         # Fallback: accept X-API-Key header (for web chatbot calling /api/quotes endpoints)
         api_key = request.headers.get("x-api-key")
