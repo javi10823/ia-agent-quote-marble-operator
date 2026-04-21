@@ -447,6 +447,49 @@ class TestRegenerateDocDataBuild:
         assert data["sectors"] == []
         assert data["mo_items"] == []
 
+    def test_normalize_alzada_labels_in_cached_sectors(self):
+        """Quotes viejos tienen Alzadas con detalle + leyenda TRAMOS pegados
+        en el label cacheado. Regenerate debe colapsarlos a '{L} × {D} Alzada'
+        sin modificar mesadas ni otros labels."""
+        from app.modules.agent.router import _build_regenerate_doc_data
+        from app.models.quote import Quote
+
+        quote = Quote(id="q1", client_name="X", project="Y", notes=None)
+        bd = {
+            "sectors": [{
+                "label": "Cocina",
+                "pieces": [
+                    "0.38 × 0.60 Placa tramo izquierdo",
+                    "2.03 × 0.60 Placa tramo derecho",
+                    "3.01 × 0.60 Alzada corrida (fondo completo sin heladera) (SE REALIZA EN 2 TRAMOS)",
+                    "4.10 × 0.65 Mesada tramo 1 (SE REALIZA EN 2 TRAMOS)",
+                ],
+            }],
+        }
+
+        data = _build_regenerate_doc_data(quote, bd)
+        pieces = data["sectors"][0]["pieces"]
+        assert pieces[0] == "0.38 × 0.60 Placa tramo izquierdo"
+        assert pieces[1] == "2.03 × 0.60 Placa tramo derecho"
+        assert pieces[2] == "3.01 × 0.60 Alzada"
+        # Mesadas no se tocan — la leyenda 2 TRAMOS es válida para mesadas
+        assert pieces[3] == "4.10 × 0.65 Mesada tramo 1 (SE REALIZA EN 2 TRAMOS)"
+
+    def test_normalize_preserves_override_star_on_alzada(self):
+        """Si el label tenía sufijo ' *' (override de m²), debe preservarse."""
+        from app.modules.agent.router import _build_regenerate_doc_data
+        from app.models.quote import Quote
+
+        quote = Quote(id="q1", client_name="X", project="Y", notes=None)
+        bd = {
+            "sectors": [{
+                "label": "Cocina",
+                "pieces": ["3.01 × 0.60 Alzada corrida (SE REALIZA EN 2 TRAMOS) *"],
+            }],
+        }
+        data = _build_regenerate_doc_data(quote, bd)
+        assert data["sectors"][0]["pieces"][0] == "3.01 × 0.60 Alzada *"
+
 
 # ── X-API-Key auth fallback ─────────────────────────────────────────────────
 
