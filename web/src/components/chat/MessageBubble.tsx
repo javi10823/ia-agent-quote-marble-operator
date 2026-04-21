@@ -105,7 +105,16 @@ const Block = memo(function Block({ block, isLast, isStreaming, actionText }: { 
 
   const showCopy = !isStreaming && hasCopyableContent(block.content);
   return (
-    <div className={clsx("relative px-[18px] py-3.5 bg-s2 text-[15px] leading-[1.7] text-t2", !isLast && "border-b border-b1")}>
+    <div
+      className={clsx(
+        "relative px-[18px] py-3.5 bg-s2 text-[15px] leading-[1.7] text-t2",
+        // Reservar espacio para el CopyButton absolute — sin esto el título
+        // del mensaje (ej: "## PASO 2 — Validación — ...") se mete debajo
+        // del botón y se pisa visualmente.
+        showCopy && "pr-[60px] sm:pr-[140px]",
+        !isLast && "border-b border-b1",
+      )}
+    >
       {showCopy && (
         <>
           <div className="absolute top-3 right-3 hidden sm:block z-10">
