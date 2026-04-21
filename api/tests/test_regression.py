@@ -28,10 +28,16 @@ class TestBug043ZocaloOmitido:
 
 
 class TestBug043RevestimientoTomas:
-    """BUG-043: Revestimiento de pared must auto-add TOMAS."""
+    """BUG-043 (historia): antes revestimiento de pared auto-agregaba TOMAS.
 
-    def test_revestimiento_pared_adds_tomas(self):
-        """If any piece has 'revestimiento' in description, add TOMAS."""
+    PR #376 (Bernardi 21/04/2026) eliminó esta heurística. El agujero de
+    toma se hace físicamente EN LA ALZADA — revestimiento no implica
+    alzada. Ahora requiere alzada explícita + `tomas_qty`.
+
+    Tests revertidos para validar la REGLA NUEVA (no regresión de bug
+    histórico — aquel bug pierde sentido con la nueva regla)."""
+
+    def test_revestimiento_pared_no_longer_adds_tomas_automatically(self):
         result = calculate_quote({
             "client_name": "Test",
             "project": "Cocina",
@@ -45,11 +51,12 @@ class TestBug043RevestimientoTomas:
         })
         assert result["ok"] is True
         mo_descs = [m["description"].lower() for m in result["mo_items"]]
-        assert any("toma corriente" in d for d in mo_descs), \
-            f"TOMAS not found for revestimiento pared. MO items: {mo_descs}"
+        assert not any("toma corriente" in d for d in mo_descs), (
+            f"Revestimiento ya NO agrega TOMAS (PR #376). MO: {mo_descs}"
+        )
 
-    def test_no_revestimiento_no_tomas_from_this_rule(self):
-        """Without revestimiento and without tall zócalo, no TOMAS added."""
+    def test_no_revestimiento_no_tomas(self):
+        """Sin revestimiento y sin zócalo alto → no hay TOMAS (como antes)."""
         result = calculate_quote({
             "client_name": "Test",
             "project": "Cocina",
@@ -63,16 +70,16 @@ class TestBug043RevestimientoTomas:
         })
         assert result["ok"] is True
         mo_descs = [m["description"].lower() for m in result["mo_items"]]
-        assert not any("toma corriente" in d for d in mo_descs), \
-            f"TOMAS should NOT be present without revestimiento or tall zócalo"
+        assert not any("toma corriente" in d for d in mo_descs)
 
 
-# ── BUG-042: Zócalo > 10cm debe agregar TOMAS ───────────────────────────────
+# ── BUG-042 (histórico): heurística zócalo > 10cm eliminada en PR #376 ──────
 
 class TestBug042TallZocaloTomas:
-    """BUG-042: Zócalo > 10cm was not adding TOMAS."""
+    """BUG-042 (historia): antes zócalo > 10cm auto-agregaba TOMAS.
+    PR #376 eliminó esta heurística. Ahora es alzada + tomas_qty."""
 
-    def test_zocalo_15cm_adds_tomas(self):
+    def test_zocalo_15cm_no_longer_adds_tomas_without_alzada(self):
         result = calculate_quote({
             "client_name": "Test",
             "project": "Cocina",
@@ -85,7 +92,9 @@ class TestBug042TallZocaloTomas:
             "plazo": "30 días",
         })
         mo_descs = [m["description"].lower() for m in result["mo_items"]]
-        assert any("toma corriente" in d for d in mo_descs)
+        assert not any("toma corriente" in d for d in mo_descs), (
+            f"Zócalo 15cm ya NO agrega TOMAS automáticamente (PR #376). MO: {mo_descs}"
+        )
 
 
 # ── BUG-044: Statuarietto — m2 incorrecto sin zócalo, total USD no coincide ──
