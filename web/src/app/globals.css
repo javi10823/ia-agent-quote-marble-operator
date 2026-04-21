@@ -106,6 +106,18 @@ body::after {
 @keyframes vspin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 @keyframes vcore { 0%, 100% { opacity: 0.3; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.04); } }
 
+/* PR #358 — Feedback visual al aplicar una candidata sugerida.
+   El row del tramo actualizado recibe la clase `candidate-apply-pulse`
+   por 2s. Arranca con background sutil + inset ring de acento para
+   localizar visualmente el tramo, y se desvanece. */
+.candidate-apply-pulse {
+  animation: candidateApplyPulse 2s ease-out;
+}
+@keyframes candidateApplyPulse {
+  0%   { background-color: rgba(95, 125, 160, 0.22); box-shadow: inset 0 0 0 2px rgba(95, 125, 160, 0.50); }
+  100% { background-color: transparent; box-shadow: inset 0 0 0 2px transparent; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

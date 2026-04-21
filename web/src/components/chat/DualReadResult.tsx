@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import CopyButton from "./CopyButton";
 import SuggestedCandidates, {
   SuggestedCandidate,
@@ -7,6 +7,7 @@ import SuggestedCandidates, {
 } from "./SuggestedCandidates";
 import { applyCandidate } from "@/lib/applyCandidate";
 import { dualReadRetry as apiDualReadRetry } from "@/lib/api";
+import { useToast } from "@/lib/toast-context";
 
 // Helpers:
 // - `safeNum`: para ARITMÉTICA (totales, m² derivado). Convierte null a 0
@@ -424,6 +425,14 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const [editedData, setEditedData] = useState<DualReadData>(() => normalizeDualReadData(data));
+  const toast = useToast();
+  // PR #358 — refs por tramo para scroll + highlight al aplicar candidata.
+  // Mapa `regionId -> HTMLElement` para acceder al row del tramo sin
+  // depender de índices. El ref se asigna en el render del tramo con
+  // `ref={(el) => (tramoRefs.current[tramo.id] = el)}`. Los elementos
+  // que dejan de renderizarse quedan como null (no hay leak — el mapa
+  // es de refs live, no de referencias retenidas).
+  const tramoRefs = useRef<Record<string, HTMLDivElement | null>>({});
   // Respuestas a pending_questions.
   // PR #356 — pre-cargamos la primera opción "concreta" (no custom) de
   // cada pregunta como default. Rationale: la primera opción que manda
@@ -773,8 +782,16 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
 
               {sector.tramos.map((tramo, ti) => (
                 <React.Fragment key={tramo.id}>
-                  {/* Mesada row */}
-                  <div className="grid grid-cols-[22px_1fr_80px_80px_80px] items-center gap-3 px-5 py-2.5 text-[13px] font-mono tabular-nums border-t border-b1">
+                  {/* Mesada row — PR #358: ref para scroll + highlight al
+                      aplicar candidata desde el bloque de sugeridas. Se
+                      accede via `tramoRefs.current[tramo.id]`. */}
+                  <div
+                    ref={(el) => {
+                      tramoRefs.current[tramo.id] = el;
+                    }}
+                    className="grid grid-cols-[22px_1fr_80px_80px_80px] items-center gap-3 px-5 py-2.5 text-[13px] font-mono tabular-nums border-t border-b1 transition-colors"
+                    data-tramo-id={tramo.id}
+                  >
                     <StatusIcon status={tramo.largo_m.status} />
                     <div className="font-sans">
                       {tramo._manual ? (
@@ -1027,19 +1044,74 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry }: Pr
             .filter((x): x is TramoWithSuggestions => x !== null),
         )}
         onApply={(regionId, valor) => {
+          // PR #358 — feedback visual del apply. El state se actualiza
+          // correctamente desde PR #357, pero si el tramo está fuera de
+          // viewport (típico: la card de candidatas está abajo del
+          // despiece, el input del tramo actualizado está arriba) el
+          // operador no percibía cambio → sensación de "el botón no
+          // hace nada".
+          //
+          // Tres piezas complementarias:
+          //   a) Toast: confirma que la acción ocurrió.
+          //   b) Scroll condicional: lleva al tramo si está fuera de
+          //      viewport. Si está visible, no scrollea (evita mareo).
+          //   c) Highlight pulse: 2s de outline para que el operador
+          //      localice visualmente dónde impactó.
+          //
+          // Si `found: false` (regionId no existe en state): toast de
+          // error explícito, sin mutación del state.
+          let applyMeta: ReturnType<typeof applyCandidate>["meta"] | null = null;
           setEditedData((prev) => {
             const result = applyCandidate(prev, regionId, valor);
-            // Logs temporales de verificación (regla 6 del user).
-            // Útiles en prod para confirmar que el regionId del botón
-            // resuelve al tramo correcto y que ningún otro cambia.
+            applyMeta = result.meta;
             // eslint-disable-next-line no-console
             console.log("[candidate-apply]", {
               regionId,
               valor,
               ...result.meta,
             });
+            if (!result.meta.found) {
+              // No mutar el state — devolver el mismo para no disparar
+              // re-render innecesario.
+              return prev;
+            }
             return result.state;
           });
+          // Side-effects visuales después del setState (setTimeout para
+          // dar al re-render una chance de flushear antes de medir DOM).
+          setTimeout(() => {
+            if (!applyMeta) return;
+            if (!applyMeta.found) {
+              toast(
+                `No pude aplicar — tramo ${regionId} no coincide con el despiece`,
+                "error",
+              );
+              return;
+            }
+            const sectorTipo = applyMeta.targetSectorTipo || "tramo";
+            toast(
+              `Aplicado ${valor.toFixed(2).replace(".", ",")} m en ${sectorTipo} · ${regionId} — revisá antes de confirmar`,
+              "success",
+            );
+            const row = tramoRefs.current[regionId];
+            if (!row) return;
+            // Scroll condicional: solo si el tramo está fuera de
+            // viewport. Margen de 80px para evitar scroll si está
+            // apenas medio oculto al borde.
+            const rect = row.getBoundingClientRect();
+            const viewportH = window.innerHeight;
+            const outOfView = rect.bottom < 80 || rect.top > viewportH - 80;
+            if (outOfView) {
+              row.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+            // Highlight pulse: clase CSS temporal, 2s, se remueve
+            // manualmente (no confiamos en `animationend` porque si el
+            // componente se re-rendera la animación se reinicia).
+            row.classList.add("candidate-apply-pulse");
+            setTimeout(() => {
+              row.classList.remove("candidate-apply-pulse");
+            }, 2000);
+          }, 0);
         }}
       />
 
