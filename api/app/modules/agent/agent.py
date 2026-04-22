@@ -1483,6 +1483,34 @@ class AgentService:
         extra_files: Optional[list] = None,
         db: AsyncSession = None,
     ) -> AsyncGenerator[dict, None]:
+        # PR #385 — traza de entrada al loop agéntico. Sabemos qué llega
+        # del frontend (mensaje, adjuntos) y qué estado del breakdown
+        # tenemos al arrancar (gates de flow). Todo lo que pase después
+        # se encadena a este entry point.
+        from app.modules.agent._trace import (
+            log_stream_enter,
+            log_bd_mutation,
+            log_sse_structural,
+            log_tool_call,
+            log_tool_result,
+            log_apply_answers,
+            log_build_commercial_attrs,
+            log_build_derived_isla_pieces,
+            log_build_verified_context,
+            log_messages_persist,
+        )
+        try:
+            _q_enter = await db.execute(select(Quote).where(Quote.id == quote_id))
+            _bd_enter = (_q_enter.scalar_one_or_none() or Quote()).quote_breakdown or {}
+        except Exception:
+            _bd_enter = {}
+        log_stream_enter(
+            quote_id=quote_id,
+            user_message=user_message,
+            plan_bytes=plan_bytes,
+            extra_files=extra_files,
+            bd_pre=_bd_enter,
+        )
 
         # ── Handle CONTEXT_CONFIRMED EARLY (PR G): el operador confirmó la card
         # de análisis de contexto (datos + asunciones + preguntas). Aplicamos
@@ -1493,16 +1521,35 @@ class AgentService:
             try:
                 _ctx_payload = json.loads(user_message[len("[CONTEXT_CONFIRMED]"):])
                 _answers = _ctx_payload.get("answers") or []
+                # PR #385 — payload recibido del frontend. `answers` es la
+                # lista real que el operador respondió en la card de contexto.
+                logging.info(
+                    f"[trace:context-confirmed:{quote_id}] payload answers={len(_answers)}"
+                )
+                for _a in _answers:
+                    logging.info(
+                        f"[trace:context-confirmed:{quote_id}]   "
+                        f"id={_a.get('id')} value={_a.get('value')} label={_a.get('label')}"
+                    )
                 _qr = await db.execute(select(Quote).where(Quote.id == quote_id))
                 _q_ctx = _qr.scalar_one_or_none()
-                _bd_ctx = (_q_ctx.quote_breakdown or {}) if _q_ctx else {}
-                _saved_dual = _bd_ctx.get("dual_read_result") or {}
+                _bd_ctx_pre = dict((_q_ctx.quote_breakdown or {}) if _q_ctx else {})
+                _bd_ctx = dict(_bd_ctx_pre)
+                _saved_dual = dict(_bd_ctx.get("dual_read_result") or {})
+                _dual_before = json.loads(json.dumps(_saved_dual, default=str))
                 # Aplicar las respuestas al dual_read_result
                 if _answers and _saved_dual:
                     from app.modules.quote_engine.pending_questions import apply_answers
                     apply_answers(_saved_dual, _answers)
                     # Limpiar pending_questions ya que están respondidas
                     _saved_dual.pop("pending_questions", None)
+                log_apply_answers(
+                    quote_id,
+                    flow="context-confirmed",
+                    dual_before=_dual_before,
+                    dual_after=_saved_dual,
+                    answers=_answers,
+                )
                 # Guardar verified_context_analysis (gate para no re-preguntar)
                 _bd_ctx["verified_context_analysis"] = _ctx_payload
                 _bd_ctx["dual_read_result"] = _saved_dual
@@ -1519,11 +1566,15 @@ class AgentService:
                         update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd_ctx)
                     )
                     await db.commit()
+                log_bd_mutation(quote_id, "context-confirmed", _bd_ctx_pre, _bd_ctx)
                 logging.info(
                     f"[context-confirmed] {quote_id} applied {len(_answers)} answers, "
                     "emitting dual_read_result"
                 )
-                yield {"type": "dual_read_result", "content": json.dumps(_saved_dual, ensure_ascii=False)}
+                _dr_chunk = json.dumps(_saved_dual, ensure_ascii=False)
+                log_sse_structural(quote_id, "dual_read_result", _dr_chunk)
+                yield {"type": "dual_read_result", "content": _dr_chunk}
+                log_sse_structural(quote_id, "done", "")
                 yield {"type": "done", "content": ""}
                 # PR #379 — Persistir el flujo real al DB:
                 # - user turn: el `[CONTEXT_CONFIRMED]<json>` que mandó el
@@ -1545,12 +1596,19 @@ class AgentService:
                         },
                     ]
                     if _q_ctx:
+                        _merged = list(_q_ctx.messages or []) + _turn
                         await db.execute(
                             update(Quote).where(Quote.id == quote_id).values(
-                                messages=list(_q_ctx.messages or []) + _turn
+                                messages=_merged
                             )
                         )
                         await db.commit()
+                        log_messages_persist(
+                            quote_id,
+                            flow="context-confirmed",
+                            added_turns=_turn,
+                            total_count=len(_merged),
+                        )
                 except Exception:
                     pass
                 return
@@ -1569,6 +1627,21 @@ class AgentService:
             _just_confirmed_dual_read = True
             try:
                 _confirmed_json = json.loads(user_message[len("[DUAL_READ_CONFIRMED]"):])
+                # PR #385 — payload crudo que llegó del frontend. Este es el
+                # punto que el usuario ve en la card editable cuando aprieta
+                # "Confirmar medidas". Si aquí el dual_read no refleja lo
+                # editado → bug en el componente. Si aquí está bien pero
+                # downstream Claude usa otro valor → bug en system prompt
+                # injection o derived pieces.
+                from app.modules.agent._trace import snapshot_dual_read as _snap_dr
+                logging.info(
+                    f"[trace:dual-read-confirmed:{quote_id}] payload received: "
+                    f"snap={_snap_dr(_confirmed_json)}"
+                )
+                logging.info(
+                    f"[trace:dual-read-confirmed:{quote_id}] pending_answers="
+                    f"{len(_confirmed_json.get('pending_answers') or [])}"
+                )
                 # Aplicar respuestas de pending_questions (ej: zócalos agregados
                 # determinísticamente cuando el operador eligió la opción default).
                 # El confirmed_json viene con `pending_answers` si el frontend
@@ -1577,10 +1650,14 @@ class AgentService:
                     from app.modules.quote_engine.pending_questions import apply_answers
                     _answers = _confirmed_json.get("pending_answers") or []
                     if _answers:
+                        _dr_before_apply = json.loads(json.dumps(_confirmed_json, default=str))
                         apply_answers(_confirmed_json, _answers)
-                        logging.info(
-                            f"[pending-questions] applied {len(_answers)} answer(s): "
-                            f"{[a.get('id') for a in _answers]}"
+                        log_apply_answers(
+                            quote_id,
+                            flow="dual-read-confirmed/pending",
+                            dual_before=_dr_before_apply,
+                            dual_after=_confirmed_json,
+                            answers=_answers,
                         )
                 except Exception as _e_ans:
                     logging.warning(f"[pending-questions] apply_answers failed: {_e_ans}")
@@ -1597,7 +1674,8 @@ class AgentService:
                 # confirmados" cuando dual_read había detectado 1).
                 _qr0 = await db.execute(select(Quote).where(Quote.id == quote_id))
                 _q0 = _qr0.scalar_one_or_none()
-                _bd0 = dict(_q0.quote_breakdown or {}) if _q0 else {}
+                _bd0_pre = dict(_q0.quote_breakdown or {}) if _q0 else {}
+                _bd0 = dict(_bd0_pre)
                 _saved_dual = _bd0.get("dual_read_result") or {}
                 # Reconstruir el analysis del brief (si está cacheado).
                 # Fallback: diccionario vacío → reconcile se cae al dual_read.
@@ -1610,10 +1688,23 @@ class AgentService:
                 # (frontend las manda dentro del _confirmed_json).
                 _op_answers_turn = _confirmed_json.get("pending_answers") or []
                 _op_answers = list(_op_answers_ctx) + list(_op_answers_turn)
+                # PR #385 — explicitar qué answers entran a los builders.
+                logging.info(
+                    f"[trace:dual-read-confirmed:{quote_id}] operator_answers "
+                    f"ctx={len(_op_answers_ctx)} turn={len(_op_answers_turn)} total={len(_op_answers)}"
+                )
+                for _oa in _op_answers:
+                    logging.info(
+                        f"[trace:dual-read-confirmed:{quote_id}]   "
+                        f"id={_oa.get('id')} value={_oa.get('value')} label={_oa.get('label')}"
+                    )
                 _commercial_attrs = build_commercial_attrs(
                     analysis=_ctx_analysis,
                     dual_result=_saved_dual,
                     operator_answers=_op_answers,
+                )
+                log_build_commercial_attrs(
+                    quote_id, flow="dual-read-confirmed", result=_commercial_attrs,
                 )
                 # PR #377 — Piezas derivadas determinísticas desde las
                 # respuestas del operador (ej: patas de isla). Evita
@@ -1623,12 +1714,19 @@ class AgentService:
                     operator_answers=_op_answers,
                     verified_measurements=_confirmed_json,
                 )
-                for _w in _derived_warnings:
-                    logging.info(f"[derived-pieces] {_w}")
+                log_build_derived_isla_pieces(
+                    quote_id,
+                    flow="dual-read-confirmed",
+                    pieces=_derived_pieces,
+                    warnings=_derived_warnings,
+                )
                 _verified_ctx = build_verified_context(
                     _confirmed_json,
                     commercial_attrs=_commercial_attrs,
                     derived_pieces=_derived_pieces or None,
+                )
+                log_build_verified_context(
+                    quote_id, flow="dual-read-confirmed", text=_verified_ctx,
                 )
                 if _q0:
                     _bd0["verified_measurements"] = _confirmed_json
@@ -1643,6 +1741,7 @@ class AgentService:
                         _bd0["verified_derived_pieces"] = _derived_pieces
                     await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd0))
                     await db.commit()
+                    log_bd_mutation(quote_id, "dual-read-confirmed", _bd0_pre, _bd0)
                 logging.info(
                     f"[dual-read] Verified measurements + commercial attrs "
                     f"saved for {quote_id} (early handler). "
@@ -4159,13 +4258,10 @@ class AgentService:
                 if tool_use.name == "list_pieces":
                     _list_pieces_called = True
                 yield {"type": "action", "content": f"⚙️ Ejecutando: {tool_use.name}..."}
-                # Log every tool call with full inputs for debugging
-                logging.info(f"🔧 TOOL CALL [{quote_id}]: {tool_use.name}")
-                try:
-                    import json as _dbg_json
-                    logging.info(f"🔧 TOOL INPUT [{quote_id}]: {_dbg_json.dumps(tool_use.input, ensure_ascii=False, default=str)[:2000]}")
-                except Exception:
-                    logging.info(f"🔧 TOOL INPUT [{quote_id}]: {str(tool_use.input)[:2000]}")
+                # PR #385 — tool call con input estructurado. Ya existía un
+                # log ad-hoc; ahora pasa por `log_tool_call` que normaliza
+                # el prefix + formato.
+                log_tool_call(quote_id, tool_use.name, tool_use.input)
 
                 try:
                     result = await self._execute_tool(
@@ -4181,12 +4277,14 @@ class AgentService:
                     result = {"ok": False, "error": f"Error ejecutando {tool_use.name}: {str(e)}"}
 
                 # Log result summary
+                # PR #385 — tool result REAL. El log anterior filtraba a
+                # un subset de keys (`ok/total_ars/...`) que dejaba en `{}`
+                # los resultados de catalog_batch_lookup, check_architect,
+                # read_plan, etc. → era imposible saber qué devolvió. Ahora
+                # loguea keys + valores primitivos y fingerprint para lo
+                # complejo. Full dump con DEBUG_AGENT_PAYLOADS=1.
                 try:
-                    if isinstance(result, dict):
-                        log_keys = {k: v for k, v in result.items() if k in ("ok", "total_ars", "total_usd", "material", "material_name", "removed", "added", "error", "quote_id")}
-                        logging.info(f"🔧 TOOL RESULT [{quote_id}] {tool_use.name}: {log_keys}")
-                    elif isinstance(result, list):
-                        logging.info(f"🔧 TOOL RESULT [{quote_id}] {tool_use.name}: {len(result)} content blocks")
+                    log_tool_result(quote_id, tool_use.name, result)
                 except Exception:
                     pass
 
@@ -4378,6 +4476,27 @@ class AgentService:
                 .values(**save_values)
             )
             await db.commit()
+            # PR #385 — persistencia final del turn completo (user +
+            # todos los assistants del loop). Loguea la cantidad de turns
+            # nuevos, preview del content y si se modificaron campos
+            # derivados (client_name, material, project) del regex.
+            try:
+                _added_turns = [db_messages[-1]] if db_messages and db_messages[-1].get("role") == "user" else []
+                _added_turns = _added_turns + list(assistant_messages or [])
+                log_messages_persist(
+                    quote_id,
+                    flow="stream_chat-save",
+                    added_turns=_added_turns,
+                    total_count=len(updated_messages),
+                )
+                _extracted_keys = [k for k in ("client_name", "material", "project") if k in save_values]
+                if _extracted_keys:
+                    logging.info(
+                        f"[trace:extract:{quote_id}] extracted fields from user_message: "
+                        f"{ {k: save_values[k] for k in _extracted_keys} }"
+                    )
+            except Exception:
+                pass
         except Exception as e:
             logging.error(f"Error saving conversation to DB: {e}", exc_info=True)
             try:
@@ -4430,6 +4549,7 @@ class AgentService:
             logging.warning(f"Could not save usage record: {e}")
 
         logging.info(f"[stream_chat] Yielding done for quote {quote_id}")
+        log_sse_structural(quote_id, "done", "")
         yield {"type": "done", "content": ""}
 
     async def _execute_tool(self, name: str, inputs: dict, quote_id: str, db: AsyncSession, conversation_history: list | None = None, current_user_message: str = "") -> dict:
@@ -5724,6 +5844,20 @@ class AgentService:
                     )
                     await db.commit()
                     logging.info(f"Saved breakdown for {save_to_qid} after calculate_quote | ARS: {change_entry['total_ars_before']} → {change_entry['total_ars_after']}")
+                    # PR #385 — diff del breakdown post-calculate_quote. Clave
+                    # para detectar qué piezas/totales se persistieron vs qué
+                    # había antes. Si acá el input del tool dice isla=1.80 pero
+                    # el breakdown tiene isla=2.03 → bug en el calculador.
+                    try:
+                        from app.modules.agent._trace import log_bd_mutation
+                        log_bd_mutation(
+                            save_to_qid,
+                            "calculate-quote-save",
+                            old_quote.quote_breakdown if old_quote else {},
+                            _merged_bd,
+                        )
+                    except Exception:
+                        pass
                 except Exception as e:
                     logging.warning(f"Could not save breakdown for {save_to_qid}: {e}")
             calc_result["quote_id"] = save_to_qid
