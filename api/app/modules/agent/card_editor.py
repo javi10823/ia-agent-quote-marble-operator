@@ -557,11 +557,26 @@ def rehydrate_messages(
         return (list(messages or []), False)
 
     quote_breakdown = quote_breakdown or {}
-    dual_read = quote_breakdown.get("dual_read_result")
+    # PR #382 — Fuente de verdad para la card del despiece:
+    # - `verified_measurements` (post-confirm del operador, incluye edits
+    #   y candidatas aplicadas — las 3 medidas confirmadas de Bernardi).
+    # - `dual_read_result` (pre-confirm — puede tener tramos vacíos que el
+    #   dual_read no pudo resolver y el operador iba a llenar).
+    # Prioridad: verified > dual_read. Si el quote pasó por confirmación
+    # de medidas, la card debe reflejar el estado final, no el snapshot
+    # original.
+    dual_read_source = (
+        quote_breakdown.get("verified_measurements")
+        or quote_breakdown.get("dual_read_result")
+    )
     context_pending = quote_breakdown.get("context_analysis_pending")
 
     new_messages: list[dict] = []
     changed = False
+
+    def _dual_read_block() -> str:
+        """Serializa la card de despiece con la fuente autoritativa."""
+        return "__DUAL_READ__" + json.dumps(dual_read_source, ensure_ascii=False)
 
     for msg in messages:
         role = msg.get("role")
@@ -573,16 +588,34 @@ def rehydrate_messages(
             changed = True
             continue
 
-        # Rule 1 — __DUAL_READ_CARD_SHOWN__
+        # Rule 1 — __DUAL_READ_CARD_SHOWN__ (marker vacío)
         if role == "assistant" and text == "__DUAL_READ_CARD_SHOWN__":
             changed = True
-            if dual_read:
-                new_content = (
-                    "__DUAL_READ__"
-                    + json.dumps(dual_read, ensure_ascii=False)
-                )
-                new_messages.append({**msg, "content": new_content})
+            if dual_read_source:
+                new_messages.append({**msg, "content": _dual_read_block()})
             # Else: descartar (no reconstruible)
+            continue
+
+        # Rule 1b (PR #382) — __DUAL_READ__<json> stale
+        # Escenario: el helper viejo ya rehidrató un quote usando
+        # `dual_read_result` (pre-confirm) en lugar de
+        # `verified_measurements`. El content quedó como
+        # `__DUAL_READ__<dual_read_result>` con tramos vacíos. Detectamos
+        # el mismatch y regeneramos con la fuente correcta.
+        #
+        # Idempotencia: si el JSON embebido ya coincide con
+        # `dual_read_source`, no se marca changed.
+        if role == "assistant" and text.startswith("__DUAL_READ__") and dual_read_source:
+            try:
+                existing = json.loads(text.replace("__DUAL_READ__", "", 1))
+            except (json.JSONDecodeError, ValueError):
+                existing = None
+            if existing != dual_read_source:
+                changed = True
+                new_messages.append({**msg, "content": _dual_read_block()})
+                continue
+            # Ya coincide — preservar sin tocar.
+            new_messages.append(msg)
             continue
 
         # Rule 2 — __CONTEXT_ANALYSIS_SHOWN__

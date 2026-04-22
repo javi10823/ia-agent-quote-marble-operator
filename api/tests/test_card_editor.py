@@ -598,3 +598,190 @@ class TestRehydrateDoesNotTouchBreakdown:
         # El breakdown no cambia
         assert bd == bd_snapshot
 
+
+# ═══════════════════════════════════════════════════════════════════════
+# PR #382 — rehydrate usa verified_measurements sobre dual_read_result
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Caso observado por Javi: quote Bernardi rehidratado con #380 mostraba
+# las mesadas de cocina vacías en la card del despiece, mientras que
+# el mensaje de Valentina en Paso 2 listaba las 3 medidas confirmadas.
+#
+# Root cause: #380 leía solo `dual_read_result` (estado pre-confirm
+# del backend — las mesadas de cocina quedaban vacías esperando que
+# el operador las llenara con candidatas sugeridas o edits). Tras la
+# confirmación del operador, las medidas reales viven en
+# `verified_measurements`.
+#
+# Fix: el helper prioriza verified_measurements > dual_read_result.
+
+
+def _bernardi_with_verified_measurements() -> dict:
+    """Breakdown de Bernardi post-confirm. `dual_read_result` tiene las
+    mesadas de cocina vacías (el estado que el dual_read detectó
+    originalmente), pero `verified_measurements` tiene las 3 medidas
+    confirmadas por el operador."""
+    return {
+        "dual_read_result": {
+            "sectores": [
+                {
+                    "id": "cocina", "tipo": "cocina",
+                    "tramos": [
+                        # Vacías — el dual_read no pudo resolverlas
+                        {"id": "t1", "descripcion": "Mesada con pileta",
+                         "largo_m": {"valor": 0}, "ancho_m": {"valor": 0}, "m2": {"valor": 0}},
+                        {"id": "t2", "descripcion": "Mesada 2",
+                         "largo_m": {"valor": 0}, "ancho_m": {"valor": 0}, "m2": {"valor": 0}},
+                    ],
+                },
+                {
+                    "id": "isla", "tipo": "isla",
+                    "tramos": [
+                        # La única que el dual_read resolvió
+                        {"id": "t3", "descripcion": "Mesada isla",
+                         "largo_m": {"valor": 1.60}, "ancho_m": {"valor": 0.60}, "m2": {"valor": 0.96}},
+                    ],
+                },
+            ],
+        },
+        "verified_measurements": {
+            "sectores": [
+                {
+                    "id": "cocina", "tipo": "cocina",
+                    "tramos": [
+                        # Ahora con las medidas confirmadas por el operador
+                        {"id": "t1", "descripcion": "Mesada con pileta",
+                         "largo_m": {"valor": 2.05}, "ancho_m": {"valor": 0.60}, "m2": {"valor": 1.23}},
+                        {"id": "t2", "descripcion": "Mesada 2",
+                         "largo_m": {"valor": 2.95}, "ancho_m": {"valor": 0.60}, "m2": {"valor": 1.77}},
+                    ],
+                },
+                {
+                    "id": "isla", "tipo": "isla",
+                    "tramos": [
+                        {"id": "t3", "descripcion": "Mesada isla",
+                         "largo_m": {"valor": 1.60}, "ancho_m": {"valor": 0.60}, "m2": {"valor": 0.96}},
+                    ],
+                },
+            ],
+        },
+    }
+
+
+class TestRehydrateUsesVerifiedMeasurements:
+    def test_prefers_verified_over_dual_read_result(self):
+        """Bernardi: si hay verified_measurements, la card debe reflejar
+        ESOS valores (3 medidas), no dual_read_result (solo isla)."""
+        msgs = [
+            {"role": "user", "content": "brief"},
+            {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"},
+        ]
+        bd = _bernardi_with_verified_measurements()
+        new_msgs, changed = rehydrate_messages(msgs, bd)
+        assert changed is True
+        assert len(new_msgs) == 2
+
+        card_content = new_msgs[1]["content"]
+        assert card_content.startswith("__DUAL_READ__")
+        parsed = json.loads(card_content.replace("__DUAL_READ__", "", 1))
+        # Las 3 mesadas con sus medidas confirmadas
+        cocina_tramos = parsed["sectores"][0]["tramos"]
+        assert cocina_tramos[0]["largo_m"]["valor"] == 2.05
+        assert cocina_tramos[1]["largo_m"]["valor"] == 2.95
+        isla_tramo = parsed["sectores"][1]["tramos"][0]
+        assert isla_tramo["largo_m"]["valor"] == 1.60
+
+    def test_falls_back_to_dual_read_when_no_verified(self):
+        """Sin verified_measurements (quote pre-confirm): usa dual_read_result
+        como antes (compat con comportamiento previo)."""
+        msgs = [
+            {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"},
+        ]
+        bd = {
+            "dual_read_result": {"sectores": [{"tipo": "cocina", "tramos": []}]},
+        }
+        new_msgs, changed = rehydrate_messages(msgs, bd)
+        assert changed is True
+        card_content = new_msgs[0]["content"]
+        parsed = json.loads(card_content.replace("__DUAL_READ__", "", 1))
+        assert parsed["sectores"][0]["tipo"] == "cocina"
+
+    def test_regenerates_stale_dual_read_content(self):
+        """Regresión del bug observado: un quote rehidratado previamente
+        con el helper viejo quedó con `__DUAL_READ__<dual_read_result>`
+        (incompleto). Al re-correr el helper con verified_measurements
+        presente, debe REGENERAR el content con la fuente autoritativa."""
+        bd = _bernardi_with_verified_measurements()
+        # Content stale: tiene el dual_read_result (mesadas vacías) embebido
+        stale_content = "__DUAL_READ__" + json.dumps(bd["dual_read_result"], ensure_ascii=False)
+        msgs = [
+            {"role": "user", "content": "brief"},
+            {"role": "assistant", "content": stale_content},
+        ]
+        new_msgs, changed = rehydrate_messages(msgs, bd)
+        assert changed is True
+        # Regenerado con verified_measurements
+        new_content = new_msgs[1]["content"]
+        parsed = json.loads(new_content.replace("__DUAL_READ__", "", 1))
+        cocina_tramos = parsed["sectores"][0]["tramos"]
+        assert cocina_tramos[0]["largo_m"]["valor"] == 2.05
+        assert cocina_tramos[1]["largo_m"]["valor"] == 2.95
+
+    def test_idempotent_with_verified_source(self):
+        """Run 2x → segundo call changed=False (el content ya tiene el
+        JSON correcto desde el primero)."""
+        bd = _bernardi_with_verified_measurements()
+        msgs = [
+            {"role": "assistant", "content": "__DUAL_READ_CARD_SHOWN__"},
+        ]
+        once, changed1 = rehydrate_messages(msgs, bd)
+        assert changed1 is True
+        twice, changed2 = rehydrate_messages(once, bd)
+        assert changed2 is False
+        assert once == twice
+
+    def test_preserves_content_when_already_matches_source(self):
+        """Si el content actual coincide exactamente con dual_read_source,
+        no se toca (idempotencia fuerte)."""
+        bd = _bernardi_with_verified_measurements()
+        good_content = (
+            "__DUAL_READ__"
+            + json.dumps(bd["verified_measurements"], ensure_ascii=False)
+        )
+        msgs = [
+            {"role": "user", "content": "brief"},
+            {"role": "assistant", "content": good_content},
+        ]
+        new_msgs, changed = rehydrate_messages(msgs, bd)
+        assert changed is False
+        assert new_msgs == msgs
+
+    def test_stale_content_without_verified_preserved(self):
+        """Si solo hay dual_read_result (sin verified), y el content
+        actual `__DUAL_READ__<json>` ya coincide con dual_read_result,
+        no se toca. Defensa: no regenerar sin causa."""
+        bd = {"dual_read_result": {"sectores": [{"tipo": "cocina"}]}}
+        current = "__DUAL_READ__" + json.dumps(bd["dual_read_result"], ensure_ascii=False)
+        msgs = [
+            {"role": "assistant", "content": current},
+        ]
+        new_msgs, changed = rehydrate_messages(msgs, bd)
+        assert changed is False
+        assert new_msgs == msgs
+
+    def test_invalid_json_in_stale_content_regenerated(self):
+        """Content con `__DUAL_READ__<garbage>` (JSON roto) — el helper
+        detecta el parse error y regenera con la fuente actual en lugar
+        de preservar el garbage."""
+        bd = _bernardi_with_verified_measurements()
+        msgs = [
+            {"role": "assistant", "content": "__DUAL_READ__{not valid json"},
+        ]
+        new_msgs, changed = rehydrate_messages(msgs, bd)
+        assert changed is True
+        parsed = json.loads(
+            new_msgs[0]["content"].replace("__DUAL_READ__", "", 1)
+        )
+        # Regenerado con verified_measurements
+        assert parsed["sectores"][0]["tramos"][0]["largo_m"]["valor"] == 2.05
+
