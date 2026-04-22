@@ -896,6 +896,38 @@ def build_verified_context(
                 if ml > 0:
                     lines.append(f"  Zócalo {lado}: {ml}ml × {alto}m")
                 # ml=0 → ignorado (operador lo descartó intencionalmente)
+            # PR #387 — emitir frentín / faldón / regrueso de cada tramo
+            # con el mismo formato que los zócalos. Antes estos campos
+            # vivían en `tramo.frentin` / `tramo.regrueso` pero no se
+            # inyectaban al system prompt → Claude tenía que descubrir su
+            # existencia de las descripciones del despiece, y a veces los
+            # omitía del Paso 2. Con esto Claude los ve explícitos bajo
+            # `SECTOR: X` y los replica en `calculate_quote.pieces`
+            # (faldón/frentín) o en MO por ml (regrueso).
+            #
+            # Shape esperado (por analogía con zócalos, salida del parser):
+            #   { "lado": "frente|lateral|...", "ml": <float>, "alto_m": <float?> }
+            # `alto_m` es opcional — si falta no se renderiza la multiplicación.
+            for f in tramo.get("frentin", []) or []:
+                ml = (f.get("ml") or 0) if isinstance(f, dict) else 0
+                if ml <= 0:
+                    continue
+                lado = f.get("lado", "?") if isinstance(f, dict) else "?"
+                alto = f.get("alto_m") if isinstance(f, dict) else None
+                if alto:
+                    lines.append(f"  Frentín {lado}: {ml}ml × {alto}m")
+                else:
+                    lines.append(f"  Frentín {lado}: {ml}ml")
+            for r in tramo.get("regrueso", []) or []:
+                ml = (r.get("ml") or 0) if isinstance(r, dict) else 0
+                if ml <= 0:
+                    continue
+                lado = r.get("lado", "?") if isinstance(r, dict) else "?"
+                alto = r.get("alto_m") if isinstance(r, dict) else None
+                if alto:
+                    lines.append(f"  Regrueso {lado}: {ml}ml × {alto}m")
+                else:
+                    lines.append(f"  Regrueso {lado}: {ml}ml")
         lines.append("")
 
     # ── Atributos comerciales con precedencia explícita ──────────────
