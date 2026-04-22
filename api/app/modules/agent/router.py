@@ -395,10 +395,22 @@ async def reopen_measurements(
 ):
     """Resetea el quote a Paso 1 para permitir edición post-confirmación.
 
-    Returns the updated quote (con Paso 2 state ya limpiado).
+    Side-effects (PR #383):
+    - Promueve `verified_measurements` → `dual_read_result` si existe
+      (para que la card re-emitida muestre las medidas editadas, no el
+      snapshot pre-edit).
+    - Corta `Quote.messages` desde el último turn assistant con
+      `__DUAL_READ__` (inclusive) y regenera esa card con el despiece
+      actualizado. El historial posterior (Paso 2 stale, preguntas de
+      Valentina con datos viejos, etc.) se descarta — "nunca dejar
+      historial viejo mezclado con estado nuevo".
+    - El brief inicial del operador y todo lo previo a la card se
+      preservan tal cual.
+
+    Returns the updated quote.
 
     Codes:
-        200 — reopen aplicado, breakdown con Paso 2 limpio.
+        200 — reopen aplicado, breakdown con Paso 2 limpio + chat cortado.
         404 — quote no existe.
         409 — status no permite reopen (validated/sent).
         400 — no había confirmación previa (nada que reabrir).
@@ -406,6 +418,7 @@ async def reopen_measurements(
     from app.modules.agent.card_editor import (
         reset_quote_to_paso1,
         is_paso2_confirmed,
+        truncate_history_at_card,
     )
     result = await db.execute(select(Quote).where(Quote.id == quote_id))
     quote = result.scalar_one_or_none()
@@ -439,7 +452,22 @@ async def reopen_measurements(
             ),
         )
 
+    # PR #383 — preservar las medidas editadas promoviéndolas a
+    # dual_read_result. `reset_quote_to_paso1` borra verified_measurements,
+    # entonces lo capturamos antes. Si el operador nunca editó
+    # (verified_measurements no existe), dual_read_result queda como estaba.
+    verified = bd.get("verified_measurements")
     new_bd = reset_quote_to_paso1(bd)
+    if verified:
+        new_bd["dual_read_result"] = verified
+
+    # Cortar historial desde la card de despiece + regenerar.
+    new_messages, _ = truncate_history_at_card(
+        list(quote.messages or []),
+        marker_prefix="__DUAL_READ__",
+        new_payload=new_bd.get("dual_read_result"),
+    )
+
     # También limpiamos total_ars / total_usd en la tabla (reflejan lo
     # calculado en Paso 2). brief_analysis y client_name se preservan.
     await db.execute(
@@ -447,6 +475,7 @@ async def reopen_measurements(
         .where(Quote.id == quote_id)
         .values(
             quote_breakdown=new_bd,
+            messages=new_messages,
             total_ars=None,
             total_usd=None,
         )
@@ -456,7 +485,113 @@ async def reopen_measurements(
     # Refetch para devolver shape consistente con el listado.
     refreshed = await db.execute(select(Quote).where(Quote.id == quote_id))
     q = refreshed.scalar_one()
-    logger.info(f"[reopen] quote {quote_id} reset to Paso 1")
+    logger.info(
+        f"[reopen-measurements] quote {quote_id} reset to Paso 1; "
+        f"messages: {len(quote.messages or [])} → {len(new_messages)}"
+    )
+    return q
+
+
+# ── REOPEN CONTEXT (editar card de análisis de contexto) ──────────────────
+#
+# PR #383 — Gemelo del endpoint /reopen-measurements pero para la card de
+# contexto (`__CONTEXT_ANALYSIS__`). El operador aprieta "Editar contexto"
+# cuando necesita cambiar un dato comercial que ya respondió (ej:
+# corregir la cantidad de anafes, cambiar material, rectificar dirección).
+#
+# Diferencias vs /reopen-measurements:
+# - Gate de reopen: `verified_context_analysis` existe (contexto confirmado),
+#   no `verified_context` (medidas confirmadas).
+# - El reset limpia también `verified_context_analysis` + todo lo de
+#   Paso 2. `context_analysis_pending` se PRESERVA (preservado también
+#   post-confirm gracias al cambio en `agent.py` del mismo PR) para que
+#   la card se pueda regenerar con los mismos `data_known + assumptions
+#   + pending_questions` que vio el operador al confirmar.
+# - El corte del chat es en `__CONTEXT_ANALYSIS__`. Todo lo posterior
+#   (dual_read card, [DUAL_READ_CONFIRMED], Paso 2 markdown, etc.) se
+#   descarta. Brief y turns pre-card de contexto se preservan.
+
+@router.post("/quotes/{quote_id}/reopen-context")
+async def reopen_context(
+    quote_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Resetea el quote al estado pre-confirmación del contexto.
+
+    Side-effects:
+    - Limpia Paso 2 + `verified_context_analysis` + `verified_context`
+      + `verified_measurements` del breakdown.
+    - Preserva `dual_read_result`, `context_analysis_pending`,
+      `brief_analysis` y metadata (plan hash, etc.).
+    - Corta `Quote.messages` desde el último turn assistant con
+      `__CONTEXT_ANALYSIS__` (inclusive) y regenera esa card con
+      `context_analysis_pending` actual.
+
+    Codes:
+        200 — reopen aplicado, contexto editable.
+        404 — quote no existe.
+        409 — status no permite reopen (validated/sent).
+        400 — no había confirmación de contexto para reabrir.
+    """
+    from app.modules.agent.card_editor import (
+        reset_quote_to_pre_context,
+        truncate_history_at_card,
+    )
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+
+    status_value = quote.status.value if hasattr(quote.status, "value") else str(quote.status)
+    if status_value in ("validated", "sent"):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"El presupuesto está en estado '{status_value}'. No se puede "
+                "reabrir edición — el PDF ya fue generado/enviado. Duplicá el "
+                "quote si necesitás rearmar."
+            ),
+        )
+
+    bd = quote.quote_breakdown or {}
+    if not bd.get("verified_context_analysis"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No hay confirmación de contexto que reabrir. El quote aún "
+                "no pasó por la card de análisis."
+            ),
+        )
+
+    new_bd = reset_quote_to_pre_context(bd)
+
+    # Cortar historial desde la card de contexto + regenerar con
+    # context_analysis_pending (preservado post-#383).
+    context_payload = new_bd.get("context_analysis_pending")
+    new_messages, _ = truncate_history_at_card(
+        list(quote.messages or []),
+        marker_prefix="__CONTEXT_ANALYSIS__",
+        new_payload=context_payload,
+    )
+
+    await db.execute(
+        update(Quote)
+        .where(Quote.id == quote_id)
+        .values(
+            quote_breakdown=new_bd,
+            messages=new_messages,
+            total_ars=None,
+            total_usd=None,
+        )
+    )
+    await db.commit()
+
+    refreshed = await db.execute(select(Quote).where(Quote.id == quote_id))
+    q = refreshed.scalar_one()
+    logger.info(
+        f"[reopen-context] quote {quote_id} reset to pre-context; "
+        f"messages: {len(quote.messages or [])} → {len(new_messages)}"
+    )
     return q
 
 

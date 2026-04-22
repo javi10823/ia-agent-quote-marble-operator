@@ -6,6 +6,8 @@ from app.modules.agent.card_editor import (
     is_card_modification_message,
     apply_card_patch,
     format_patch_summary,
+    truncate_history_at_card,
+    reset_quote_to_pre_context,
 )
 
 
@@ -468,9 +470,12 @@ class TestRehydrateMessagesBernardi:
         assert new_msgs[0]["content"] == "brief"
 
     def test_no_invention_when_context_pending_missing(self):
-        """Mismo criterio para context_analysis — post-confirmación
-        `context_analysis_pending` se poppea del breakdown. El helper no
-        reconstruye la card (acepta perderla) en lugar de fabricar."""
+        """Mismo criterio para context_analysis — si el breakdown no
+        tiene `context_analysis_pending` (quote viejo antes de #383, o
+        quote que nunca pasó por la card), el helper no fabrica data.
+        Nota: post-#383 el handler [CONTEXT_CONFIRMED] preserva
+        context_analysis_pending, pero los breakdowns legacy pueden no
+        tenerlo."""
         msgs = [
             {"role": "user", "content": "brief"},
             {"role": "assistant", "content": "__CONTEXT_ANALYSIS_SHOWN__"},
@@ -784,4 +789,249 @@ class TestRehydrateUsesVerifiedMeasurements:
         )
         # Regenerado con verified_measurements
         assert parsed["sectores"][0]["tramos"][0]["largo_m"]["valor"] == 2.05
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PR #383 — truncate_history_at_card (corte + regeneración al reabrir)
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Regla del operador: "Editar despiece / Editar contexto" debe cortar
+# el chat desde la card respectiva y regenerarla con el estado nuevo.
+# Nunca se borra lo previo a la card (brief del operador + comentarios
+# iniciales). Nunca se deja historial viejo mezclado con estado nuevo.
+
+
+def _bernardi_confirmed_history() -> list[dict]:
+    """Historial completo de un quote que pasó contexto + medidas +
+    Paso 2. Base para los tests de corte."""
+    return [
+        {"role": "user", "content": "cotizar cocina + isla en pura prima"},
+        {"role": "assistant", "content": '__CONTEXT_ANALYSIS__{"data_known":[{"field":"Material","value":"Pura Prima"}],"pending_questions":[]}'},
+        {"role": "user", "content": '[CONTEXT_CONFIRMED]{"answers":[]}'},
+        {"role": "assistant", "content": '__DUAL_READ__{"sectores":[{"id":"cocina","tramos":[{"largo_m":{"valor":2.05}}]}]}'},
+        {"role": "user", "content": '[DUAL_READ_CONFIRMED]{"sectores":[]}'},
+        {"role": "assistant", "content": "## PASO 2 — Validación\nMaterial: PURASTONE\nTotal: $797.177"},
+        {"role": "user", "content": "Confirmo"},
+    ]
+
+
+class TestTruncateHistoryAtCard:
+    def test_truncates_at_dual_read_and_regenerates(self):
+        """Corte en __DUAL_READ__: preserva brief + context + confirmación
+        de contexto; descarta card vieja + [DUAL_READ_CONFIRMED] + Paso 2
+        + confirmación del operador. Appendea card regenerada con payload
+        nuevo."""
+        msgs = _bernardi_confirmed_history()
+        new_payload = {"sectores": [{"id": "cocina", "tramos": [{"largo_m": {"valor": 2.20}}]}]}
+
+        new_msgs, changed = truncate_history_at_card(
+            msgs,
+            marker_prefix="__DUAL_READ__",
+            new_payload=new_payload,
+        )
+        assert changed is True
+
+        # Pre-card: brief + CONTEXT_ANALYSIS + CONTEXT_CONFIRMED → 3 turns.
+        # Post-card: se descartan los 4 posteriores (card vieja, confirmación,
+        # Paso 2 markdown, "Confirmo").
+        # Nueva card regenerada → total 4 turns.
+        assert len(new_msgs) == 4
+
+        # Brief preservado
+        assert new_msgs[0]["content"] == "cotizar cocina + isla en pura prima"
+        # Card de contexto preservada
+        assert new_msgs[1]["content"].startswith("__CONTEXT_ANALYSIS__")
+        # Confirmación de contexto preservada
+        assert new_msgs[2]["content"].startswith("[CONTEXT_CONFIRMED]")
+        # Card de despiece regenerada con el payload nuevo
+        assert new_msgs[3]["role"] == "assistant"
+        assert new_msgs[3]["content"].startswith("__DUAL_READ__")
+        parsed = json.loads(new_msgs[3]["content"].replace("__DUAL_READ__", "", 1))
+        assert parsed["sectores"][0]["tramos"][0]["largo_m"]["valor"] == 2.20
+
+    def test_truncates_at_context_analysis_and_regenerates(self):
+        """Corte en __CONTEXT_ANALYSIS__: preserva solo el brief."""
+        msgs = _bernardi_confirmed_history()
+        new_payload = {"data_known": [{"field": "Material", "value": "PURASTONE"}]}
+
+        new_msgs, changed = truncate_history_at_card(
+            msgs,
+            marker_prefix="__CONTEXT_ANALYSIS__",
+            new_payload=new_payload,
+        )
+        assert changed is True
+
+        # Solo el brief + card de contexto regenerada = 2 turns.
+        assert len(new_msgs) == 2
+        assert new_msgs[0]["content"] == "cotizar cocina + isla en pura prima"
+        assert new_msgs[1]["content"].startswith("__CONTEXT_ANALYSIS__")
+        parsed = json.loads(new_msgs[1]["content"].replace("__CONTEXT_ANALYSIS__", "", 1))
+        assert parsed["data_known"][0]["value"] == "PURASTONE"
+
+    def test_no_marker_returns_unchanged(self):
+        """Si el historial no tiene la card, no hay nada que cortar."""
+        msgs = [
+            {"role": "user", "content": "brief"},
+            {"role": "assistant", "content": "Hola, te falta el plano."},
+        ]
+        new_msgs, changed = truncate_history_at_card(
+            msgs,
+            marker_prefix="__DUAL_READ__",
+            new_payload={"sectores": []},
+        )
+        assert changed is False
+        assert new_msgs == msgs
+
+    def test_empty_messages_noop(self):
+        new_msgs, changed = truncate_history_at_card(
+            [],
+            marker_prefix="__DUAL_READ__",
+            new_payload={"x": 1},
+        )
+        assert changed is False
+        assert new_msgs == []
+
+    def test_none_messages_noop(self):
+        new_msgs, changed = truncate_history_at_card(
+            None,
+            marker_prefix="__DUAL_READ__",
+            new_payload={"x": 1},
+        )
+        assert changed is False
+        assert new_msgs == []
+
+    def test_cuts_at_last_card_when_multiple(self):
+        """Si hay múltiples __DUAL_READ__ (ej: card re-emitida después
+        de un patch desde chat), cortar al último — es el estado más
+        reciente del despiece en el historial."""
+        msgs = [
+            {"role": "user", "content": "brief"},
+            {"role": "assistant", "content": '__DUAL_READ__{"v":1}'},  # vieja
+            {"role": "user", "content": "agregá un zócalo"},
+            {"role": "assistant", "content": '__DUAL_READ__{"v":2}'},  # última
+            {"role": "user", "content": "[DUAL_READ_CONFIRMED]{}"},
+            {"role": "assistant", "content": "Paso 2..."},
+        ]
+        new_msgs, changed = truncate_history_at_card(
+            msgs,
+            marker_prefix="__DUAL_READ__",
+            new_payload={"v": 3},
+        )
+        assert changed is True
+        # brief + card vieja + "agregá zócalo" + card regenerada = 4
+        assert len(new_msgs) == 4
+        assert new_msgs[1]["content"] == '__DUAL_READ__{"v":1}'  # primera preservada
+        assert new_msgs[2]["content"] == "agregá un zócalo"
+        last_parsed = json.loads(new_msgs[3]["content"].replace("__DUAL_READ__", "", 1))
+        assert last_parsed["v"] == 3
+
+    def test_no_payload_strips_card_without_regenerating(self):
+        """new_payload=None → corta sin re-emitir. Caso defensivo."""
+        msgs = _bernardi_confirmed_history()
+        new_msgs, changed = truncate_history_at_card(
+            msgs,
+            marker_prefix="__DUAL_READ__",
+            new_payload=None,
+        )
+        assert changed is True
+        # brief + ctx card + ctx_confirmed = 3 turns
+        assert len(new_msgs) == 3
+        assert not any(
+            m.get("content", "").startswith("__DUAL_READ__")
+            for m in new_msgs if isinstance(m.get("content"), str)
+        )
+
+    def test_preserves_brief_with_plano_attachment(self):
+        """Brief con content como lista (user subió plano) se preserva
+        tal cual — incluyendo los blocks de image."""
+        msgs = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "cotizar"},
+                    {"type": "image", "source": {"data": "..."}},
+                ],
+            },
+            {"role": "assistant", "content": '__DUAL_READ__{}'},
+        ]
+        new_msgs, changed = truncate_history_at_card(
+            msgs,
+            marker_prefix="__DUAL_READ__",
+            new_payload={"x": 1},
+        )
+        assert changed is True
+        # Brief con image block intacto
+        assert isinstance(new_msgs[0]["content"], list)
+        assert len(new_msgs[0]["content"]) == 2
+
+    def test_idempotent_with_same_payload(self):
+        """Llamar 2 veces con el mismo payload produce el mismo resultado."""
+        msgs = _bernardi_confirmed_history()
+        payload = {"v": "new"}
+        once, _ = truncate_history_at_card(
+            msgs, marker_prefix="__DUAL_READ__", new_payload=payload,
+        )
+        twice, _ = truncate_history_at_card(
+            once, marker_prefix="__DUAL_READ__", new_payload=payload,
+        )
+        assert once == twice
+
+
+class TestResetQuoteToPreContext:
+    def test_clears_verified_context_analysis_and_paso2(self):
+        bd = {
+            "dual_read_result": {"sectores": []},
+            "context_analysis_pending": {"data_known": []},
+            "verified_context_analysis": {"answers": [{"q": 1, "a": "X"}]},
+            "verified_context": "[MEDIDAS...]",
+            "verified_measurements": {"sectores": []},
+            "material_name": "PURASTONE",
+            "total_ars": 797177,
+            "brief_analysis": {"client_name": "Erica Bernardi"},
+        }
+        reset = reset_quote_to_pre_context(bd)
+        # Paso 2 + verified_context_analysis limpio
+        assert "verified_context_analysis" not in reset
+        assert "verified_context" not in reset
+        assert "verified_measurements" not in reset
+        assert "material_name" not in reset
+        assert "total_ars" not in reset
+        # Preservados
+        assert reset["dual_read_result"] == {"sectores": []}
+        assert reset["context_analysis_pending"] == {"data_known": []}
+        assert reset["brief_analysis"] == {"client_name": "Erica Bernardi"}
+
+    def test_preserves_context_analysis_pending(self):
+        """context_analysis_pending es el snapshot de la card original.
+        Es la fuente para regenerarla al reabrir."""
+        bd = {
+            "verified_context_analysis": {"answers": []},
+            "context_analysis_pending": {"data_known": [{"field": "x"}]},
+        }
+        reset = reset_quote_to_pre_context(bd)
+        assert reset["context_analysis_pending"] == {"data_known": [{"field": "x"}]}
+
+    def test_empty_breakdown(self):
+        assert reset_quote_to_pre_context({}) == {}
+        assert reset_quote_to_pre_context(None) == {}
+
+    def test_does_not_mutate_input(self):
+        bd = {
+            "verified_context_analysis": {"answers": []},
+            "verified_context": "X",
+            "context_analysis_pending": {"data_known": []},
+        }
+        snapshot = json.loads(json.dumps(bd))
+        reset_quote_to_pre_context(bd)
+        assert bd == snapshot
+
+    def test_idempotent(self):
+        bd = {
+            "verified_context_analysis": {"answers": []},
+            "verified_context": "X",
+            "context_analysis_pending": {"data_known": []},
+        }
+        once = reset_quote_to_pre_context(bd)
+        twice = reset_quote_to_pre_context(once)
+        assert once == twice
 

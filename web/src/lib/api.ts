@@ -168,6 +168,11 @@ export interface QuoteBreakdown {
    *  Usado por el frontend como flag para lockear edits inline del
    *  despiece y mostrar el botón "Editar despiece". */
   verified_context?: string;
+  /** PR #383 — Presente cuando el operador ya confirmó el contexto
+   *  (card `__CONTEXT_ANALYSIS__`). Se usa como flag para mostrar el
+   *  botón "Editar contexto" (gemelo de "Editar despiece" pero para
+   *  el paso anterior). */
+  verified_context_analysis?: { answers?: unknown[] } | null;
 }
 
 export interface QuoteDetail extends Quote {
@@ -500,6 +505,30 @@ export async function reopenMeasurements(id: string): Promise<void> {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "Error al reabrir edición del despiece");
+  }
+}
+
+/**
+ * PR #383 — Reabre la edición del contexto después de haber confirmado
+ * la card de análisis. Limpia Paso 2 + `verified_context_analysis` y
+ * corta el historial desde la card `__CONTEXT_ANALYSIS__` (inclusive),
+ * regenerándola con los data_known + assumptions + pending_questions
+ * que el operador vio en el momento original.
+ *
+ * Errores:
+ *  - 404: quote no existe.
+ *  - 409: status es `validated` o `sent` (PDF ya entregado).
+ *  - 400: no había confirmación de contexto previa.
+ */
+export async function reopenContext(id: string): Promise<void> {
+  const res = await apiFetch(
+    `${API_BASE}/api/quotes/${id}/reopen-context`,
+    { method: "POST", credentials: "include" },
+  );
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al reabrir edición del contexto");
   }
 }
 

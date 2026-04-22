@@ -1506,7 +1506,14 @@ class AgentService:
                 # Guardar verified_context_analysis (gate para no re-preguntar)
                 _bd_ctx["verified_context_analysis"] = _ctx_payload
                 _bd_ctx["dual_read_result"] = _saved_dual
-                _bd_ctx.pop("context_analysis_pending", None)
+                # PR #383 — NO pop `context_analysis_pending`. Se preserva
+                # como snapshot para que el endpoint /reopen-context pueda
+                # regenerar la card `__CONTEXT_ANALYSIS__` con los mismos
+                # data_known + assumptions + pending_questions que el
+                # operador vio al confirmar. El gate "ya se confirmó
+                # contexto" usa `verified_context_analysis` (no
+                # `context_analysis_pending`), por lo que preservarlo no
+                # re-dispara la card a mitad del flujo.
                 if _q_ctx:
                     await db.execute(
                         update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd_ctx)
