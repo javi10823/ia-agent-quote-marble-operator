@@ -1203,6 +1203,118 @@ def build_derived_isla_pieces(
     return pieces, warnings
 
 
+# ─────────────────────────────────────────────────────────────────────
+# PR #386 — Materialización de piezas derivadas como tramos del despiece
+# ─────────────────────────────────────────────────────────────────────
+#
+# Hasta #385, las piezas derivadas (patas de isla) vivían solo en
+# `verified_derived_pieces` del breakdown y en un bloque separado del
+# system prompt de Claude. El operador las confirmaba al confirmar el
+# contexto pero NO las veía en la card del despiece — aparecían recién
+# en el Paso 2. Resultado: card con m² menos que el PDF real.
+#
+# Este helper materializa las piezas derivadas como tramos reales del
+# sector isla del dual_read_result para que:
+#   1. El operador las vea en la card del despiece post CONTEXT_CONFIRMED.
+#   2. El operador pueda editarlas como cualquier otra pieza.
+#   3. Paso 2 y PDF lean desde una única fuente de verdad (el despiece),
+#      sin doble conteo contra `derived_pieces` del system prompt.
+
+
+def merge_derived_pieces_into_dual_read(
+    dual_read: dict | None,
+    derived_pieces: list[dict] | None,
+) -> dict:
+    """Sincroniza los tramos `_derived:true` del sector `isla` del
+    `dual_read_result` con la lista `derived_pieces` (output de
+    `build_derived_isla_pieces`).
+
+    Comportamiento:
+    - **Idempotente**: remueve TODOS los tramos con flag `_derived:true`
+      antes de agregar los nuevos. Reconfirmar contexto no duplica patas.
+    - `derived_pieces=None` o `[]` → solo limpieza (remueve los existentes,
+      no agrega nada). Usado por `/reopen-context` y para el caso en que
+      el operador cambió la respuesta "¿hay patas?" a "no".
+    - Si no hay sector `isla` en el dual_read y hay piezas derivadas → no
+      crea sector (las patas no tienen sentido sin isla detectada).
+    - **No muta el input** — devuelve una copia nueva.
+
+    Shape del tramo resultante:
+        {
+            "id": "derived_pata_frontal",
+            "descripcion": "Pata frontal isla",
+            "largo_m": {"valor": 2.03, "status": "CONFIRMADO"},
+            "ancho_m": {"valor": 0.60, "status": "CONFIRMADO"},
+            "m2":      {"valor": 1.22, "status": "CONFIRMADO"},
+            "zocalos": [],
+            "_derived": True,
+            "_derived_source": "derived_from_operator_answers",
+        }
+    """
+    if not dual_read:
+        return {}
+    import copy as _copy
+    new_dr = _copy.deepcopy(dual_read)
+
+    # Encontrar sector isla. No creamos uno si no existe.
+    isla_sector = None
+    for s in new_dr.get("sectores") or []:
+        if (s.get("tipo") or "").lower() == "isla":
+            isla_sector = s
+            break
+    if isla_sector is None:
+        return new_dr  # Sin sector isla, nada que mergear.
+
+    # Filtrar tramos existentes: preservar los que NO son derivados.
+    existing_tramos = isla_sector.get("tramos") or []
+    preserved = [t for t in existing_tramos if not t.get("_derived")]
+
+    # Construir tramos nuevos desde las piezas derivadas.
+    new_tramos: list[dict] = []
+    for piece in derived_pieces or []:
+        desc = piece.get("description") or "Pieza derivada"
+        largo = piece.get("largo")
+        prof = piece.get("prof")
+        m2 = piece.get("m2")
+        new_tramos.append({
+            "id": _derived_piece_id(desc),
+            "descripcion": desc,
+            "largo_m": {"valor": largo, "status": "CONFIRMADO"},
+            "ancho_m": {"valor": prof, "status": "CONFIRMADO"},
+            "m2":      {"valor": m2, "status": "CONFIRMADO"},
+            "zocalos": [],
+            "_derived": True,
+            "_derived_source": piece.get("source") or "derived_from_operator_answers",
+        })
+
+    isla_sector["tramos"] = preserved + new_tramos
+    return new_dr
+
+
+def _derived_piece_id(description: str) -> str:
+    """ID estable para un tramo derivado a partir de su descripción.
+    Permite que si una pieza se regenera con los mismos datos, tenga el
+    mismo id (útil para diffs en logs y comparaciones)."""
+    import re as _re
+    slug = _re.sub(r"[^\w]+", "_", (description or "").strip().lower())
+    slug = slug.strip("_") or "piece"
+    return f"derived_{slug}"
+
+
+def dual_read_has_derived_pieces(dual_read: dict | None) -> bool:
+    """True si el dual_read tiene al menos un tramo `_derived:true`.
+    Usado por `[DUAL_READ_CONFIRMED]` para decidir si skipear el
+    re-cálculo de `build_derived_isla_pieces` (el operador puede haber
+    editado las patas en la card — no queremos pisarlo)."""
+    if not dual_read:
+        return False
+    for s in dual_read.get("sectores") or []:
+        for t in s.get("tramos") or []:
+            if t.get("_derived"):
+                return True
+    return False
+
+
 def build_commercial_attrs(
     analysis: dict | None,
     dual_result: dict | None,
