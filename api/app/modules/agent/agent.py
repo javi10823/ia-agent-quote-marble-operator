@@ -1550,6 +1550,35 @@ class AgentService:
                     dual_after=_saved_dual,
                     answers=_answers,
                 )
+                # PR #386 — materializar piezas derivadas (patas de isla) como
+                # tramos reales del despiece. Antes las patas vivían solo en
+                # `verified_derived_pieces` y en un bloque separado del system
+                # prompt → el operador no las veía en la card. Ahora aparecen
+                # como tramos del sector isla, editables, con flag `_derived`.
+                # Idempotente: reconfirmar contexto reemplaza las viejas.
+                try:
+                    from app.modules.quote_engine.dual_reader import (
+                        build_derived_isla_pieces,
+                        merge_derived_pieces_into_dual_read,
+                    )
+                    _ctx_derived, _ctx_derived_warn = build_derived_isla_pieces(
+                        operator_answers=_answers,
+                        verified_measurements=_saved_dual,
+                    )
+                    log_build_derived_isla_pieces(
+                        quote_id,
+                        flow="context-confirmed",
+                        pieces=_ctx_derived,
+                        warnings=_ctx_derived_warn,
+                    )
+                    _saved_dual = merge_derived_pieces_into_dual_read(
+                        _saved_dual, _ctx_derived,
+                    )
+                except Exception as _e_merge:
+                    logging.warning(
+                        f"[context-confirmed:{quote_id}] derived-merge failed: {_e_merge}",
+                        exc_info=True,
+                    )
                 # Guardar verified_context_analysis (gate para no re-preguntar)
                 _bd_ctx["verified_context_analysis"] = _ctx_payload
                 _bd_ctx["dual_read_result"] = _saved_dual
@@ -1706,24 +1735,54 @@ class AgentService:
                 log_build_commercial_attrs(
                     quote_id, flow="dual-read-confirmed", result=_commercial_attrs,
                 )
-                # PR #377 — Piezas derivadas determinísticas desde las
-                # respuestas del operador (ej: patas de isla). Evita
-                # que el LLM calcule dimensiones a ojo y emita 0.90×0.90
-                # en una pata lateral que debería ser 0.60×0.90.
-                _derived_pieces, _derived_warnings = build_derived_isla_pieces(
-                    operator_answers=_op_answers,
-                    verified_measurements=_confirmed_json,
+                # PR #386 — Fuente única de verdad para las patas de isla:
+                # el despiece (`_confirmed_json`) viene con los tramos
+                # `_derived:true` del `[CONTEXT_CONFIRMED]` y posiblemente
+                # editados por el operador en la card. Skipeamos el
+                # re-cálculo para respetar esos edits. Si por alguna razón
+                # los tramos derivados no están (caso legacy o
+                # flow text-only pre-#386), caemos al cálculo determinístico
+                # y los agregamos como tramos antes de emitir.
+                from app.modules.quote_engine.dual_reader import (
+                    dual_read_has_derived_pieces,
+                    merge_derived_pieces_into_dual_read,
                 )
-                log_build_derived_isla_pieces(
-                    quote_id,
-                    flow="dual-read-confirmed",
-                    pieces=_derived_pieces,
-                    warnings=_derived_warnings,
-                )
+                if dual_read_has_derived_pieces(_confirmed_json):
+                    # Ya están como tramos — no recalcular. Claude los ve
+                    # como parte del SECTOR: ISLA del verified_context.
+                    _derived_pieces = []
+                    _derived_warnings = []
+                    logging.info(
+                        f"[trace:dual-read-confirmed:{quote_id}] "
+                        "derived pieces already materialized as tramos in dual_read — skipping recompute"
+                    )
+                else:
+                    _derived_pieces, _derived_warnings = build_derived_isla_pieces(
+                        operator_answers=_op_answers,
+                        verified_measurements=_confirmed_json,
+                    )
+                    log_build_derived_isla_pieces(
+                        quote_id,
+                        flow="dual-read-confirmed",
+                        pieces=_derived_pieces,
+                        warnings=_derived_warnings,
+                    )
+                    if _derived_pieces:
+                        # Backfill para quotes legacy: mergear al despiece
+                        # para que Paso 2 y PDF lean de una sola fuente.
+                        _confirmed_json = merge_derived_pieces_into_dual_read(
+                            _confirmed_json, _derived_pieces,
+                        )
+                # PR #386 — NO pasar `derived_pieces` a build_verified_context.
+                # Las patas ya están como tramos del sector isla y se renderizan
+                # naturalmente bajo `SECTOR: ISLA` en el verified_context text.
+                # Si además pasáramos `derived_pieces`, Claude las vería dos
+                # veces (tramos + bloque [PIEZAS DERIVADAS]) y las sumaría
+                # doble al armar `calculate_quote.pieces`.
                 _verified_ctx = build_verified_context(
                     _confirmed_json,
                     commercial_attrs=_commercial_attrs,
-                    derived_pieces=_derived_pieces or None,
+                    derived_pieces=None,
                 )
                 log_build_verified_context(
                     quote_id, flow="dual-read-confirmed", text=_verified_ctx,
@@ -1734,11 +1793,10 @@ class AgentService:
                     # Guardar también los commercial_attrs estructurados
                     # para auditoría y uso futuro (ej: templates de docs).
                     _bd0["verified_commercial_attrs"] = _commercial_attrs
-                    # PR #377 — piezas derivadas disponibles para auditoría
-                    # y para que consumers downstream (ej: templates de
-                    # docs) no re-calculen.
-                    if _derived_pieces:
-                        _bd0["verified_derived_pieces"] = _derived_pieces
+                    # PR #386 — `verified_derived_pieces` queda derivable del
+                    # dual_read (tramos `_derived:true` del sector isla). No
+                    # lo persistimos más para evitar doble source of truth.
+                    _bd0.pop("verified_derived_pieces", None)
                     await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd0))
                     await db.commit()
                     log_bd_mutation(quote_id, "dual-read-confirmed", _bd0_pre, _bd0)

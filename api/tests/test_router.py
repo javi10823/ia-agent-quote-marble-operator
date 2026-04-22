@@ -1147,6 +1147,51 @@ class TestReopenContext:
         assert r2.status_code == 400
 
     @pytest.mark.asyncio
+    async def test_reopen_context_clears_derived_pieces_from_isla(
+        self, client, db_session,
+    ):
+        """PR #386 — reopen-context debe quitar los tramos `_derived:true`
+        del sector isla. La re-confirmación del contexto los regenera
+        según las nuevas respuestas (quizá diferentes)."""
+        from app.models.quote import Quote
+        from sqlalchemy import update
+        qid = await self._make_context_confirmed_quote(client, db_session)
+        # Inyectar un dual_read con patas derivadas ya materializadas
+        # (como quedaría post-#386 después de CONTEXT_CONFIRMED).
+        existing = (await client.get(f"/api/quotes/{qid}")).json()["quote_breakdown"]
+        existing["dual_read_result"] = {
+            "sectores": [
+                {"id": "isla", "tipo": "isla", "tramos": [
+                    {"id": "i1", "descripcion": "Mesada isla",
+                     "largo_m": {"valor": 2.03}, "ancho_m": {"valor": 0.60}, "m2": {"valor": 1.22}},
+                    {"id": "derived_pata_frontal_isla", "descripcion": "Pata frontal isla",
+                     "largo_m": {"valor": 2.03}, "ancho_m": {"valor": 0.90}, "m2": {"valor": 1.83},
+                     "zocalos": [], "_derived": True,
+                     "_derived_source": "derived_from_operator_answers"},
+                    {"id": "derived_pata_lateral_izq", "descripcion": "Pata lateral isla izq",
+                     "largo_m": {"valor": 0.60}, "ancho_m": {"valor": 0.90}, "m2": {"valor": 0.54},
+                     "zocalos": [], "_derived": True,
+                     "_derived_source": "derived_from_operator_answers"},
+                ]},
+            ],
+        }
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(quote_breakdown=existing)
+        )
+        await db_session.commit()
+
+        resp = await client.post(f"/api/quotes/{qid}/reopen-context")
+        assert resp.status_code == 200, resp.text
+
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        isla = detail["quote_breakdown"]["dual_read_result"]["sectores"][0]
+        # Solo la mesada queda (tramo sin `_derived`)
+        assert len(isla["tramos"]) == 1
+        assert isla["tramos"][0]["descripcion"] == "Mesada isla"
+        # Ningún tramo tiene `_derived:true`
+        assert not any(t.get("_derived") for t in isla["tramos"])
+
+    @pytest.mark.asyncio
     async def test_reopen_context_preserves_dual_read_and_brief(
         self, client, db_session,
     ):
