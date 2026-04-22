@@ -420,6 +420,9 @@ async def reopen_measurements(
         is_paso2_confirmed,
         truncate_history_at_card,
     )
+    from app.modules.agent._trace import log_http_enter, log_reopen
+    log_http_enter(quote_id, "POST /quotes/:id/reopen-measurements")
+
     result = await db.execute(select(Quote).where(Quote.id == quote_id))
     quote = result.scalar_one_or_none()
     if not quote:
@@ -462,8 +465,9 @@ async def reopen_measurements(
         new_bd["dual_read_result"] = verified
 
     # Cortar historial desde la card de despiece + regenerar.
-    new_messages, _ = truncate_history_at_card(
-        list(quote.messages or []),
+    msgs_pre = list(quote.messages or [])
+    new_messages, truncate_matched = truncate_history_at_card(
+        msgs_pre,
         marker_prefix="__DUAL_READ__",
         new_payload=new_bd.get("dual_read_result"),
     )
@@ -482,13 +486,19 @@ async def reopen_measurements(
     )
     await db.commit()
 
+    log_reopen(
+        quote_id,
+        kind="measurements",
+        bd_pre=bd,
+        bd_post=new_bd,
+        msgs_count_pre=len(msgs_pre),
+        msgs_count_post=len(new_messages),
+        truncate_matched=truncate_matched,
+    )
+
     # Refetch para devolver shape consistente con el listado.
     refreshed = await db.execute(select(Quote).where(Quote.id == quote_id))
     q = refreshed.scalar_one()
-    logger.info(
-        f"[reopen-measurements] quote {quote_id} reset to Paso 1; "
-        f"messages: {len(quote.messages or [])} → {len(new_messages)}"
-    )
     return q
 
 
@@ -537,6 +547,9 @@ async def reopen_context(
         reset_quote_to_pre_context,
         truncate_history_at_card,
     )
+    from app.modules.agent._trace import log_http_enter, log_reopen
+    log_http_enter(quote_id, "POST /quotes/:id/reopen-context")
+
     result = await db.execute(select(Quote).where(Quote.id == quote_id))
     quote = result.scalar_one_or_none()
     if not quote:
@@ -568,8 +581,9 @@ async def reopen_context(
     # Cortar historial desde la card de contexto + regenerar con
     # context_analysis_pending (preservado post-#383).
     context_payload = new_bd.get("context_analysis_pending")
-    new_messages, _ = truncate_history_at_card(
-        list(quote.messages or []),
+    msgs_pre = list(quote.messages or [])
+    new_messages, truncate_matched = truncate_history_at_card(
+        msgs_pre,
         marker_prefix="__CONTEXT_ANALYSIS__",
         new_payload=context_payload,
     )
@@ -586,12 +600,18 @@ async def reopen_context(
     )
     await db.commit()
 
+    log_reopen(
+        quote_id,
+        kind="context",
+        bd_pre=bd,
+        bd_post=new_bd,
+        msgs_count_pre=len(msgs_pre),
+        msgs_count_post=len(new_messages),
+        truncate_matched=truncate_matched,
+    )
+
     refreshed = await db.execute(select(Quote).where(Quote.id == quote_id))
     q = refreshed.scalar_one()
-    logger.info(
-        f"[reopen-context] quote {quote_id} reset to pre-context; "
-        f"messages: {len(quote.messages or [])} → {len(new_messages)}"
-    )
     return q
 
 
@@ -1817,7 +1837,17 @@ async def chat(
     db: AsyncSession = Depends(get_db),
 ):
     from app.main import touch_chat_activity
+    from app.modules.agent._trace import log_http_enter
     touch_chat_activity()
+
+    # PR #385 — traza del request HTTP entrante al chat. Lo primero que
+    # vemos en el log cuando se dispara un turn del agente.
+    log_http_enter(
+        quote_id,
+        "POST /quotes/:id/chat",
+        message_preview=(message or "")[:200].replace("\n", " "),
+        plan_files=len(plan_files or []),
+    )
 
     # Budget check — read DIRECTLY from DB (not cached config — multi-worker cache stale)
     try:
