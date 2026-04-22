@@ -368,12 +368,38 @@ def _detect_isla_presence_question(brief: str, dual_result: dict) -> dict | None
     }
 
 
+def _has_non_isla_sector(dual_result: dict) -> bool:
+    """True si el despiece tiene al menos un sector que NO es isla.
+    La alzada solo tiene sentido en sectores apoyados contra pared
+    (cocina, baño, lavadero) — la isla es central sin pared de fondo.
+    """
+    for s in dual_result.get("sectores") or []:
+        tipo = (s.get("tipo") or "").lower()
+        if tipo and tipo != "isla":
+            return True
+    return False
+
+
 def _detect_alzada_question(brief: str, dual_result: dict) -> dict | None:
     """Alzada: típicamente el operador la olvida o no está en el plano.
-    Preguntar siempre en cocina salvo que brief sea explícito."""
-    if not _is_cocina_work(dual_result, brief or ""):
-        return None
+
+    PR #388 — se pregunta para cualquier trabajo con al menos un sector
+    NO-isla (cocina, baño, lavadero). Antes el gate era `_is_cocina_work`
+    que dejaba afuera baños y lavaderos puros — se omitía la pregunta
+    aunque pudieran llevar alzada.
+
+    Skip cuando:
+    - El único sector detectado es isla (no tiene pared de fondo).
+    - El dual_read está vacío y el brief no menciona cocina (fallback
+      conservador — no preguntar a ciegas).
+    - El brief ya menciona alzada explícitamente (con/sin/alto).
+    """
     b = brief or ""
+    has_non_isla = _has_non_isla_sector(dual_result)
+    # Si no hay sectores detectados, caer al legacy gate (brief cocina o
+    # sectores vacíos sin evidencia de baño/lavadero).
+    if not has_non_isla and not _is_cocina_work(dual_result, b):
+        return None
     if _ALZADA.search(b) or _ALZADA_NO.search(b):
         return None
     return {

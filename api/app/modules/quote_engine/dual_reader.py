@@ -1256,20 +1256,27 @@ def build_derived_isla_pieces(
 def merge_derived_pieces_into_dual_read(
     dual_read: dict | None,
     derived_pieces: list[dict] | None,
+    *,
+    kind: str = "isla_pata",
 ) -> dict:
-    """Sincroniza los tramos `_derived:true` del sector `isla` del
+    """Sincroniza los tramos derivados del sector `isla` del
     `dual_read_result` con la lista `derived_pieces` (output de
     `build_derived_isla_pieces`).
 
     Comportamiento:
-    - **Idempotente**: remueve TODOS los tramos con flag `_derived:true`
-      antes de agregar los nuevos. Reconfirmar contexto no duplica patas.
-    - `derived_pieces=None` o `[]` → solo limpieza (remueve los existentes,
-      no agrega nada). Usado por `/reopen-context` y para el caso en que
-      el operador cambió la respuesta "¿hay patas?" a "no".
-    - Si no hay sector `isla` en el dual_read y hay piezas derivadas → no
-      crea sector (las patas no tienen sentido sin isla detectada).
+    - **Idempotente**: remueve los tramos con `_derived_kind == kind`
+      antes de agregar los nuevos. Reconfirmar contexto no duplica patas
+      ni mezcla kinds (alzada vs patas pueden coexistir en sectores
+      distintos — cada helper limpia solo lo suyo).
+    - `derived_pieces=None` o `[]` → solo limpieza de `kind` (remueve los
+      existentes de ese kind, no agrega nada). Cambiar "¿hay patas?" a
+      "no" dispara este path.
+    - Si no hay sector `isla` en el dual_read → no-op (las patas no
+      tienen sentido sin isla detectada).
     - **No muta el input** — devuelve una copia nueva.
+
+    Para borrar **todos** los tramos derivados de cualquier kind (usado
+    por /reopen-context), usar `clear_all_derived_tramos(dual_read)`.
 
     Shape del tramo resultante:
         {
@@ -1280,6 +1287,7 @@ def merge_derived_pieces_into_dual_read(
             "m2":      {"valor": 1.22, "status": "CONFIRMADO"},
             "zocalos": [],
             "_derived": True,
+            "_derived_kind": "isla_pata",
             "_derived_source": "derived_from_operator_answers",
         }
     """
@@ -1297,9 +1305,14 @@ def merge_derived_pieces_into_dual_read(
     if isla_sector is None:
         return new_dr  # Sin sector isla, nada que mergear.
 
-    # Filtrar tramos existentes: preservar los que NO son derivados.
+    # Filtrar tramos existentes: preservar los que NO son de este `kind`.
+    # Los derivados de OTRO kind quedan (ej: si mañana hay alzada en isla
+    # también, no se pisan). Los no-derivados siempre se preservan.
     existing_tramos = isla_sector.get("tramos") or []
-    preserved = [t for t in existing_tramos if not t.get("_derived")]
+    preserved = [
+        t for t in existing_tramos
+        if not (t.get("_derived") and t.get("_derived_kind", "isla_pata") == kind)
+    ]
 
     # Construir tramos nuevos desde las piezas derivadas.
     new_tramos: list[dict] = []
@@ -1316,10 +1329,158 @@ def merge_derived_pieces_into_dual_read(
             "m2":      {"valor": m2, "status": "CONFIRMADO"},
             "zocalos": [],
             "_derived": True,
+            "_derived_kind": kind,
             "_derived_source": piece.get("source") or "derived_from_operator_answers",
         })
 
     isla_sector["tramos"] = preserved + new_tramos
+    return new_dr
+
+
+# ─────────────────────────────────────────────────────────────────────
+# PR #388 — Alzada como tramo derivado por sector
+# ─────────────────────────────────────────────────────────────────────
+#
+# La alzada (tira vertical contra pared que sube detrás de la mesada)
+# venía viviendo solo como dos campos top-level del dual_read:
+# `dual_result["alzada"] = True/False` y `dual_result["alzada_alto_m"]`.
+# El operador confirmaba "sí, 10cm" en la card de contexto pero NO veía
+# la alzada en el despiece. Claude tenía que "inventar" la pieza en
+# Paso 2 leyendo el brief y el system prompt.
+#
+# Ahora materializamos la alzada como un tramo por sector (no por cada
+# tramo interno — más legible, consistente con cómo se cotiza):
+#   SECTOR: COCINA
+#     Alzada cocina: 5.00m × 0.10m = 0.50 m²
+#
+# Decisión de modelado (acordada con el operador):
+# - 1 tramo por sector, no 1 por cada tramo interno.
+# - `descripcion = "Alzada <sector_id>"`.
+# - `largo = perímetro visible` = suma de `largo_m.valor` de los tramos
+#   NO-derivados del sector (mesadas originales, no patas ni alzadas
+#   previas).
+# - `ancho = alzada_alto_m` (tipicamente 0.05, 0.10 o custom).
+# - Scope: sectores cuyo tipo NO es `isla` (la isla es central sin pared
+#   de fondo, no lleva alzada). Cocinas, baños, lavaderos: sí.
+
+
+# Sectores que NO llevan alzada nunca. La isla es central — no tiene
+# pared de fondo contra la cual apoyarla.
+_NO_ALZADA_SECTOR_TIPOS = {"isla"}
+
+
+def _sector_visible_perimeter(sector: dict | None) -> float:
+    """Suma de `largo_m.valor` de los tramos NO-derivados del sector.
+
+    Usado para dimensionar la alzada: la tira vertical corre por todo
+    el perímetro visible de mesadas contra pared. Excluye tramos
+    derivados (patas de isla, alzadas previas) — solo cuenta el despiece
+    original del dual_read.
+    """
+    if not sector:
+        return 0.0
+    total = 0.0
+    for t in sector.get("tramos") or []:
+        if t.get("_derived"):
+            continue
+        largo = t.get("largo_m")
+        v = largo.get("valor") if isinstance(largo, dict) else largo
+        try:
+            if v is not None:
+                total += float(v)
+        except (TypeError, ValueError):
+            continue
+    return round(total, 2)
+
+
+def merge_alzada_tramos_into_dual_read(
+    dual_read: dict | None,
+    alto_m: float | None,
+    *,
+    active: bool = True,
+) -> dict:
+    """Sincroniza tramos `_derived_kind="alzada"` en todos los sectores
+    NO-isla del dual_read, según las respuestas confirmadas del operador.
+
+    Comportamiento:
+    - **Idempotente**: remueve tramos `_derived_kind="alzada"` previos
+      antes de agregar los nuevos. Reconfirmar contexto no duplica.
+    - `active=False` o `alto_m<=0` o `alto_m=None` → solo limpieza
+      (remueve alzadas existentes, no agrega). Cambiar "¿lleva alzada?"
+      a "no" dispara este path.
+    - Para cada sector NO-isla cuyo perímetro visible > 0 → agrega
+      **un solo tramo**: `"Alzada <sector_id>"` con
+      `largo = perímetro`, `ancho = alto_m`.
+    - Si un sector no tiene tramos no-derivados (perímetro=0) → skip
+      ese sector (no hay mesada original contra la cual apoyar alzada).
+    - **No muta el input** — devuelve una copia nueva.
+    - No pisa tramos `_derived_kind="isla_pata"` (patas de isla) —
+      usa el mismo filtro por kind que el helper de patas.
+    """
+    if not dual_read:
+        return {}
+    import copy as _copy
+    new_dr = _copy.deepcopy(dual_read)
+
+    try:
+        alto_val = float(alto_m) if alto_m is not None else 0.0
+    except (TypeError, ValueError):
+        alto_val = 0.0
+
+    should_emit = bool(active) and alto_val > 0
+
+    for sector in new_dr.get("sectores") or []:
+        # Limpiar tramos alzada previos en TODOS los sectores (incluso
+        # isla — defensivo, por si alguna vez un handler anterior los
+        # agregó por error).
+        tramos = sector.get("tramos") or []
+        sector["tramos"] = [
+            t for t in tramos
+            if not (t.get("_derived") and t.get("_derived_kind") == "alzada")
+        ]
+
+        if not should_emit:
+            continue
+
+        sector_tipo = (sector.get("tipo") or "").lower()
+        if sector_tipo in _NO_ALZADA_SECTOR_TIPOS:
+            continue
+
+        perimeter = _sector_visible_perimeter(sector)
+        if perimeter <= 0:
+            continue
+
+        sector_id = sector.get("id") or sector_tipo or "sector"
+        desc = f"Alzada {sector_id}"
+        m2 = round(perimeter * alto_val, 2)
+        sector["tramos"].append({
+            "id": _derived_piece_id(desc),
+            "descripcion": desc,
+            "largo_m": {"valor": round(perimeter, 2), "status": "CONFIRMADO"},
+            "ancho_m": {"valor": round(alto_val, 2), "status": "CONFIRMADO"},
+            "m2":      {"valor": m2, "status": "CONFIRMADO"},
+            "zocalos": [],
+            "_derived": True,
+            "_derived_kind": "alzada",
+            "_derived_source": "alzada_answer",
+        })
+
+    return new_dr
+
+
+def clear_all_derived_tramos(dual_read: dict | None) -> dict:
+    """Remueve TODOS los tramos `_derived:true` (cualquier kind) del
+    dual_read. Usado por `/reopen-context` que quiere borrar cualquier
+    pieza derivada (patas + alzadas) antes de la re-confirmación.
+
+    **No muta el input** — devuelve copia nueva."""
+    if not dual_read:
+        return {}
+    import copy as _copy
+    new_dr = _copy.deepcopy(dual_read)
+    for sector in new_dr.get("sectores") or []:
+        tramos = sector.get("tramos") or []
+        sector["tramos"] = [t for t in tramos if not t.get("_derived")]
     return new_dr
 
 

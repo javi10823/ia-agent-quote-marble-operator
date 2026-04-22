@@ -565,6 +565,57 @@ class TestDetectAlzada:
         qs = detect_pending_questions("sin alzada", _make_dual_result())
         assert all(q["id"] != "alzada" for q in qs)
 
+    # PR #388 — la pregunta se relajó: antes solo se preguntaba si
+    # `_is_cocina_work=True`. Ahora se pregunta si hay al menos un
+    # sector NO-isla (cocina, baño, lavadero).
+
+    def test_emits_in_bano(self):
+        """Baño puro (sin cocina) → antes no se preguntaba alzada. Ahora sí."""
+        dr = {
+            "sectores": [
+                {"id": "s1", "tipo": "baño", "tramos": [
+                    {"id": "t1", "descripcion": "Vanitory",
+                     "largo_m": {"valor": 1.20, "status": "CONFIRMADO"},
+                     "ancho_m": {"valor": 0.50, "status": "CONFIRMADO"},
+                     "m2": {"valor": 0.60, "status": "CONFIRMADO"},
+                     "zocalos": [], "frentin": [], "regrueso": []},
+                ]},
+            ],
+        }
+        qs = detect_pending_questions("vanitory mármol", dr)
+        assert any(q["id"] == "alzada" for q in qs)
+
+    def test_emits_in_lavadero(self):
+        dr = {
+            "sectores": [
+                {"id": "s1", "tipo": "lavadero", "tramos": [
+                    {"id": "t1", "descripcion": "Lavadero",
+                     "largo_m": {"valor": 1.80, "status": "CONFIRMADO"},
+                     "ancho_m": {"valor": 0.55, "status": "CONFIRMADO"},
+                     "m2": {"valor": 0.99, "status": "CONFIRMADO"},
+                     "zocalos": [], "frentin": [], "regrueso": []},
+                ]},
+            ],
+        }
+        qs = detect_pending_questions("lavadero granito", dr)
+        assert any(q["id"] == "alzada" for q in qs)
+
+    def test_skips_when_only_isla(self):
+        """Isla sola (sin cocina/baño/lavadero) → no preguntar alzada."""
+        dr = {
+            "sectores": [
+                {"id": "s1", "tipo": "isla", "tramos": [
+                    {"id": "t1", "descripcion": "Mesada isla",
+                     "largo_m": {"valor": 2.00, "status": "CONFIRMADO"},
+                     "ancho_m": {"valor": 0.60, "status": "CONFIRMADO"},
+                     "m2": {"valor": 1.20, "status": "CONFIRMADO"},
+                     "zocalos": [], "frentin": [], "regrueso": []},
+                ]},
+            ],
+        }
+        qs = detect_pending_questions("isla central granito", dr)
+        assert all(q["id"] != "alzada" for q in qs)
+
 
 class TestApplyAlzada:
     def test_preset_10cm(self):

@@ -578,17 +578,18 @@ async def reopen_context(
 
     new_bd = reset_quote_to_pre_context(bd)
 
-    # PR #386 — quitar tramos `_derived:true` del sector isla del dual_read.
-    # Esos tramos (patas) se materializan en `[CONTEXT_CONFIRMED]` a partir
-    # de las respuestas del operador. Si reabre contexto, esas respuestas
-    # podrían cambiar → las viejas patas quedan stale. La re-confirmación
-    # del contexto las regenera con los valores nuevos.
+    # PR #386/#388 — quitar TODOS los tramos `_derived:true` del dual_read,
+    # de cualquier kind (patas de isla `isla_pata`, alzadas `alzada`, y los
+    # que se agreguen a futuro). Se materializan en `[CONTEXT_CONFIRMED]` a
+    # partir de las respuestas del operador. Si reabre contexto, esas
+    # respuestas podrían cambiar → los derivados viejos quedan stale. La
+    # re-confirmación del contexto los regenera con los valores nuevos.
     if new_bd.get("dual_read_result"):
         from app.modules.quote_engine.dual_reader import (
-            merge_derived_pieces_into_dual_read,
+            clear_all_derived_tramos,
         )
-        new_bd["dual_read_result"] = merge_derived_pieces_into_dual_read(
-            new_bd["dual_read_result"], [],
+        new_bd["dual_read_result"] = clear_all_derived_tramos(
+            new_bd["dual_read_result"],
         )
 
     # Cortar historial desde la card de contexto + regenerar con
