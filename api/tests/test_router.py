@@ -1147,6 +1147,43 @@ class TestReopenContext:
         assert r2.status_code == 400
 
     @pytest.mark.asyncio
+    async def test_reopen_context_clears_alzada_derived_tramos(
+        self, client, db_session,
+    ):
+        """PR #388 — reopen-context debe quitar tramos `_derived_kind='alzada'`
+        además de los de patas. Una alzada con distinto alto después
+        requiere regenerar desde cero con la nueva respuesta."""
+        from app.models.quote import Quote
+        from sqlalchemy import update
+        qid = await self._make_context_confirmed_quote(client, db_session)
+        existing = (await client.get(f"/api/quotes/{qid}")).json()["quote_breakdown"]
+        existing["dual_read_result"] = {
+            "sectores": [
+                {"id": "cocina", "tipo": "cocina", "tramos": [
+                    {"id": "c1", "descripcion": "Cocina",
+                     "largo_m": {"valor": 2.05}, "ancho_m": {"valor": 0.60}, "m2": {"valor": 1.23}},
+                    {"id": "derived_alzada_cocina", "descripcion": "Alzada cocina",
+                     "largo_m": {"valor": 2.05}, "ancho_m": {"valor": 0.10}, "m2": {"valor": 0.21},
+                     "zocalos": [], "_derived": True, "_derived_kind": "alzada"},
+                ]},
+            ],
+        }
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(quote_breakdown=existing)
+        )
+        await db_session.commit()
+
+        resp = await client.post(f"/api/quotes/{qid}/reopen-context")
+        assert resp.status_code == 200, resp.text
+
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        cocina = detail["quote_breakdown"]["dual_read_result"]["sectores"][0]
+        # Solo la mesada original queda — la alzada derivada se limpió
+        assert len(cocina["tramos"]) == 1
+        assert cocina["tramos"][0]["descripcion"] == "Cocina"
+        assert not any(t.get("_derived") for t in cocina["tramos"])
+
+    @pytest.mark.asyncio
     async def test_reopen_context_clears_derived_pieces_from_isla(
         self, client, db_session,
     ):

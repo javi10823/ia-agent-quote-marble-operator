@@ -1560,6 +1560,7 @@ class AgentService:
                     from app.modules.quote_engine.dual_reader import (
                         build_derived_isla_pieces,
                         merge_derived_pieces_into_dual_read,
+                        merge_alzada_tramos_into_dual_read,
                     )
                     _ctx_derived, _ctx_derived_warn = build_derived_isla_pieces(
                         operator_answers=_answers,
@@ -1573,6 +1574,24 @@ class AgentService:
                     )
                     _saved_dual = merge_derived_pieces_into_dual_read(
                         _saved_dual, _ctx_derived,
+                    )
+                    # PR #388 — materializar alzada como tramo por sector
+                    # (1 tramo: "Alzada cocina" largo=perímetro × alto).
+                    # `apply_alzada_answer` ya escribió los campos top-level
+                    # `alzada` / `alzada_alto_m` sobre `_saved_dual`. Este
+                    # merge los lleva al despiece visible. Si el operador
+                    # respondió "no" → `alzada=False` → el helper solo limpia
+                    # alzadas previas (idempotencia al reconfirmar).
+                    _alzada_active = bool(_saved_dual.get("alzada"))
+                    _alzada_alto = _saved_dual.get("alzada_alto_m")
+                    _saved_dual = merge_alzada_tramos_into_dual_read(
+                        _saved_dual,
+                        alto_m=_alzada_alto,
+                        active=_alzada_active,
+                    )
+                    logging.info(
+                        f"[trace:context-confirmed:{quote_id}] alzada "
+                        f"active={_alzada_active} alto_m={_alzada_alto}"
                     )
                 except Exception as _e_merge:
                     logging.warning(

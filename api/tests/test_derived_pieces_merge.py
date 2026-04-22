@@ -20,9 +20,12 @@ import pytest
 
 from app.modules.quote_engine.dual_reader import (
     merge_derived_pieces_into_dual_read,
+    merge_alzada_tramos_into_dual_read,
+    clear_all_derived_tramos,
     dual_read_has_derived_pieces,
     build_derived_isla_pieces,
     build_verified_context,
+    _sector_visible_perimeter,
 )
 
 
@@ -245,7 +248,287 @@ class TestNoDoubleCountingInVerifiedContext:
         # NO debe aparecer.
         assert "PIEZAS DERIVADAS DE RESPUESTAS DEL OPERADOR" not in ctx
 
-    def test_would_double_count_if_both_sources_passed(self):
+    def test_would_double_count_if_both_sources_passed(self):  # noqa: E501
+        pass
+
+    # Placeholder para la refactor de kind — ver tests más abajo en la
+    # clase TestMergeAlzadaTramos que cubre el split por kind.
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PR #388 — Alzada como tramo derivado por sector
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def _dr_cocina_L_and_bano() -> dict:
+    """Dual_read con cocina en L (2 tramos) + baño vanitory (1 tramo).
+    Ambos NO-isla → deberían recibir alzada."""
+    return {
+        "sectores": [
+            {
+                "id": "cocina", "tipo": "cocina",
+                "tramos": [
+                    {"id": "c1", "descripcion": "Cocina 1",
+                     "largo_m": {"valor": 2.05}, "ancho_m": {"valor": 0.60}, "m2": {"valor": 1.23}},
+                    {"id": "c2", "descripcion": "Cocina 2",
+                     "largo_m": {"valor": 2.95}, "ancho_m": {"valor": 0.60}, "m2": {"valor": 1.77}},
+                ],
+            },
+            {
+                "id": "bano", "tipo": "baño",
+                "tramos": [
+                    {"id": "b1", "descripcion": "Vanitory",
+                     "largo_m": {"valor": 1.20}, "ancho_m": {"valor": 0.50}, "m2": {"valor": 0.60}},
+                ],
+            },
+        ],
+    }
+
+
+def _dr_isla_only() -> dict:
+    return {
+        "sectores": [
+            {
+                "id": "isla", "tipo": "isla",
+                "tramos": [
+                    {"id": "i1", "descripcion": "Mesada isla",
+                     "largo_m": {"valor": 2.03}, "ancho_m": {"valor": 0.60}, "m2": {"valor": 1.22}},
+                ],
+            },
+        ],
+    }
+
+
+class TestSectorVisiblePerimeter:
+    def test_sums_largos_of_non_derived_tramos(self):
+        sector = {
+            "id": "cocina", "tipo": "cocina",
+            "tramos": [
+                {"largo_m": {"valor": 2.05}},
+                {"largo_m": {"valor": 2.95}},
+            ],
+        }
+        assert _sector_visible_perimeter(sector) == 5.00
+
+    def test_skips_derived_tramos(self):
+        sector = {
+            "id": "cocina", "tipo": "cocina",
+            "tramos": [
+                {"largo_m": {"valor": 2.05}},
+                {"largo_m": {"valor": 1.80}, "_derived": True, "_derived_kind": "alzada"},
+            ],
+        }
+        # Solo el 2.05, la alzada previa se ignora (no se usa para derivar nueva).
+        assert _sector_visible_perimeter(sector) == 2.05
+
+    def test_handles_primitive_largo(self):
+        """Si `largo_m` es número crudo (no dict con valor), también funciona."""
+        sector = {"tramos": [{"largo_m": 1.50}, {"largo_m": 2.00}]}
+        assert _sector_visible_perimeter(sector) == 3.50
+
+    def test_empty_sector(self):
+        assert _sector_visible_perimeter(None) == 0.0
+        assert _sector_visible_perimeter({}) == 0.0
+        assert _sector_visible_perimeter({"tramos": []}) == 0.0
+
+
+class TestMergeAlzadaTramos:
+    def test_adds_one_tramo_per_non_isla_sector(self):
+        dr = _dr_cocina_L_and_bano()
+        result = merge_alzada_tramos_into_dual_read(dr, alto_m=0.10, active=True)
+        cocina = next(s for s in result["sectores"] if s["tipo"] == "cocina")
+        bano = next(s for s in result["sectores"] if s["tipo"] == "baño")
+
+        # Cocina: 2 tramos originales + 1 alzada
+        assert len(cocina["tramos"]) == 3
+        alz_cocina = cocina["tramos"][-1]
+        assert alz_cocina["descripcion"] == "Alzada cocina"
+        assert alz_cocina["largo_m"]["valor"] == 5.00  # 2.05 + 2.95
+        assert alz_cocina["ancho_m"]["valor"] == 0.10
+        assert alz_cocina["m2"]["valor"] == 0.50
+        assert alz_cocina["_derived"] is True
+        assert alz_cocina["_derived_kind"] == "alzada"
+
+        # Baño: 1 tramo original + 1 alzada
+        assert len(bano["tramos"]) == 2
+        alz_bano = bano["tramos"][-1]
+        assert alz_bano["descripcion"] == "Alzada bano"  # id es "bano"
+        assert alz_bano["largo_m"]["valor"] == 1.20
+        assert alz_bano["ancho_m"]["valor"] == 0.10
+
+    def test_skips_isla_sector(self):
+        dr = _dr_isla_only()
+        result = merge_alzada_tramos_into_dual_read(dr, alto_m=0.10, active=True)
+        isla = result["sectores"][0]
+        # La isla no recibe alzada — sigue con su único tramo de mesada.
+        assert len(isla["tramos"]) == 1
+        assert not any(t.get("_derived_kind") == "alzada" for t in isla["tramos"])
+
+    def test_active_false_only_cleans(self):
+        """Si el operador responde 'no' a alzada, se limpian las previas
+        sin agregar nuevas."""
+        dr = _dr_cocina_L_and_bano()
+        with_alzada = merge_alzada_tramos_into_dual_read(dr, 0.10, active=True)
+        cleaned = merge_alzada_tramos_into_dual_read(with_alzada, 0.10, active=False)
+        # Cocina vuelve a sus 2 tramos originales
+        cocina = next(s for s in cleaned["sectores"] if s["tipo"] == "cocina")
+        assert len(cocina["tramos"]) == 2
+        assert not any(t.get("_derived_kind") == "alzada" for t in cocina["tramos"])
+
+    def test_zero_alto_only_cleans(self):
+        """alto_m=0 o None equivale a active=False."""
+        dr = _dr_cocina_L_and_bano()
+        result = merge_alzada_tramos_into_dual_read(dr, alto_m=0, active=True)
+        cocina = next(s for s in result["sectores"] if s["tipo"] == "cocina")
+        assert len(cocina["tramos"]) == 2
+
+        result2 = merge_alzada_tramos_into_dual_read(dr, alto_m=None, active=True)
+        cocina2 = next(s for s in result2["sectores"] if s["tipo"] == "cocina")
+        assert len(cocina2["tramos"]) == 2
+
+    def test_idempotent_same_alto(self):
+        """Llamar 2 veces con el mismo alto no duplica."""
+        dr = _dr_cocina_L_and_bano()
+        step1 = merge_alzada_tramos_into_dual_read(dr, 0.10, active=True)
+        step2 = merge_alzada_tramos_into_dual_read(step1, 0.10, active=True)
+        cocina = next(s for s in step2["sectores"] if s["tipo"] == "cocina")
+        assert len(cocina["tramos"]) == 3  # 2 originales + 1 alzada (no 2 alzadas)
+
+    def test_idempotent_different_alto_replaces(self):
+        """Cambiar el alto de 10cm a 5cm reemplaza (no agrega)."""
+        dr = _dr_cocina_L_and_bano()
+        step1 = merge_alzada_tramos_into_dual_read(dr, 0.10, active=True)
+        step2 = merge_alzada_tramos_into_dual_read(step1, 0.05, active=True)
+        cocina = next(s for s in step2["sectores"] if s["tipo"] == "cocina")
+        assert len(cocina["tramos"]) == 3
+        alz = next(t for t in cocina["tramos"] if t.get("_derived_kind") == "alzada")
+        assert alz["ancho_m"]["valor"] == 0.05
+        assert alz["m2"]["valor"] == 0.25  # 5.00 × 0.05
+
+    def test_does_not_mutate_input(self):
+        dr = _dr_cocina_L_and_bano()
+        snapshot = copy.deepcopy(dr)
+        merge_alzada_tramos_into_dual_read(dr, 0.10, active=True)
+        assert dr == snapshot
+
+    def test_empty_dual_read(self):
+        assert merge_alzada_tramos_into_dual_read(None, 0.10) == {}
+        assert merge_alzada_tramos_into_dual_read({}, 0.10) == {}
+
+    def test_sector_with_no_visible_tramos_skipped(self):
+        """Si un sector solo tiene tramos derivados (no mesada original),
+        no se le agrega alzada."""
+        dr = {
+            "sectores": [
+                {"id": "cocina", "tipo": "cocina", "tramos": [
+                    # Solo un tramo ficticio ya derivado (edge case):
+                    {"largo_m": {"valor": 1.0}, "_derived": True, "_derived_kind": "foo"},
+                ]},
+            ],
+        }
+        result = merge_alzada_tramos_into_dual_read(dr, 0.10, active=True)
+        cocina = result["sectores"][0]
+        # No se agregó alzada (perímetro=0 porque el único tramo es derivado)
+        assert not any(t.get("_derived_kind") == "alzada" for t in cocina["tramos"])
+
+    def test_coexists_with_isla_patas(self):
+        """Alzada en cocina + patas en isla → ambos kinds coexisten."""
+        dr = {
+            "sectores": [
+                {"id": "cocina", "tipo": "cocina", "tramos": [
+                    {"largo_m": {"valor": 2.00}, "ancho_m": {"valor": 0.60}, "m2": {"valor": 1.20}},
+                ]},
+                {"id": "isla", "tipo": "isla", "tramos": [
+                    {"largo_m": {"valor": 1.80}, "ancho_m": {"valor": 0.60}, "m2": {"valor": 1.08}},
+                ]},
+            ],
+        }
+        patas = [
+            {"description": "Pata frontal isla", "largo": 1.80, "prof": 0.90, "m2": 1.62, "source": "x"},
+        ]
+        with_patas = merge_derived_pieces_into_dual_read(dr, patas)
+        with_both = merge_alzada_tramos_into_dual_read(with_patas, 0.10, active=True)
+
+        isla = next(s for s in with_both["sectores"] if s["tipo"] == "isla")
+        cocina = next(s for s in with_both["sectores"] if s["tipo"] == "cocina")
+        # Isla tiene mesada + pata (no alzada — es isla)
+        assert len(isla["tramos"]) == 2
+        assert any(t.get("_derived_kind") == "isla_pata" for t in isla["tramos"])
+        assert not any(t.get("_derived_kind") == "alzada" for t in isla["tramos"])
+        # Cocina tiene mesada + alzada (no patas)
+        assert len(cocina["tramos"]) == 2
+        assert any(t.get("_derived_kind") == "alzada" for t in cocina["tramos"])
+
+    def test_merge_patas_does_not_pisa_alzada_in_same_sector(self):
+        """Guard: si por alguna razón hubiera alzada y luego corremos el
+        helper de patas (kind='isla_pata') sobre el mismo dual_read, la
+        alzada debe sobrevivir (solo se pisan los de kind='isla_pata')."""
+        dr = {
+            "sectores": [
+                {"id": "isla", "tipo": "isla", "tramos": [
+                    {"largo_m": {"valor": 1.80}, "ancho_m": {"valor": 0.60}, "m2": {"valor": 1.08}},
+                    # Hipotético: alguien puso alzada en isla (no deberíamos
+                    # pero el helper no debería borrarlo al reconfirmar patas)
+                    {"largo_m": {"valor": 1.80}, "_derived": True, "_derived_kind": "alzada"},
+                ]},
+            ],
+        }
+        new_patas = [{"description": "Pata frontal isla", "largo": 1.80, "prof": 0.90, "m2": 1.62}]
+        result = merge_derived_pieces_into_dual_read(dr, new_patas)
+        isla = result["sectores"][0]
+        # La alzada sigue, la pata se agregó
+        assert any(t.get("_derived_kind") == "alzada" for t in isla["tramos"])
+        assert any(t.get("_derived_kind") == "isla_pata" for t in isla["tramos"])
+
+
+class TestClearAllDerivedTramos:
+    def test_removes_all_kinds(self):
+        dr = _dr_cocina_L_and_bano()
+        dr["sectores"].append({
+            "id": "isla", "tipo": "isla",
+            "tramos": [
+                {"id": "i1", "largo_m": {"valor": 1.80}, "ancho_m": {"valor": 0.60}, "m2": {"valor": 1.08}},
+            ],
+        })
+        # Agregar patas + alzadas
+        with_patas = merge_derived_pieces_into_dual_read(dr, [
+            {"description": "Pata frontal isla", "largo": 1.80, "prof": 0.90, "m2": 1.62},
+        ])
+        with_both = merge_alzada_tramos_into_dual_read(with_patas, 0.10, active=True)
+        # Limpiar todo
+        cleaned = clear_all_derived_tramos(with_both)
+        for sector in cleaned["sectores"]:
+            assert not any(t.get("_derived") for t in sector["tramos"])
+
+    def test_preserves_non_derived(self):
+        dr = _dr_cocina_L_and_bano()
+        cleaned = clear_all_derived_tramos(dr)
+        # Sin cambios: no había nada derivado
+        cocina = next(s for s in cleaned["sectores"] if s["tipo"] == "cocina")
+        assert len(cocina["tramos"]) == 2
+
+    def test_empty_input(self):
+        assert clear_all_derived_tramos(None) == {}
+        assert clear_all_derived_tramos({}) == {}
+
+
+class TestAlzadaAppearsInVerifiedContext:
+    """Integración: post-merge, verified_context muestra la alzada como
+    tramo bajo SECTOR: X. Claude la ve ahí sin bloque aparte."""
+
+    def test_alzada_tramo_emitted(self):
+        dr = _dr_cocina_L_and_bano()
+        with_alzada = merge_alzada_tramos_into_dual_read(dr, 0.10, active=True)
+        ctx = build_verified_context(with_alzada, commercial_attrs=None, derived_pieces=None)
+        assert "Alzada cocina" in ctx
+        assert "5.0m × 0.1m" in ctx  # perímetro × alto
+        assert "Alzada bano" in ctx
+
+    def test_no_alzada_when_only_isla(self):
+        dr = _dr_isla_only()
+        with_alzada = merge_alzada_tramos_into_dual_read(dr, 0.10, active=True)
+        ctx = build_verified_context(with_alzada, commercial_attrs=None, derived_pieces=None)
+        assert "Alzada" not in ctx
         """Contra-ejemplo: si el handler accidentalmente pasara
         derived_pieces a build_verified_context TAMBIÉN con los tramos
         mergeados, las patas aparecen DOS veces. Este test documenta la
