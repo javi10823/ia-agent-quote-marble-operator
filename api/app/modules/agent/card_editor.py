@@ -648,6 +648,78 @@ def rehydrate_messages(
     return (new_messages, changed)
 
 
+# ─────────────────────────────────────────────────────────────────────
+# PR #383 — Reset del historial al reabrir edición
+#
+# Cuando el operador aprieta "Editar despiece" o "Editar contexto"
+# (endpoints /reopen-measurements y /reopen-context), se corta el chat
+# desde la card respectiva y se regenera con los datos actuales del
+# breakdown. Objetivo: evitar que el historial viejo (Paso 2 stale,
+# preguntas de Valentina pidiendo datos que ya están, etc.) quede
+# mezclado con el estado nuevo post-edición.
+#
+# Regla explícita del operador: "Nunca dejar historial viejo mezclado
+# con estado nuevo. Nunca borrar el brief inicial del operador." — por
+# eso el corte es desde la card hacia adelante, preservando todo lo
+# previo (brief, attachments, turns comerciales pre-card).
+# ─────────────────────────────────────────────────────────────────────
+
+
+def truncate_history_at_card(
+    messages: list[dict] | None,
+    *,
+    marker_prefix: str,
+    new_payload: dict | None,
+) -> tuple[list[dict], bool]:
+    """Corta el historial desde el ÚLTIMO turn `assistant` cuyo content
+    empieza con `marker_prefix` (inclusive) y opcionalmente regenera ese
+    turn con `new_payload`.
+
+    Args:
+        messages: turns tal como están en `Quote.messages`. Puede ser None.
+        marker_prefix: `"__DUAL_READ__"` o `"__CONTEXT_ANALYSIS__"`.
+        new_payload: si no es None, se serializa a JSON y se appendea
+            como nuevo turn assistant con el mismo `marker_prefix`.
+            Si es None, la card NO se regenera — el historial queda sin
+            ella (caso raro: reabrir cuando no hay data para reconstruir).
+
+    Returns:
+        `(new_messages, changed)`. `changed=False` si no se encontró el
+        marker en el historial (no hay nada que cortar — el helper no
+        agrega una card from scratch).
+
+    Idempotente pragmáticamente: llamar 2 veces con el mismo payload
+    produce el mismo resultado (se corta después del assistant con
+    marker, se vuelve a regenerar con el mismo payload).
+    """
+    if not messages:
+        return ([], False)
+
+    last_idx = -1
+    for i in range(len(messages) - 1, -1, -1):
+        msg = messages[i]
+        if msg.get("role") != "assistant":
+            continue
+        content_text = _content_to_text(msg.get("content"))
+        if content_text.startswith(marker_prefix):
+            last_idx = i
+            break
+
+    if last_idx == -1:
+        # No encontramos la card. No inventamos — devolvemos el
+        # historial sin tocar. El endpoint caller decide qué hacer
+        # (típicamente: reset del breakdown igual, pero chat intacto).
+        return (list(messages), False)
+
+    new_messages = list(messages[:last_idx])
+    if new_payload is not None:
+        new_messages.append({
+            "role": "assistant",
+            "content": marker_prefix + json.dumps(new_payload, ensure_ascii=False),
+        })
+    return (new_messages, True)
+
+
 def reset_quote_to_paso1(
     quote_breakdown: dict | None,
     *,
@@ -678,4 +750,23 @@ def reset_quote_to_paso1(
         new_bd.pop(key, None)
     if not preserve_dual_read_result:
         new_bd.pop("dual_read_result", None)
+    return new_bd
+
+
+def reset_quote_to_pre_context(quote_breakdown: dict | None) -> dict:
+    """Reset al estado "pre-confirmación de contexto" — tira todo lo de
+    Paso 2 + `verified_context_analysis` pero preserva
+    `context_analysis_pending` (para regenerar la card de contexto) y
+    `dual_read_result`.
+
+    Usado por el endpoint `/reopen-context`: el operador quiere modificar
+    un dato del análisis de contexto (ej: material, cantidad de anafes,
+    dirección). Volvemos a un estado donde la card `__CONTEXT_ANALYSIS__`
+    es re-renderizable y el chat posterior (dual_read + Paso 2) queda
+    invalidado.
+    """
+    if not quote_breakdown:
+        return {}
+    new_bd = reset_quote_to_paso1(quote_breakdown)
+    new_bd.pop("verified_context_analysis", None)
     return new_bd

@@ -889,6 +889,280 @@ class TestReopenMeasurements:
         detail = (await client.get(f"/api/quotes/{qid}")).json()
         assert detail["client_name"] == "Erica Bernardi"
 
+    # ── PR #383 — Corte de historial al reopen ──────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_reopen_truncates_chat_from_dual_read(self, client, db_session):
+        """Post-reopen el historial queda cortado desde __DUAL_READ__
+        (inclusive) y la card se regenera con las medidas editadas.
+        Brief + card de contexto + [CONTEXT_CONFIRMED] se preservan;
+        todo lo posterior (Paso 2 markdown, preguntas, confirmación) se
+        descarta."""
+        import json as _json
+        from app.models.quote import Quote
+        from sqlalchemy import update
+
+        qid = await self._make_paso2_quote(client, db_session)
+        # Simular historial Bernardi-style con Paso 2 ya calculado
+        legacy_msgs = [
+            {"role": "user", "content": "cotizar cocina + isla"},
+            {"role": "assistant", "content": '__CONTEXT_ANALYSIS__{"data_known":[]}'},
+            {"role": "user", "content": '[CONTEXT_CONFIRMED]{"answers":[]}'},
+            {"role": "assistant", "content": '__DUAL_READ__{"sectores":[{"id":"cocina","tramos":[{"largo_m":{"valor":1.60}}]}]}'},
+            {"role": "user", "content": '[DUAL_READ_CONFIRMED]{"sectores":[]}'},
+            {"role": "assistant", "content": "## PASO 2 — Validación\nTotal: $797.177"},
+            {"role": "user", "content": "Confirmo"},
+        ]
+        # verified_measurements con las medidas editadas — estas deben
+        # aparecer en la card regenerada.
+        bd_extra = {
+            "verified_measurements": {
+                "sectores": [{"id": "cocina", "tramos": [{"largo_m": {"valor": 2.05}}]}],
+            },
+        }
+        existing = (await client.get(f"/api/quotes/{qid}")).json()["quote_breakdown"]
+        existing.update(bd_extra)
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(
+                messages=legacy_msgs, quote_breakdown=existing,
+            )
+        )
+        await db_session.commit()
+
+        resp = await client.post(f"/api/quotes/{qid}/reopen-measurements")
+        assert resp.status_code == 200, resp.text
+
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        msgs = detail["messages"]
+        # brief + ctx_analysis + ctx_confirmed + card regenerada = 4
+        assert len(msgs) == 4, msgs
+        assert msgs[0]["content"] == "cotizar cocina + isla"
+        assert msgs[1]["content"].startswith("__CONTEXT_ANALYSIS__")
+        assert msgs[2]["content"].startswith("[CONTEXT_CONFIRMED]")
+        # Card regenerada con verified_measurements (editadas)
+        assert msgs[3]["content"].startswith("__DUAL_READ__")
+        parsed = _json.loads(msgs[3]["content"].replace("__DUAL_READ__", "", 1))
+        assert parsed["sectores"][0]["tramos"][0]["largo_m"]["valor"] == 2.05
+
+    @pytest.mark.asyncio
+    async def test_reopen_promotes_verified_to_dual_read_in_breakdown(
+        self, client, db_session,
+    ):
+        """verified_measurements → dual_read_result en el breakdown post-reopen,
+        para que la card regenerada refleje los edits del operador."""
+        import json as _json
+        from app.models.quote import Quote
+        from sqlalchemy import update
+
+        qid = await self._make_paso2_quote(client, db_session)
+        existing = (await client.get(f"/api/quotes/{qid}")).json()["quote_breakdown"]
+        existing["verified_measurements"] = {
+            "sectores": [{"id": "cocina", "tramos": [{"largo_m": {"valor": 2.05}}]}],
+        }
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(quote_breakdown=existing)
+        )
+        await db_session.commit()
+
+        resp = await client.post(f"/api/quotes/{qid}/reopen-measurements")
+        assert resp.status_code == 200
+
+        bd = resp.json()["quote_breakdown"]
+        assert bd["dual_read_result"]["sectores"][0]["tramos"][0]["largo_m"]["valor"] == 2.05
+        assert "verified_measurements" not in bd  # limpiada en el reset
+
+    @pytest.mark.asyncio
+    async def test_reopen_preserves_brief_when_no_card_in_history(
+        self, client, db_session,
+    ):
+        """Si el historial no tiene __DUAL_READ__ por alguna razón
+        (historial corrupto, edge case), el reopen limpia el breakdown
+        igual pero no rompe el chat — queda intacto."""
+        from app.models.quote import Quote
+        from sqlalchemy import update
+
+        qid = await self._make_paso2_quote(client, db_session)
+        sparse_msgs = [
+            {"role": "user", "content": "cotizar"},
+            {"role": "assistant", "content": "Mando el plano por favor."},
+        ]
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(messages=sparse_msgs)
+        )
+        await db_session.commit()
+
+        resp = await client.post(f"/api/quotes/{qid}/reopen-measurements")
+        assert resp.status_code == 200
+
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        # Chat sin cambios (no había card que cortar)
+        assert len(detail["messages"]) == 2
+        assert detail["messages"][0]["content"] == "cotizar"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PR #383 — Endpoint reopen-context (editar card de análisis de contexto)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestReopenContext:
+    """Endpoint que reabre la edición del contexto (card
+    __CONTEXT_ANALYSIS__). Gemelo de /reopen-measurements pero para el
+    paso anterior del flujo."""
+
+    async def _make_context_confirmed_quote(self, client, db_session) -> str:
+        """Quote con verified_context_analysis (contexto confirmado) +
+        historial completo con ambas cards."""
+        from app.models.quote import Quote
+        from sqlalchemy import update
+        create = await client.post("/api/quotes")
+        qid = create.json()["id"]
+        bd = {
+            "dual_read_result": {"sectores": [{"id": "cocina", "tramos": []}]},
+            "context_analysis_pending": {
+                "data_known": [{"field": "Material", "value": "PURASTONE"}],
+                "assumptions": [],
+                "pending_questions": [],
+            },
+            "verified_context_analysis": {"answers": [{"q": 1, "a": "x"}]},
+            "verified_context": "[MEDIDAS VERIFICADAS...]",
+            "verified_measurements": {"sectores": [{"tramos": [{"largo_m": {"valor": 2.05}}]}]},
+            "material_name": "PURASTONE",
+            "total_ars": 797177,
+            "total_usd": 4128,
+            "mo_items": [{"description": "Colocación"}],
+        }
+        msgs = [
+            {"role": "user", "content": "cotizar cocina"},
+            {"role": "assistant", "content": '__CONTEXT_ANALYSIS__{"data_known":[]}'},
+            {"role": "user", "content": '[CONTEXT_CONFIRMED]{"answers":[]}'},
+            {"role": "assistant", "content": '__DUAL_READ__{"sectores":[]}'},
+            {"role": "user", "content": '[DUAL_READ_CONFIRMED]{"sectores":[]}'},
+            {"role": "assistant", "content": "## PASO 2 — Total $797.177"},
+            {"role": "user", "content": "Confirmo"},
+        ]
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(
+                quote_breakdown=bd,
+                messages=msgs,
+                total_ars=797177,
+                total_usd=4128,
+            )
+        )
+        await db_session.commit()
+        return qid
+
+    @pytest.mark.asyncio
+    async def test_reopen_context_clears_paso2_and_context_confirmation(
+        self, client, db_session,
+    ):
+        qid = await self._make_context_confirmed_quote(client, db_session)
+        resp = await client.post(f"/api/quotes/{qid}/reopen-context")
+        assert resp.status_code == 200, resp.text
+
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        bd = detail["quote_breakdown"] or {}
+        # Contexto + Paso 2 limpios
+        assert "verified_context_analysis" not in bd
+        assert "verified_context" not in bd
+        assert "material_name" not in bd
+        assert "mo_items" not in bd
+        # context_analysis_pending preservado (fuente para regenerar card)
+        assert bd.get("context_analysis_pending", {}).get("data_known")
+        # Totales de la tabla también limpios
+        assert detail["total_ars"] is None
+        assert detail["total_usd"] is None
+
+    @pytest.mark.asyncio
+    async def test_reopen_context_truncates_chat_from_context_card(
+        self, client, db_session,
+    ):
+        """Post-reopen el chat queda cortado desde __CONTEXT_ANALYSIS__
+        (inclusive). Solo el brief (y cualquier turn previo a la card de
+        contexto) se preserva."""
+        qid = await self._make_context_confirmed_quote(client, db_session)
+        resp = await client.post(f"/api/quotes/{qid}/reopen-context")
+        assert resp.status_code == 200
+
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        msgs = detail["messages"]
+        # Solo el brief + card regenerada = 2 turns
+        assert len(msgs) == 2, msgs
+        assert msgs[0]["content"] == "cotizar cocina"
+        # Card regenerada con context_analysis_pending preservado
+        assert msgs[1]["content"].startswith("__CONTEXT_ANALYSIS__")
+
+    @pytest.mark.asyncio
+    async def test_reopen_context_404_for_nonexistent_quote(self, client):
+        resp = await client.post(
+            "/api/quotes/00000000-0000-0000-0000-000000000000/reopen-context"
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_reopen_context_400_when_no_context_confirmed(self, client):
+        """Quote sin verified_context_analysis → 400."""
+        create = await client.post("/api/quotes")
+        qid = create.json()["id"]
+        resp = await client.post(f"/api/quotes/{qid}/reopen-context")
+        assert resp.status_code == 400
+        assert "contexto" in resp.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_reopen_context_409_when_validated(self, client, db_session):
+        from app.models.quote import Quote, QuoteStatus
+        from sqlalchemy import update
+        qid = await self._make_context_confirmed_quote(client, db_session)
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(status=QuoteStatus.VALIDATED)
+        )
+        await db_session.commit()
+
+        resp = await client.post(f"/api/quotes/{qid}/reopen-context")
+        assert resp.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_reopen_context_409_when_sent(self, client, db_session):
+        from app.models.quote import Quote, QuoteStatus
+        from sqlalchemy import update
+        qid = await self._make_context_confirmed_quote(client, db_session)
+        await db_session.execute(
+            update(Quote).where(Quote.id == qid).values(status=QuoteStatus.SENT)
+        )
+        await db_session.commit()
+
+        resp = await client.post(f"/api/quotes/{qid}/reopen-context")
+        assert resp.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_reopen_context_idempotent_second_call_returns_400(
+        self, client, db_session,
+    ):
+        """El primer reopen borra verified_context_analysis → el segundo
+        responde 400 (nada que reabrir)."""
+        qid = await self._make_context_confirmed_quote(client, db_session)
+        r1 = await client.post(f"/api/quotes/{qid}/reopen-context")
+        assert r1.status_code == 200
+        r2 = await client.post(f"/api/quotes/{qid}/reopen-context")
+        assert r2.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_reopen_context_preserves_dual_read_and_brief(
+        self, client, db_session,
+    ):
+        """dual_read_result se preserva — el despiece detectado sigue
+        siendo útil post-edit de contexto. Brief del operador intacto."""
+        qid = await self._make_context_confirmed_quote(client, db_session)
+        await client.post(f"/api/quotes/{qid}/reopen-context")
+
+        detail = (await client.get(f"/api/quotes/{qid}")).json()
+        bd = detail["quote_breakdown"]
+        # El operador puede haber editado medidas — `verified_measurements`
+        # se promueve a `dual_read_result` igual que en /reopen-measurements.
+        assert "dual_read_result" in bd
+        # Brief en el chat intacto
+        assert detail["messages"][0]["content"] == "cotizar cocina"
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # PR #380 — Endpoint rehydrate-history

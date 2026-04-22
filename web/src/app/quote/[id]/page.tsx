@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { fetchQuote, streamChat, markQuoteAsRead, validateQuote, updateQuote, reopenMeasurements, type QuoteDetail, type QuoteEditablePatch } from "@/lib/api";
+import { fetchQuote, streamChat, markQuoteAsRead, validateQuote, updateQuote, reopenMeasurements, reopenContext, type QuoteDetail, type QuoteEditablePatch } from "@/lib/api";
 import { useQuotes } from "@/lib/quotes-context";
 import MessageBubble from "@/components/chat/MessageBubble";
 import CopyButton from "@/components/chat/CopyButton";
@@ -217,6 +217,11 @@ export default function QuotePage() {
   // Estado { open, busy } para coordinar UI del modal (backdrop bloquea
   // clicks durante el POST + spinner en botón de confirmar).
   const [reopenModal, setReopenModal] = useState<{ open: boolean; busy: boolean }>({
+    open: false, busy: false,
+  });
+  // PR #383 — segundo modal para "Editar contexto". Misma shape que
+  // reopenModal, flujo análogo (POST /reopen-context + refresh del quote).
+  const [contextModal, setContextModal] = useState<{ open: boolean; busy: boolean }>({
     open: false, busy: false,
   });
   const sentFromDetail = useRef(false);
@@ -770,21 +775,37 @@ export default function QuotePage() {
                           Corregir
                         </button>
                       </div>
-                      {/* PR #378 — "Editar despiece" cuando el quote ya
-                          tiene verified_context (Paso 2 calculado). Llama
-                          al endpoint /reopen-measurements que limpia Paso 2
-                          y deja el despiece editable otra vez. Confirmación
-                          obligatoria porque es destructivo: se pierde el
-                          cálculo actual y el operador tiene que re-confirmar
-                          medidas antes de generar PDF. */}
-                      {quote?.quote_breakdown?.verified_context && (
-                        <div className="mt-2 ml-[42px]">
-                          <button
-                            onClick={() => setReopenModal({ open: true, busy: false })}
-                            className="w-full px-4 py-2 rounded-lg text-[12px] font-medium bg-transparent border border-amb/40 text-amb cursor-pointer hover:bg-amb/10 transition"
-                          >
-                            ↩ Editar despiece (invalida el cálculo actual)
-                          </button>
+                      {/* PR #378/#383 — "Editar despiece" + "Editar contexto".
+                          Son acciones paralelas que reabren la edición en
+                          pasos distintos. Cada una corta el chat desde su
+                          card respectiva y regenera el estado:
+                          - "Editar despiece" cuando hay verified_context
+                            (medidas confirmadas) → /reopen-measurements.
+                          - "Editar contexto" cuando hay
+                            verified_context_analysis (contexto confirmado)
+                            → /reopen-context. El primer click invalida
+                            también Paso 2 y cualquier card de despiece
+                            posterior — cambiar contexto puede invalidar
+                            medidas. */}
+                      {(quote?.quote_breakdown?.verified_context
+                        || quote?.quote_breakdown?.verified_context_analysis) && (
+                        <div className="mt-2 ml-[42px] flex flex-col gap-2">
+                          {quote?.quote_breakdown?.verified_context && (
+                            <button
+                              onClick={() => setReopenModal({ open: true, busy: false })}
+                              className="w-full px-4 py-2 rounded-lg text-[12px] font-medium bg-transparent border border-amb/40 text-amb cursor-pointer hover:bg-amb/10 transition"
+                            >
+                              ↩ Editar despiece (invalida el cálculo actual)
+                            </button>
+                          )}
+                          {quote?.quote_breakdown?.verified_context_analysis && (
+                            <button
+                              onClick={() => setContextModal({ open: true, busy: false })}
+                              className="w-full px-4 py-2 rounded-lg text-[12px] font-medium bg-transparent border border-amb/40 text-amb cursor-pointer hover:bg-amb/10 transition"
+                            >
+                              ↩ Editar contexto (invalida Paso 2 y medidas)
+                            </button>
+                          )}
                         </div>
                       )}
                     </>
@@ -866,6 +887,10 @@ export default function QuotePage() {
                     await reopenMeasurements(quoteId);
                     const fresh = await fetchQuote(quoteId);
                     setQuote(fresh);
+                    // PR #383 — el backend ahora corta el historial desde
+                    // la card de despiece y regenera con las medidas
+                    // editadas. Re-parseamos messages para reflejarlo.
+                    setMessages(parseMessages(fresh.messages || []));
                     setReopenModal({ open: false, busy: false });
                     toast(
                       "Despiece reabierto. Editá las medidas y volvé a confirmar.",
@@ -887,6 +912,87 @@ export default function QuotePage() {
                   </>
                 ) : (
                   "↩ Editar despiece"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PR #383 — Modal "Editar contexto". Mismo patrón que el modal
+          de despiece, pero el copy aclara que además de Paso 2 se pierden
+          también las medidas confirmadas (cambiar contexto puede
+          invalidar piezas/tramos del dual_read). */}
+      {contextModal.open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => !contextModal.busy && setContextModal({ open: false, busy: false })}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="context-modal-title"
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-b1 bg-s2 p-6 shadow-[0_20px_40px_-20px_rgba(0,0,0,0.5)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3
+              id="context-modal-title"
+              className="text-[15px] font-semibold text-t1 mb-2"
+            >
+              Editar contexto
+            </h3>
+            <p className="text-[13px] text-t2 leading-relaxed mb-4">
+              Vas a <strong className="text-t1">invalidar el Paso 2 y las
+              medidas confirmadas</strong> para volver a editar los datos
+              comerciales (material, anafes, ubicación, etc.). Después
+              tenés que reconfirmar contexto y medidas para regenerar el
+              presupuesto.
+            </p>
+            <div className="text-[12px] text-amb bg-amb/[0.08] border border-amb/30 rounded-lg px-3 py-2 mb-5 leading-relaxed">
+              Se pierden totales, MO, material y confirmación de medidas.
+              El plano, el brief y el despiece detectado se mantienen.
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setContextModal({ open: false, busy: false })}
+                disabled={contextModal.busy}
+                className="px-4 py-2 rounded-lg text-[13px] font-medium border border-b2 text-t2 hover:text-t1 hover:border-b3 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  setContextModal({ open: true, busy: true });
+                  try {
+                    await reopenContext(quoteId);
+                    const fresh = await fetchQuote(quoteId);
+                    setQuote(fresh);
+                    // Re-parsear messages: el backend ya cortó el historial
+                    // desde la card de contexto y la regeneró. Actualizamos
+                    // la vista para reflejarlo sin necesitar un reload.
+                    setMessages(parseMessages(fresh.messages || []));
+                    setContextModal({ open: false, busy: false });
+                    toast(
+                      "Contexto reabierto. Editá los datos y volvé a confirmar.",
+                      "success",
+                    );
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : "Error al reabrir edición";
+                    setContextModal({ open: false, busy: false });
+                    toast(msg, "error");
+                  }
+                }}
+                disabled={contextModal.busy}
+                className="px-4 py-2 rounded-lg text-[13px] font-semibold bg-amb hover:brightness-110 text-acc-ink transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {contextModal.busy ? (
+                  <>
+                    <span className="inline-block w-3 h-3 border-2 border-acc-ink/40 border-t-acc-ink rounded-full animate-spin" />
+                    Reabriendo…
+                  </>
+                ) : (
+                  "↩ Editar contexto"
                 )}
               </button>
             </div>
