@@ -250,6 +250,104 @@ class TestBuildVerifiedContext:
         assert "frontal" in ctx
         assert "1.74" in ctx
 
+    # ───────────────────────────────────────────────────────
+    # PR #387 — frentín + regrueso en verified_context
+    # ───────────────────────────────────────────────────────
+    #
+    # Antes: `tramo.frentin` / `tramo.regrueso` vivían en el dual_read
+    # pero no se inyectaban al system prompt. Claude podía omitirlos del
+    # Paso 2. Ahora se emiten explícitos bajo `SECTOR: X` con el mismo
+    # formato que los zócalos (el agente ya sabe parsear ese formato).
+
+    def _tramo_with_field(self, field: str, items: list) -> dict:
+        """Helper: construye un dual_read con un tramo que tiene `field`
+        (frentin/regrueso) seteado."""
+        dr = _build_single_result(_sample_result(), "SOLO_SONNET")
+        dr["sectores"][0]["tramos"][0][field] = items
+        return dr
+
+    def test_emits_frentin_under_sector(self):
+        dr = self._tramo_with_field(
+            "frentin",
+            [{"lado": "frente", "ml": 6.22, "alto_m": 0.05}],
+        )
+        ctx = build_verified_context(dr)
+        assert "Frentín frente" in ctx
+        assert "6.22ml" in ctx
+        assert "0.05m" in ctx
+
+    def test_emits_regrueso_under_sector(self):
+        dr = self._tramo_with_field(
+            "regrueso",
+            [{"lado": "frente", "ml": 3.5, "alto_m": 0.03}],
+        )
+        ctx = build_verified_context(dr)
+        assert "Regrueso frente" in ctx
+        assert "3.5ml" in ctx
+
+    def test_frentin_without_alto_renders_only_ml(self):
+        """Si no hay alto_m, mostrar solo los ml — no inventar multiplicación."""
+        dr = self._tramo_with_field(
+            "frentin",
+            [{"lado": "frente", "ml": 2.40}],
+        )
+        ctx = build_verified_context(dr)
+        assert "Frentín frente: 2.4ml" in ctx
+        assert "0.4ml × " not in ctx  # no debería haber "× <algo>m"
+
+    def test_empty_frentin_list_noop(self):
+        """Tramo con `frentin: []` no emite nada. El caso más común hoy."""
+        dr = self._tramo_with_field("frentin", [])
+        ctx = build_verified_context(dr)
+        assert "Frentín" not in ctx
+        assert "Regrueso" not in ctx
+
+    def test_zero_ml_items_skipped(self):
+        """Items con `ml=0` se ignoran — mismo criterio que zócalos
+        (operador los descartó intencionalmente)."""
+        dr = self._tramo_with_field(
+            "frentin",
+            [{"lado": "frente", "ml": 0, "alto_m": 0.05}],
+        )
+        ctx = build_verified_context(dr)
+        assert "Frentín" not in ctx
+
+    def test_multiple_items_all_emitted(self):
+        dr = self._tramo_with_field(
+            "frentin",
+            [
+                {"lado": "frente", "ml": 2.50, "alto_m": 0.05},
+                {"lado": "lateral", "ml": 0.60, "alto_m": 0.05},
+            ],
+        )
+        ctx = build_verified_context(dr)
+        assert "Frentín frente" in ctx
+        assert "Frentín lateral" in ctx
+
+    def test_frentin_and_regrueso_coexist(self):
+        """Un tramo puede tener ambos — deben salir los dos."""
+        dr = _build_single_result(_sample_result(), "SOLO_SONNET")
+        dr["sectores"][0]["tramos"][0]["frentin"] = [
+            {"lado": "frente", "ml": 2.00, "alto_m": 0.05},
+        ]
+        dr["sectores"][0]["tramos"][0]["regrueso"] = [
+            {"lado": "frente", "ml": 2.00, "alto_m": 0.03},
+        ]
+        ctx = build_verified_context(dr)
+        assert "Frentín frente" in ctx
+        assert "Regrueso frente" in ctx
+
+    def test_malformed_items_ignored(self):
+        """Si un item no es dict o no tiene ml → skip sin explotar."""
+        dr = self._tramo_with_field(
+            "frentin",
+            [None, "not a dict", {"lado": "frente", "ml": 2.0, "alto_m": 0.05}],
+        )
+        ctx = build_verified_context(dr)
+        # El único item válido se emite
+        assert ctx.count("Frentín") == 1
+        assert "Frentín frente" in ctx
+
 
 # ═══════════════════════════════════════════════════════
 # Compare float helper
