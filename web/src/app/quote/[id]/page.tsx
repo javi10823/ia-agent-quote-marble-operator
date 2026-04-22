@@ -213,6 +213,12 @@ export default function QuotePage() {
   const [lastFailedMsg, setLastFailedMsg] = useState<string | null>(null);
   const [lastInlineResponse, setLastInlineResponse] = useState<UIMessage | null>(null);
   const [inlineActionText, setInlineActionText] = useState("");
+  // PR #381 — modal styled reemplaza window.confirm del "Editar despiece".
+  // Estado { open, busy } para coordinar UI del modal (backdrop bloquea
+  // clicks durante el POST + spinner en botón de confirmar).
+  const [reopenModal, setReopenModal] = useState<{ open: boolean; busy: boolean }>({
+    open: false, busy: false,
+  });
   const sentFromDetail = useRef(false);
   const { refresh: refreshQuotes, markRead } = useQuotes();
 
@@ -774,25 +780,7 @@ export default function QuotePage() {
                       {quote?.quote_breakdown?.verified_context && (
                         <div className="mt-2 ml-[42px]">
                           <button
-                            onClick={async () => {
-                              const ok = window.confirm(
-                                "Vas a invalidar el cálculo actual y volver a edición del despiece. " +
-                                "Vas a tener que reconfirmar las medidas para regenerar el presupuesto. " +
-                                "\n\n¿Continuar?"
-                              );
-                              if (!ok) return;
-                              try {
-                                await reopenMeasurements(quoteId);
-                                toast("Despiece reabierto. Editá las medidas y volvé a confirmar.", "success");
-                                // Refresh quote para que el frontend re-renderee
-                                // DualReadResult en modo editable (locked=false).
-                                const fresh = await fetchQuote(quoteId);
-                                setQuote(fresh);
-                              } catch (err) {
-                                const msg = err instanceof Error ? err.message : "Error al reabrir edición";
-                                toast(msg, "error");
-                              }
-                            }}
+                            onClick={() => setReopenModal({ open: true, busy: false })}
                             className="w-full px-4 py-2 rounded-lg text-[12px] font-medium bg-transparent border border-amb/40 text-amb cursor-pointer hover:bg-amb/10 transition"
                           >
                             ↩ Editar despiece (invalida el cálculo actual)
@@ -828,6 +816,83 @@ export default function QuotePage() {
           )}
         </div>
       ) : null}
+
+      {/* PR #381 — Modal "Editar despiece" con el design system de la app.
+          Antes usábamos window.confirm() nativo del navegador — rompía la
+          estética dark premium del resto de la UI. Este modal sigue el
+          mismo patrón que RegenerateButton (otra acción destructiva con
+          advertencia). Click afuera cierra (salvo durante `busy`, para
+          no cancelar el POST en vuelo). */}
+      {reopenModal.open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => !reopenModal.busy && setReopenModal({ open: false, busy: false })}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reopen-modal-title"
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-b1 bg-s2 p-6 shadow-[0_20px_40px_-20px_rgba(0,0,0,0.5)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3
+              id="reopen-modal-title"
+              className="text-[15px] font-semibold text-t1 mb-2"
+            >
+              Editar despiece
+            </h3>
+            <p className="text-[13px] text-t2 leading-relaxed mb-4">
+              Vas a <strong className="text-t1">invalidar el cálculo actual</strong>{" "}
+              y volver a edición del despiece. Vas a tener que reconfirmar
+              las medidas para regenerar el presupuesto.
+            </p>
+            <div className="text-[12px] text-amb bg-amb/[0.08] border border-amb/30 rounded-lg px-3 py-2 mb-5 leading-relaxed">
+              Se pierden los totales, MO y material de este Paso 2. El plano
+              y el historial se mantienen.
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setReopenModal({ open: false, busy: false })}
+                disabled={reopenModal.busy}
+                className="px-4 py-2 rounded-lg text-[13px] font-medium border border-b2 text-t2 hover:text-t1 hover:border-b3 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  setReopenModal({ open: true, busy: true });
+                  try {
+                    await reopenMeasurements(quoteId);
+                    const fresh = await fetchQuote(quoteId);
+                    setQuote(fresh);
+                    setReopenModal({ open: false, busy: false });
+                    toast(
+                      "Despiece reabierto. Editá las medidas y volvé a confirmar.",
+                      "success",
+                    );
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : "Error al reabrir edición";
+                    setReopenModal({ open: false, busy: false });
+                    toast(msg, "error");
+                  }
+                }}
+                disabled={reopenModal.busy}
+                className="px-4 py-2 rounded-lg text-[13px] font-semibold bg-amb hover:brightness-110 text-acc-ink transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {reopenModal.busy ? (
+                  <>
+                    <span className="inline-block w-3 h-3 border-2 border-acc-ink/40 border-t-acc-ink rounded-full animate-spin" />
+                    Reabriendo…
+                  </>
+                ) : (
+                  "↩ Editar despiece"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
