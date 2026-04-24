@@ -33,6 +33,12 @@ class QuoteInput(BaseModel):
     colocacion: bool = Field(default=True)
     pileta: Optional[PiletaType] = Field(default=None)
     sink_type: Optional[SinkTypeInput] = Field(default=None, description="Tipo de bacha: basin_count (simple/doble), mount_type (arriba/abajo)")
+    # PR #397 — SKU específico de pileta Johnson (ej: "LUXOR171", "ON30A").
+    # Si se envía, se intenta matchear contra `sinks.json` y se agrega como
+    # producto físico a la cotización (además del MO PEGADOPILETA). Si no
+    # matchea, el quote se crea igual con warning. Si no se envía, el
+    # comportamiento actual se mantiene (solo MO, sin producto).
+    pileta_sku: Optional[str] = Field(default=None, max_length=64, description="SKU de pileta Johnson del catálogo (opcional)")
     anafe: bool = Field(default=False)
     frentin: bool = Field(default=False)
     pulido: bool = Field(default=False)
