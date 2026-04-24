@@ -53,6 +53,34 @@ _ISLA_NO = re.compile(r"\bsin\s+isla|no\s+(lleva|va)\s+isla|cocina\s+(recta|en\s
 _ALZADA = re.compile(r"\b(con|lleva)\s+alzada|alzada\s+(de|=)\s*\d", re.IGNORECASE)
 _ALZADA_NO = re.compile(r"\bsin\s+alzada|no\s+(lleva|va)\s+alzada", re.IGNORECASE)
 
+# PR #392 — frentín (faldón) y regrueso.
+#
+# Regla de skip (criterio del operador, 2026-04-24):
+#   "skip solo cuando ya podés poblar tramo.frentin[] / tramo.regrueso[]
+#    sin inventar nada. Si falta alto o lados, preguntar."
+#
+# Por eso _FRENTIN_ALTO matchea cuando hay un **valor numérico explícito**
+# (ej: "frentín de 5cm", "faldón 10 cm"). Mención vaga ("con frentín") NO
+# matchea → el operador igual tiene que confirmar alto en la card.
+# _FRENTIN_NO matchea "sin frentín" / "no lleva frentín" → skip directo,
+# el despiece queda sin items de frentín.
+_FRENTIN_ALTO = re.compile(
+    r"\b(?:frent[ií]n|fald[oó]n)\s+(?:de\s+)?(\d+)\s*cm",
+    re.IGNORECASE,
+)
+_FRENTIN_NO = re.compile(
+    r"\bsin\s+(?:frent[ií]n|fald[oó]n)|no\s+(?:lleva|va)\s+(?:frent[ií]n|fald[oó]n)",
+    re.IGNORECASE,
+)
+_REGRUESO_ALTO = re.compile(
+    r"\bregrueso\s+(?:de\s+)?(\d+)\s*cm",
+    re.IGNORECASE,
+)
+_REGRUESO_NO = re.compile(
+    r"\bsin\s+regrueso|no\s+(?:lleva|va)\s+regrueso",
+    re.IGNORECASE,
+)
+
 
 def brief_mentions_zocalos(brief: str) -> str | None:
     """Devuelve 'yes' si el brief pide zócalos, 'no' si los excluye, None si
@@ -419,6 +447,109 @@ def _detect_alzada_question(brief: str, dual_result: dict) -> dict | None:
     }
 
 
+# ─────────────────────────────────────────────────────────────────────
+# PR #392 — Frentín / faldón y regrueso: preguntas + apply
+# ─────────────────────────────────────────────────────────────────────
+#
+# Antes no existían en el flow de contexto. El brief_analyzer solo
+# capturaba boolean `frentin_mentioned` / `regrueso_mentioned` y el
+# context_analyzer los volcaba como assumption "Mencionado" sin
+# dimensiones. Resultado: Claude tenía que inventar alto y lados en
+# Paso 2, o directamente omitirlos si el brief no los mencionaba.
+#
+# Este PR cierra el loop:
+#   - Pregunta siempre que haya al menos un tramo de mesada en el
+#     dual_read, salvo que el brief traiga valor operativo (ver regla
+#     de skip arriba en los regex).
+#   - Apply answer llena `tramo.frentin[]` / `tramo.regrueso[]` con
+#     shape `{lado, ml, alto_m}`. Usa `ml = tramo.largo_m.valor` y
+#     `lado = "frente"` (D1/D2 del plan). Custom vía detail parseable.
+#   - Skip tramos `_derived:true` (patas de isla, alzada) — esos no
+#     llevan frentín/regrueso propios, ya son piezas derivadas.
+#   - Consumer: `build_verified_context` (post-#387) ya renderiza los
+#     items bajo `SECTOR: X`. Claude los ve con alto exacto y no
+#     inventa.
+
+
+def _has_any_tramo(dual_result: dict) -> bool:
+    """True si hay al menos un tramo de mesada (no-derivado) en el
+    dual_read. Gate de las preguntas de frentín/regrueso — si no hay
+    despiece sobre el cual aplicarlos, no preguntamos."""
+    for s in dual_result.get("sectores") or []:
+        for t in s.get("tramos") or []:
+            if not t.get("_derived"):
+                return True
+    return False
+
+
+def _detect_frentin_question(brief: str, dual_result: dict) -> dict | None:
+    """Frentín / faldón: pieza vertical que baja por el frente de la mesada.
+
+    Skip (brief con valor operativo):
+      - "sin frentín" / "sin faldón" / "no lleva frentín" → `_FRENTIN_NO`.
+      - "frentín de 5 cm" / "faldón 10cm" → `_FRENTIN_ALTO`.
+
+    Mención vaga ("con frentín" sin cm) → igual se pregunta para que el
+    operador confirme alto/lados.
+
+    Skip también cuando no hay ningún tramo en el dual_read (no hay
+    mesada sobre la cual aplicar).
+    """
+    b = brief or ""
+    if _FRENTIN_NO.search(b):
+        return None
+    if _FRENTIN_ALTO.search(b):
+        return None
+    if not _has_any_tramo(dual_result):
+        return None
+    return {
+        "id": "frentin",
+        "label": "Frentín / Faldón",
+        "question": (
+            "¿Lleva frentín o faldón? (tira vertical que baja por el "
+            "frente de la mesada)"
+        ),
+        "type": "radio_with_detail",
+        "options": [
+            {"value": "no", "label": "No lleva"},
+            {"value": "3", "label": "Sí — 3 cm frente"},
+            {"value": "5", "label": "Sí — 5 cm frente"},
+            {"value": "10", "label": "Sí — 10 cm frente"},
+            {"value": "custom", "label": "Sí — otro alto o lados (detallar)"},
+        ],
+        "detail_placeholder": "Ej: 7 cm, frente y lateral izq",
+    }
+
+
+def _detect_regrueso_question(brief: str, dual_result: dict) -> dict | None:
+    """Regrueso: refuerzo de espesor en el frente visible de la mesada.
+    Mismo patrón de skip que frentín."""
+    b = brief or ""
+    if _REGRUESO_NO.search(b):
+        return None
+    if _REGRUESO_ALTO.search(b):
+        return None
+    if not _has_any_tramo(dual_result):
+        return None
+    return {
+        "id": "regrueso",
+        "label": "Regrueso",
+        "question": (
+            "¿Lleva regrueso? (refuerzo de espesor en los frentes "
+            "visibles de la mesada)"
+        ),
+        "type": "radio_with_detail",
+        "options": [
+            {"value": "no", "label": "No lleva"},
+            {"value": "2", "label": "Sí — 2 cm"},
+            {"value": "3", "label": "Sí — 3 cm"},
+            {"value": "5", "label": "Sí — 5 cm"},
+            {"value": "custom", "label": "Sí — otro alto o lados (detallar)"},
+        ],
+        "detail_placeholder": "Ej: 4 cm, frente y lateral",
+    }
+
+
 def _detect_zocalos_question(brief: str, dual_result: dict) -> dict | None:
     """Si el brief no menciona zócalos y la card tampoco los detectó, preguntar.
 
@@ -530,6 +661,15 @@ def detect_pending_questions(
     q_alz = _detect_alzada_question(brief, dual_result)
     if q_alz:
         questions.append(q_alz)
+    # PR #392 — frentín y regrueso, siempre con gate de brief explícito.
+    # Aparecen después de alzada porque son trabajos menos frecuentes —
+    # mantener alzada cerca de zócalos (decisiones core del despiece).
+    q_frentin = _detect_frentin_question(brief, dual_result)
+    if q_frentin:
+        questions.append(q_frentin)
+    q_regrueso = _detect_regrueso_question(brief, dual_result)
+    if q_regrueso:
+        questions.append(q_regrueso)
     q_coloc = _detect_colocacion_question(brief, dual_result)
     if q_coloc:
         questions.append(q_coloc)
@@ -828,6 +968,208 @@ def apply_alzada_answer(dual_result: dict, answer: dict) -> dict:
     return dual_result
 
 
+# ─────────────────────────────────────────────────────────────────────
+# PR #392 — apply frentín / regrueso
+# ─────────────────────────────────────────────────────────────────────
+#
+# Shape estable (coherente con zócalos, consumido por
+# `build_verified_context` post-#387):
+#     tramo["frentin"] = [{"lado": "frente", "ml": <float>, "alto_m": <float>}]
+#     tramo["regrueso"] = [...]
+#
+# Default de lados = "frente" para presets (D1/D2 acordados con operador).
+# Custom permite que el detail especifique lados extra — parsing simple
+# por keywords; si el parse falla, cae a solo "frente" con el alto
+# detectado.
+#
+# Idempotencia: cada apply REEMPLAZA la lista (no append). Si el
+# operador reconfirma, no duplica items.
+#
+# Skip tramos `_derived:true` — las patas de isla y alzadas ya son
+# piezas verticales por su propia cuenta, no llevan frentín propio.
+
+
+_CUSTOM_ALTO_CM = re.compile(r"(\d+(?:[.,]\d+)?)\s*cm", re.IGNORECASE)
+_CUSTOM_LADOS_MAP = {
+    "frente":       "frente",
+    "frontal":      "frente",
+    "adelante":     "frente",
+    "lateral izq":  "lateral_izq",
+    "lateral izquierdo": "lateral_izq",
+    "lado izq":     "lateral_izq",
+    "izquierdo":    "lateral_izq",
+    "izq":          "lateral_izq",
+    "lateral der":  "lateral_der",
+    "lateral derecho": "lateral_der",
+    "lado der":     "lateral_der",
+    "derecho":      "lateral_der",
+    "der":          "lateral_der",
+    "trasero":      "trasero",
+    "atras":        "trasero",
+    "atrás":        "trasero",
+}
+
+
+def _parse_custom_frentin_regrueso(detail: str) -> tuple[float | None, list[str]]:
+    """Parsea `detail` de custom respuesta → (alto_m, lados).
+
+    Reconoce:
+      - alto numérico "N cm" / "N.N cm" → alto_m.
+      - keywords de lados: "frente", "lateral izq", "trasero", etc.
+
+    Si no detecta ningún lado → ["frente"] (default consistente con
+    los presets). Si no detecta alto → alto_m None (caller maneja).
+    """
+    alto_m: float | None = None
+    d = (detail or "").lower()
+    m = _CUSTOM_ALTO_CM.search(d)
+    if m:
+        try:
+            alto_m = float(m.group(1).replace(",", ".")) / 100.0
+        except ValueError:
+            alto_m = None
+
+    lados: list[str] = []
+    for kw, lado in _CUSTOM_LADOS_MAP.items():
+        if kw in d and lado not in lados:
+            lados.append(lado)
+    if not lados:
+        lados = ["frente"]
+    return alto_m, lados
+
+
+def _tramo_largo(tramo: dict) -> float:
+    """Extrae `largo_m.valor` (dict FieldValue) o `largo_m` crudo. 0 si falta."""
+    largo = tramo.get("largo_m")
+    if isinstance(largo, dict):
+        v = largo.get("valor")
+    else:
+        v = largo
+    try:
+        return float(v) if v is not None else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _tramo_ancho(tramo: dict) -> float:
+    """Extrae `ancho_m.valor` del tramo — usado como ml cuando el lado
+    es lateral (los laterales corren por la profundidad de la mesada,
+    no por el largo)."""
+    ancho = tramo.get("ancho_m")
+    if isinstance(ancho, dict):
+        v = ancho.get("valor")
+    else:
+        v = ancho
+    try:
+        return float(v) if v is not None else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _ml_for_lado(tramo: dict, lado: str) -> float:
+    """ML del item según el lado:
+      - frente/trasero → corre por el largo de la mesada.
+      - lateral_izq/der → corre por la profundidad (ancho).
+    """
+    if lado in ("lateral_izq", "lateral_der"):
+        return _tramo_ancho(tramo)
+    return _tramo_largo(tramo)
+
+
+def _build_items_for_lados(tramo: dict, lados: list[str], alto_m: float) -> list[dict]:
+    """Arma la lista de items `{lado, ml, alto_m}` para un tramo
+    dado, descartando los que quedan con ml=0."""
+    items: list[dict] = []
+    for lado in lados:
+        ml = _ml_for_lado(tramo, lado)
+        if ml <= 0:
+            continue
+        items.append({
+            "lado": lado,
+            "ml": round(ml, 2),
+            "alto_m": round(float(alto_m), 3),
+        })
+    return items
+
+
+def _apply_extra_pieces_answer(
+    dual_result: dict,
+    answer: dict,
+    *,
+    field: str,
+    preset_values: set[str],
+) -> dict:
+    """Helper común para frentín y regrueso. La diferencia entre ellos
+    es solo el nombre del field (`frentin` / `regrueso`) y los valores
+    preset aceptados — todo lo demás es idéntico."""
+    if not isinstance(answer, dict):
+        return dual_result
+    value = answer.get("value")
+
+    # "no" → limpiar el field en todos los tramos.
+    if value == "no":
+        for sector in dual_result.get("sectores") or []:
+            for tramo in sector.get("tramos") or []:
+                tramo[field] = []
+        return dual_result
+
+    # Determinar alto_m + lados.
+    alto_m: float | None = None
+    lados: list[str] = ["frente"]
+    if value in preset_values:
+        try:
+            alto_m = int(value) / 100.0
+        except (TypeError, ValueError):
+            alto_m = None
+    elif value == "custom":
+        alto_m, lados = _parse_custom_frentin_regrueso(answer.get("detail") or "")
+    else:
+        # value desconocido → no aplicar, preservar estado actual.
+        return dual_result
+
+    if alto_m is None or alto_m <= 0:
+        return dual_result
+
+    # Aplicar a cada tramo no-derivado del dual_read. Reemplazo total
+    # del field (idempotente: reconfirmar no duplica).
+    for sector in dual_result.get("sectores") or []:
+        for tramo in sector.get("tramos") or []:
+            if tramo.get("_derived"):
+                # Piezas derivadas (patas, alzadas) no llevan frentín/regrueso
+                # propio — skipear y preservar lo que tengan.
+                continue
+            tramo[field] = _build_items_for_lados(tramo, lados, alto_m)
+    return dual_result
+
+
+def apply_frentin_answer(dual_result: dict, answer: dict) -> dict:
+    """Aplica respuesta de `frentin` al dual_read. Escribe `tramo.frentin[]`
+    en cada tramo no-derivado según los lados elegidos.
+
+    `answer` shape:
+        {
+          "id": "frentin",
+          "value": "no" | "3" | "5" | "10" | "custom",
+          "detail": "texto libre (solo para custom)"
+        }
+    """
+    return _apply_extra_pieces_answer(
+        dual_result, answer,
+        field="frentin",
+        preset_values={"3", "5", "10"},
+    )
+
+
+def apply_regrueso_answer(dual_result: dict, answer: dict) -> dict:
+    """Aplica respuesta de `regrueso` al dual_read. Shape idéntico a
+    frentín con otros presets."""
+    return _apply_extra_pieces_answer(
+        dual_result, answer,
+        field="regrueso",
+        preset_values={"2", "3", "5"},
+    )
+
+
 def apply_answers(dual_result: dict, answers: list[dict]) -> dict:
     """Aplica todas las respuestas del operador al card. Dispatch por id."""
     # Import lazy para evitar ciclos
@@ -855,6 +1197,12 @@ def apply_answers(dual_result: dict, answers: list[dict]) -> dict:
             apply_anafe_count_answer(dual_result, ans)
         elif qid == "alzada":
             apply_alzada_answer(dual_result, ans)
+        elif qid == "frentin":
+            # PR #392
+            apply_frentin_answer(dual_result, ans)
+        elif qid == "regrueso":
+            # PR #392
+            apply_regrueso_answer(dual_result, ans)
         elif qid == "material":
             apply_material_answer(dual_result, ans)
         elif qid == "localidad":
