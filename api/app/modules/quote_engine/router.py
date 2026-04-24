@@ -1,5 +1,6 @@
 """Public API endpoint for quote generation — no LLM, pure calculation."""
 
+import asyncio
 import uuid
 import logging
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Header
@@ -285,129 +286,206 @@ async def upload_source_files(
     await db.execute(upd(Quote).where(Quote.id == quote_id).values(source_files=existing))
     await db.commit()
 
+    # PR #394 — Web API rule: quotes originados desde el chatbot externo
+    # (`source="web"`) que traigan al menos 1 archivo guardado válido NO
+    # deben recibir presupuesto pre-calculado. El operador revisa el
+    # archivo + datos manualmente desde la UI interna antes de devolver
+    # números al cliente.
+    #
+    # Criterio del operador (2026-04-24): gate por presencia de archivo
+    # adjunto en este endpoint, no por intención ni por tipo de archivo.
+    # Flujos internos (operador con JWT vía /api/quotes/*) no pasan por
+    # acá — intactos.
+    _is_web_source = (quote.source or "").lower() == "web"
+    _skip_auto_estimate = _is_web_source and bool(saved)
+
+    if _skip_auto_estimate:
+        logging.info(
+            f"[web-api] skipping auto-estimate for {quote_id}: "
+            f"source=web, {len(saved)} file(s) saved. Operator will review."
+        )
+
     # If quote has no breakdown yet and we just saved files, trigger agent processing
-    # in the background so the API responds immediately to the chatbot
-    if saved and not quote.quote_breakdown:
-        import asyncio
+    # in the background so the API responds immediately to the chatbot.
+    # PR #394 — gate: web+archivo NO dispara. Otros sources mantienen comportamiento.
+    if saved and not quote.quote_breakdown and not _skip_auto_estimate:
+        _schedule_agent_background_processing(quote_id, quote, saved[0])
 
+    response = {"ok": True, "saved": len(saved), "errors": errors, "files": existing}
+    # PR #394 — aviso explícito al chatbot externo cuando el estimate no
+    # se genera automáticamente (source=web + archivo adjunto). Campos
+    # aditivos: clientes viejos que no los miren siguen andando.
+    if _skip_auto_estimate:
+        response["estimate_skipped"] = True
+        response["estimate_skip_reason"] = "web_upload_manual_review"
+        response["message"] = (
+            "Archivo recibido. Un operador revisará la información antes de cotizar."
+        )
+    return response
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Background agent processing
+# ─────────────────────────────────────────────────────────────────────
+#
+# PR #394 — extraído de upload_source_files para que el scheduler sea
+# mockeable en tests. El closure anidado dentro del endpoint volvía
+# imposible verificar la invocación del bg task sin parchar
+# `asyncio.create_task` a nivel global (con side-effects sobre el
+# resto del event loop).
+
+
+def _schedule_agent_background_processing(quote_id: str, quote: Quote, first_file: dict) -> None:
+    """Programa la corrida asíncrona de Valentina sobre un archivo recién
+    subido (lee plano → extrae piezas → `calculate_quote` → persiste
+    breakdown). Fire-and-forget: la response del endpoint sale inmediata
+    al chatbot externo.
+
+    Usado solo cuando `source != "web"` (regla del PR #394): quotes
+    web con archivo quedan para revisión manual del operador.
+    """
+    import json as _json
+    from pathlib import Path
+
+    try:
+        _cfg = _json.loads(
+            (Path(__file__).parent.parent.parent / "catalog" / "config.json").read_text()
+        )
+        _default_plazo = _cfg.get("delivery_days", {}).get(
+            "display", "30 dias desde la toma de medidas"
+        )
+    except Exception:
+        _default_plazo = "30 dias desde la toma de medidas"
+
+    async def _process_plan_background(qid: str, q: Quote, file_info: dict):
+        """Run Valentina in background to read plan, extract pieces, calculate quote."""
         try:
-            import json as _json
-            _cfg = _json.loads((Path(__file__).parent.parent.parent / "catalog" / "config.json").read_text())
-            _default_plazo = _cfg.get("delivery_days", {}).get("display", "30 dias desde la toma de medidas")
-        except Exception:
-            _default_plazo = "30 dias desde la toma de medidas"
+            from app.modules.agent.agent import AgentService
+            from app.core.database import AsyncSessionLocal
 
-        async def _process_plan_background(qid: str, q: Quote, first_file: dict):
-            """Run Valentina in background to read plan, extract pieces, calculate quote."""
-            try:
-                from app.modules.agent.agent import AgentService
-                from app.core.database import AsyncSessionLocal
+            # Build context message from quote data
+            parts = []
+            if q.client_name:
+                parts.append(f"Cliente: {q.client_name}")
+            if q.project:
+                parts.append(f"Proyecto: {q.project}")
+            if q.material:
+                parts.append(f"Material: {q.material}")
+            localidad = getattr(q, "localidad", None)
+            if localidad:
+                parts.append(f"Localidad: {localidad}")
+            colocacion = getattr(q, "colocacion", None)
+            if colocacion is not None:
+                parts.append(f"{'Con' if colocacion else 'Sin'} colocación")
+            pileta_val = getattr(q, "pileta", None)
+            if pileta_val:
+                parts.append(f"Pileta: {pileta_val}")
+            anafe_val = getattr(q, "anafe", None)
+            if anafe_val:
+                parts.append(f"Con anafe")
+            sink_type_val = getattr(q, "sink_type", None)
+            if sink_type_val:
+                bc = sink_type_val.get("basin_count", "").capitalize()
+                mt = (
+                    "Pegada de " + sink_type_val.get("mount_type", "")
+                    if sink_type_val.get("mount_type")
+                    else ""
+                )
+                parts.append(f"Tipo de bacha: {bc} · {mt}".strip(" ·"))
+            parts.append(f"Plazo: {_default_plazo}")
+            if q.notes:
+                parts.append(f"Notas del cliente: {q.notes}")
+            parts.append(
+                "Adjunto el plano. Es un procesamiento automático — calculá el "
+                "presupuesto completo y guardá el breakdown. NO generar documentos "
+                "(PDF/Excel/Drive). NO pedir confirmación. Solo calcular y guardar."
+            )
 
-                # Build context message from quote data
-                parts = []
-                if q.client_name:
-                    parts.append(f"Cliente: {q.client_name}")
-                if q.project:
-                    parts.append(f"Proyecto: {q.project}")
-                if q.material:
-                    parts.append(f"Material: {q.material}")
-                localidad = getattr(q, "localidad", None)
-                if localidad:
-                    parts.append(f"Localidad: {localidad}")
-                colocacion = getattr(q, "colocacion", None)
-                if colocacion is not None:
-                    parts.append(f"{'Con' if colocacion else 'Sin'} colocación")
-                pileta_val = getattr(q, "pileta", None)
-                if pileta_val:
-                    parts.append(f"Pileta: {pileta_val}")
-                anafe_val = getattr(q, "anafe", None)
-                if anafe_val:
-                    parts.append(f"Con anafe")
-                sink_type_val = getattr(q, "sink_type", None)
-                if sink_type_val:
-                    bc = sink_type_val.get("basin_count", "").capitalize()
-                    mt = "Pegada de " + sink_type_val.get("mount_type", "") if sink_type_val.get("mount_type") else ""
-                    parts.append(f"Tipo de bacha: {bc} · {mt}".strip(" ·"))
-                parts.append(f"Plazo: {_default_plazo}")
-                if q.notes:
-                    parts.append(f"Notas del cliente: {q.notes}")
-                parts.append("Adjunto el plano. Es un procesamiento automático — calculá el presupuesto completo y guardá el breakdown. NO generar documentos (PDF/Excel/Drive). NO pedir confirmación. Solo calcular y guardar.")
+            auto_message = "\n".join(parts)
 
-                auto_message = "\n".join(parts)
+            # Read file from disk — check both OUTPUT_DIR and /tmp fallback, retry once
+            from app.core.static import OUTPUT_DIR as _OUTDIR
 
-                # Read file from disk — check both OUTPUT_DIR and /tmp fallback, retry once
-                from app.core.static import OUTPUT_DIR as _OUTDIR
-                plan_data = None
-                for _attempt in range(2):
-                    file_path = _OUTDIR / qid / "sources" / first_file["filename"]
-                    if not file_path.exists():
-                        file_path = Path("/tmp/output") / qid / "sources" / first_file["filename"]
-                    if file_path.exists():
-                        plan_data = file_path.read_bytes()
-                        break
-                    if _attempt == 0:
-                        logging.warning(f"File not found for {qid}, retrying in 2s: {first_file['filename']}")
-                        await asyncio.sleep(2)
-                if plan_data is None:
-                    logging.error(f"File NOT FOUND after retry for {qid}: {first_file['filename']}. Skipping background processing.")
-                    return
+            plan_data = None
+            for _attempt in range(2):
+                file_path = _OUTDIR / qid / "sources" / file_info["filename"]
+                if not file_path.exists():
+                    file_path = Path("/tmp/output") / qid / "sources" / file_info["filename"]
+                if file_path.exists():
+                    plan_data = file_path.read_bytes()
+                    break
+                if _attempt == 0:
+                    logging.warning(
+                        f"File not found for {qid}, retrying in 2s: {file_info['filename']}"
+                    )
+                    await asyncio.sleep(2)
+            if plan_data is None:
+                logging.error(
+                    f"File NOT FOUND after retry for {qid}: {file_info['filename']}. "
+                    "Skipping background processing."
+                )
+                return
 
-                agent = AgentService()
-                async with AsyncSessionLocal() as bg_db:
-                    async for _ in agent.stream_chat(
-                        quote_id=qid,
-                        messages=q.messages or [],
-                        user_message=auto_message,
-                        plan_bytes=plan_data,
-                        plan_filename=first_file["filename"] if plan_data else None,
-                        db=bg_db,
-                    ):
-                        pass  # Consume stream — only care about side effects (DB updates)
+            agent = AgentService()
+            async with AsyncSessionLocal() as bg_db:
+                async for _ in agent.stream_chat(
+                    quote_id=qid,
+                    messages=q.messages or [],
+                    user_message=auto_message,
+                    plan_bytes=plan_data,
+                    plan_filename=file_info["filename"] if plan_data else None,
+                    db=bg_db,
+                ):
+                    pass  # Consume stream — only care about side effects (DB updates)
 
-                # Verify breakdown was saved — if Valentina extracted pieces
-                # but didn't call calculate_quote, call it explicitly
-                async with AsyncSessionLocal() as verify_db:
-                    from sqlalchemy import select as _sel
-                    _r = await verify_db.execute(_sel(Quote).where(Quote.id == qid))
-                    _updated = _r.scalar_one_or_none()
-                    if _updated and not _updated.quote_breakdown:
-                        logging.warning(f"Breakdown not saved after stream_chat for {qid} — attempting fallback calculate")
-                        # Try to build calc input from quote data + any pieces in messages
-                        try:
-                            # Extract pieces from Valentina's messages if available
-                            pieces_from_msgs = _updated.pieces  # raw pieces if saved
-                            if pieces_from_msgs:
-                                calc_input = {
-                                    "client_name": _updated.client_name,
-                                    "project": _updated.project,
-                                    "material": _updated.material,
-                                    "pieces": pieces_from_msgs,
-                                    "localidad": getattr(_updated, "localidad", "rosario"),
-                                    "colocacion": getattr(_updated, "colocacion", True),
-                                    "pileta": getattr(_updated, "pileta", None),
-                                    "anafe": getattr(_updated, "anafe", False),
-                                    "plazo": _default_plazo,
-                                }
-                                from app.modules.quote_engine.calculator import calculate_quote as _calc
-                                fallback_result = _calc(calc_input)
-                                if fallback_result.get("ok"):
-                                    from sqlalchemy import update as _upd
-                                    await verify_db.execute(
-                                        _upd(Quote).where(Quote.id == qid).values(
-                                            quote_breakdown=fallback_result,
-                                            total_ars=fallback_result.get("total_ars"),
-                                            total_usd=fallback_result.get("total_usd"),
-                                        )
+            # Verify breakdown was saved — if Valentina extracted pieces
+            # but didn't call calculate_quote, call it explicitly
+            async with AsyncSessionLocal() as verify_db:
+                from sqlalchemy import select as _sel
+
+                _r = await verify_db.execute(_sel(Quote).where(Quote.id == qid))
+                _updated = _r.scalar_one_or_none()
+                if _updated and not _updated.quote_breakdown:
+                    logging.warning(
+                        f"Breakdown not saved after stream_chat for {qid} — "
+                        "attempting fallback calculate"
+                    )
+                    try:
+                        pieces_from_msgs = _updated.pieces
+                        if pieces_from_msgs:
+                            calc_input = {
+                                "client_name": _updated.client_name,
+                                "project": _updated.project,
+                                "material": _updated.material,
+                                "pieces": pieces_from_msgs,
+                                "localidad": getattr(_updated, "localidad", "rosario"),
+                                "colocacion": getattr(_updated, "colocacion", True),
+                                "pileta": getattr(_updated, "pileta", None),
+                                "anafe": getattr(_updated, "anafe", False),
+                                "plazo": _default_plazo,
+                            }
+                            from app.modules.quote_engine.calculator import (
+                                calculate_quote as _calc,
+                            )
+
+                            fallback_result = _calc(calc_input)
+                            if fallback_result.get("ok"):
+                                from sqlalchemy import update as _upd
+
+                                await verify_db.execute(
+                                    _upd(Quote).where(Quote.id == qid).values(
+                                        quote_breakdown=fallback_result,
+                                        total_ars=fallback_result.get("total_ars"),
+                                        total_usd=fallback_result.get("total_usd"),
                                     )
-                                    await verify_db.commit()
-                                    logging.info(f"Fallback calculate_quote succeeded for {qid}")
-                        except Exception as fb_err:
-                            logging.error(f"Fallback calculate failed for {qid}: {fb_err}")
+                                )
+                                await verify_db.commit()
+                                logging.info(f"Fallback calculate_quote succeeded for {qid}")
+                    except Exception as fb_err:
+                        logging.error(f"Fallback calculate failed for {qid}: {fb_err}")
 
-                logging.info(f"Auto-processed plan for web quote {qid}")
-            except Exception as e:
-                logging.error(f"Failed to auto-process plan for {qid}: {e}", exc_info=True)
+            logging.info(f"Auto-processed plan for web quote {qid}")
+        except Exception as e:
+            logging.error(f"Failed to auto-process plan for {qid}: {e}", exc_info=True)
 
-        asyncio.create_task(_process_plan_background(quote_id, quote, saved[0]))
-
-    return {"ok": True, "saved": len(saved), "errors": errors, "files": existing}
+    asyncio.create_task(_process_plan_background(quote_id, quote, first_file))
