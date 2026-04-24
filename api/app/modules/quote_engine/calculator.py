@@ -123,6 +123,223 @@ def _normalize_material_name(name: str) -> str:
     return lower
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# PR #396 — Family gate para fuzzy matching de materiales
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Bug raíz: `_find_material` corría `thefuzz.extractOne` sobre TODOS los
+# catálogos juntos. Palabras genéricas ("Grey", "Silver", "Metro")
+# matcheaban entre familias incompatibles. Caso real Perdomo Fabiana
+# (2026-04-24): input="Puraprima Metro Grey" → output="GRANITO SILVER
+# GREY LETHER - 2 ESP". Son familias ontológicamente distintas:
+#
+#   Puraprima = sinterizado  → merma sí, COLOCACIONDEKTON/NEOLITH
+#   Granito   = piedra natural → merma no,  COLOCACION
+#
+# Ahora: detector de familia previo al fuzzy. Input con keyword de
+# familia busca SÓLO en los catálogos de esa familia.
+
+
+# Familia canónica → lista de catálogos (usar `unión` para granito —
+# hay `materials-granito-nacional` + `materials-granito-importado`).
+_FAMILY_CATALOGS: dict[str, list[str]] = {
+    "puraprima": ["materials-puraprima"],
+    "purastone": ["materials-purastone"],
+    "silestone": ["materials-silestone"],
+    "dekton": ["materials-dekton"],
+    "neolith": ["materials-neolith"],
+    "laminatto": ["materials-laminatto"],
+    "granito": ["materials-granito-nacional", "materials-granito-importado"],
+    "marmol": ["materials-marmol"],
+}
+
+# Familias sintéticas vs naturales — usado para bloquear cross-type
+# catastrófico (sintético ≠ natural en merma, colocación, precio base).
+_SYNTHETIC_FAMILIES = frozenset({
+    "puraprima", "purastone", "silestone", "dekton", "neolith", "laminatto",
+})
+_NATURAL_FAMILIES = frozenset({"granito", "marmol"})
+
+
+# Keywords normalizados (post-`_normalize_input_string`) que mapean a
+# familia. Orden IMPORTA: keywords más específicos primero. Ej:
+# "purastone prima" → familia "puraprima" (porque los items
+# "PURASTONE PRIMA X" viven en materials-puraprima.json), NO "purastone".
+_FAMILY_KEYWORDS: list[tuple[str, str]] = [
+    # Aliases específicos primero.
+    ("purastone prima", "puraprima"),
+    ("pura stone prima", "puraprima"),
+    # Luego los genéricos.
+    ("puraprima", "puraprima"),
+    ("pura prima", "puraprima"),
+    ("purastone", "purastone"),
+    ("pura stone", "purastone"),
+    ("silestone", "silestone"),
+    ("dekton", "dekton"),
+    ("neolith", "neolith"),
+    ("laminatto", "laminatto"),
+    ("laminato", "laminatto"),
+    ("granito", "granito"),
+    ("marmol", "marmol"),  # normalizado ya sin tilde
+]
+
+
+def _normalize_input_string(raw: str) -> str:
+    """Normalización canónica para matcheo: lowercase, sin tildes,
+    espacios colapsados, separadores tipo `-_/|` a espacios.
+
+    No es idéntica a `_normalize_material_name`: esta es más agresiva
+    (decompone acentos con unicodedata + reemplaza separadores) y se
+    usa antes del fuzzy para dar al matcher un shape estable.
+    """
+    import unicodedata as _u
+    if not raw:
+        return ""
+    # Decomponer acentos.
+    nfkd = _u.normalize("NFKD", raw)
+    no_accent = "".join(c for c in nfkd if not _u.combining(c))
+    lower = no_accent.lower().strip()
+    # Reemplazar separadores raros por espacios.
+    for ch in ("-", "_", "/", "|", "–", "—"):
+        lower = lower.replace(ch, " ")
+    # Colapsar múltiples espacios.
+    lower = " ".join(lower.split())
+    return lower
+
+
+def _detect_family(raw_input: str) -> str | None:
+    """Detecta la familia del material desde el input del usuario.
+
+    Dos pasadas:
+      1. Substring exacto sobre `_FAMILY_KEYWORDS` (orden específico →
+         genérico). Si matchea, retorna sin llamar al fuzzy.
+      2. Fuzzy token-level: cada token del input vs cada keyword con
+         `fuzz.ratio`. Captura typos ("puraprma" → "puraprima",
+         "maramol" → "marmol"). Cutoff 85.
+
+    Retorna la familia canónica o `None` si ninguna alternativa pasa.
+    """
+    normalized = _normalize_input_string(raw_input)
+    if not normalized:
+        return None
+    for keyword, family in _FAMILY_KEYWORDS:
+        if keyword in normalized:
+            return family
+    # Fuzzy fallback: typos en el keyword de familia.
+    try:
+        from thefuzz import fuzz as _fz
+    except ImportError:
+        return None
+    tokens = normalized.split()
+    best_family: str | None = None
+    best_score = 0
+    for keyword, family in _FAMILY_KEYWORDS:
+        # Si el keyword es multi-palabra, saltear (el substring ya no
+        # matcheó; fuzz.ratio sobre un multi-word vs un solo token daría
+        # falsos negativos — usaríamos partial_ratio pero es demasiado
+        # permisivo para tokens cortos).
+        if " " in keyword:
+            continue
+        for token in tokens:
+            score = _fz.ratio(token, keyword)
+            if score > best_score:
+                best_score = score
+                best_family = family
+    if best_score >= 85:
+        return best_family
+    return None
+
+
+def _strip_family_keyword(text: str, family: str) -> str:
+    """Remueve los keywords de la `family` especificada del texto
+    normalizado. Usado para que el fuzzy intra-familia mire solo la
+    parte específica del material, no el nombre de la familia que ya
+    usamos como gate.
+
+    Dos pasos:
+      1. Exact replace: saca substrings que matcheen keywords de la
+         familia (más largos primero: "purastone prima" > "purastone").
+      2. Fuzzy single-token: saca tokens individuales que matcheen un
+         keyword single-word con `ratio ≥ 85`. Cubre typos que
+         `_detect_family` aceptó pero quedaron en el texto ("puraprma"
+         vs "puraprima" → removido).
+
+    Ejemplo:
+      - "puraprima metro grey" (family=puraprima) → "metro grey".
+      - "puraprma metro grey" → "metro grey" (typo sacado por fuzzy).
+      - "PURASTONE PRIMA METRO GREY..." → "metro grey..." (exact).
+    """
+    lowered = _normalize_input_string(text)
+    keywords = [k for k, f in _FAMILY_KEYWORDS if f == family]
+    keywords.sort(key=len, reverse=True)
+    for kw in keywords:
+        lowered = lowered.replace(kw, " ")
+    lowered = " ".join(lowered.split())
+    # Pasada fuzzy: tokens con typo de familia se sacan también.
+    try:
+        from thefuzz import fuzz as _fz
+    except ImportError:
+        return lowered
+    single_word_keywords = [k for k in keywords if " " not in k]
+    if not single_word_keywords:
+        return lowered
+    tokens = lowered.split()
+    kept = [
+        t for t in tokens
+        if not any(_fz.ratio(t, kw) >= 85 for kw in single_word_keywords)
+    ]
+    return " ".join(kept)
+
+
+def _build_family_material_list(family: str) -> list[tuple[str, str]]:
+    """Devuelve `[(name, catalog), ...]` de todos los items en los
+    catálogos de esa familia. Si la familia no existe, lista vacía."""
+    from app.modules.agent.tools.catalog_tool import _load_catalog
+    out: list[tuple[str, str]] = []
+    for cat in _FAMILY_CATALOGS.get(family, []):
+        items = _load_catalog(cat) or []
+        for item in items:
+            name = item.get("name", "")
+            if name:
+                out.append((name, cat))
+    return out
+
+
+def _top_suggestions(
+    raw_input: str,
+    scope: list[tuple[str, str]],
+    *,
+    top_k: int = 3,
+) -> list[dict]:
+    """Top-K matches por `thefuzz` sobre el scope dado. Shape estable:
+        [{"sku": str | None, "name": str, "score": int, "catalog": str}]
+
+    `sku` se deja `None` si el catálogo no lo devuelve — el caller
+    puede pasar a `catalog_lookup` si necesita el SKU exacto.
+    """
+    if not scope:
+        return []
+    try:
+        from thefuzz import process as fuzz_process
+    except ImportError:
+        return []
+    names = [n for n, _c in scope]
+    name_to_cat = dict(scope)
+    results = fuzz_process.extract(raw_input, names, limit=top_k)
+    out: list[dict] = []
+    for name, score in results:
+        cat = name_to_cat.get(name, "")
+        # Extraer familia corta del catálogo ("materials-puraprima" → "puraprima").
+        cat_short = cat.replace("materials-", "") if cat else ""
+        out.append({
+            "sku": None,
+            "name": name,
+            "score": int(score),
+            "catalog": cat_short,
+        })
+    return out
+
+
 def _find_material(material_name: str) -> dict:
     """Search for material across all catalogs with fuzzy fallback."""
     from app.modules.agent.tools.catalog_tool import _load_catalog
@@ -155,8 +372,17 @@ def _find_material(material_name: str) -> dict:
             ),
         }
 
+    # PR #396 — si el input tiene keyword de familia, TODOS los pasos
+    # (exact, normalize, fuzzy) deben buscar sólo en esa familia para
+    # prevenir cross-family bleed incluso en match exacto.
+    _detected_family_early = _detect_family(material_name)
+    if _detected_family_early:
+        _early_cats = _FAMILY_CATALOGS.get(_detected_family_early, MATERIAL_CATALOGS)
+    else:
+        _early_cats = MATERIAL_CATALOGS
+
     # 1. Exact match (case-insensitive via catalog_lookup)
-    for cat in MATERIAL_CATALOGS:
+    for cat in _early_cats:
         result = catalog_lookup(cat, material_name)
         if result.get("found"):
             return result
@@ -164,87 +390,161 @@ def _find_material(material_name: str) -> dict:
     # 2. Try normalized name
     normalized = _normalize_material_name(material_name)
     if normalized != material_name.lower().strip():
-        for cat in MATERIAL_CATALOGS:
+        for cat in _early_cats:
             result = catalog_lookup(cat, normalized)
             if result.get("found"):
                 logging.info(f"[normalize] '{material_name}' → '{result.get('name')}' (normalized)")
                 result["fuzzy_corrected_from"] = material_name
+                # PR #396 — también marcamos el catálogo para trazabilidad
+                # (el path de normalización es determinístico, score=100).
+                result["fuzzy_score"] = 100
+                result["fuzzy_catalog"] = cat.replace("materials-", "")
                 return result
 
-    # 3. Fuzzy match across all material catalogs
+    # 3. Fuzzy match — PR #396: family-gated.
+    #
+    # Política:
+    #   - Input con keyword de familia → fuzzy SOLO en catálogos de esa
+    #     familia (score_cutoff=80).
+    #   - Input sin keyword de familia → fuzzy cross-catalog con
+    #     score_cutoff=85 (más estricto — evita matches accidentales).
+    #   - Sin match → `{found: False, suggestions: [...]}` con shape
+    #     estable, sin cross-family silencioso.
     try:
         from thefuzz import process as fuzz_process
 
-        # Build list of all material names with their catalog
-        all_materials: list[tuple[str, str]] = []  # (name, catalog)
-        for cat in MATERIAL_CATALOGS:
-            items = _load_catalog(cat)
-            for item in items:
-                name = item.get("name", "")
-                if name:
-                    all_materials.append((name, cat))
-
-        if not all_materials:
-            return {"found": False, "error": f"Material '{material_name}' no encontrado — catálogos vacíos"}
-
-        # Filter out acabado variants (LEATHER, FIAMATADO, PULIDO, etc.)
-        # unless the operator explicitly requested them. Default acabado =
-        # "pulido/extra 2 esp" variant.
-        #
-        # Rule (PR #4 — pedido del usuario): cuando el brief no especifica
-        # variante/acabado y existe un variant "EXTRA 2 ESP" del material,
-        # se devuelve esa variante por default. Esto también cubre el caso
-        # de espesor no coincidente (ej: brief "25mm" vs catálogo 20mm):
-        # el filtrado se queda con el EXTRA 2 ESP y `_find_material` lo
-        # retorna sin preguntar. Ver rules/materials-guide.md § Espesor.
-        # Strip thickness tokens from input ("25mm", "— 25mm", "- 25 mm") so
-        # fuzzy doesn't down-score valid matches just because the brief
-        # specifies a thickness the catalog name doesn't carry.
+        # Strip thickness tokens ("25mm", "— 25mm") — el catálogo no
+        # siempre trae espesor en el nombre y no queremos penalizarlo.
         import re as _re_thk
         _clean_input = _re_thk.sub(
             r'[—\-–]?\s*\d{1,2}\s*mm\b', '', material_name, flags=_re_thk.IGNORECASE,
         ).strip()
+        # PR #396 — quitar paréntesis y su contenido del input para el
+        # fuzzy. Los paréntesis típicamente llevan notas del operador
+        # ("(SKU estándar, NO Extra 2)") que no deben pesar en el
+        # matcheo — generaban ties con tokens comunes tipo "2 ESP".
+        # El `material_name` original se preserva para la detección
+        # downstream de negaciones (PR #8 DINALE).
+        _clean_input = _re_thk.sub(r'\([^)]*\)', '', _clean_input).strip()
+        _clean_input = " ".join(_clean_input.split())
+
+        # Build list (scope depende de si detectamos familia o no).
+        detected_family = _detect_family(material_name)
+
+        if detected_family is not None:
+            scope: list[tuple[str, str]] = _build_family_material_list(detected_family)
+            score_cutoff = 80
+            logging.info(
+                f"[fuzzy] family gate: '{material_name}' → family={detected_family} "
+                f"(scope {len(scope)} items, cutoff={score_cutoff})"
+            )
+        else:
+            # Sin familia: cross-catalog con umbral más estricto.
+            scope = []
+            for cat in MATERIAL_CATALOGS:
+                for item in _load_catalog(cat) or []:
+                    name = item.get("name", "")
+                    if name:
+                        scope.append((name, cat))
+            score_cutoff = 85
+            logging.info(
+                f"[fuzzy] no family keyword for '{material_name}' → cross-catalog "
+                f"(scope {len(scope)} items, cutoff={score_cutoff})"
+            )
+
+        if not scope:
+            return {
+                "found": False,
+                "error": f"Material '{material_name}' no encontrado — catálogos vacíos",
+                "suggestions": [],
+            }
+
+        # Filtro de acabado: excluir LEATHER / FIAMATADO / FLAMEADO a
+        # menos que el input los pida explícitamente.
         input_lower = material_name.lower()
         has_leather = "leather" in input_lower
         has_fiamatado = "fiamatado" in input_lower or "flameado" in input_lower
         filtered = [
-            (n, c) for n, c in all_materials
+            (n, c) for n, c in scope
             if (has_leather or "leather" not in n.lower())
             and (has_fiamatado or "fiamatado" not in n.lower())
         ]
-        names = [m[0] for m in (filtered if filtered else all_materials)]
-        match = fuzz_process.extractOne(_clean_input, names, score_cutoff=70)
+        working_scope = filtered if filtered else scope
 
-        # If matched a non-EXTRA variant but an EXTRA 2 ESP exists for the
-        # same base name, prefer the EXTRA 2 ESP. Detect base name as the
-        # matched name minus the variant suffix.
+        # PR #396 — cuando ya detectamos familia, strip el keyword de
+        # familia del input y de los nombres. Así el fuzzy mira solo la
+        # parte específica del material ("metro grey" vs "metro grey"),
+        # no el nombre de la familia que ya validamos como gate. Sin
+        # esto el matcher puede preferir otro item que tenga la palabra
+        # "PURAPRIMA" literal sobre el que tiene el material correcto.
+        if detected_family is not None:
+            # Mapa de nombre stripped → (name_original, catalog).
+            stripped_to_original: dict[str, tuple[str, str]] = {}
+            for n, c in working_scope:
+                stripped = _strip_family_keyword(n, detected_family)
+                # Si varios items strippean al mismo texto, el primero
+                # gana (determinístico por orden del catálogo).
+                stripped_to_original.setdefault(stripped, (n, c))
+            names = list(stripped_to_original.keys())
+            _fuzzy_input = _strip_family_keyword(_clean_input, detected_family)
+            if not _fuzzy_input:
+                # Solo keyword de familia, nada específico. No podemos
+                # fuzzy con string vacío — delegar a suggestions.
+                _fuzzy_input = _clean_input
+        else:
+            stripped_to_original = {n: (n, c) for n, c in working_scope}
+            names = [n for n, _c in working_scope]
+            _fuzzy_input = _clean_input
+
+        match = fuzz_process.extractOne(_fuzzy_input, names, score_cutoff=score_cutoff)
+
+        # Fallback "EXTRA 2 ESP": aplicar SOLO si el match ya está en
+        # la familia correcta (scope family-gated o cross con familia
+        # coincidente). No hacemos cross-family fallback.
         if match:
-            matched_name = match[0]
+            matched_stripped, _score_pre = match
+            matched_name, matched_cat = stripped_to_original[matched_stripped]
             m_upper = matched_name.upper()
             if "EXTRA 2" not in m_upper and "EXTRA" not in m_upper:
-                # Look for a sibling with EXTRA 2 (ESP) and the same base tokens
+                # Buscar sibling "EXTRA 2 ESP" con MISMO catálogo
+                # (misma familia) y mismo material base (tokens
+                # compartidos).
                 base_tokens = set(
                     t for t in m_upper.split()
                     if t not in {"LEATHER", "FIAMATADO", "FLAMEADO", "PULIDO", "20MM", "-"}
                 )
-                for n, _c in filtered:
+                for n, c in working_scope:
+                    if c != matched_cat:
+                        continue  # Mismo catálogo = misma familia.
                     n_upper = n.upper()
                     if ("EXTRA 2" in n_upper or "EXTRA" in n_upper) and base_tokens.issubset(set(n_upper.split())):
                         logging.info(
                             f"[variant-default] '{material_name}' → preferring "
-                            f"'{n}' (EXTRA 2 ESP) over '{matched_name}'"
+                            f"'{n}' (EXTRA 2 ESP) over '{matched_name}' "
+                            f"[same catalog {c}]"
                         )
+                        # Sustituir el tuple del match con el nombre
+                        # ORIGINAL del sibling EXTRA — ya no necesitamos
+                        # el stripped_to_original lookup.
+                        matched_name = n
+                        matched_cat = c
                         match = (n, match[1])
                         break
 
         if match:
-            matched_name, score = match[0], match[1]
-            # Find which catalog it belongs to
-            matched_cat = next(cat for name, cat in all_materials if name == matched_name)
+            _, score = match
+            # matched_name + matched_cat ya resueltos arriba.
             result = catalog_lookup(matched_cat, matched_name)
             if result.get("found"):
-                logging.info(f"[fuzzy] '{material_name}' → '{matched_name}' (score={score})")
+                logging.info(
+                    f"[fuzzy] '{material_name}' → '{matched_name}' "
+                    f"(score={score}, catalog={matched_cat})"
+                )
                 result["fuzzy_corrected_from"] = material_name
+                result["fuzzy_score"] = int(score)
+                result["fuzzy_catalog"] = matched_cat.replace("materials-", "")
+                if detected_family:
+                    result["fuzzy_family"] = detected_family
 
                 # Detectar negación explícita del variant matcheado.
                 # Caso DINALE 14/04/2026: brief dice "NO Extra 2" pero el
@@ -285,10 +585,32 @@ def _find_material(material_name: str) -> dict:
                         )
                         break
                 return result
+
+        # No hay match con score_cutoff suficiente → suggestions estable
+        # sin cross-family silencioso (PR #396).
+        suggestions = _top_suggestions(_clean_input, working_scope, top_k=3)
+        detail = (
+            f"Material '{material_name}' no encontrado en familia "
+            f"'{detected_family}'. Revisar sugerencias o corregir nombre."
+            if detected_family
+            else f"Material '{material_name}' no encontrado con confianza "
+                 f"suficiente. Revisar sugerencias o especificar familia "
+                 f"(puraprima, silestone, dekton, granito, etc.)."
+        )
+        return {
+            "found": False,
+            "error": detail,
+            "family": detected_family,
+            "suggestions": suggestions,
+        }
     except ImportError:
         logging.warning("thefuzz not installed — fuzzy matching disabled")
 
-    return {"found": False, "error": f"Material '{material_name}' no encontrado en ningún catálogo"}
+    return {
+        "found": False,
+        "error": f"Material '{material_name}' no encontrado en ningún catálogo",
+        "suggestions": [],
+    }
 
 
 def _find_flete(localidad: str) -> dict:
@@ -1142,6 +1464,10 @@ def calculate_quote(input_data: dict) -> dict:
         "skip_flete": skip_flete,
         **({"warnings": warnings} if warnings else {}),
         **({"fuzzy_corrected_from": mat_result["fuzzy_corrected_from"]} if "fuzzy_corrected_from" in mat_result else {}),
+        # PR #396 — metadata de trazabilidad del fuzzy match.
+        **({"fuzzy_score": mat_result["fuzzy_score"]} if "fuzzy_score" in mat_result else {}),
+        **({"fuzzy_catalog": mat_result["fuzzy_catalog"]} if "fuzzy_catalog" in mat_result else {}),
+        **({"fuzzy_family": mat_result["fuzzy_family"]} if "fuzzy_family" in mat_result else {}),
         # Edificio validation checklist
         **({"edificio_checklist": {
             "sin_colocacion": not colocacion,
