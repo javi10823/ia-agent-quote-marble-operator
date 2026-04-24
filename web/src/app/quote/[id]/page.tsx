@@ -794,38 +794,41 @@ export default function QuotePage() {
           </div>
           {quote?.status === "draft" ? (
             <div className="shrink-0 px-4 md:px-7 pt-3 md:pt-3.5 pb-3 md:pb-[18px] border-t border-b1 bg-s1">
-              {/* PR #378/#383 — Action tray persistente con los reopens.
-                  Antes estos botones vivían dentro del bloque de
-                  "Confirmar/Corregir" (solo visible cuando Valentina
-                  terminaba pidiendo confirmación). Si el operador abría
-                  el quote y el último turn no era una pregunta, el
-                  botón no aparecía — a pesar de que el breakdown decía
-                  que había Paso 2 confirmado. Ahora están siempre
-                  disponibles mientras el quote esté en draft y el
-                  breakdown habilite cada reopen. */}
-              {(quote?.quote_breakdown?.verified_context
-                || quote?.quote_breakdown?.verified_context_analysis) && (
-                <div className="mb-3 flex flex-col gap-2">
-                  {quote?.quote_breakdown?.verified_context && (
-                    <button
-                      onClick={() => setReopenModal({ open: true, busy: false })}
-                      className="w-full px-4 py-2 rounded-lg text-[12px] font-medium bg-transparent border border-amb/40 text-amb cursor-pointer hover:bg-amb/10 transition"
-                    >
-                      ↩ Editar despiece (invalida el cálculo actual)
-                    </button>
-                  )}
-                  {quote?.quote_breakdown?.verified_context_analysis && (
-                    <button
-                      onClick={() => setContextModal({ open: true, busy: false })}
-                      className="w-full px-4 py-2 rounded-lg text-[12px] font-medium bg-transparent border border-amb/40 text-amb cursor-pointer hover:bg-amb/10 transition"
-                    >
-                      ↩ Editar contexto (invalida Paso 2 y medidas)
-                    </button>
-                  )}
-                </div>
-              )}
+              {/* PR #378/#383/#390 — Los botones de reopen son acciones de
+                  RECUPERACIÓN, no la acción primaria del turno. La acción
+                  primaria es responder a Valentina (el chat input).
+                  Historia de iteraciones:
+                    #378 → abajo del último turn de Valentina, escondidos
+                    #384 → arriba del chat input, en blockes grandes →
+                           competían con responder (bug UX del operador)
+                    #390 → pequeños, ghost, debajo del input al lado del
+                           hint de teclado. Siempre disponibles, nunca
+                           gritones. Al click el modal da el warning
+                           destructivo completo. */}
               <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} multiPiece={multiPiece} setMultiPiece={setMultiPiece} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
-              <div className="text-[10px] text-t4 text-center mt-[7px]">{`Enter para enviar ${DOT} Shift+Enter para nueva l${I}nea`}</div>
+              <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mt-[7px]">
+                <span className="text-[10px] text-t4">{`Enter para enviar ${DOT} Shift+Enter para nueva l${I}nea`}</span>
+                {quote?.quote_breakdown?.verified_context && (
+                  <button
+                    type="button"
+                    onClick={() => setReopenModal({ open: true, busy: false })}
+                    className="text-[10px] text-t3 hover:text-amb transition underline-offset-2 hover:underline"
+                    title="Invalida el cálculo actual y vuelve a edición del despiece"
+                  >
+                    ↩ Editar despiece
+                  </button>
+                )}
+                {quote?.quote_breakdown?.verified_context_analysis && (
+                  <button
+                    type="button"
+                    onClick={() => setContextModal({ open: true, busy: false })}
+                    className="text-[10px] text-t3 hover:text-amb transition underline-offset-2 hover:underline"
+                    title="Invalida Paso 2 y medidas; vuelve a edición del contexto"
+                  >
+                    ↩ Editar contexto
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <div className="shrink-0 px-4 md:px-7 py-3 border-t border-b1 bg-s1 text-center">
