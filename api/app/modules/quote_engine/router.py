@@ -136,10 +136,22 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
         if not calc_result.get("ok"):
             return QuoteResponse(ok=False, error=calc_result.get("error"))
 
-        # Append fuzzy correction note if material was auto-corrected
+        # Append fuzzy correction note if material was auto-corrected.
+        # PR #396 — incluir score + catálogo para trazabilidad.
         quote_notes = body.notes or ""
         if calc_result.get("fuzzy_corrected_from"):
-            correction = f"Material corregido: '{calc_result['fuzzy_corrected_from']}' → '{calc_result['material_name']}'"
+            _score = calc_result.get("fuzzy_score")
+            _cat = calc_result.get("fuzzy_catalog") or ""
+            _meta_parts = []
+            if _score is not None:
+                _meta_parts.append(f"fuzzy {_score}")
+            if _cat:
+                _meta_parts.append(f"catálogo {_cat}")
+            _meta = f" ({', '.join(_meta_parts)})" if _meta_parts else ""
+            correction = (
+                f"Material corregido: '{calc_result['fuzzy_corrected_from']}' → "
+                f"'{calc_result['material_name']}'{_meta}"
+            )
             quote_notes = f"{quote_notes}\n{correction}".strip() if quote_notes else correction
 
         # Create quote record in DB
