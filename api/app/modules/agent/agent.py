@@ -1512,6 +1512,37 @@ class AgentService:
             bd_pre=_bd_enter,
         )
 
+        # ── PR #395 — Handle [SYSTEM_TRIGGER:process_saved_plan]
+        # EARLY: reemplazamos el mensaje por un brief sintético armado
+        # desde las columnas del Quote (client_name, material, localidad,
+        # pileta, anafe, notes, etc.) ANTES de que el flow normal lo
+        # procese. Efecto: el agente ve ese "brief" como si el operador
+        # lo hubiera escrito + el plan_bytes ya fue restaurado desde
+        # `source_files` por el endpoint `/chat` → multi_crop + context
+        # analyzer corren normal → card de contexto sale llena.
+        #
+        # Sin este handler, el operador tendría que retipear los datos
+        # que el chatbot web ya dejó en columnas para que el brief
+        # analyzer los capture. Acá los sintetizamos.
+        if user_message.startswith("[SYSTEM_TRIGGER:process_saved_plan]"):
+            try:
+                _q_ps_res = await db.execute(select(Quote).where(Quote.id == quote_id))
+                _q_ps = _q_ps_res.scalar_one_or_none()
+                if _q_ps is not None:
+                    from app.modules.agent.synthetic_brief import (
+                        build_brief_from_quote_columns,
+                    )
+                    user_message = build_brief_from_quote_columns(_q_ps)
+                    logging.info(
+                        f"[trace:process-saved-plan:{quote_id}] trigger replaced "
+                        f"with synthetic brief ({len(user_message)} chars)"
+                    )
+            except Exception as _e_ps:
+                logging.warning(
+                    f"[process-saved-plan:{quote_id}] synthetic brief build failed: "
+                    f"{_e_ps}. Falling back to raw trigger → flow puede no activarse."
+                )
+
         # ── Handle CONTEXT_CONFIRMED EARLY (PR G): el operador confirmó la card
         # de análisis de contexto (datos + asunciones + preguntas). Aplicamos
         # las respuestas al dual_read_result guardado, emitimos el chunk de
