@@ -36,6 +36,33 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
     # Normalize material to list
     materials = body.material if isinstance(body.material, list) else [body.material]
 
+    # PR #397 — Resolver `pileta` desde sink_type / pileta_sku ANTES de
+    # cualquier persistencia o cálculo. Aplica tanto al path no-pieces
+    # (quote DRAFT/PENDING guardado para revisión del operador) como al
+    # path con-pieces (corrida de calculate_quote). Así la DB y el
+    # cálculo ven el mismo valor de pileta resuelto.
+    #
+    # Reglas (acordadas con operador, 2026-04-24):
+    #   1. body.pileta seteado → respetar.
+    #   2. body.pileta_sku presente → empotrada_johnson (SKU implica
+    #      que D'Angelo provee la pileta).
+    #   3. body.sink_type presente:
+    #        - mount_type=arriba → apoyo.
+    #        - mount_type=abajo  → empotrada_cliente.
+    #   4. Nada de lo anterior → None (no se cotiza MO pileta).
+    #
+    # basin_count NO multiplica qty (mesada doble sigue siendo 1
+    # PEGADOPILETA — regla del negocio).
+    _resolved_pileta: Optional[PiletaType] = body.pileta
+    if _resolved_pileta is None:
+        if body.pileta_sku:
+            _resolved_pileta = PiletaType.EMPOTRADA_JOHNSON
+        elif body.sink_type is not None:
+            if body.sink_type.mount_type == "arriba":
+                _resolved_pileta = PiletaType.APOYO
+            else:
+                _resolved_pileta = PiletaType.EMPOTRADA_CLIENTE
+
     # Default plazo from config.json if not provided
     if not body.plazo:
         try:
@@ -88,7 +115,9 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
                 notes=body.notes,
                 localidad=body.localidad,
                 colocacion=body.colocacion,
-                pileta=body.pileta.value if body.pileta else None,
+                # PR #397 — persistir el pileta resuelto (no el body raw)
+                # para que la DB refleje lo que el calculator usaría.
+                pileta=_resolved_pileta.value if _resolved_pileta else None,
                 sink_type=body.sink_type.model_dump() if body.sink_type else None,
                 anafe=body.anafe,
             )
@@ -122,7 +151,11 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
             "pieces": [p.model_dump() for p in body.pieces],
             "localidad": body.localidad,
             "colocacion": body.colocacion,
-            "pileta": body.pileta.value if body.pileta else None,
+            "pileta": _resolved_pileta.value if _resolved_pileta else None,
+            # pileta_sku: si el chatbot mandó uno (o si el body.pileta_sku
+            # coexiste con pileta=empotrada_johnson), el calculator lo usa
+            # para lookup en sinks.json y agregar el producto físico.
+            "pileta_sku": body.pileta_sku or None,
             "anafe": body.anafe,
             "frentin": body.frentin,
             "pulido": body.pulido,
@@ -171,7 +204,9 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
             notes=quote_notes,
             localidad=body.localidad,
             colocacion=body.colocacion,
-            pileta=body.pileta.value if body.pileta else None,
+            # PR #397 — persistir el pileta resuelto (puede venir de
+            # body.pileta directo o derivado de sink_type / pileta_sku).
+            pileta=_resolved_pileta.value if _resolved_pileta else None,
             sink_type=body.sink_type.model_dump() if body.sink_type else None,
             anafe=body.anafe,
             pieces=[p.model_dump() for p in body.pieces] if body.pieces else None,
