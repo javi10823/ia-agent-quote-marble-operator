@@ -1,8 +1,19 @@
 """Tests for auth endpoints — create-user protection, username strip."""
 
 import os
+from datetime import datetime, timedelta, timezone
+
 import pytest
-from app.core.auth import create_token, COOKIE_NAME
+from jose import jwt
+
+from app.core.auth import (
+    create_token,
+    COOKIE_NAME,
+    ALGORITHM,
+    TOKEN_EXPIRY_HOURS,
+    REFRESH_THRESHOLD_HOURS,
+)
+from app.core.config import settings
 
 
 class TestCreateUserProtection:
@@ -341,3 +352,118 @@ class TestTypedPatch:
         quote_id = create_res.json()["id"]
         res = await client.patch(f"/api/quotes/{quote_id}", json={"client_name": "A" * 501})
         assert res.status_code == 422
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PR #389 — Sliding session refresh
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Al token activo le quedan <24h de vida → la siguiente request
+# autenticada emite un token nuevo (cookie + header `X-Refreshed-Token`).
+# Al activo le quedan >=24h → no se emite refresh (evita spam).
+#
+# Helpers para simular tokens con `exp` arbitrario sin tener que esperar
+# días reales ni monkeypatchear `datetime.now` global.
+
+
+def _make_token_with_remaining(email: str, remaining_hours: float) -> str:
+    """Emite un JWT con `exp = now + remaining_hours`. Usado para simular
+    tokens cerca/lejos de vencer sin tocar el reloj."""
+    exp = datetime.now(timezone.utc) + timedelta(hours=remaining_hours)
+    payload = {
+        "sub": email,
+        "exp": exp,
+        "iat": datetime.now(timezone.utc),
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
+
+
+def _decode_exp_hours(token: str) -> float:
+    """Calcula horas restantes hasta `exp` del JWT."""
+    payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+    exp_dt = datetime.fromtimestamp(int(payload["exp"]), tz=timezone.utc)
+    return (exp_dt - datetime.now(timezone.utc)).total_seconds() / 3600
+
+
+class TestSlidingSessionRefresh:
+    @pytest.mark.asyncio
+    async def test_refresh_fires_when_under_threshold(self, client_no_auth):
+        """Token con <24h de vida → el middleware emite uno nuevo en la
+        response (cookie + header `X-Refreshed-Token`)."""
+        # Token a punto de vencer: 2h de vida (umbral: 24h → debe refrescar).
+        old_token = _make_token_with_remaining("test@test.com", remaining_hours=2)
+
+        res = await client_no_auth.get(
+            "/api/quotes",
+            headers={"Authorization": f"Bearer {old_token}"},
+        )
+        assert res.status_code != 401
+        # El header expuesto debe tener el token fresco.
+        refreshed = res.headers.get("X-Refreshed-Token") or res.headers.get("x-refreshed-token")
+        assert refreshed, "esperaba X-Refreshed-Token en la response"
+        assert refreshed != old_token, "el token nuevo debe diferir del viejo"
+        # Y debe tener ~72h de vida (TOKEN_EXPIRY_HOURS).
+        remaining = _decode_exp_hours(refreshed)
+        assert remaining > TOKEN_EXPIRY_HOURS - 1  # tolerancia 1h
+        # La cookie también se re-emite.
+        assert COOKIE_NAME in res.cookies
+
+    @pytest.mark.asyncio
+    async def test_no_refresh_when_above_threshold(self, client_no_auth):
+        """Token fresco (ej: acabado de emitir, ~72h) → no refresh — evita
+        spam de Set-Cookie/header en cada request cuando la sesión está
+        lejos de vencer."""
+        fresh_token = create_token("test@test.com")
+        res = await client_no_auth.get(
+            "/api/quotes",
+            headers={"Authorization": f"Bearer {fresh_token}"},
+        )
+        assert res.status_code != 401
+        assert res.headers.get("X-Refreshed-Token") is None
+        assert res.headers.get("x-refreshed-token") is None
+
+    @pytest.mark.asyncio
+    async def test_expired_token_returns_401_no_refresh(self, client_no_auth):
+        """Token ya vencido (remaining < 0) → 401 con 'Sesión expirada'.
+        No refresh (no podemos re-emitir en un token que no es válido)."""
+        expired = _make_token_with_remaining("test@test.com", remaining_hours=-1)
+        res = await client_no_auth.get(
+            "/api/quotes",
+            headers={"Authorization": f"Bearer {expired}"},
+        )
+        assert res.status_code == 401
+        assert res.json()["detail"] == "Sesión expirada"
+        assert res.headers.get("X-Refreshed-Token") is None
+
+    @pytest.mark.asyncio
+    async def test_no_token_returns_401_no_authenticado(self, client_no_auth):
+        """Sin token ni cookie → 401 con 'No autenticado'. El string es
+        el contract que el frontend matchea para el redirect a /login."""
+        res = await client_no_auth.get("/api/quotes")
+        assert res.status_code == 401
+        assert res.json()["detail"] == "No autenticado"
+
+    @pytest.mark.asyncio
+    async def test_refresh_at_threshold_boundary(self, client_no_auth):
+        """Token con exactamente REFRESH_THRESHOLD_HOURS - 0.1h de vida
+        (apenas bajo el umbral) → sí refresh.
+        Token con exactamente REFRESH_THRESHOLD_HOURS + 0.1h → no refresh."""
+        just_under = _make_token_with_remaining(
+            "test@test.com",
+            remaining_hours=REFRESH_THRESHOLD_HOURS - 0.1,
+        )
+        res1 = await client_no_auth.get(
+            "/api/quotes",
+            headers={"Authorization": f"Bearer {just_under}"},
+        )
+        assert res1.headers.get("X-Refreshed-Token"), "justo bajo umbral debe refrescar"
+
+        just_over = _make_token_with_remaining(
+            "test@test.com",
+            remaining_hours=REFRESH_THRESHOLD_HOURS + 0.1,
+        )
+        res2 = await client_no_auth.get(
+            "/api/quotes",
+            headers={"Authorization": f"Bearer {just_over}"},
+        )
+        assert res2.headers.get("X-Refreshed-Token") is None, "justo sobre umbral NO debe refrescar"

@@ -24,8 +24,20 @@ logger = logging.getLogger(__name__)
 # ── Config ───────────────────────────────────────────────────────────────────
 
 ALGORITHM = "HS256"
-TOKEN_EXPIRY_HOURS = 72  # 3 days
+TOKEN_EXPIRY_HOURS = 72  # 3 days — absolute lifetime of each issued token.
 COOKIE_NAME = "auth_token"
+
+# PR #389 — sliding refresh: cuando al token activo le quedan menos de
+# este umbral, la siguiente request autenticada emite un nuevo token
+# (cookie + header `X-Refreshed-Token`). Efecto: un operador que usa
+# la app cualquier rato dentro de (TOKEN_EXPIRY - REFRESH_THRESHOLD)
+# **nunca ve 401**. Si deja el navegador inactivo más que ese margen
+# la sesión vence naturalmente y el próximo click lo manda a /login.
+#
+# Umbral actual: 24h. Balance entre "no molestar al activo" (cualquier
+# click extiende 72h) y "cerrar sesiones abandonadas en tiempo
+# razonable" (~1 día de idle disponible antes del corte).
+REFRESH_THRESHOLD_HOURS = 24
 
 
 # ── Rate Limiter (in-memory, no Redis) ─────────────────────────────────────
@@ -267,4 +279,39 @@ async def auth_middleware(request: Request, call_next):
     # Attach user info to request state
     request.state.user_email = payload.get("sub")
 
-    return await call_next(request)
+    response = await call_next(request)
+
+    # PR #389 — sliding refresh. Si al token le quedan menos de
+    # REFRESH_THRESHOLD_HOURS de vida y la request autenticada completó
+    # con éxito, emitir token nuevo en la response. Mientras el operador
+    # use la app regularmente la sesión nunca vence.
+    #
+    # Side-effects solo en el success path (call_next completó sin
+    # raise). Si hubo excepción que se propaga al ASGI handler, no
+    # tocamos cookies — el error viaja limpio.
+    try:
+        exp_ts = payload.get("exp")
+        sub = payload.get("sub")
+        if exp_ts and sub:
+            exp_dt = datetime.fromtimestamp(int(exp_ts), tz=timezone.utc)
+            now_dt = datetime.now(timezone.utc)
+            remaining = exp_dt - now_dt
+            if timedelta(0) < remaining < timedelta(hours=REFRESH_THRESHOLD_HOURS):
+                new_token = create_token(sub)
+                # Re-emitir cookie (path desktop + el primario aún).
+                set_auth_cookie(response, new_token)
+                # Header fallback para clientes sin cookie cross-origin
+                # (iOS Safari ITP). El frontend captura `X-Refreshed-Token`
+                # en `apiFetch` y lo guarda en localStorage para próximos
+                # requests vía Authorization header.
+                response.headers["X-Refreshed-Token"] = new_token
+                logger.info(
+                    f"[auth] sliding refresh for {sub} — "
+                    f"remaining={remaining.total_seconds() / 3600:.1f}h, "
+                    f"new exp=+{TOKEN_EXPIRY_HOURS}h"
+                )
+    except Exception as _e_refresh:
+        # No romper la response del usuario si algo raro pasa en el refresh.
+        logger.warning(f"[auth] sliding refresh failed: {_e_refresh}")
+
+    return response
