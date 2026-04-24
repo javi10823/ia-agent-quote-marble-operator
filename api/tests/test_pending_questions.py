@@ -634,3 +634,248 @@ class TestApplyAlzada:
         apply_answers(result, [{"id": "alzada", "value": "custom", "detail": "15"}])
         assert result["alzada"] is True
         assert result["alzada_alto_m"] == 0.15
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PR #392 — Frentín y regrueso: detectors + apply
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def _dr_cocina_L_no_derived() -> dict:
+    """Dual_read con cocina en L (2 tramos de mesada), sin derivados."""
+    return {
+        "sectores": [
+            {
+                "id": "cocina", "tipo": "cocina",
+                "tramos": [
+                    {"id": "c1", "descripcion": "Cocina 1",
+                     "largo_m": {"valor": 2.05}, "ancho_m": {"valor": 0.60},
+                     "m2": {"valor": 1.23}, "zocalos": [],
+                     "frentin": [], "regrueso": []},
+                    {"id": "c2", "descripcion": "Cocina 2",
+                     "largo_m": {"valor": 2.95}, "ancho_m": {"valor": 0.60},
+                     "m2": {"valor": 1.77}, "zocalos": [],
+                     "frentin": [], "regrueso": []},
+                ],
+            },
+        ],
+    }
+
+
+def _dr_with_derived_pata() -> dict:
+    """Dual_read con cocina + isla que tiene patas derivadas. Las patas
+    no deben recibir frentín."""
+    return {
+        "sectores": [
+            {
+                "id": "cocina", "tipo": "cocina",
+                "tramos": [
+                    {"id": "c1", "descripcion": "Cocina",
+                     "largo_m": {"valor": 2.00}, "ancho_m": {"valor": 0.60},
+                     "m2": {"valor": 1.20}, "zocalos": [],
+                     "frentin": [], "regrueso": []},
+                ],
+            },
+            {
+                "id": "isla", "tipo": "isla",
+                "tramos": [
+                    {"id": "i1", "descripcion": "Mesada isla",
+                     "largo_m": {"valor": 1.80}, "ancho_m": {"valor": 0.60},
+                     "m2": {"valor": 1.08}, "zocalos": [],
+                     "frentin": [], "regrueso": []},
+                    {"id": "derived_pata_frontal", "descripcion": "Pata frontal isla",
+                     "largo_m": {"valor": 1.80}, "ancho_m": {"valor": 0.90},
+                     "m2": {"valor": 1.62}, "zocalos": [],
+                     "_derived": True, "_derived_kind": "isla_pata"},
+                ],
+            },
+        ],
+    }
+
+
+class TestDetectFrentin:
+    def test_emits_when_brief_silent(self):
+        qs = detect_pending_questions("cliente juan, cocina en L",
+                                      _dr_cocina_L_no_derived())
+        assert any(q["id"] == "frentin" for q in qs)
+
+    def test_skips_when_brief_says_sin_frentin(self):
+        qs = detect_pending_questions("sin frentin", _dr_cocina_L_no_derived())
+        assert all(q["id"] != "frentin" for q in qs)
+
+    def test_skips_when_brief_says_sin_faldon(self):
+        qs = detect_pending_questions("sin faldón", _dr_cocina_L_no_derived())
+        assert all(q["id"] != "frentin" for q in qs)
+
+    def test_skips_when_brief_has_alto_numerico(self):
+        qs = detect_pending_questions("con frentín de 5cm",
+                                      _dr_cocina_L_no_derived())
+        assert all(q["id"] != "frentin" for q in qs)
+
+    def test_skips_when_brief_has_faldon_alto(self):
+        qs = detect_pending_questions("faldón 10 cm", _dr_cocina_L_no_derived())
+        assert all(q["id"] != "frentin" for q in qs)
+
+    def test_emits_when_brief_mentions_without_value(self):
+        """Ajuste D4 del operador: mención vaga 'con frentín' (sin cm)
+        igual dispara la pregunta — no podemos poblar sin inventar alto."""
+        qs = detect_pending_questions("con frentín", _dr_cocina_L_no_derived())
+        assert any(q["id"] == "frentin" for q in qs)
+
+    def test_skips_when_no_tramos(self):
+        """Dual_read vacío → no hay mesada sobre la cual aplicar frentín."""
+        qs = detect_pending_questions("cotizar cocina", {"sectores": []})
+        assert all(q["id"] != "frentin" for q in qs)
+
+    def test_skips_when_only_derived_tramos(self):
+        """Un sector con solo tramos `_derived` no es mesada real."""
+        dr = {
+            "sectores": [
+                {"id": "isla", "tipo": "isla", "tramos": [
+                    {"id": "derived_x", "_derived": True,
+                     "largo_m": {"valor": 1.0}, "ancho_m": {"valor": 0.9},
+                     "m2": {"valor": 0.9}, "zocalos": []},
+                ]},
+            ],
+        }
+        qs = detect_pending_questions("cotizar", dr)
+        assert all(q["id"] != "frentin" for q in qs)
+
+
+class TestDetectRegrueso:
+    def test_emits_when_brief_silent(self):
+        qs = detect_pending_questions("cliente juan", _dr_cocina_L_no_derived())
+        assert any(q["id"] == "regrueso" for q in qs)
+
+    def test_skips_when_brief_says_sin_regrueso(self):
+        qs = detect_pending_questions("sin regrueso", _dr_cocina_L_no_derived())
+        assert all(q["id"] != "regrueso" for q in qs)
+
+    def test_skips_when_brief_has_alto_numerico(self):
+        qs = detect_pending_questions("regrueso de 3 cm",
+                                      _dr_cocina_L_no_derived())
+        assert all(q["id"] != "regrueso" for q in qs)
+
+    def test_emits_when_brief_mentions_without_value(self):
+        qs = detect_pending_questions("con regrueso", _dr_cocina_L_no_derived())
+        assert any(q["id"] == "regrueso" for q in qs)
+
+
+class TestApplyFrentin:
+    def test_preset_5cm_populates_all_tramos(self):
+        """Preset '5' → cada tramo no-derivado recibe item
+        `{lado:'frente', ml:largo, alto_m:0.05}`."""
+        dr = _dr_cocina_L_no_derived()
+        apply_answers(dr, [{"id": "frentin", "value": "5"}])
+        cocina = dr["sectores"][0]
+        t1 = cocina["tramos"][0]
+        t2 = cocina["tramos"][1]
+        assert t1["frentin"] == [{"lado": "frente", "ml": 2.05, "alto_m": 0.05}]
+        assert t2["frentin"] == [{"lado": "frente", "ml": 2.95, "alto_m": 0.05}]
+
+    def test_preset_3cm(self):
+        dr = _dr_cocina_L_no_derived()
+        apply_answers(dr, [{"id": "frentin", "value": "3"}])
+        t1 = dr["sectores"][0]["tramos"][0]
+        assert t1["frentin"] == [{"lado": "frente", "ml": 2.05, "alto_m": 0.03}]
+
+    def test_no_clears_all_tramos(self):
+        dr = _dr_cocina_L_no_derived()
+        # Primero aplicar algo
+        apply_answers(dr, [{"id": "frentin", "value": "5"}])
+        assert dr["sectores"][0]["tramos"][0]["frentin"]
+        # Después "no" → vaciar
+        apply_answers(dr, [{"id": "frentin", "value": "no"}])
+        for t in dr["sectores"][0]["tramos"]:
+            assert t["frentin"] == []
+
+    def test_skips_derived_tramos(self):
+        """Las patas derivadas de isla NO reciben frentín — son
+        piezas propias de material vertical."""
+        dr = _dr_with_derived_pata()
+        apply_answers(dr, [{"id": "frentin", "value": "5"}])
+        isla = dr["sectores"][1]
+        mesada = isla["tramos"][0]  # no-derived
+        pata = isla["tramos"][1]  # _derived: True
+        assert mesada["frentin"]  # mesada sí recibió
+        # La pata no tenía campo frentin inicialmente — tampoco lo debe
+        # haber agregado.
+        assert not pata.get("frentin")
+
+    def test_custom_with_alto(self):
+        dr = _dr_cocina_L_no_derived()
+        apply_answers(dr, [{"id": "frentin", "value": "custom",
+                            "detail": "7 cm frente"}])
+        t1 = dr["sectores"][0]["tramos"][0]
+        assert t1["frentin"] == [{"lado": "frente", "ml": 2.05, "alto_m": 0.07}]
+
+    def test_custom_with_lateral(self):
+        """Custom con lateral → el item usa ancho_m como ml."""
+        dr = _dr_cocina_L_no_derived()
+        apply_answers(dr, [{"id": "frentin", "value": "custom",
+                            "detail": "7 cm, frente y lateral izq"}])
+        t1 = dr["sectores"][0]["tramos"][0]
+        # frente (ml=largo=2.05) + lateral_izq (ml=ancho=0.60)
+        lados = {item["lado"] for item in t1["frentin"]}
+        assert lados == {"frente", "lateral_izq"}
+        lateral_item = next(i for i in t1["frentin"] if i["lado"] == "lateral_izq")
+        assert lateral_item["ml"] == 0.60  # = ancho_m
+        assert lateral_item["alto_m"] == 0.07
+
+    def test_custom_without_alto_is_noop(self):
+        """Custom sin alto numérico → skip (no inventar)."""
+        dr = _dr_cocina_L_no_derived()
+        apply_answers(dr, [{"id": "frentin", "value": "custom",
+                            "detail": "frente solamente"}])
+        t1 = dr["sectores"][0]["tramos"][0]
+        assert t1["frentin"] == []  # unchanged
+
+    def test_idempotent_replaces_no_append(self):
+        """Reconfirmar con el mismo valor no duplica items."""
+        dr = _dr_cocina_L_no_derived()
+        apply_answers(dr, [{"id": "frentin", "value": "5"}])
+        apply_answers(dr, [{"id": "frentin", "value": "5"}])
+        t1 = dr["sectores"][0]["tramos"][0]
+        assert len(t1["frentin"]) == 1
+
+    def test_change_alto_replaces(self):
+        dr = _dr_cocina_L_no_derived()
+        apply_answers(dr, [{"id": "frentin", "value": "5"}])
+        apply_answers(dr, [{"id": "frentin", "value": "10"}])
+        t1 = dr["sectores"][0]["tramos"][0]
+        assert len(t1["frentin"]) == 1
+        assert t1["frentin"][0]["alto_m"] == 0.10
+
+
+class TestApplyRegrueso:
+    def test_preset_3cm_populates_all_tramos(self):
+        dr = _dr_cocina_L_no_derived()
+        apply_answers(dr, [{"id": "regrueso", "value": "3"}])
+        t1 = dr["sectores"][0]["tramos"][0]
+        assert t1["regrueso"] == [{"lado": "frente", "ml": 2.05, "alto_m": 0.03}]
+
+    def test_no_clears(self):
+        dr = _dr_cocina_L_no_derived()
+        apply_answers(dr, [{"id": "regrueso", "value": "3"}])
+        apply_answers(dr, [{"id": "regrueso", "value": "no"}])
+        for t in dr["sectores"][0]["tramos"]:
+            assert t["regrueso"] == []
+
+    def test_custom_with_alto(self):
+        dr = _dr_cocina_L_no_derived()
+        apply_answers(dr, [{"id": "regrueso", "value": "custom",
+                            "detail": "4 cm frente"}])
+        t1 = dr["sectores"][0]["tramos"][0]
+        assert t1["regrueso"] == [{"lado": "frente", "ml": 2.05, "alto_m": 0.04}]
+
+    def test_frentin_and_regrueso_coexist_in_same_tramo(self):
+        """Aplicar frentín y regrueso al mismo tramo no se pisan —
+        son campos distintos."""
+        dr = _dr_cocina_L_no_derived()
+        apply_answers(dr, [
+            {"id": "frentin", "value": "5"},
+            {"id": "regrueso", "value": "3"},
+        ])
+        t1 = dr["sectores"][0]["tramos"][0]
+        assert t1["frentin"] == [{"lado": "frente", "ml": 2.05, "alto_m": 0.05}]
+        assert t1["regrueso"] == [{"lado": "frente", "ml": 2.05, "alto_m": 0.03}]
