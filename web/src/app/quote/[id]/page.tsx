@@ -806,13 +806,23 @@ export default function QuotePage() {
                            gritones. Al click el modal da el warning
                            destructivo completo. */}
               <ChatInput input={input} setInput={setInput} files={attachedFiles} setFiles={setAttachedFiles} multiPiece={multiPiece} setMultiPiece={setMultiPiece} dragActive={dragActive} setDragActive={setDragActive} dragCounterRef={dragCounter} sending={sending} send={send} onKey={onKey} fileRef={fileRef} />
-              <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mt-[7px]">
+              {/* PR #391 — ajuste de visibilidad sobre #390. Los links quedaron
+                  en 10px + color t3 (gris genérico) → se camuflaban con el
+                  hint del teclado. Ahora: 11px, color amb/80 (amber tenue —
+                  diferenciable del gris del hint), separador vertical `|`
+                  para cortar visualmente. Siguen sutiles, pero se leen como
+                  acción. */}
+              <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 mt-[7px]">
                 <span className="text-[10px] text-t4">{`Enter para enviar ${DOT} Shift+Enter para nueva l${I}nea`}</span>
+                {(quote?.quote_breakdown?.verified_context
+                  || quote?.quote_breakdown?.verified_context_analysis) && (
+                  <span className="text-[10px] text-b2" aria-hidden="true">|</span>
+                )}
                 {quote?.quote_breakdown?.verified_context && (
                   <button
                     type="button"
                     onClick={() => setReopenModal({ open: true, busy: false })}
-                    className="text-[10px] text-t3 hover:text-amb transition underline-offset-2 hover:underline"
+                    className="text-[11px] text-amb/80 hover:text-amb transition underline-offset-2 hover:underline font-medium"
                     title="Invalida el cálculo actual y vuelve a edición del despiece"
                   >
                     ↩ Editar despiece
@@ -822,7 +832,7 @@ export default function QuotePage() {
                   <button
                     type="button"
                     onClick={() => setContextModal({ open: true, busy: false })}
-                    className="text-[10px] text-t3 hover:text-amb transition underline-offset-2 hover:underline"
+                    className="text-[11px] text-amb/80 hover:text-amb transition underline-offset-2 hover:underline font-medium"
                     title="Invalida Paso 2 y medidas; vuelve a edición del contexto"
                   >
                     ↩ Editar contexto
