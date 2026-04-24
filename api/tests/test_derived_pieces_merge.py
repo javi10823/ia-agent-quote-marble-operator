@@ -27,6 +27,8 @@ from app.modules.quote_engine.dual_reader import (
     build_verified_context,
     _sector_visible_perimeter,
 )
+from app.modules.quote_engine.pending_questions import apply_answers
+import json
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -546,3 +548,300 @@ class TestAlzadaAppearsInVerifiedContext:
         # La pata frontal aparece 2 veces (tramos + bloque derivado).
         assert ctx_bad.count("Pata frontal isla") == 2
         assert "PIEZAS DERIVADAS" in ctx_bad
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PR #393 — Re-aplicar derivados en [DUAL_READ_CONFIRMED]
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Bug raíz: si el operador edita largos en la card post-CONTEXT_CONFIRMED,
+# los derivados materializados en context-confirmed quedan stale (alzada
+# con perímetro viejo, frentín/regrueso con ml=0 si el parser había
+# dejado null).
+#
+# Fix: en DUAL_READ_CONFIRMED, re-aplicar answers del contexto sobre el
+# _confirmed_json final + re-materializar alzada/patas con las medidas
+# actuales. Replace, no merge blando.
+#
+# Estos tests reproducen la composición del handler sin tocar DB. Si
+# alguno se rompe, el handler debe sincronizarse con el nuevo contrato.
+
+
+def _simulate_dual_read_confirmed_pipeline(
+    confirmed_json: dict,
+    op_answers_ctx: list[dict],
+) -> dict:
+    """Simula el pipeline del handler [DUAL_READ_CONFIRMED] post-#393
+    sobre un dict puro. Útil para tests sin DB.
+
+    Orden:
+      1. apply_answers(op_answers_ctx) → rescribe frentin/regrueso/alzada
+      2. merge_alzada_tramos_into_dual_read → tramos "Alzada <sector>"
+      3. build_derived_isla_pieces + merge → tramos patas isla
+    """
+    out = json.loads(json.dumps(confirmed_json, default=str))
+    if op_answers_ctx:
+        apply_answers(out, op_answers_ctx)
+    out = merge_alzada_tramos_into_dual_read(
+        out,
+        alto_m=out.get("alzada_alto_m"),
+        active=bool(out.get("alzada")),
+    )
+    derived_pieces, _ = build_derived_isla_pieces(op_answers_ctx, out)
+    out = merge_derived_pieces_into_dual_read(out, derived_pieces)
+    return out
+
+
+class TestReapplyDerivadosBernardiNullEditado:
+    """Caso real Bernardi 2026-04-24: el parser dejó R1/R2 sin medir.
+    El operador edita los largos en la card. Al confirmar medidas, los
+    derivados deben materializarse con esos largos."""
+
+    def _confirmed_with_null_cocinas(self) -> dict:
+        """Shape post-CONTEXT_CONFIRMED (pre-edit): R1/R2 con largo=None,
+        isla R3 con valores. Alzada ya seteada por context-confirmed
+        (pero sin tramo alzada porque perímetro=0)."""
+        return {
+            "sectores": [
+                {
+                    "id": "sector_cocina", "tipo": "cocina",
+                    "tramos": [
+                        {"id": "R1", "descripcion": "Mesada (con anafe, pileta)",
+                         "largo_m": {"valor": None}, "ancho_m": {"valor": None},
+                         "m2": {"valor": None},
+                         "zocalos": [], "frentin": [], "regrueso": []},
+                        {"id": "R2", "descripcion": "Mesada 2",
+                         "largo_m": {"valor": None}, "ancho_m": {"valor": None},
+                         "m2": {"valor": None},
+                         "zocalos": [], "frentin": [], "regrueso": []},
+                    ],
+                },
+                {
+                    "id": "sector_isla", "tipo": "isla",
+                    "tramos": [
+                        {"id": "R3", "descripcion": "Mesada isla",
+                         "largo_m": {"valor": 1.60}, "ancho_m": {"valor": 0.70},
+                         "m2": {"valor": 1.12},
+                         "zocalos": [], "frentin": [], "regrueso": []},
+                    ],
+                },
+            ],
+            "alzada": True,
+            "alzada_alto_m": 0.05,
+        }
+
+    def _answers_bernardi(self) -> list[dict]:
+        return [
+            {"id": "alzada", "value": "5"},
+            {"id": "frentin", "value": "no"},
+            {"id": "regrueso", "value": "2"},
+            {"id": "isla_patas", "value": "no"},
+        ]
+
+    def test_after_edit_alzada_cocina_has_correct_perimeter(self):
+        """Operador edita R1=2.05 y R2=2.95. Post DUAL_READ_CONFIRMED la
+        alzada cocina debe tener perímetro = 5.00m."""
+        confirmed = self._confirmed_with_null_cocinas()
+        cocina = confirmed["sectores"][0]
+        cocina["tramos"][0]["largo_m"] = {"valor": 2.05}
+        cocina["tramos"][0]["ancho_m"] = {"valor": 0.60}
+        cocina["tramos"][0]["m2"] = {"valor": 1.23}
+        cocina["tramos"][1]["largo_m"] = {"valor": 2.95}
+        cocina["tramos"][1]["ancho_m"] = {"valor": 0.60}
+        cocina["tramos"][1]["m2"] = {"valor": 1.77}
+
+        out = _simulate_dual_read_confirmed_pipeline(confirmed, self._answers_bernardi())
+
+        cocina_out = next(s for s in out["sectores"] if s["tipo"] == "cocina")
+        alzada = next(
+            (t for t in cocina_out["tramos"] if t.get("_derived_kind") == "alzada"),
+            None,
+        )
+        assert alzada is not None, "esperaba tramo Alzada cocina post-edit"
+        assert alzada["descripcion"] == "Alzada sector_cocina"
+        assert alzada["largo_m"]["valor"] == 5.00
+        assert alzada["ancho_m"]["valor"] == 0.05
+        assert alzada["m2"]["valor"] == 0.25
+
+    def test_after_edit_regrueso_ml_matches_new_largos(self):
+        """Regrueso=2cm. ml debe ser el largo editado (2.05 y 2.95), no 0."""
+        confirmed = self._confirmed_with_null_cocinas()
+        cocina = confirmed["sectores"][0]
+        cocina["tramos"][0]["largo_m"] = {"valor": 2.05}
+        cocina["tramos"][0]["ancho_m"] = {"valor": 0.60}
+        cocina["tramos"][1]["largo_m"] = {"valor": 2.95}
+        cocina["tramos"][1]["ancho_m"] = {"valor": 0.60}
+
+        out = _simulate_dual_read_confirmed_pipeline(confirmed, self._answers_bernardi())
+
+        cocina_out = next(s for s in out["sectores"] if s["tipo"] == "cocina")
+        no_derived = [t for t in cocina_out["tramos"] if not t.get("_derived")]
+        assert no_derived[0]["regrueso"] == [
+            {"lado": "frente", "ml": 2.05, "alto_m": 0.02}
+        ]
+        assert no_derived[1]["regrueso"] == [
+            {"lado": "frente", "ml": 2.95, "alto_m": 0.02}
+        ]
+
+    def test_after_edit_isla_no_alzada(self):
+        """Sector isla nunca recibe alzada. Con edits en cocina, la isla
+        sigue con 1 tramo (su mesada original)."""
+        confirmed = self._confirmed_with_null_cocinas()
+        confirmed["sectores"][0]["tramos"][0]["largo_m"] = {"valor": 2.05}
+        confirmed["sectores"][0]["tramos"][0]["ancho_m"] = {"valor": 0.60}
+
+        out = _simulate_dual_read_confirmed_pipeline(confirmed, self._answers_bernardi())
+
+        isla = next(s for s in out["sectores"] if s["tipo"] == "isla")
+        alzadas_isla = [
+            t for t in isla["tramos"] if t.get("_derived_kind") == "alzada"
+        ]
+        assert len(alzadas_isla) == 0
+        # La isla debe tener solo su mesada original (no answers de patas).
+        assert len(isla["tramos"]) == 1
+
+
+class TestReapplyDerivadosEditParserDetected:
+    """El parser detectó un largo, el operador lo corrige en la card
+    (ej: 2.00 → 2.10). Los derivados deben recalcularse con el valor
+    corregido."""
+
+    def test_edited_largo_propagates_to_alzada_perimeter(self):
+        confirmed = {
+            "sectores": [
+                {"id": "cocina", "tipo": "cocina", "tramos": [
+                    {"id": "R1", "descripcion": "Cocina",
+                     "largo_m": {"valor": 2.00}, "ancho_m": {"valor": 0.60},
+                     "m2": {"valor": 1.20},
+                     "zocalos": [], "frentin": [], "regrueso": []},
+                ]},
+            ],
+            "alzada": True,
+            "alzada_alto_m": 0.10,
+        }
+        answers = [
+            {"id": "alzada", "value": "10"},
+            {"id": "frentin", "value": "5"},
+            {"id": "regrueso", "value": "no"},
+            {"id": "isla_patas", "value": "no"},
+        ]
+
+        # Simular context-confirmed: alzada con perímetro=2.00
+        with_ctx = merge_alzada_tramos_into_dual_read(
+            json.loads(json.dumps(confirmed, default=str)),
+            alto_m=0.10, active=True,
+        )
+        alzada_ctx = next(
+            t for t in with_ctx["sectores"][0]["tramos"]
+            if t.get("_derived_kind") == "alzada"
+        )
+        assert alzada_ctx["largo_m"]["valor"] == 2.00
+
+        # Operador edita R1 largo=2.00 → 2.10.
+        with_ctx["sectores"][0]["tramos"][0]["largo_m"] = {"valor": 2.10}
+        # Frentín pre-edit tenía ml=2.00 (stale).
+        with_ctx["sectores"][0]["tramos"][0]["frentin"] = [
+            {"lado": "frente", "ml": 2.00, "alto_m": 0.05},
+        ]
+
+        # Pipeline DUAL_READ_CONFIRMED post-#393.
+        out = _simulate_dual_read_confirmed_pipeline(with_ctx, answers)
+
+        # Alzada: perímetro recalculado con largo nuevo.
+        tramos = out["sectores"][0]["tramos"]
+        alzada_new = next(t for t in tramos if t.get("_derived_kind") == "alzada")
+        assert alzada_new["largo_m"]["valor"] == 2.10
+
+        # Frentín: ml recalculado con largo nuevo (replace, no append).
+        mesada = next(t for t in tramos if not t.get("_derived"))
+        assert mesada["frentin"] == [{"lado": "frente", "ml": 2.10, "alto_m": 0.05}]
+
+
+class TestReapplyDerivadosDobleConfirmSinDup:
+    """Doble DUAL_READ_CONFIRMED seguido no debe duplicar tramos derivados
+    ni items de frentín/regrueso."""
+
+    def test_two_passes_same_tramo_counts(self):
+        confirmed = {
+            "sectores": [
+                {"id": "cocina", "tipo": "cocina", "tramos": [
+                    {"id": "R1", "descripcion": "Cocina",
+                     "largo_m": {"valor": 2.00}, "ancho_m": {"valor": 0.60},
+                     "m2": {"valor": 1.20},
+                     "zocalos": [], "frentin": [], "regrueso": []},
+                    {"id": "R2", "descripcion": "Cocina 2",
+                     "largo_m": {"valor": 3.00}, "ancho_m": {"valor": 0.60},
+                     "m2": {"valor": 1.80},
+                     "zocalos": [], "frentin": [], "regrueso": []},
+                ]},
+            ],
+            "alzada": True,
+            "alzada_alto_m": 0.05,
+        }
+        answers = [
+            {"id": "alzada", "value": "5"},
+            {"id": "frentin", "value": "5"},
+            {"id": "regrueso", "value": "2"},
+            {"id": "isla_patas", "value": "no"},
+        ]
+
+        pass1 = _simulate_dual_read_confirmed_pipeline(confirmed, answers)
+        pass2 = _simulate_dual_read_confirmed_pipeline(pass1, answers)
+
+        cocina1 = next(s for s in pass1["sectores"] if s["tipo"] == "cocina")
+        cocina2 = next(s for s in pass2["sectores"] if s["tipo"] == "cocina")
+
+        assert len(cocina1["tramos"]) == len(cocina2["tramos"])
+
+        # Exactamente 1 tramo alzada — no 2.
+        alzadas2 = [t for t in cocina2["tramos"] if t.get("_derived_kind") == "alzada"]
+        assert len(alzadas2) == 1
+
+        # Cada mesada tiene exactamente 1 frentín y 1 regrueso.
+        mesadas = [t for t in cocina2["tramos"] if not t.get("_derived")]
+        assert len(mesadas) == 2
+        for m in mesadas:
+            assert len(m["frentin"]) == 1
+            assert len(m["regrueso"]) == 1
+
+
+class TestReapplyDerivadosLimpiezaPatasCambiadas:
+    """Si el operador reabre contexto y cambia `isla_patas` de 'sí' a
+    'no', las patas materializadas en el context-confirmed anterior se
+    deben limpiar en el siguiente DUAL_READ_CONFIRMED."""
+
+    def test_patas_cleaned_when_answer_changes_to_no(self):
+        # Pre-condición: isla con mesada + 3 patas ya materializadas.
+        confirmed = {
+            "sectores": [
+                {"id": "isla", "tipo": "isla", "tramos": [
+                    {"id": "R3", "descripcion": "Mesada isla",
+                     "largo_m": {"valor": 1.80}, "ancho_m": {"valor": 0.60},
+                     "m2": {"valor": 1.08},
+                     "zocalos": [], "frentin": [], "regrueso": []},
+                    {"id": "derived_pata_frontal_isla",
+                     "descripcion": "Pata frontal isla",
+                     "largo_m": {"valor": 1.80}, "ancho_m": {"valor": 0.90},
+                     "m2": {"valor": 1.62},
+                     "zocalos": [],
+                     "_derived": True, "_derived_kind": "isla_pata",
+                     "_derived_source": "old"},
+                ]},
+            ],
+        }
+        # Nuevo answer: operador cambió a "sin patas".
+        answers = [
+            {"id": "alzada", "value": "no"},
+            {"id": "frentin", "value": "no"},
+            {"id": "regrueso", "value": "no"},
+            {"id": "isla_patas", "value": "no"},
+        ]
+
+        out = _simulate_dual_read_confirmed_pipeline(confirmed, answers)
+
+        isla = out["sectores"][0]
+        # Solo la mesada original, sin patas viejas.
+        assert len(isla["tramos"]) == 1
+        assert not any(
+            t.get("_derived_kind") == "isla_pata" for t in isla["tramos"]
+        )

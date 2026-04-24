@@ -1754,44 +1754,78 @@ class AgentService:
                 log_build_commercial_attrs(
                     quote_id, flow="dual-read-confirmed", result=_commercial_attrs,
                 )
-                # PR #386 — Fuente única de verdad para las patas de isla:
-                # el despiece (`_confirmed_json`) viene con los tramos
-                # `_derived:true` del `[CONTEXT_CONFIRMED]` y posiblemente
-                # editados por el operador en la card. Skipeamos el
-                # re-cálculo para respetar esos edits. Si por alguna razón
-                # los tramos derivados no están (caso legacy o
-                # flow text-only pre-#386), caemos al cálculo determinístico
-                # y los agregamos como tramos antes de emitir.
+                # PR #393 — Re-aplicar answers del contexto sobre el
+                # `_confirmed_json` final. Caso Bernardi 2026-04-24: el
+                # parser dejó R1/R2 sin medir; el operador los editó en la
+                # card; al confirmar medidas los derivados (alzada, frentín,
+                # regrueso) quedaban con los ml/perímetros viejos (null).
+                #
+                # Orden acordado con el operador:
+                #   1. apply_answers — rescribe frentin[]/regrueso[] con
+                #      ml=largo_actual; re-escribe alzada/alzada_alto_m.
+                #   2. merge_alzada_tramos_into_dual_read — regenera tramos
+                #      "Alzada <sector>" con perímetro actual (no-derivados).
+                #   3. build_derived_isla_pieces + merge — regenera patas
+                #      con el largo de isla actual.
+                #   4. build_verified_context — texto con todo materializado.
+                #
+                # "Replace, no merge blando": cada helper pisa el kind
+                # correspondiente. Ninguno hace append. Answers son fuente
+                # de verdad; si el operador editó item derivado (ej: alto
+                # de pata), ese cambio se pierde — debe editar la answer
+                # vía reopen-context.
                 from app.modules.quote_engine.dual_reader import (
-                    dual_read_has_derived_pieces,
                     merge_derived_pieces_into_dual_read,
+                    merge_alzada_tramos_into_dual_read,
                 )
-                if dual_read_has_derived_pieces(_confirmed_json):
-                    # Ya están como tramos — no recalcular. Claude los ve
-                    # como parte del SECTOR: ISLA del verified_context.
-                    _derived_pieces = []
-                    _derived_warnings = []
-                    logging.info(
-                        f"[trace:dual-read-confirmed:{quote_id}] "
-                        "derived pieces already materialized as tramos in dual_read — skipping recompute"
-                    )
-                else:
-                    _derived_pieces, _derived_warnings = build_derived_isla_pieces(
-                        operator_answers=_op_answers,
-                        verified_measurements=_confirmed_json,
-                    )
-                    log_build_derived_isla_pieces(
-                        quote_id,
-                        flow="dual-read-confirmed",
-                        pieces=_derived_pieces,
-                        warnings=_derived_warnings,
-                    )
-                    if _derived_pieces:
-                        # Backfill para quotes legacy: mergear al despiece
-                        # para que Paso 2 y PDF lean de una sola fuente.
-                        _confirmed_json = merge_derived_pieces_into_dual_read(
-                            _confirmed_json, _derived_pieces,
+                if _op_answers_ctx:
+                    try:
+                        _dr_before_re = json.loads(json.dumps(_confirmed_json, default=str))
+                        apply_answers(_confirmed_json, _op_answers_ctx)
+                        log_apply_answers(
+                            quote_id,
+                            flow="dual-read-confirmed/re-apply-ctx",
+                            dual_before=_dr_before_re,
+                            dual_after=_confirmed_json,
+                            answers=_op_answers_ctx,
                         )
+                    except Exception as _e_re:
+                        logging.warning(
+                            f"[dual-read-confirmed:{quote_id}] re-apply ctx "
+                            f"answers failed: {_e_re}"
+                        )
+
+                # Materializar alzada con los largos finales (replace por
+                # `_derived_kind="alzada"`).
+                _alzada_active_final = bool(_confirmed_json.get("alzada"))
+                _alzada_alto_final = _confirmed_json.get("alzada_alto_m")
+                _confirmed_json = merge_alzada_tramos_into_dual_read(
+                    _confirmed_json,
+                    alto_m=_alzada_alto_final,
+                    active=_alzada_active_final,
+                )
+                logging.info(
+                    f"[trace:dual-read-confirmed:{quote_id}] re-materialized "
+                    f"alzada active={_alzada_active_final} alto_m={_alzada_alto_final}"
+                )
+
+                # Materializar patas de isla con el largo actual de la isla
+                # y las answers finales (replace por `_derived_kind="isla_pata"`).
+                # Llamamos siempre — incluso con _derived_pieces=[] el merge
+                # limpia las patas viejas si el operador cambió a "no patas".
+                _derived_pieces, _derived_warnings = build_derived_isla_pieces(
+                    operator_answers=_op_answers,
+                    verified_measurements=_confirmed_json,
+                )
+                log_build_derived_isla_pieces(
+                    quote_id,
+                    flow="dual-read-confirmed",
+                    pieces=_derived_pieces,
+                    warnings=_derived_warnings,
+                )
+                _confirmed_json = merge_derived_pieces_into_dual_read(
+                    _confirmed_json, _derived_pieces,
+                )
                 # PR #386 — NO pasar `derived_pieces` a build_verified_context.
                 # Las patas ya están como tramos del sector isla y se renderizan
                 # naturalmente bajo `SECTOR: ISLA` en el verified_context text.
