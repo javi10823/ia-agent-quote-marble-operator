@@ -17,7 +17,7 @@ import ContextAnalysis from "@/components/chat/ContextAnalysis";
 import HomeHero from "@/components/chat/HomeHero";
 import { useToast } from "@/lib/toast-context";
 import clsx from "clsx";
-import { A, I, O, N, DOT, SUP2, DASH, ITEM, WARN, CIRCLE, ARROW, XMARK, CLOUD, WAVE, PAGE, PICTURE, CLIP, RULER, TAG, FOLDER, CHART } from "@/lib/chars";
+import { A, E, I, O, N, DOT, SUP2, DASH, ITEM, WARN, CIRCLE, ARROW, XMARK, CLOUD, WAVE, PAGE, PICTURE, CLIP, RULER, TAG, FOLDER, CHART } from "@/lib/chars";
 import { VALID_FILE_TYPES as PARENT_VALID_TYPES, MAX_FILE_SIZE as PARENT_MAX_SIZE, MAX_FILES as PARENT_MAX_FILES } from "@/lib/constants";
 
 export interface UIMessage {
@@ -591,10 +591,64 @@ export default function QuotePage() {
           )}
           <div className="flex-1 overflow-y-auto px-4 md:px-7 pt-5 md:pt-7 pb-4 flex flex-col gap-4 md:gap-5">
             {messages.length === 0 && (
-              <HomeHero
-                onPickFile={() => fileRef.current?.click()}
-                onFocusText={() => { const ta = document.querySelector("textarea"); if (ta) (ta as HTMLTextAreaElement).focus(); }}
-              />
+              (() => {
+                // PR #395 — Quote creado por chatbot externo con archivo
+                // subido (gate del #394 bloqueó el auto-estimate). El
+                // operador necesita disparar manualmente el análisis. Este
+                // CTA reemplaza el HomeHero genérico en ese caso: el plano
+                // ya existe, no hace falta pedir "pegá tu plano".
+                const hasSavedPlanFromWeb = (
+                  quote?.source === "web"
+                  && !!quote?.source_files
+                  && quote.source_files.length > 0
+                  && !quote?.quote_breakdown
+                  && (quote?.status === "draft" || quote?.status === "pending")
+                );
+                if (!hasSavedPlanFromWeb) {
+                  return (
+                    <HomeHero
+                      onPickFile={() => fileRef.current?.click()}
+                      onFocusText={() => { const ta = document.querySelector("textarea"); if (ta) (ta as HTMLTextAreaElement).focus(); }}
+                    />
+                  );
+                }
+                const files = quote!.source_files!;
+                const filesLabel = files.length === 1
+                  ? files[0].filename
+                  : `${files.length} archivos`;
+                return (
+                  <div className="flex flex-col items-center justify-center text-center px-6 py-10">
+                    <div className="mb-4 w-12 h-12 rounded-xl bg-acc/10 border border-acc/20 flex items-center justify-center text-acc text-[22px]">
+                      {PAGE}
+                    </div>
+                    <div className="text-[15px] font-semibold text-t1 mb-1.5">
+                      {`Archivos recibidos del chatbot`}
+                    </div>
+                    <div className="text-[13px] text-t3 mb-5 max-w-md leading-relaxed">
+                      {`${filesLabel} ya est${A} guardado. Cuando est${E}s listo, proces${A} el plano para que Valentina arme el an${A}lisis de contexto con los datos del cliente.`}
+                    </div>
+                    <button
+                      onClick={() => send("[SYSTEM_TRIGGER:process_saved_plan]")}
+                      disabled={sending}
+                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-[13px] font-semibold text-white bg-acc border-none cursor-pointer hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {sending ? (
+                        <>
+                          <span className="inline-block w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                          {`Procesando${DOT}${DOT}${DOT}`}
+                        </>
+                      ) : (
+                        <>
+                          {ARROW} Procesar plano y contexto
+                        </>
+                      )}
+                    </button>
+                    <div className="text-[11px] text-t4 mt-3 max-w-sm">
+                      {`Tambi${E}n pod${E}s escribir un mensaje al chat para darle m${A}s instrucciones a Valentina.`}
+                    </div>
+                  </div>
+                );
+              })()
             )}
             {messages.map((msg, idx) => {
               // Find last REAL assistant message (not dots or empty)
