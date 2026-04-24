@@ -1,21 +1,48 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { login } from "@/lib/auth";
 import clsx from "clsx";
 
+// Next.js 14 requiere que cualquier componente que use `useSearchParams`
+// esté dentro de un `<Suspense>` boundary para que la prerender estática
+// no falle. Lo envolvemos al nivel del export default y el componente
+// real queda con toda la lógica adentro.
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // PR #389 — banner informativo cuando caemos acá por sesión vencida.
+  // `handleAuthError` en `lib/api.ts` agrega `?reason=expired` al redirect.
+  const expiredReason = searchParams?.get("reason") === "expired";
+  const [showExpiredBanner, setShowExpiredBanner] = useState(expiredReason);
+
+  useEffect(() => {
+    // Limpiar el flag de redirecting al aterrizar en /login — si no,
+    // un refresh manual de esta misma página dejaría el flag vivo y el
+    // próximo 401 post-login no podría redirigir.
+    try {
+      window.sessionStorage.removeItem("dangelo:redirecting");
+    } catch { /* ignore */ }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setShowExpiredBanner(false);
     setLoading(true);
     try {
       await login(username, password);
@@ -53,6 +80,18 @@ export default function LoginPage() {
             Sistema de presupuestos
           </div>
         </div>
+
+        {/* PR #389 — banner de sesión expirada. Aparece cuando
+            `handleAuthError` redirige con ?reason=expired. Se oculta al
+            intentar login o al mostrar un error de credenciales. */}
+        {showExpiredBanner && !error && (
+          <div className="flex items-center gap-2 px-3.5 py-2.5 bg-amb/[0.08] border border-amb/[0.25] rounded-lg text-[13px] text-amb mb-4 animate-[fadeUp_0.2s_ease]">
+            <svg className="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <span>Tu sesión expiró. Iniciá sesión de nuevo para seguir.</span>
+          </div>
+        )}
 
         {/* Error */}
         {error && (

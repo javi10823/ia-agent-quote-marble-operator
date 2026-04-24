@@ -21,23 +21,49 @@ function resolveApiBase(): string {
 const API_BASE = resolveApiBase();
 
 /**
- * Antes: cualquier 401 redirigía automáticamente a /login. Problema: si
- * un SOLO fetch secundario (ej: una de las 3 requests que hace /config
- * al montar) devolvía 401 por cualquier motivo transiente (cross-origin
- * cookie issue, redirect chain, expired token en un endpoint pero no en
- * otros), el usuario era pateado a login sin ver el error real.
+ * Historia: PR antiguo redirigía a /login en CUALQUIER 401 → bug con
+ * 401 transientes (cross-origin cookie issues, expired token en un
+ * endpoint pero no en otros). Desde entonces era no-op: ningún 401 se
+ * atendía y el user quedaba en UI zombi cuando la sesión vencía.
  *
- * Ahora: NO redirigimos automáticamente. Dejamos que el error burbujee
- * como cualquier otro — el caller muestra toast o inline error. El
- * usuario mantiene su sesión y puede decidir si volver a loguearse
- * manualmente. Si la cookie realmente expiró todas las siguientes
- * requests fallarán con 401, pero al menos ve QUÉ está pasando en vez
- * de un rebote misterioso a /login.
+ * PR #389: detectar solo los 401 **determinísticos del backend** (los
+ * strings exactos que emite `auth.py` del middleware cuando el token
+ * no existe o expiró) y en ese caso limpiar + redirigir. Cualquier otro
+ * 401 (rutas privadas que devuelven 401 por otra razón, 401 transiente
+ * cross-origin raro) sigue siendo no-op → preserva la robustez
+ * histórica contra falsos positivos.
  *
- * El flujo de login/logout explícito sigue funcionando (auth.ts).
+ * Side-effect: el backend con sliding refresh ahora extiende la sesión
+ * en cada request mientras el token esté vivo. Solo vas a llegar a
+ * `handleAuthError` si DE VERDAD dejaste el navegador inactivo >24h
+ * después del último refresh.
  */
-function handleAuthError(_res: Response): void {
-  // no-op intentional — ver doc arriba
+const AUTH_EXPIRED_DETAILS = new Set([
+  "Sesión expirada",
+  "No autenticado",
+]);
+
+function handleAuthError(res: Response): void {
+  if (res.status !== 401) return;
+  if (typeof window === "undefined") return;
+  // Evitar que 3 fetchs concurrentes (ej: /quotes + /quotes/check + /usage)
+  // disparen 3 redirects en paralelo. sessionStorage dura lo que la pestaña.
+  try {
+    if (window.sessionStorage.getItem("dangelo:redirecting") === "1") return;
+  } catch { /* storage inaccessible — seguir igual */ }
+
+  // Clonar para no consumir el body del caller. Sin await: fire-and-forget.
+  res.clone().json().then((body) => {
+    const detail = typeof body?.detail === "string" ? body.detail : "";
+    if (!AUTH_EXPIRED_DETAILS.has(detail)) return;
+    try { window.sessionStorage.setItem("dangelo:redirecting", "1"); } catch {}
+    try { localStorage.removeItem("dangelo:token"); } catch {}
+    // Si ya estamos en /login no hace falta navegar — evita loops cuando
+    // el propio /api/auth/check durante el login devuelve 401.
+    const path = window.location?.pathname || "";
+    if (path.startsWith("/login")) return;
+    window.location.href = "/login?reason=expired";
+  }).catch(() => { /* body no parseable — no redirigir por las dudas */ });
 }
 
 /**
@@ -73,8 +99,9 @@ export function withAuthHeader(init?: RequestInit): RequestInit {
  * Uso: `apiFetch(url, init)` en lugar de `fetch(url, init)`.
  */
 export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  let res: Response;
   try {
-    return await fetch(input, withAuthHeader(init));
+    res = await fetch(input, withAuthHeader(init));
   } catch (err: any) {
     // TypeError: Failed to fetch (Chrome/Safari) / NetworkError (Firefox)
     if (err instanceof TypeError || err?.name === "NetworkError") {
@@ -82,6 +109,19 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
     }
     throw err;
   }
+  // PR #389 — sliding session refresh. Si al token le quedaban <24h, el
+  // backend emite un JWT nuevo en el header `X-Refreshed-Token` (además
+  // de Set-Cookie). Sincronizamos el fallback de localStorage — es lo
+  // que usa `withAuthHeader` cuando la cookie cross-origin no viaja
+  // (iOS Safari con ITP). Sin esto, el fallback se quedaba con el token
+  // viejo post-expiración y recién al vencer el fallback iba a /login.
+  try {
+    const refreshed = res.headers.get("X-Refreshed-Token");
+    if (refreshed && typeof window !== "undefined") {
+      localStorage.setItem("dangelo:token", refreshed);
+    }
+  } catch { /* ignore storage errors */ }
+  return res;
 }
 
 export interface ResumenObraRecord {
@@ -663,6 +703,17 @@ export async function* streamChat(
     throw new Error("No se pudo conectar con Valentina. Intentá de nuevo.");
   }
   clearTimeout(connectTimeout);
+
+  // PR #389 — mismo capture de refresh token + detección 401 que apiFetch.
+  // streamChat hace fetch directo (sin apiFetch) porque el body es un
+  // ReadableStream (SSE), pero igual participa en el sliding session flow.
+  try {
+    const refreshed = res.headers.get("X-Refreshed-Token");
+    if (refreshed && typeof window !== "undefined") {
+      localStorage.setItem("dangelo:token", refreshed);
+    }
+  } catch { /* ignore */ }
+  handleAuthError(res);
 
   if (!res.ok) {
     if (res.status === 400) {

@@ -124,6 +124,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # PR #389 — sliding session refresh: el middleware de auth emite un
+    # nuevo JWT en cookie + `X-Refreshed-Token` cuando al token activo le
+    # quedan <24h de vida. El header queda expuesto al JS del frontend
+    # para que el fallback de localStorage (iOS Safari con ITP bloqueando
+    # cookies cross-origin) también se actualice y la sesión deslice.
+    expose_headers=["X-Refreshed-Token"],
 )
 
 app.include_router(auth_router, prefix="/api")
