@@ -67,6 +67,14 @@ class Quote(Base):
     # Raw pieces input (as submitted, before calculation)
     pieces: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
+    # PR #400 — Raw payload completo del POST /api/v1/quote (source="web").
+    # Snapshot literal del body que mandó el bot externo, antes de cualquier
+    # derivación (resolve_pileta, parse_measurements, fuzzy correction, etc.).
+    # Útil para auditar bugs del bot vs bugs del backend: si el campo `pileta`
+    # del quote difiere del que llega acá, sabemos en qué capa está el problema.
+    # NULL para quotes operator (Valentina) y para quotes web pre-#400.
+    web_input: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     # Conversation link (web sessions)
     conversation_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
 

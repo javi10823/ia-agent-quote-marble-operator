@@ -33,6 +33,17 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
     No LLM involved — pure Python calculation.
     Returns quotes with PDF/Excel links.
     """
+    # PR #400 — Snapshot raw del body ANTES de cualquier derivación. Se
+    # persiste literal en `quote.web_input` para que el operador pueda
+    # auditar exactamente qué mandó el bot (sink_type, pileta_sku,
+    # conversation, plazo, etc.) sin pasar por las normalizaciones que
+    # vienen abajo (resolve_pileta, parse_measurements, etc.).
+    #
+    # mode="json" para que enums (PiletaType) y datetimes serialicen a
+    # primitivos JSON-safe; sino el INSERT tira `Object of type ... is not
+    # JSON serializable`.
+    _raw_web_input = body.model_dump(mode="json")
+
     # Normalize material to list
     materials = body.material if isinstance(body.material, list) else [body.material]
 
@@ -120,6 +131,8 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
                 pileta=_resolved_pileta.value if _resolved_pileta else None,
                 sink_type=body.sink_type.model_dump() if body.sink_type else None,
                 anafe=body.anafe,
+                # PR #400 — payload crudo del bot. Ver bloque _raw_web_input arriba.
+                web_input=_raw_web_input,
             )
             db.add(quote)
             await db.commit()
@@ -210,6 +223,8 @@ async def create_quote_api(body: QuoteInput, db: AsyncSession = Depends(get_db))
             sink_type=body.sink_type.model_dump() if body.sink_type else None,
             anafe=body.anafe,
             pieces=[p.model_dump() for p in body.pieces] if body.pieces else None,
+            # PR #400 — payload crudo del bot. Ver bloque _raw_web_input arriba.
+            web_input=_raw_web_input,
         )
         db.add(quote)
         await db.commit()
