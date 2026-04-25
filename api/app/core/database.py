@@ -71,6 +71,11 @@ async def init_db():
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS email_draft JSON",
             # PR #24 — Condiciones de Contratación PDF para edificios.
             "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS condiciones_pdf JSON",
+            # PR #400 — Snapshot raw del body POST /api/v1/quote para quotes
+            # source="web". Permite auditar el caso Fabiana y similares
+            # (qué mandó el bot vs qué derivó el backend). NULL para quotes
+            # web pre-#400 (no hay backfill posible — el body original se perdió).
+            "ALTER TABLE quotes ADD COLUMN IF NOT EXISTS web_input JSON",
             # PR #19 — backfill is_building para quotes que tenían is_edificio=true
             # solo en el JSON breakdown. Idempotente (UPDATE WHERE).
             "UPDATE quotes SET is_building = TRUE "

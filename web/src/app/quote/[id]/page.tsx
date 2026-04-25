@@ -130,6 +130,73 @@ function buildFullSnapshot(quote: QuoteDetail | null, messages: UIMessage[]): st
   return parts.join("\n").trim();
 }
 
+// PR #400 — Snapshot enfocado en debug de quotes WEB. Vuelca:
+//   1. Meta básica del quote (id, cliente, proyecto, source, fecha).
+//   2. `web_input` raw: el body literal del POST /api/v1/quote (tal cual
+//      lo mandó el bot externo, antes de derivaciones del backend).
+//   3. Lo que el backend derivó: pileta resuelto, sink_type persistido,
+//      notes (con la corrección fuzzy si aplicó), totales, m².
+//   4. Conversación tal cual (reusa buildFullSnapshot para no duplicar
+//      el formateo de mensajes).
+// Útil para mandarle a un compañero / al dev del bot cuando un quote
+// salió raro y hay que comparar input vs output sin abrir la DB.
+function buildWebRequestSnapshot(quote: QuoteDetail | null, messages: UIMessage[]): string {
+  if (!quote) return "";
+  const lines: string[] = [];
+
+  lines.push(`# SOLICITUD WEB — ${quote.client_name || "(sin cliente)"} / ${quote.project || "(sin proyecto)"}`);
+  lines.push("");
+  lines.push(`- Quote ID: ${quote.id}`);
+  lines.push(`- Source: ${quote.source || "operator"}`);
+  lines.push(`- Status: ${quote.status}`);
+  lines.push(`- Fecha: ${new Date(quote.created_at).toLocaleString("es-AR")}`);
+  if (quote.material) lines.push(`- Material persistido: ${quote.material}`);
+  lines.push("");
+
+  lines.push("## 1. Body crudo del POST /api/v1/quote");
+  lines.push("");
+  if (quote.web_input) {
+    lines.push("```json");
+    lines.push(JSON.stringify(quote.web_input, null, 2));
+    lines.push("```");
+  } else {
+    // Quote web pre-#400 (no había persistencia del body) o quote operator.
+    // Indicamos por qué falta para que el lector no asuma un bug nuevo.
+    lines.push("_(no disponible — quote previo a la persistencia de web_input, o source=operator)_");
+  }
+  lines.push("");
+
+  lines.push("## 2. Derivación del backend");
+  lines.push("");
+  if (quote.pileta) lines.push(`- pileta resuelto: \`${quote.pileta}\``);
+  if (quote.sink_type) {
+    lines.push(`- sink_type: \`${JSON.stringify(quote.sink_type)}\``);
+  }
+  if (quote.localidad) lines.push(`- localidad: ${quote.localidad}`);
+  if (quote.colocacion != null) lines.push(`- colocación: ${quote.colocacion ? "sí" : "no"}`);
+  if (quote.anafe != null) lines.push(`- anafe: ${quote.anafe ? "sí" : "no"}`);
+  if (quote.total_ars != null) lines.push(`- total ARS: ${quote.total_ars}`);
+  if (quote.total_usd != null) lines.push(`- total USD: ${quote.total_usd}`);
+  if (quote.notes) {
+    lines.push("");
+    lines.push("Notas (incluye corrección fuzzy si aplicó):");
+    lines.push("```");
+    lines.push(quote.notes);
+    lines.push("```");
+  }
+  lines.push("");
+
+  // 3. Conversación / mensajes — solo si hay algo. Reuse buildFullSnapshot
+  // para no duplicar el filtrado de markers internos.
+  if (messages.length > 0) {
+    lines.push("## 3. Conversación");
+    lines.push("");
+    lines.push(buildFullSnapshot(quote, messages));
+  }
+
+  return lines.join("\n").trim();
+}
+
 const STATUS_CLASS: Record<string, { label: string; cls: string; text: string; dotColor: string }> = {
   draft:     { label: "Borrador",  cls: "bg-amb-bg text-amb", text: "text-amb",          dotColor: "var(--amb)" },
   pending:   { label: "Pendiente", cls: "bg-acc-bg text-acc", text: "text-[#b299ff]",    dotColor: "#b299ff" },
@@ -512,7 +579,18 @@ export default function QuotePage() {
                 <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: st.dotColor }} />
                 {st.label}
               </span>
-              {quote?.source === "web" && <span className="text-[9px] font-semibold font-mono tracking-wider px-1.5 py-[2px] rounded border border-[#b48fe0]/30 text-[#b48fe0] shrink-0 not-italic">WEB</span>}
+              {quote?.source === "web" && (
+                <>
+                  <span className="text-[9px] font-semibold font-mono tracking-wider px-1.5 py-[2px] rounded border border-[#b48fe0]/30 text-[#b48fe0] shrink-0 not-italic">WEB</span>
+                  {/* PR #400 — Botón de debug: dump del body raw + derivaciones
+                      + conversación. Solo visible en quotes web (al lado del badge). */}
+                  <CopyButton
+                    text={buildWebRequestSnapshot(quote, messages)}
+                    label="Copiar solicitud"
+                    className="not-italic shrink-0"
+                  />
+                </>
+              )}
             </div>
             <div className="text-xs text-t3 mt-1 truncate max-w-[600px] font-sans">
               {quote?.project}{quote?.material ? ` ${DOT} ${quote.material}` : ""}

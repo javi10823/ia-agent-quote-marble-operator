@@ -59,6 +59,10 @@ class QuoteDetailResponse(QuoteListResponse):
     # PR #24 — PDF de Condiciones (solo edificios). Frontend lo muestra
     # como card debajo del PDF principal cuando is_building=True.
     condiciones_pdf: Optional[dict] = None
+    # PR #400 — Payload crudo del POST /api/v1/quote (solo source="web").
+    # El frontend lo usa para el botón "Copiar solicitud web" — dump literal
+    # de lo que mandó el bot externo, útil para debug del bot vs backend.
+    web_input: Optional[dict] = None
 
 
 class QuoteCompareItem(BaseModel):

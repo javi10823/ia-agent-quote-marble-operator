@@ -156,6 +156,13 @@ export interface Quote {
   is_read: boolean;
   notes: string | null;
   sink_type: { basin_count: "simple" | "doble"; mount_type: "arriba" | "abajo" } | null;
+  // PR #400 — campos que el backend ya devuelve en QuoteListResponse pero
+  // no estaban tipados en el cliente. Se usan en `buildWebRequestSnapshot`
+  // para volcar la derivación del backend (pileta resuelto, etc.).
+  pileta?: string | null;
+  localidad?: string | null;
+  colocacion?: boolean | null;
+  anafe?: boolean | null;
   resumen_obra?: ResumenObraRecord | null;
   condiciones_pdf?: {
     pdf_url: string;
@@ -220,6 +227,11 @@ export interface QuoteDetail extends Quote {
   quote_breakdown: QuoteBreakdown | null;
   source_files: SourceFile[] | null;
   children?: Quote[];  // building_child_material quotes for building_parent
+  /** PR #400 — Snapshot raw del body POST /api/v1/quote (solo source="web").
+   *  Usado por el botón "Copiar solicitud web" en el detalle: dump literal
+   *  de lo que mandó el bot externo, antes de derivaciones del backend.
+   *  Null para quotes operator y para web pre-#400. */
+  web_input?: Record<string, unknown> | null;
 }
 
 export interface Message {
