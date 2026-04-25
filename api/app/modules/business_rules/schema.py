@@ -1,7 +1,13 @@
 """Pydantic schemas del payload de `GET /api/v1/business-rules`.
 
-Shape v0 acordado con el operador (2026-04-24). Cualquier cambio
-breaking debe bumpear `version` y notificar al consumer (bot web).
+Shape v0 prescriptivo (PR #399, rework de #398): el bot web copia
+estos strings literal en su system prompt. Por eso los campos son
+copy-paste-into-prompt (question literal, notes literales, flags
+booleanas), no vocabulario abstracto.
+
+Cualquier cambio breaking debe bumpear `version` y notificar al
+consumer (bot web). El formato de version es `YYYY-MM-DD-vN` —
+permite múltiples versiones el mismo día si hace falta.
 """
 from __future__ import annotations
 
@@ -10,50 +16,109 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-class SinkRules(BaseModel):
-    """Vocabulario para captura de pileta/bacha en el bot web."""
+class BachaRules(BaseModel):
+    """Reglas de captura de pileta/bacha para el bot web."""
 
-    cocina_requires_capture: bool = Field(
+    requires_clarification_when_mentioned: bool = Field(
         ...,
         description=(
-            "Si True, el bot web debe capturar pileta antes de cerrar el "
-            "lead cuando el proyecto incluye cocina. Refleja la regla "
-            "interna 'en cocina la pileta siempre va empotrada' — el "
-            "operador debe saber tipo y ownership antes de cotizar."
+            "Si True, cuando el cliente mencione pileta/bacha/agujero "
+            "para pileta o diga que no tiene la pileta, el bot debe "
+            "preguntar si la trae o la compra en D'Angelo antes de "
+            "cerrar el lead."
         ),
     )
-    ownership_options: list[Literal["cliente", "dangelo"]] = Field(
+    question: str = Field(
         ...,
         description=(
-            "Quién provee la pileta. 'cliente' = el cliente trae la pileta; "
-            "'dangelo' = D'Angelo provee del catálogo Johnson (puede pasar "
-            "`pileta_sku` opcional al endpoint /api/v1/quote para SKU "
-            "específico)."
+            "Texto literal que el bot debe usar para preguntar. "
+            "Copy-paste exacto."
         ),
     )
-    mount_options: list[Literal["abajo", "arriba"]] = Field(
+    do_not_ask: list[str] = Field(
         ...,
         description=(
-            "Tipo de montaje. 'abajo' = bajo mesada (empotrada); 'arriba' "
-            "= sobre mesada (apoyo). Mismo vocabulario que el campo "
-            "`sink_type.mount_type` del POST /api/v1/quote."
+            "Topics que el bot NO debe preguntar al cliente — son "
+            "detalles internos que el operador resuelve después."
+        ),
+    )
+    payload_mapping: dict[
+        Literal["propia", "dangelo", "apoyo"],
+        Literal["empotrada_cliente", "empotrada_johnson", "apoyo"],
+    ] = Field(
+        ...,
+        description=(
+            "Mapping de la respuesta del cliente al valor del enum "
+            "`pileta` que se manda en POST /api/v1/quote. "
+            "'propia' = cliente la trae; 'dangelo' = D'Angelo la "
+            "provee; 'apoyo' = pileta sobre mesada."
+        ),
+    )
+    notes: list[str] = Field(
+        ...,
+        description=(
+            "Notas adicionales que el bot puede usar como contexto en "
+            "el prompt. Texto literal en español."
         ),
     )
 
 
 class MaterialsRules(BaseModel):
-    """Vocabulario de familias de materiales para el bot web."""
+    """Reglas y vocabulario de materiales para el bot web."""
 
+    marble_not_recommended_for_kitchen: bool = Field(
+        ...,
+        description=(
+            "Si True, el bot debe desaconsejar mármol para cocina (es "
+            "poroso, se mancha con ácidos). Sugerir alternativas "
+            "(granito / sintéticos)."
+        ),
+    )
+    silestone_purastone_not_for_exterior: bool = Field(
+        ...,
+        description=(
+            "Si True, el bot debe desaconsejar Silestone y Purastone "
+            "para exterior (no resistentes a UV / temperatura). "
+            "Sugerir Dekton / Neolith."
+        ),
+    )
     families: list[str] = Field(
         ...,
         description=(
-            "Familias canónicas reconocidas por el matcher de materiales. "
-            "El bot web puede usarlas para sugerir opciones al usuario sin "
-            "mezclar familias (ej: no proponer granito cuando piden "
-            "puraprima). El POST /api/v1/quote acepta `material` con "
-            "cualquier string que contenga keyword de familia."
+            "Familias canónicas de material reconocidas por el matcher "
+            "interno. Útil para que el bot sugiera opciones sin mezclar "
+            "familias incompatibles. Subordinado al shape rules.* — "
+            "vocabulario, no endpoint paralelo."
         ),
     )
+
+
+class NamingRules(BaseModel):
+    """Reglas de ortografía / naming que el bot debe seguir."""
+
+    purastone_one_word: bool = Field(
+        ...,
+        description=(
+            "Si True, escribir 'Purastone' como una sola palabra "
+            "(no 'Pura Stone')."
+        ),
+    )
+    puraprima_one_word: bool = Field(
+        ...,
+        description=(
+            "Si True, escribir 'Puraprima' como una sola palabra "
+            "(no 'Pura Prima')."
+        ),
+    )
+
+
+class RulesPayload(BaseModel):
+    """Wrapper de las reglas v0. El bot web itera por sub-secciones
+    (bacha / materials / naming) para construir su prompt."""
+
+    bacha: BachaRules
+    materials: MaterialsRules
+    naming: NamingRules
 
 
 class BusinessRulesV0(BaseModel):
@@ -62,10 +127,9 @@ class BusinessRulesV0(BaseModel):
     version: str = Field(
         ...,
         description=(
-            "Versión del payload en formato ISO YYYY-MM-DD. Se bumpea "
+            "Versión del payload en formato `YYYY-MM-DD-vN`. Se bumpea "
             "manualmente cuando hay cambio breaking. El bot web puede "
             "comparar contra su versión cacheada para revalidación."
         ),
     )
-    sink: SinkRules
-    materials: MaterialsRules
+    rules: RulesPayload

@@ -1,76 +1,84 @@
-"""Construcción del payload de `business-rules` v0.
+"""Construcción del payload de `business-rules` v0 prescriptivo.
 
-Política de fuentes (acordado con operador, 2026-04-24):
-  - **Levantar de la fuente de verdad** cuando exista como dato
-    estructurado (constante / enum / dict). Cero duplicación.
-  - **Hardcodear en este módulo** solo las reglas que hoy son lógica
-    Python (ej: "cocina_requires_capture" deriva de
-    `_detect_pileta_question` que es una función con condicional, no
-    una constante). Documentar el origen.
+PR #399 — rework del shape original (#398) a versión copy-paste para
+prompt del bot web. El bot web no usa los strings como vocabulario
+abstracto: los inserta literal en su system prompt para asegurar que
+las preguntas al cliente final salgan idénticas a la convención del
+operador.
 
-Si una constante / enum referenciado se renombra o cambia su shape,
-este módulo va a romper en import — es la salvaguarda contra drift.
+Política de fuentes:
+  - Strings literales (question, notes) — hardcoded acá. Son contenido
+    de prompt, no derivable de constantes.
+  - `families` — levantado de `_FAMILY_CATALOGS` (calculator post-#396).
+    Drift guard: si renombran el dict, este módulo no importa.
+  - Flags booleanas (requires_clarification, marble_not_recommended,
+    purastone_one_word, etc.) — hardcoded reflejando reglas de negocio
+    documentadas en `rules/quote-process-general.md` y CONTEXT.md.
+
+Mapping interno (no se serializa al cliente — vive como descripción
+del field `payload_mapping`):
+
+    bot web manda → /api/v1/quote recibe
+    "propia"      → pileta="empotrada_cliente"
+    "dangelo"     → pileta="empotrada_johnson" (+ pileta_sku opcional)
+    "apoyo"       → pileta="apoyo"
 """
 from __future__ import annotations
 
-from typing import get_args
-
 from app.modules.business_rules.schema import (
+    BachaRules,
     BusinessRulesV0,
     MaterialsRules,
-    SinkRules,
+    NamingRules,
+    RulesPayload,
 )
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Versión del payload v0
+# Versión del payload
 # ─────────────────────────────────────────────────────────────────────
 #
-# Formato ISO YYYY-MM-DD. Bump manual al introducir cambios breaking
+# Formato `YYYY-MM-DD-vN`. Bump manual al introducir cambios breaking
 # (renombre de campos, cambio de tipos, remoción). Cambios aditivos
-# (nuevo campo opcional) no requieren bump.
-_VERSION = "2026-04-24"
+# (nuevo campo opcional) no requieren bump pero conviene actualizar
+# la fecha si el cambio es significativo.
+_VERSION = "2026-04-24-v1"
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Mapping interno (NO se serializa al cliente)
+# Strings literales — copy-paste del prompt del bot web
 # ─────────────────────────────────────────────────────────────────────
-#
-# El bot web ve el eje `ownership` con dos valores canónicos:
-# `cliente` y `dangelo`. Backend interno usa el enum `PiletaType`
-# del schema `QuoteInput`. Mapeo:
-#
-#   cliente  → PiletaType.EMPOTRADA_CLIENTE
-#   dangelo  → PiletaType.EMPOTRADA_JOHNSON (+ opcional `pileta_sku`)
-#
-# El valor `apoyo` del enum no es ownership — es mount type. Por eso
-# `apoyo` queda fuera de `ownership_options` y se modela como
-# `mount_options=arriba` (ver `mount_options` abajo).
-#
-# Cuando el bot web envía a /api/v1/quote:
-#   ownership=cliente, mount=abajo  → pileta=empotrada_cliente
-#   ownership=dangelo, mount=abajo  → pileta=empotrada_johnson [+ pileta_sku]
-#   ownership=cliente, mount=arriba → pileta=apoyo (cliente trae bacha de apoyo)
-#   ownership=dangelo, mount=arriba → no soportado (D'Angelo no
-#                                     provee piletas de apoyo, fuera
-#                                     de catálogo).
-_OWNERSHIP_OPTIONS = ("cliente", "dangelo")
 
+_BACHA_QUESTION = "¿La pileta ya la tenés, o la comprás con nosotros?"
 
-def _mount_options() -> list[str]:
-    """Levanta los valores válidos de `mount_type` desde la fuente
-    canónica (schema del POST /api/v1/quote). Si alguien renombra el
-    Literal, este módulo rompe en import — drift detectado."""
-    from app.modules.quote_engine.schemas import SinkTypeInput
+_BACHA_DO_NOT_ASK = [
+    "simple/doble",
+    "arriba/abajo",
+]
 
-    field = SinkTypeInput.model_fields["mount_type"]
-    return list(get_args(field.annotation))
+_BACHA_PAYLOAD_MAPPING = {
+    "propia": "empotrada_cliente",
+    "dangelo": "empotrada_johnson",
+    "apoyo": "apoyo",
+}
+
+_BACHA_NOTES = [
+    (
+        "Si el cliente menciona pileta, bacha, agujero para pileta o dice "
+        "que no tiene la pileta, aclarar si la trae o la compra en "
+        "D'Angelo antes de cerrar."
+    ),
+    (
+        "No preguntar detalle fino de bacha como simple/doble o pegada "
+        "arriba/abajo."
+    ),
+]
 
 
 def _material_families() -> list[str]:
     """Levanta las familias canónicas del matcher de materiales
-    (calculator.py post-#396). Misma garantía anti-drift: si el dict
-    se renombra, este módulo no importa."""
+    (calculator.py post-#396). Si el dict se renombra, este módulo
+    rompe en import — drift guard."""
     from app.modules.quote_engine.calculator import _FAMILY_CATALOGS
 
     return list(_FAMILY_CATALOGS.keys())
@@ -84,17 +92,22 @@ def build_rules() -> BusinessRulesV0:
     """
     return BusinessRulesV0(
         version=_VERSION,
-        sink=SinkRules(
-            # `cocina_requires_capture=True` refleja la lógica de
-            # `pending_questions.py::_detect_pileta_question` — la
-            # pregunta de pileta se dispara SIEMPRE en cocina (salvo
-            # que el brief la niegue explícito). Hardcodeado acá
-            # porque es lógica condicional, no una constante.
-            cocina_requires_capture=True,
-            ownership_options=list(_OWNERSHIP_OPTIONS),
-            mount_options=_mount_options(),
-        ),
-        materials=MaterialsRules(
-            families=_material_families(),
+        rules=RulesPayload(
+            bacha=BachaRules(
+                requires_clarification_when_mentioned=True,
+                question=_BACHA_QUESTION,
+                do_not_ask=list(_BACHA_DO_NOT_ASK),
+                payload_mapping=dict(_BACHA_PAYLOAD_MAPPING),
+                notes=list(_BACHA_NOTES),
+            ),
+            materials=MaterialsRules(
+                marble_not_recommended_for_kitchen=True,
+                silestone_purastone_not_for_exterior=True,
+                families=_material_families(),
+            ),
+            naming=NamingRules(
+                purastone_one_word=True,
+                puraprima_one_word=True,
+            ),
         ),
     )
