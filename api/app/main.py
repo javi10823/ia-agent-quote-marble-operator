@@ -137,6 +137,9 @@ app.include_router(usage_router, prefix="/api")
 app.include_router(agent_router, prefix="/api")
 app.include_router(catalog_router, prefix="/api")
 app.include_router(quote_engine_router, prefix="/api")
+# PR #398 — endpoint público de reglas de negocio v0 para el bot web.
+from app.modules.business_rules.router import router as business_rules_router
+app.include_router(business_rules_router, prefix="/api")
 # Authenticated file serving (replaces unauthenticated StaticFiles mount)
 app.include_router(files_router)
 

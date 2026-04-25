@@ -73,6 +73,12 @@ PUBLIC_ROUTES = {
     "/api/auth/login",
     "/api/auth/create-user",  # Protected internally (checks if users exist)
     "/api/v1/quote",  # Web API — uses its own API key
+    # PR #398 — endpoint de reglas de negocio v0 para el bot web.
+    # Público sin api-key: el bot externo necesita levantarlo al
+    # construir su system prompt y no tiene credenciales. El payload
+    # NO expone precios, SKUs internos, ni lógica comercial — solo
+    # vocabulario de captura. Ver `business_rules/schema.py`.
+    "/api/v1/business-rules",
 }
 
 # Route prefixes that are public
