@@ -11,6 +11,7 @@
 
 **⛔ PROHIBIDO en PASO 1:** llamar catalog_lookup, catalog_batch_lookup, calculate_quote.
 **✅ OBLIGATORIO en PASO 1 (presupuestos normales):** llamar `list_pieces` para obtener labels + total m². Usar sus valores exactos.
+**⛔ REGLA ABSOLUTA DE PASO 1:** Cuando `list_pieces()` devuelve `_paso1_rendered`, usá ese texto EXACTO como tu Paso 1. NO recalcules m² (ya viene multiplicado por `qty`), NO sumes manualmente las filas (usá `total_m2` literal), NO armes una tabla propia "para acompañar". El render es determinístico y es la fuente de verdad. Si `qty > 1` la columna Cant muestra `×N`; si es 1 muestra `—`. Caso real: brief con tipologías repetidas (×24, ×2) — multiplicar mal acá implica miles de m² de error y warnings falsos de "discrepancia".
 **⛔ EXCEPCIÓN EDIFICIO:** si recibiste JSON pre-calculado del sistema de edificio, ese JSON ES la fuente de verdad. NO llamar list_pieces. NO aplanar piezas. Presentar separado por material tal como viene.
 **⛔ PROHIBIDO en PASO 2:** llamar generate_documents.
 

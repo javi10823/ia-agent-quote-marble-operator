@@ -4836,6 +4836,27 @@ class AgentService:
                     await db.execute(update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd))
                     await db.commit()
                     logging.info(f"[paso1] Persisted {len(inputs['pieces'])} pieces, total_m2={result.get('total_m2')}")
+
+                    # PR #412 — render determinístico del Paso 1 (gemelo
+                    # de `_paso2_rendered`). Inyectamos un string markdown
+                    # listo para que el LLM lo emita verbatim, evitando
+                    # que recalcule m² o sume mal las filas (caso DYSCON
+                    # 9,43 vs 42,39). Ver system prompt para la regla
+                    # "usar `_paso1_rendered` literal".
+                    try:
+                        from app.modules.quote_engine.calculator import (
+                            build_deterministic_paso1,
+                        )
+                        result["_paso1_rendered"] = build_deterministic_paso1(
+                            result,
+                            client_name=_q.client_name,
+                            project=_q.project,
+                            material=_q.material,
+                        )
+                    except Exception as _e_p1:
+                        logging.warning(
+                            f"[paso1] build_deterministic_paso1 failed: {_e_p1}"
+                        )
             except Exception as e:
                 logging.warning(f"[paso1] Failed to persist pieces: {e}")
             return result
