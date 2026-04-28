@@ -1378,6 +1378,139 @@ def _extract_quote_info(user_message: str) -> dict:
     return info
 
 
+# ─────────────────────────────────────────────────────────────────────
+# PR #416 — Intent classifier para guardrail post-Paso 2.
+#
+# Objetivo: bloquear `generate_documents` cuando el último mensaje del
+# operador NO es una confirmación explícita. Caso real (DYSCON post-#415):
+#
+#   1. Paso 2 renderizado correcto.
+#   2. Operador: "flete + toma medidas Piñero $100.000 poner 3 fletes"
+#      → Sonnet recalcula OK (mensaje largo + numérico).
+#   3. Operador: "Armado frentín en mano de obra no va."
+#      → Sonnet va directo a generate_documents (mensaje corto + heurística
+#         `len < 200` lo marca como confirm) → PDF con datos viejos.
+#
+# Filosofía (review feedback):
+#   - Confirmación = whitelist POSITIVA. Sin señal explícita, no es
+#     confirmación — independiente del length. "Length < 200" es proxy
+#     basura ya quemado dos veces.
+#   - Modificación = (imperativo + noun) OR (negación + concepto).
+#     Dos detectores semánticos distintos, no uno solo con AND.
+#   - Bloquear generate_documents = ausencia de confirm Y presencia de
+#     mod (o ambiguo). Esto reduce blast radius — no bloquea por
+#     keyword de negación suelta ("no va a haber problema, generá").
+#
+# Deuda anotada: si aparece un 4° caso whack-a-mole (ya van pileta /
+# regrueso+material / confirm-mod), refactor a clasificador Haiku con
+# 1 call: "CONFIRM | MODIFY | OTHER". Por ahora keywords basta.
+# ─────────────────────────────────────────────────────────────────────
+
+# Whitelist: si el mensaje contiene EXACTAMENTE alguna de estas frases
+# (o sustring claro), es confirmación. La regla es positiva-explícita.
+_CONFIRM_PHRASES = (
+    "confirmo",
+    "confirmar",
+    "confirmá",
+    "dale",
+    # "generá"/"genera"/"generar" como invocación directa post-Paso 2.
+    # Padded con espacios para evitar match en "regenerá" / "considera".
+    " genera ",
+    " generá ",
+    " generar ",
+    "imprimí",
+    "imprimir",
+    "listo",
+    "perfecto",
+    "todo ok",
+    "todo bien",
+    "está bien",
+    "esta bien",
+    "está perfecto",
+    "esta perfecto",
+    "aprobado",
+    "apruebo",
+    " sí ",      # con espacios para evitar matches en "siglo", "asíduo", etc.
+    " si ",
+    "yes",
+    "ok ",       # "ok" suelto; el espacio post evita "okay" parcial
+)
+
+# Imperativos que indican modificación cuando van con un sustantivo.
+_MOD_IMPERATIVES = (
+    "agreg", "sumá", "sumar", "añad", "poné", "poner",
+    "sac", "quit", "remov", "borr", "elimin",
+    "cambi", "modific", "correg", "edit", "ajust", "rectific",
+    "actualiz", "reemplaz",
+)
+
+# Sustantivos / conceptos que pueden ser objeto de modificación.
+# Cubre material (zócalo/mesada/tramo/sector — del card-editor) y
+# MO/comercial (frentín, regrueso, flete, anafe, colocación, descuento,
+# pileta, bacha). Lista deliberadamente amplia para detectar mod intent
+# — el AND con imperativo o la negación-cerca evita falsos positivos.
+_MOD_NOUNS = (
+    "zócal", "zocal", "mesada", "tramo", "pieza", "sector",
+    "bacha", "pileta", "frentín", "frentin", "regrueso",
+    "flete", "anafe", "colocación", "colocacion", "armado",
+    "mano de obra", "descuento", "merma", "iva", "material",
+    "precio", "total",
+)
+
+# Negaciones que indican modificación cuando aparecen cerca de un
+# concepto (`_MOD_NOUNS`). Distintas semánticamente de los imperativos
+# — ej: "el frentín no va", "el descuento no aplica".
+_NEG_PATTERNS = (
+    "no va", "no debe", "no incluir", "no aplicar", "no aplica",
+    "no corresponde", "no usar", "no quiero",
+    "fuera de", "sacar", "quitar",  # imperativos también, pero también pueden venir solos
+)
+
+
+def _user_intent(msg: str) -> str:
+    """Clasifica el intent del último mensaje del operador.
+
+    Returns:
+        "confirm"  — operador confirmó explícitamente (whitelist positiva).
+        "modify"   — operador pidió un cambio (imperativo+noun o
+                     negación+concepto).
+        "other"    — ambiguo / otro / vacío. **Default conservador**:
+                     trata como NO-confirmación.
+
+    El guardrail de `generate_documents` solo permite ejecutar si
+    intent=="confirm". "modify" y "other" lo bloquean — la diferencia
+    es solo el mensaje de error que ve el LLM (mod = "recalculá",
+    other = "pedí confirmación explícita").
+    """
+    if not msg or not msg.strip():
+        return "other"
+    m = msg.lower().strip()
+
+    # 1. Confirmación: whitelist explícita.
+    # Padding con espacios para que substrings precisos matcheen
+    # (ej: " sí " no matchea "siglo" pero sí "tengo sí en el medio").
+    _padded = f" {m} "
+    for phrase in _CONFIRM_PHRASES:
+        if phrase in _padded:
+            return "confirm"
+
+    # 2. Modificación — DOS detectores OR'ed.
+    # 2a. Imperativo + sustantivo en el mismo mensaje.
+    has_imp = any(kw in m for kw in _MOD_IMPERATIVES)
+    has_noun = any(kw in m for kw in _MOD_NOUNS)
+    if has_imp and has_noun:
+        return "modify"
+
+    # 2b. Negación + sustantivo (sin requerir imperativo).
+    # Ej: "el frentín no va", "el descuento no aplica".
+    if has_noun:
+        for neg in _NEG_PATTERNS:
+            if neg in m:
+                return "modify"
+
+    return "other"
+
+
 # PR #413 — Brief guards: extract structured data from operator brief
 # to override LLM (Sonnet) hallucinations or omissions in calc_input.
 # Used in the `mo-list-authority` block to compare brief vs Sonnet
@@ -4978,6 +5111,65 @@ class AgentService:
             return await read_plan(inputs["filename"], inputs.get("crop_instructions", []))
         elif name == "generate_documents":
             import uuid as uuid_mod
+
+            # PR #416 — Guardrail post-Paso 2: bloquear generate_documents
+            # cuando el último mensaje del operador NO es una confirmación
+            # explícita. Caso DYSCON: "Armado frentín en mano de obra no
+            # va." (51 chars, sin keyword de confirm) → Sonnet decidía
+            # generar PDF directo en vez de recalcular. Resultado: PDF
+            # con datos viejos.
+            #
+            # Filosofía: confirmación = whitelist positiva. Sin "confirmo"
+            # / "dale" / "ok generá" / etc., NO se generan documentos —
+            # se devuelve un error que fuerza al LLM a recalcular y
+            # mostrar Paso 2 antes de re-intentar.
+            #
+            # Solo aplica si Paso 2 ya está hecho (`total_ars` poblado).
+            # En el primer generate (post-confirmación inicial) `total_ars`
+            # no existe todavía y el guardrail no entra.
+            try:
+                _gd_qr = await db.execute(select(Quote).where(Quote.id == quote_id))
+                _gd_q = _gd_qr.scalar_one_or_none()
+                _has_paso2 = bool(_gd_q and _gd_q.total_ars)
+                if _has_paso2 and current_user_message:
+                    _intent = _user_intent(current_user_message)
+                    if _intent != "confirm":
+                        logging.warning(
+                            f"[guardrail-generate] BLOCKED generate_documents "
+                            f"for {quote_id}: last user_message intent='{_intent}' "
+                            f"(no explicit confirm). msg_preview="
+                            f"{current_user_message[:120]!r}"
+                        )
+                        if _intent == "modify":
+                            _err = (
+                                "⛔ El operador pidió una modificación, NO una "
+                                "confirmación. ANTES de generar documentos:\n"
+                                "1. Llamá a `calculate_quote` con los valores "
+                                "actualizados según el último mensaje.\n"
+                                "2. Mostrá el Paso 2 nuevo completo (tabla + "
+                                "MO + GRAND TOTAL).\n"
+                                "3. Esperá una confirmación EXPLÍCITA del "
+                                "operador (ej: 'Confirmo', 'Dale', 'OK generá') "
+                                "antes de re-intentar generate_documents."
+                            )
+                        else:
+                            _err = (
+                                "⛔ El último mensaje del operador no es una "
+                                "confirmación explícita. Pedí una confirmación "
+                                "clara ('Confirmo', 'Dale', 'OK generá') antes "
+                                "de llamar a generate_documents. Si el operador "
+                                "pidió un cambio, recalculá primero."
+                            )
+                        return {"ok": False, "error": _err}
+            except Exception as _e_guard:
+                # Guard nunca debe romper el flow. Si falla la lectura,
+                # logueamos y dejamos pasar — fallback al comportamiento
+                # antiguo (Sonnet decide solo).
+                logging.warning(
+                    f"[guardrail-generate] check failed for {quote_id}: "
+                    f"{_e_guard} (allowing through as fallback)"
+                )
+
             quotes_data = inputs.get("quotes", [])
             # Backward compat: if old format with quote_data, wrap it
             if not quotes_data and "quote_data" in inputs:
