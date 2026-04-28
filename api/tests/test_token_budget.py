@@ -96,8 +96,12 @@ class TestTokenBudget:
         )
         total_chars = sum(len(b["text"]) for b in blocks if b.get("type") == "text")
         raw_tokens = estimate_tokens(total_chars) + self._tools_tokens() + 1500
-        assert raw_tokens < 55_000, (
-            f"Raw prompt exceeds 55K token limit: {raw_tokens} tokens ({total_chars} chars)"
+        # PR #401 — bump 55_000 → 55_500 para acomodar `regrueso` y
+        # `regrueso_ml` agregados al tool schema de calculate_quote
+        # (~16 tokens). Sigue muy lejos del límite real de Anthropic
+        # (200K) — esto es un guardrail defensivo, no la API ceiling.
+        assert raw_tokens < 55_500, (
+            f"Raw prompt exceeds 55.5K token limit: {raw_tokens} tokens ({total_chars} chars)"
         )
 
     def test_dynamic_examples_capped_at_2(self):

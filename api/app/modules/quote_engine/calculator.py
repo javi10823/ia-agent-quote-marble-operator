@@ -1147,6 +1147,44 @@ def calculate_quote(input_data: dict) -> dict:
             ml_45 = round(frentin_ml * 2, 2)
             mo_items.append({"description": "Corte 45", "quantity": ml_45, "unit_price": price_45, "base_price": base_45, "total": round(price_45 * ml_45)})
 
+    # PR #401 — Regrueso (refuerzo de espesor en frentes). Análogo al
+    # frentín pero más simple:
+    #   - Único SKU "REGRUESO" en labor.json (sin variante sintético).
+    #   - No tiene CORTE45 asociado — el regrueso se pega plano al frente.
+    #   - Cobrado por metro lineal igual que el frentín.
+    #
+    # Causa raíz histórica: PR #392 introdujo el detector + apply de
+    # respuesta de regrueso en pending_questions, pero asumió que el
+    # calculator lo procesaría automáticamente. No había bloque para
+    # convertir `regrueso_ml` → mo_item, por lo que el texto fuente
+    # ("M.O. REGRUESO frente 1x60,68ml") nunca se reflejaba en el costo
+    # final. Este bloque lo cierra.
+    regrueso = input_data.get("regrueso", False)
+    regrueso_ml = input_data.get("regrueso_ml", 0)
+    if regrueso and regrueso_ml <= 0:
+        # Auto-calculate from pieces with "regrueso" en la descripción.
+        # Mismo patrón que el auto-detect del frentín (línea 1130-1136):
+        # si el operador declaró el regrueso pero no pasó ml, sumamos el
+        # largo de las piezas marcadas como tal. Fallback de 1 ml si no
+        # se encuentra ninguna — pero al menos genera la línea para que
+        # el operador la vea (vs silenciosamente perderla).
+        for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces):
+            desc = (p.get("description") or "").lower()
+            if "regrueso" in desc:
+                regrueso_ml += p.get("largo", 0)
+        if regrueso_ml <= 0:
+            regrueso_ml = 1  # Fallback: at least 1 ml
+    if regrueso and regrueso_ml > 0:
+        price, base = _get_mo_price("REGRUESO")
+        ml = round(regrueso_ml, 2)
+        mo_items.append({
+            "description": "Regrueso frente",
+            "quantity": ml,
+            "unit_price": price,
+            "base_price": base,
+            "total": round(price * ml),
+        })
+
     # Flete (default: always charge unless skip_flete=True)
     if skip_flete:
         logging.info(f"Flete skipped: skip_flete=True (cliente retira en fábrica)")
@@ -1459,6 +1497,10 @@ def calculate_quote(input_data: dict) -> dict:
         "anafe": anafe,
         "frentin": frentin,
         "frentin_ml": frentin_ml,
+        # PR #401 — regrueso. Persistir en el output para patch mode
+        # (re-cálculo con el mismo regrueso sin perderlo).
+        "regrueso": regrueso,
+        "regrueso_ml": regrueso_ml,
         "inglete": inglete,
         "pulido": pulido,
         "skip_flete": skip_flete,
