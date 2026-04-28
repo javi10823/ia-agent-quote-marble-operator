@@ -80,12 +80,23 @@ async def parse_measurements(notes: str, material: str, project: str = "") -> di
 
         response = await client.messages.create(
             model=settings.ANTHROPIC_MODEL,
-            max_tokens=500,
+            # PR #406 — bumpeado de 500 a 4000. Caso DYSCON (14 piezas
+            # con quantity) excedía el budget viejo: el JSON salía
+            # truncado a media key y rompía con `JSONDecodeError`. PR
+            # #405 (quantity) no fue causa — solo destapó el límite, ya
+            # estaba apretado para edificios. 4000 cubre ~80 piezas
+            # típicas de edificio grande con holgura.
+            max_tokens=4000,
             system=PARSE_SYSTEM,
             messages=[{"role": "user", "content": user_msg}],
         )
 
         text = response.content[0].text.strip()
+        # PR #406 — capturar el motivo de stop para diagnosticar
+        # truncamientos. `stop_reason="max_tokens"` significa que
+        # Haiku se quedó sin presupuesto antes de cerrar el JSON.
+        stop_reason = getattr(response, "stop_reason", None)
+
         # Strip markdown code fences if present
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
@@ -109,7 +120,22 @@ async def parse_measurements(notes: str, material: str, project: str = "") -> di
         return parsed
 
     except json.JSONDecodeError as e:
-        logger.error(f"Parser JSON decode error: {e}")
+        # PR #406 — distinguir truncamiento por max_tokens del JSON
+        # genuinamente roto. Si Haiku cortó por budget, el síntoma
+        # downstream es que la card de contexto desaparece y el flow
+        # cae al markdown plano del agente — el operador necesita
+        # saber el motivo en logs sin tener que correlacionar.
+        _stop = locals().get("stop_reason")
+        _len = len(locals().get("text", ""))
+        if _stop == "max_tokens":
+            logger.error(
+                f"Parser JSON truncated by max_tokens (output={_len} chars). "
+                f"Bump max_tokens further or reduce input size. JSONDecodeError: {e}"
+            )
+        else:
+            logger.error(
+                f"Parser JSON decode error (stop_reason={_stop}, output={_len} chars): {e}"
+            )
         return None
     except Exception as e:
         logger.error(f"Parser error: {e}")
