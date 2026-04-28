@@ -1378,6 +1378,112 @@ def _extract_quote_info(user_message: str) -> dict:
     return info
 
 
+# PR #413 — Brief guards: extract structured data from operator brief
+# to override LLM (Sonnet) hallucinations or omissions in calc_input.
+# Used in the `mo-list-authority` block to compare brief vs Sonnet
+# inputs and force corrections.
+#
+# Filosofía: Sonnet alucina números o droppea info del brief. El guard
+# backend extrae literal del brief y compara. Si difieren con el input
+# del LLM, override + log ruidoso para telemetría.
+
+def _extract_regrueso_ml_from_brief(brief: str) -> tuple[float | None, str]:
+    """Extrae los ml de regrueso del brief del operador.
+
+    Estrategia estricta — devuelve `(ml, reason)`:
+      - `("ok", float)` — exactamente 1 mención cuantificada de regrueso
+        + valor numérico de ml ≤ 80 chars de distancia.
+      - `(None, "not_found")` — no hay mención de regrueso.
+      - `(None, "aborted_a_definir")` — regrueso mencionado pero con
+        "a definir" / "aprox" / "?" cerca → no auto-inyectar (pedido
+        del operador: que falle ruidoso, no dato silencioso mal).
+      - `(None, "multiple_matches")` — más de 1 par regrueso+ml en el
+        brief (ej: "regrueso shower 8ml + regrueso mesada 60ml") →
+        operador debe consolidar o pasarlo explícito.
+      - `(None, "qualitative_only")` — regrueso mencionado sin un
+        número de ml asociado (ej: "lleva regrueso 5cm" sin total).
+
+    Reusada por el guard de `mo-list-authority` antes de
+    `calculate_quote` para detectar:
+      - Sonnet omitió regrueso: brief tiene → input no.
+      - Sonnet alucinó regrueso_ml: brief tiene N → input tiene M.
+
+    Si esta función devuelve None+motivo, el guard NO inyecta y deja
+    que el operador resuelva — mejor falla ruidoso que cobrar mal.
+    """
+    import re
+    if not brief:
+        return None, "not_found"
+
+    text = brief.lower()
+    # Match each mention of "regrueso" word.
+    matches = list(re.finditer(r"\bregrueso\b", text))
+    if not matches:
+        return None, "not_found"
+
+    # For each mention, look up to 80 chars to the right for `\d ml`
+    # and check for "a definir" / "aprox" qualifier.
+    _aborts = ("a definir", "aprox", "aproximadamente", "consultar", "a confirmar")
+    found_values: list[float] = []
+    has_aborted = False
+    for m in matches:
+        end = min(len(text), m.end() + 80)
+        window = text[m.start():end]
+        # Abort markers cerca → ignorar este match (operador todavía
+        # no decidió). Otros matches pueden seguir contando.
+        if any(a in window for a in _aborts):
+            has_aborted = True
+            continue
+        # Buscar primer número con `ml` en la ventana.
+        ml_match = re.search(r"(\d+(?:[.,]\d+)?)\s*ml\b", window)
+        if ml_match:
+            raw = ml_match.group(1).replace(",", ".")
+            try:
+                found_values.append(float(raw))
+            except ValueError:
+                pass
+
+    if has_aborted and not found_values:
+        return None, "aborted_a_definir"
+    if len(found_values) == 0:
+        return None, "qualitative_only"
+    if len(found_values) > 1:
+        # Más de un valor cuantificado → no inyectar, falla ruidoso.
+        return None, "multiple_matches"
+    return found_values[0], "ok"
+
+
+def _brief_mentions_gris_mara_variant(brief: str) -> str | None:
+    """Devuelve la variante de Gris Mara que el operador pidió en el
+    brief, o None si no especificó variante.
+
+    Variantes reconocidas: "fiamatado" o "leather".
+
+    Estrategia: requiere que la variante aparezca ≤ 80 chars de la
+    palabra "gris mara" para no confundirse con menciones casuales
+    en otra parte del brief (ej: "antes pedimos fiamatado pero ahora
+    Gris Mara estándar" → no debe matchear fiamatado).
+    """
+    if not brief:
+        return None
+    text = brief.lower()
+    if "gris mara" not in text:
+        return None
+    import re
+    # Para cada mención de "gris mara", chequear ±80 chars por
+    # "fiamatado"/"leather". Asimétrico hacia adelante (es lo más
+    # común) pero tolera atrás también.
+    for m in re.finditer(r"gris\s+mara", text):
+        start = max(0, m.start() - 80)
+        end = min(len(text), m.end() + 80)
+        window = text[start:end]
+        if "fiamatado" in window:
+            return "fiamatado"
+        if "leather" in window:
+            return "leather"
+    return None
+
+
 def _serialize_content(content) -> list:
     """Convert Anthropic SDK content blocks to JSON-serializable dicts."""
     result = []
@@ -5536,6 +5642,97 @@ class AgentService:
                         f"for {save_to_qid}"
                     )
                     inputs["colocacion"] = False
+
+            # PR #413 — Brief guards: material variant + regrueso ml.
+            # Comparar el brief del operador contra los `inputs` que armó
+            # Sonnet, y forzar override + log ruidoso cuando difieren.
+            # Caso DYSCON destapó dos clases de drift del LLM:
+            #   1. Material variant: brief dice "Granito Gris Mara
+            #      (NO Extra 2)" y Sonnet inyecta "Granito Gris Mara
+            #      Fiamatado" (alucinación por descarte).
+            #   2. Regrueso ml: brief dice "REGRUESO frente — 60.68ml"
+            #      explícito y Sonnet directamente lo omite del input.
+            #
+            # ⚠️ Asimetría documentada: el guard de Gris Mara solo
+            # actúa cuando el brief NO menciona variante. Caso inverso
+            # (brief dice "Fiamatado" y Sonnet droppea a base) NO está
+            # cubierto. Es deuda — ver test
+            # `test_brief_has_variant_sonnet_drops_NOT_FIXED_doc_only`
+            # que la documenta como xfail. Ampliar a bidireccional
+            # cuando aparezca el caso real.
+
+            # Guard 1: Gris Mara — si brief no especifica variante,
+            # forzar `material="Granito Gris Mara"` para que el
+            # override de PR #410 dispare en `_find_material` y caiga
+            # en EXTRA 2 ESP (regla de negocio).
+            _brief_variant = _brief_mentions_gris_mara_variant(_pileta_all_text)
+            _input_material = (inputs.get("material") or "")
+            _input_material_lower = _input_material.lower()
+            if (
+                "gris mara" in _input_material_lower
+                and _brief_variant is None
+                and ("fiamatado" in _input_material_lower or "leather" in _input_material_lower)
+            ):
+                logging.warning(
+                    f"[brief-guard-material] Gris Mara variant override "
+                    f"for {save_to_qid}: brief='Granito Gris Mara' (sin variante) "
+                    f"| sonnet={_input_material!r} → forced 'Granito Gris Mara' "
+                    f"(regla de negocio: solo EXTRA 2 ESP salvo pedido explícito)"
+                )
+                inputs["material"] = "Granito Gris Mara"
+
+            # Guard 2: Regrueso — comparar brief vs input.
+            # Reglas (siguiendo feedback del review):
+            #   a) Brief tiene N + Sonnet pasó N → ✓ no-op.
+            #   b) Brief tiene N + Sonnet pasó M ≠ N → override + warning
+            #      (alucinación de número).
+            #   c) Brief tiene N + Sonnet no pasó nada → inyectar.
+            #   d) Brief sin regrueso + Sonnet pasó algo → respetar
+            #      (lo infirió de otro lado, no es nuestra pelea).
+            #   e) Brief con "a definir" / >1 match / qualitative_only →
+            #      NO inyectar (mejor falla ruidoso que dato silencioso mal).
+            _brief_regrueso_ml, _brief_regrueso_reason = (
+                _extract_regrueso_ml_from_brief(_pileta_all_text)
+            )
+            _input_regrueso = bool(inputs.get("regrueso"))
+            _input_regrueso_ml = inputs.get("regrueso_ml") or 0
+            try:
+                _input_regrueso_ml = float(_input_regrueso_ml)
+            except (TypeError, ValueError):
+                _input_regrueso_ml = 0.0
+
+            if _brief_regrueso_reason == "ok" and _brief_regrueso_ml is not None:
+                # Casos a/b/c — brief explícito.
+                if not _input_regrueso or _input_regrueso_ml <= 0:
+                    # Caso (c): Sonnet omitió.
+                    logging.warning(
+                        f"[brief-guard-regrueso] auto-inyectado para {save_to_qid}: "
+                        f"brief={_brief_regrueso_ml}ml | sonnet=None → "
+                        f"forced regrueso=True regrueso_ml={_brief_regrueso_ml}"
+                    )
+                    inputs["regrueso"] = True
+                    inputs["regrueso_ml"] = _brief_regrueso_ml
+                elif abs(_input_regrueso_ml - _brief_regrueso_ml) > 0.01:
+                    # Caso (b): alucinación. Override.
+                    logging.warning(
+                        f"[brief-guard-regrueso] HALLUCINATION override "
+                        f"for {save_to_qid}: brief={_brief_regrueso_ml}ml "
+                        f"| sonnet={_input_regrueso_ml}ml → forced "
+                        f"{_brief_regrueso_ml}ml. Sonnet inventó un número "
+                        f"distinto al del brief — auditar por qué."
+                    )
+                    inputs["regrueso_ml"] = _brief_regrueso_ml
+                # else: caso (a) — no-op silencioso (match perfecto).
+            elif _brief_regrueso_reason in ("multiple_matches", "aborted_a_definir", "qualitative_only"):
+                # Caso (e): no inyectar, log ruidoso.
+                logging.warning(
+                    f"[brief-guard-regrueso] NO override for {save_to_qid}: "
+                    f"brief tiene regrueso pero ambiguo (reason={_brief_regrueso_reason}). "
+                    f"Sonnet pasó regrueso={_input_regrueso} ml={_input_regrueso_ml}. "
+                    f"Operador debe consolidar o pasarlo explícito."
+                )
+            # Caso (d) `not_found`: brief sin regrueso → respetar lo
+            # que pasó Sonnet (silencioso, sin warning — es el path normal).
 
             if not inputs.get("pileta"):
                 # 2. Keyword fallback: scan conversation for pileta/bacha mentions
