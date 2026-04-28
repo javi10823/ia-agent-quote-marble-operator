@@ -98,11 +98,30 @@ def _check_iva_mo(qdata: dict) -> tuple[list[str], list[str]]:
         up = mo.get("unit_price")
         desc = mo.get("description", "?")
         has_edif_disc = bool(mo.get("edificio_discount"))
+        # PR #415 — items con `price_includes_vat: true` (caso flete
+        # Piñero/Cañada/Alvear): el JSON ya tiene el precio final con
+        # IVA, así que `unit_price == base_price`. La fórmula
+        # `unit == round(base × 1.21)` NO aplica para estos. Sin este
+        # skip el validador bloqueaba generate_documents y Sonnet
+        # caía a recalcular cambiando localidad → flete viejo + render
+        # incorrecto (caso DYSCON post-#414).
+        price_includes_vat = bool(mo.get("price_includes_vat"))
 
         if bp is None:
             continue  # Old data without base_price — skip silently
         if up is None:
             warnings.append(f"MO '{desc}' sin unit_price")
+            continue
+
+        if price_includes_vat:
+            # Cuando el catálogo ya trae el precio con IVA, el "base"
+            # es igual al "with_iva". Validar igualdad estricta —
+            # cualquier divergencia es bug del calculator/catalog_lookup.
+            if abs(up - bp) > 1:
+                errors.append(
+                    f"MO '{desc}' con price_includes_vat=true esperaba "
+                    f"unit==base ({bp}), actual={up}"
+                )
             continue
 
         if has_edif_disc:
