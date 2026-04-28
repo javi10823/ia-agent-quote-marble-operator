@@ -219,10 +219,28 @@ def parsed_pieces_to_card(parsed: dict) -> dict | None:
             # El zócalo hereda la quantity del tramo padre (24 mesadas →
             # 24 zócalos). Si el LLM ya pasó `quantity` para el zócalo,
             # respetarla; si no, heredar del tramo previo en el final.
+            #
+            # PR #408 — `m2` del zócalo ya multiplicado por quantity.
+            # `parsed_pieces_to_card` ya escribe `m2 = ml × alto × quantity`
+            # como m² total del zócalo (consistente con tramo.m2 que ya
+            # viene multiplicado por #405). Cualquier consumer (frontend
+            # render, build_verified_context, etc.) puede leer `m2`
+            # directamente sin recalcular ni re-multiplicar.
+            #
+            # `lado` lleva sufijo `(×N)` cuando quantity > 1 — espejo del
+            # tratamiento del tramo. Sin esto el operador veía
+            # "M1 mesada (×24)" pero el zócalo abajo decía solo "atrás"
+            # (mismo bug que motivó este PR).
+            base_lado = (p.get("description") or "trasero").replace("Zócalo ", "").replace("Zócalo", "").strip() or "trasero"
+            lado_display = f"{base_lado} (×{quantity})" if quantity > 1 else base_lado
+            ml_v = float(largo)
+            alto_v = float(alto)
             zocalo = {
-                "lado": (p.get("description") or "trasero").replace("Zócalo ", "").replace("Zócalo", "").strip() or "trasero",
-                "ml": float(largo),
-                "alto_m": float(alto),
+                "lado": lado_display,
+                "ml": ml_v,
+                "alto_m": alto_v,
+                # PR #408 — m² total del zócalo (ya multiplicado por quantity).
+                "m2": round(ml_v * alto_v * quantity, 2),
                 "status": "CONFIRMADO",
                 "opus_ml": None,
                 "sonnet_ml": None,
@@ -248,6 +266,10 @@ def parsed_pieces_to_card(parsed: dict) -> dict | None:
     # quantity=1 (el default del parser). Lo sobrescribimos con la
     # quantity del tramo padre — caso DYSCON: 24 mesadas → 24 zócalos.
     # Si el zócalo trae quantity > 1 explícita del LLM, respetarla.
+    #
+    # PR #408 — al heredar quantity, también recomputar `m2` y agregar
+    # sufijo `(×N)` al `lado` (porque ambos se calcularon arriba con
+    # quantity=1 default).
     for t in tramos:
         t_qty = t.get("quantity", 1)
         if t_qty <= 1:
@@ -255,17 +277,23 @@ def parsed_pieces_to_card(parsed: dict) -> dict | None:
         for z in t["zocalos"]:
             if z.get("quantity", 1) <= 1:
                 z["quantity"] = t_qty
+                # Recompute m² total con la quantity heredada.
+                z["m2"] = round(z.get("ml", 0) * z.get("alto_m", 0) * t_qty, 2)
+                # Sufijo (×N) al display del lado (idempotente: solo
+                # agrega si no estaba ya).
+                _lado = z.get("lado") or "trasero"
+                if f"(×{t_qty})" not in _lado:
+                    z["lado"] = f"{_lado} (×{t_qty})"
 
-    # PR #405 — total m² del sector, ya con cantidades aplicadas:
-    #   - tramo.m2.valor ya viene multiplicado por tramo.quantity.
-    #   - zocalo: ml × alto_m × quantity.
+    # PR #405 + #408 — total m² del sector, todo ya multiplicado.
+    #   - tramo.m2.valor ya viene con quantity aplicado (#405).
+    #   - zocalo.m2 ya viene con quantity aplicado (#408).
+    # Equivalente al cálculo viejo `ml * alto_m * quantity`, pero leyendo
+    # el campo persistido — fuente única de verdad para que el frontend
+    # pueda mostrar el mismo número sin recalcular.
     m2_total_valor = round(
         sum(t["m2"]["valor"] for t in tramos)
-        + sum(
-            z["ml"] * z["alto_m"] * z.get("quantity", 1)
-            for t in tramos
-            for z in t["zocalos"]
-        ),
+        + sum(z.get("m2", 0) for t in tramos for z in t["zocalos"]),
         2,
     )
 

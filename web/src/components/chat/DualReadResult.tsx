@@ -102,6 +102,12 @@ interface Zocalo {
   ml: number | null;
   alto_m: number | null;
   status: string;
+  // PR #408 — quantity heredada del tramo padre cuando el brief textual
+  // declaró tipologías repetidas (ej: 24 mesadas con su zócalo cada una).
+  // Si está ausente o ≤1, se asume 1 unidad. El render del m² del
+  // zócalo multiplica por este valor para que el total coincida con el
+  // calculator downstream.
+  quantity?: number;
   _manual?: boolean;
 }
 
@@ -689,7 +695,14 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry, lock
       t.zocalos.forEach((z) => {
         const ml = safeNum(z.ml);
         if (ml > 0) {
-          zocalosM2 += ml * safeNum(z.alto_m);
+          // PR #408 — multiplicar por quantity heredada del tramo padre
+          // cuando el brief textual declaró tipologías repetidas (×N).
+          // Sin esto, el zócalo del Office tipo M1 ×24 contribuye solo
+          // su m²/u al total (0.19 en vez de 4.56) → display visible
+          // del despiece queda mintiendo. `quantity || 1` para retro-
+          // compatibilidad con duals viejos sin el field.
+          const qty = z.quantity || 1;
+          zocalosM2 += ml * safeNum(z.alto_m) * qty;
           zocalosCount += 1;
         }
       });
@@ -728,7 +741,12 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry, lock
           const ml = safeNum(z.ml);
           if (ml <= 0) return;
           const alto = safeNum(z.alto_m);
-          const zm2 = ml * alto;
+          // PR #408 — m² del zócalo multiplicado por quantity. Mismo
+          // tratamiento que el render de filas (más abajo, ~línea 950)
+          // y que el sumario del header (zocalosM2). Si el dual viene
+          // del plano (sin quantity), `quantity || 1` mantiene comportamiento.
+          const qty = z.quantity || 1;
+          const zm2 = ml * alto * qty;
           total += zm2;
           const altoDisplay = z.alto_m == null ? MISSING : alto.toFixed(2);
           lines.push(`| Zóc. ${z.lado} | ${ml.toFixed(2)} ml × ${altoDisplay} | ${zm2.toFixed(2)} |`);
@@ -947,7 +965,13 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry, lock
                           <span className="text-t4 ml-0.5">m</span>
                         </div>
                         <div className="text-t1 font-medium text-right flex items-center justify-end gap-2">
-                          <span>{(z.ml == null || z.alto_m == null) ? MISSING : (z.ml * z.alto_m).toFixed(2)}</span>
+                          {/* PR #408 — m² del zócalo en la fila editable
+                              también multiplica por quantity heredada. Si
+                              el zócalo es de un Office tipo M1 ×24, la
+                              fila muestra el m² total del lote (4.56),
+                              consistente con el resumen del header y con
+                              el cálculo del Paso 2 downstream. */}
+                          <span>{(z.ml == null || z.alto_m == null) ? MISSING : (z.ml * z.alto_m * (z.quantity || 1)).toFixed(2)}</span>
                           {/* PR #61 — botón remover siempre disponible, independiente
                               del status (el operador confirma con el cliente si lleva
                               zócalos o no; Dual Read solo sugiere). Hover aumenta
