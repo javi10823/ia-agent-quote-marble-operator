@@ -250,6 +250,26 @@
     "aldao": {
       "sku": "ENVALDAO",
       "pulido_extra": true
+    },
+    "piñero": {
+      "sku": "ENVPIÑERO",
+      "pulido_extra": true
+    },
+    "pinero": {
+      "sku": "ENVPIÑERO",
+      "pulido_extra": true
+    },
+    "cañada de gomez": {
+      "sku": "FLETE CAÑADA",
+      "pulido_extra": true
+    },
+    "cañada": {
+      "sku": "FLETE CAÑADA",
+      "pulido_extra": true
+    },
+    "canada de gomez": {
+      "sku": "FLETE CAÑADA",
+      "pulido_extra": true
     }
   },
   "material_aliases": {
