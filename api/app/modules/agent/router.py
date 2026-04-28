@@ -1056,9 +1056,11 @@ async def derive_material(
         "plazo": plazo,
         "skip_flete": original.quote_breakdown.get("skip_flete", False) if original.quote_breakdown else False,
     }
-    # Carry over frentin/inglete/pulido from original breakdown if they existed
+    # Carry over frentin/inglete/pulido (y PR #401: regrueso) from original
+    # breakdown if they existed. Sin este carry-over un derive_material
+    # perdería el regrueso del original.
     if original.quote_breakdown:
-        for key in ("frentin", "frentin_ml", "inglete", "pulido", "discount_pct", "is_edificio"):
+        for key in ("frentin", "frentin_ml", "regrueso", "regrueso_ml", "inglete", "pulido", "discount_pct", "is_edificio"):
             val = original.quote_breakdown.get(key)
             if val:
                 calc_input[key] = val
