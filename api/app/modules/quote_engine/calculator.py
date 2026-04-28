@@ -1386,7 +1386,23 @@ def calculate_quote(input_data: dict) -> dict:
                 logging.info(f"Edificio flete: {num_pieces} piezas físicas ÷ {_per_trip} = {flete_qty} fletes")
             else:
                 flete_qty = 1
-            mo_items.append({"description": f"Flete + toma medidas {localidad}", "quantity": flete_qty, "unit_price": flete_price, "base_price": flete_base, "total": round(flete_price * flete_qty)})
+            # PR #415 — propagar el flag price_includes_vat del catálogo
+            # al mo_item para que el validador (`_check_mo_iva`) sepa
+            # que la fórmula `unit == round(base × 1.21)` NO aplica
+            # cuando el item ya viene con IVA incluido en el JSON
+            # (caso Piñero/Cañada/Alvear). Sin esto el validador
+            # falla y bloquea generate_documents (caso DYSCON post-#414).
+            _flete_includes_vat = bool(flete_result.get("price_includes_vat"))
+            _flete_item = {
+                "description": f"Flete + toma medidas {localidad}",
+                "quantity": flete_qty,
+                "unit_price": flete_price,
+                "base_price": flete_base,
+                "total": round(flete_price * flete_qty),
+            }
+            if _flete_includes_vat:
+                _flete_item["price_includes_vat"] = True
+            mo_items.append(_flete_item)
 
             # Pulido de cantos extra: if zone has pulido_extra=true AND colocación is on
             if colocacion and flete_result.get("pulido_extra", False):

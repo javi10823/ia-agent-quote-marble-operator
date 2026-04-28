@@ -182,6 +182,15 @@ def catalog_lookup(catalog: str, sku: str) -> dict:
                 result["sink_type"] = item["sink_type"]
             if "thickness_mm" in item:
                 result["thickness_mm"] = item["thickness_mm"]
+            # PR #415 — propagar `price_includes_vat: true` al output.
+            # Necesario para que downstream (calculator → mo_item →
+            # validation_tool._check_mo_iva) sepa que `unit_price ==
+            # base_price` es la regla correcta para este item, en vez
+            # de exigir `unit_price == round(base × 1.21)`.
+            # PR #414 hizo que el price salga ya con IVA pero el flag
+            # se quedaba en el item sin propagar.
+            if _price_already_has_vat:
+                result["price_includes_vat"] = True
 
             return result
 
