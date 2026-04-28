@@ -831,6 +831,84 @@ def list_pieces(pieces: list, is_edificio: bool = False) -> dict:
     }
 
 
+def build_deterministic_paso1(
+    list_pieces_result: dict,
+    *,
+    client_name: str | None = None,
+    project: str | None = None,
+    material: str | None = None,
+) -> str:
+    """Build Paso 1 markdown from `list_pieces` output — 100% deterministic.
+
+    PR #412 — Paso 1 venía siendo armado libremente por el LLM como
+    respuesta de chat. El LLM ignoraba `piece.m2` y `total_m2` del
+    response y rehacía la cuenta como `largo × prof` (m²/u, sin
+    multiplicar por `qty`). Caso DYSCON: tabla decía 9.43 m² cuando
+    `total_m2` era 42.39, y el propio modelo emitía un warning de
+    "DISCREPANCIA DETECTADA" como efecto secundario del bug.
+
+    Patrón: gemelo a `build_deterministic_paso2` (línea ~1607). El
+    handler de `list_pieces` en agent.py inyecta este string como
+    `result["_paso1_rendered"]`. El system prompt instruye al LLM a
+    usarlo verbatim — sin recalcular ni acompañar con tabla propia.
+
+    Reglas del render:
+    - Una fila por `piece` del response.
+    - Columna `Cant`: `×N` cuando `qty > 1`, `—` cuando `qty == 1`.
+    - Columna `m²`: usar **`piece.m2` literal** (ya viene multiplicado
+      por qty desde `list_pieces:821`).
+    - TOTAL: usar **`total_m2` literal** del response (suma del
+      backend, fuente de verdad — nunca recalcular sumando filas).
+    - Header con cliente/obra/material si se pasaron.
+    """
+    pieces = list_pieces_result.get("pieces") or []
+    total_m2 = list_pieces_result.get("total_m2", 0)
+
+    lines: list[str] = []
+
+    # Header — cliente / obra / material (si vienen).
+    if client_name or project:
+        header_parts = []
+        if client_name:
+            header_parts.append(f"**{client_name}**")
+        if project:
+            header_parts.append(f"**Obra:** {project}")
+        lines.append(" | ".join(header_parts))
+        lines.append("")
+
+    # Material + total m² del sector.
+    if material:
+        # `_round_half_up` para alinear display con el cálculo (ARS rules).
+        _total_disp = _round_half_up(total_m2, 2)
+        # Display ARS-style: 42.39 → "42,39" (coma decimal). El render
+        # del Paso 2 hace lo mismo en otras partes del breakdown.
+        _total_str = f"{_total_disp:.2f}".replace(".", ",")
+        lines.append(f"### {material} — {_total_str} m²")
+        lines.append("")
+
+    # Tabla de piezas.
+    lines.append("| Pieza | Cant | m² |")
+    lines.append("|---|---|---|")
+    for p in pieces:
+        label = p.get("label") or ""
+        qty = p.get("qty", 1) or 1
+        try:
+            qty_int = int(qty)
+        except (TypeError, ValueError):
+            qty_int = 1
+        cant_disp = f"×{qty_int}" if qty_int > 1 else "—"
+        m2 = p.get("m2", 0)
+        m2_disp = f"{m2:.2f}".replace(".", ",")
+        lines.append(f"| {label} | {cant_disp} | {m2_disp} |")
+
+    # TOTAL — fuente única de verdad: `total_m2` del response.
+    _total_disp = _round_half_up(total_m2, 2)
+    _total_str = f"{_total_disp:.2f}".replace(".", ",")
+    lines.append(f"| **TOTAL** | | **{_total_str} m²** |")
+
+    return "\n".join(lines)
+
+
 def calculate_merma(m2_needed: float, material_type: str, is_edificio: bool = False) -> dict:
     """Calculate merma for synthetic materials.
 
