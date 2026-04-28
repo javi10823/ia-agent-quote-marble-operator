@@ -28,6 +28,18 @@ Reglas de medidas:
 - Frentín: largo × alto (generalmente 0.02m o 0.03m)
 - Si dice "zócalo atrás 5cm" en una mesada de 2m → zócalo largo=2.0, alto=0.05
 
+Cantidad (`quantity`) — PR #405:
+- Por DEFECTO `quantity=1` (cocinas particulares, una mesada por pieza).
+- Si el texto declara cantidad multiplicada explícita ("× 24", "×2",
+  "(×N)", "×24 unidades", "= 27.60 m²" cuando dice "1.15 m²/u × 24"),
+  extraer ese N como `quantity` entero ≥1.
+- El zócalo de una pieza con `quantity=N` también lleva `quantity=N`
+  (24 mesadas → 24 zócalos). NO inventar zócalos extra; solo replicar
+  la cantidad de la mesada padre.
+- NO multiplicar `largo`/`prof`/`alto`. Esos quedan por unidad.
+  El cálculo `m² total = largo × prof × quantity` lo hace el calculator
+  downstream — vos solo extraés la cantidad como número aparte.
+
 Detectar también:
 - pileta: "Johnson" o "johnson" → "empotrada_johnson", "empotrada" o "bajo mesada" → "empotrada_cliente", "apoyo" → "apoyo"
 - anafe: si menciona anafe/hornalla → true
@@ -37,8 +49,9 @@ Detectar también:
 Respondé SOLO con JSON válido, sin markdown ni explicaciones:
 {{
   "pieces": [
-    {{"description": "Mesada cocina", "largo": 2.0, "prof": {depth}}},
-    {{"description": "Zócalo trasero", "largo": 2.0, "alto": {zocalo}}}
+    {{"description": "M1 mesada", "largo": 1.92, "prof": {depth}, "quantity": 24}},
+    {{"description": "M1 zócalo atrás", "largo": 1.92, "alto": 0.10, "quantity": 24}},
+    {{"description": "M2 mesada", "largo": 1.70, "prof": {depth}, "quantity": 1}}
   ],
   "pileta": "empotrada_johnson" | "empotrada_cliente" | "apoyo" | null,
   "anafe": false,
@@ -138,19 +151,36 @@ def parsed_pieces_to_card(parsed: dict) -> dict | None:
             continue
         prof = p.get("prof")
         alto = p.get("alto")
+        # PR #405 — cantidad multiplicada (default 1). El parser LLM la
+        # extrae cuando ve "×24", "×2", etc. en el brief. Casos sin
+        # quantity (cocina particular) quedan en 1 y no cambian.
+        try:
+            quantity = int(p.get("quantity") or 1)
+        except (TypeError, ValueError):
+            quantity = 1
+        if quantity < 1:
+            quantity = 1
 
         if prof is not None and isinstance(prof, (int, float)) and prof > 0:
-            # Es una mesada
-            m2 = round(largo * prof, 2)
+            # Es una mesada. m2.valor = largo × prof × quantity (m² total
+            # del tramo). Calculator downstream NO debe re-multiplicar:
+            # se le pasa `quantity` separado y `largo/prof` por unidad.
+            m2_per_unit = round(largo * prof, 2)
+            m2 = round(m2_per_unit * quantity, 2)
+            base_desc = p.get("description") or f"Mesada {len(tramos) + 1}"
+            descripcion = f"{base_desc} (×{quantity})" if quantity > 1 else base_desc
             tramo = {
                 "id": f"t{len(tramos) + 1}",
-                "descripcion": p.get("description") or f"Mesada {len(tramos) + 1}",
+                "descripcion": descripcion,
                 "largo_m": _field(largo),
                 "ancho_m": _field(prof),
                 "m2": _field(m2),
                 "zocalos": [],
                 "frentin": [],
                 "regrueso": [],
+                # PR #405 — cantidad propagada al tramo. El handoff a
+                # calculator usa este campo para `pieces[].quantity`.
+                "quantity": quantity,
                 "_manual": True,
             }
             # Si hay zócalos pendientes sin tramo previo, asignarlos al primer tramo
@@ -159,7 +189,10 @@ def parsed_pieces_to_card(parsed: dict) -> dict | None:
                 pending_zocalos = []
             tramos.append(tramo)
         elif alto is not None and isinstance(alto, (int, float)) and alto > 0:
-            # Es un zócalo — asignar al último tramo, o dejarlo pendiente
+            # Es un zócalo — asignar al último tramo, o dejarlo pendiente.
+            # El zócalo hereda la quantity del tramo padre (24 mesadas →
+            # 24 zócalos). Si el LLM ya pasó `quantity` para el zócalo,
+            # respetarla; si no, heredar del tramo previo en el final.
             zocalo = {
                 "lado": (p.get("description") or "trasero").replace("Zócalo ", "").replace("Zócalo", "").strip() or "trasero",
                 "ml": float(largo),
@@ -167,6 +200,9 @@ def parsed_pieces_to_card(parsed: dict) -> dict | None:
                 "status": "CONFIRMADO",
                 "opus_ml": None,
                 "sonnet_ml": None,
+                # PR #405 — quantity del zócalo. Si el LLM no lo extrajo,
+                # se hereda del tramo padre más abajo (resolución en 2 pasos).
+                "quantity": quantity,
             }
             if tramos:
                 tramos[-1]["zocalos"].append(zocalo)
@@ -180,9 +216,30 @@ def parsed_pieces_to_card(parsed: dict) -> dict | None:
     if pending_zocalos:
         tramos[0]["zocalos"].extend(pending_zocalos)
 
+    # PR #405 — herencia de quantity para zócalos del último tramo.
+    # Si el LLM no extrajo quantity para un zócalo (ej: solo dice
+    # "zócalo 5cm" después de la mesada con ×24), el zócalo arranca con
+    # quantity=1 (el default del parser). Lo sobrescribimos con la
+    # quantity del tramo padre — caso DYSCON: 24 mesadas → 24 zócalos.
+    # Si el zócalo trae quantity > 1 explícita del LLM, respetarla.
+    for t in tramos:
+        t_qty = t.get("quantity", 1)
+        if t_qty <= 1:
+            continue
+        for z in t["zocalos"]:
+            if z.get("quantity", 1) <= 1:
+                z["quantity"] = t_qty
+
+    # PR #405 — total m² del sector, ya con cantidades aplicadas:
+    #   - tramo.m2.valor ya viene multiplicado por tramo.quantity.
+    #   - zocalo: ml × alto_m × quantity.
     m2_total_valor = round(
         sum(t["m2"]["valor"] for t in tramos)
-        + sum(z["ml"] * z["alto_m"] for t in tramos for z in t["zocalos"]),
+        + sum(
+            z["ml"] * z["alto_m"] * z.get("quantity", 1)
+            for t in tramos
+            for z in t["zocalos"]
+        ),
         2,
     )
 

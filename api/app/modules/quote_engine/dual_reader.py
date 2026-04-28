@@ -888,14 +888,42 @@ def build_verified_context(
             largo_v = largo.get("valor", 0) if isinstance(largo, dict) else largo
             ancho_v = ancho.get("valor", 0) if isinstance(ancho, dict) else ancho
             m2_v = m2.get("valor", 0) if isinstance(m2, dict) else m2
-            lines.append(f"  {desc}: {largo_v}m × {ancho_v}m = {m2_v} m²")
+            # PR #405 — render quantity cuando > 1 (path TEXT con
+            # tipologías repetidas, ej: edificio con 24 mesadas idénticas).
+            # `m2_v` ya viene multiplicado por quantity desde el parser
+            # text_parser.parsed_pieces_to_card. La línea `× quantity =`
+            # le indica a Claude que debe pasar `quantity=N` al
+            # `calculate_quote.pieces[]` (NO un m²_override) — el
+            # calculator multiplica por su cuenta y NO puede recibir
+            # ambos sin doblar el cobro.
+            t_qty = tramo.get("quantity", 1) or 1
+            try:
+                t_qty = int(t_qty)
+            except (TypeError, ValueError):
+                t_qty = 1
+            if t_qty > 1:
+                lines.append(
+                    f"  {desc}: {largo_v}m × {ancho_v}m × {t_qty} = {m2_v} m²"
+                )
+            else:
+                lines.append(f"  {desc}: {largo_v}m × {ancho_v}m = {m2_v} m²")
             for z in tramo.get("zocalos", []):
                 ml = z.get("ml", 0) or 0
                 alto = z.get("alto_m", _default_zocalo_alto())
                 lado = z.get("lado", "?")
-                if ml > 0:
+                if ml <= 0:
+                    continue  # ml=0 → operador lo descartó intencionalmente
+                # PR #405 — zócalo también lleva quantity (heredada del
+                # tramo padre en el adapter). Mismo formato.
+                z_qty = z.get("quantity", 1) or 1
+                try:
+                    z_qty = int(z_qty)
+                except (TypeError, ValueError):
+                    z_qty = 1
+                if z_qty > 1:
+                    lines.append(f"  Zócalo {lado}: {ml}ml × {alto}m × {z_qty}")
+                else:
                     lines.append(f"  Zócalo {lado}: {ml}ml × {alto}m")
-                # ml=0 → ignorado (operador lo descartó intencionalmente)
             # PR #387 — emitir frentín / faldón / regrueso de cada tramo
             # con el mismo formato que los zócalos. Antes estos campos
             # vivían en `tramo.frentin` / `tramo.regrueso` pero no se
