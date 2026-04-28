@@ -136,16 +136,37 @@ def catalog_lookup(catalog: str, sku: str) -> dict:
 
             # Price with IVA (from config.json)
             # Business rule: USD uses floor(), ARS uses round() — intentional
+            #
+            # PR #414 — respetar `price_includes_vat: true`. Antes el
+            # catalog_lookup aplicaba ×1.21 SIEMPRE, ignorando el flag.
+            # Caso DYSCON: ENVPIÑERO ($100.000 con IVA) cobraba $121.000.
+            # Cuando el flag es true, el price del JSON ya es el final
+            # con IVA y NO debe re-multiplicarse.
+            #
+            # Affected items hoy (todos en delivery-zones.json):
+            #   ENVPIÑERO ($100.000), FLETE CAÑADA ($225.000),
+            #   ENVALV ($30.000). Para esos 3, price_with_iva = price_base.
+            #
+            # `price_*_base` mantiene el valor crudo del JSON para
+            # auditoría — cuando price_includes_vat=true el "base" y el
+            # "with_iva" son iguales.
             iva = _get_iva_multiplier()
+            _price_already_has_vat = bool(item.get("price_includes_vat"))
             if "price_usd" in item:
                 price_base = item["price_usd"]
-                price_with_iva = math.floor(price_base * iva)  # USD: floor per business rule
+                if _price_already_has_vat:
+                    price_with_iva = price_base
+                else:
+                    price_with_iva = math.floor(price_base * iva)  # USD: floor per business rule
                 result["price_usd"] = price_with_iva
                 result["price_usd_base"] = price_base
                 result["currency"] = "USD"
             elif "price_ars" in item:
                 price_base = item["price_ars"]
-                price_with_iva = round(price_base * iva)  # ARS: round per business rule
+                if _price_already_has_vat:
+                    price_with_iva = price_base
+                else:
+                    price_with_iva = round(price_base * iva)  # ARS: round per business rule
                 result["price_ars"] = price_with_iva
                 result["price_ars_base"] = price_base
                 result["currency"] = "ARS"
