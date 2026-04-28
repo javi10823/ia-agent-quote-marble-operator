@@ -61,6 +61,15 @@ class TestRegruesoMoItem:
             f"{[m['description'] for m in result['mo_items']]}"
         )
         item = regrueso_items[0]
+        # PR #403 — label canónico del repo (ver
+        # `examples/quote-030-juan-carlos-negro-brasil.md:49`).
+        # PR #401 había puesto "Regrueso frente" calcando mal del
+        # frentín — el "frente" del brief era ubicación, no parte
+        # del nombre. El operador lo señaló al revisar un quote.
+        assert item["description"] == "Mano de obra regrueso x ml", (
+            f"Label canónico distinto: {item['description']!r}. "
+            f"Esperado: 'Mano de obra regrueso x ml' (ver ejemplo #030)."
+        )
         assert item["quantity"] == 60.68
         # Precio del catálogo labor.json — 13810.06 ARS por ml (sin IVA).
         # El calculator aplica IVA ×1.21 → round(13810.06 * 1.21) = 16710

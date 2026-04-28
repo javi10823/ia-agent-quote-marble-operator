@@ -1177,8 +1177,14 @@ def calculate_quote(input_data: dict) -> dict:
     if regrueso and regrueso_ml > 0:
         price, base = _get_mo_price("REGRUESO")
         ml = round(regrueso_ml, 2)
+        # PR #403 — label canónico del repo. El ejemplo validado
+        # `examples/quote-030-juan-carlos-negro-brasil.md:49` usa
+        # "Mano de obra regrueso x ml" como description del row de
+        # MO. PR #401 (yo) había puesto "Regrueso frente" calcando
+        # mal del frentín — el "frente" del brief era ubicación
+        # ("regrueso del frente, h:5cm"), no parte del nombre.
         mo_items.append({
-            "description": "Regrueso frente",
+            "description": "Mano de obra regrueso x ml",
             "quantity": ml,
             "unit_price": price,
             "base_price": base,
