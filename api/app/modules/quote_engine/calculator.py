@@ -1160,8 +1160,25 @@ def calculate_quote(input_data: dict) -> dict:
         price_unit = mat_result["price_ars"]
         price_base = mat_result["price_ars_base"]
 
+    # Resolver regrueso_ml ANTES del m² total: el regrueso consume material
+    # análogo al zócalo (canto visible de 5cm de alto). PR #401 sumó la MO,
+    # pero los m² nunca se acumulaban → material subfacturado.
+    # Ver rules/calculation-formulas.md:83-88 ("SI suma m²: ml_total × alto").
+    regrueso = input_data.get("regrueso", False)
+    regrueso_ml = input_data.get("regrueso_ml", 0)
+    if regrueso and regrueso_ml <= 0:
+        for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces):
+            desc = (p.get("description") or "").lower()
+            if "regrueso" in desc:
+                regrueso_ml += p.get("largo", 0)
+        if regrueso_ml <= 0:
+            regrueso_ml = 1
+
     # 2. Calculate m2
     total_m2, piece_details = calculate_m2([p if isinstance(p, dict) else p.model_dump() for p in pieces])
+    if regrueso and regrueso_ml > 0:
+        regrueso_m2 = round(regrueso_ml * 0.05, 4)
+        total_m2 = round(total_m2 + regrueso_m2, 4)
 
     # 3. Merma
     merma = calculate_merma(total_m2, mat_result.get("name", material_name), is_edificio=is_edificio)
@@ -1299,33 +1316,8 @@ def calculate_quote(input_data: dict) -> dict:
             ml_45 = round(frentin_ml * 2, 2)
             mo_items.append({"description": "Corte 45", "quantity": ml_45, "unit_price": price_45, "base_price": base_45, "total": round(price_45 * ml_45)})
 
-    # PR #401 — Regrueso (refuerzo de espesor en frentes). Análogo al
-    # frentín pero más simple:
-    #   - Único SKU "REGRUESO" en labor.json (sin variante sintético).
-    #   - No tiene CORTE45 asociado — el regrueso se pega plano al frente.
-    #   - Cobrado por metro lineal igual que el frentín.
-    #
-    # Causa raíz histórica: PR #392 introdujo el detector + apply de
-    # respuesta de regrueso en pending_questions, pero asumió que el
-    # calculator lo procesaría automáticamente. No había bloque para
-    # convertir `regrueso_ml` → mo_item, por lo que el texto fuente
-    # ("M.O. REGRUESO frente 1x60,68ml") nunca se reflejaba en el costo
-    # final. Este bloque lo cierra.
-    regrueso = input_data.get("regrueso", False)
-    regrueso_ml = input_data.get("regrueso_ml", 0)
-    if regrueso and regrueso_ml <= 0:
-        # Auto-calculate from pieces with "regrueso" en la descripción.
-        # Mismo patrón que el auto-detect del frentín (línea 1130-1136):
-        # si el operador declaró el regrueso pero no pasó ml, sumamos el
-        # largo de las piezas marcadas como tal. Fallback de 1 ml si no
-        # se encuentra ninguna — pero al menos genera la línea para que
-        # el operador la vea (vs silenciosamente perderla).
-        for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces):
-            desc = (p.get("description") or "").lower()
-            if "regrueso" in desc:
-                regrueso_ml += p.get("largo", 0)
-        if regrueso_ml <= 0:
-            regrueso_ml = 1  # Fallback: at least 1 ml
+    # PR #401 — Regrueso MO. La resolución de `regrueso_ml` se hace arriba
+    # (antes del cálculo de total_m2) porque también consume material.
     if regrueso and regrueso_ml > 0:
         price, base = _get_mo_price("REGRUESO")
         ml = round(regrueso_ml, 2)

@@ -165,3 +165,25 @@ class TestRegruesoRegressionGuards:
         descriptions = [m["description"].lower() for m in result["mo_items"]]
         assert any("regrueso" in d for d in descriptions)
         assert not any("armado frentín" in d or "armado frentin" in d for d in descriptions)
+
+    def test_regrueso_suma_m2_al_material(self):
+        """El regrueso consume material como un canto de 5cm de alto
+        (análogo al zócalo). `material_m2` debe incluir `regrueso_ml × 0.05`
+        — antes solo se cobraba la MO, el material quedaba subfacturado.
+
+        Caso del bug: 42.39 m² de mesadas + 60.68 ml de regrueso →
+        material_m2 esperado = 42.39 + 3.034 = 45.424."""
+        base_pieces = [{"description": "Mesada", "largo": 7.065, "prof": 6.0, "quantity": 1}]
+
+        sin = calculate_quote(_input(pieces=base_pieces))
+        con = calculate_quote(_input(pieces=base_pieces, regrueso=True, regrueso_ml=60.68))
+
+        assert sin["material_m2"] == 42.39
+        assert con["material_m2"] == 45.424, (
+            f"material_m2 debería sumar 60.68 × 0.05 = 3.034 al base. "
+            f"Obtuve {con['material_m2']}, esperaba 45.424."
+        )
+        assert con["material_total"] > sin["material_total"], (
+            "El total de material con regrueso debe ser mayor — el regrueso "
+            "consume m² adicional que se multiplica por price_unit."
+        )
