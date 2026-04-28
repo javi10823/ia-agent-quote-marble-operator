@@ -25,6 +25,26 @@ const safeNum = (n: unknown): number =>
 const displayNum = (n: unknown): string =>
   typeof n === "number" && Number.isFinite(n) ? n.toFixed(2) : MISSING;
 
+// PR #409 — roundHalfUp en JS, espejo de `calculator._round_half_up`.
+// Math.round() en JS hace banker's-like rounding por float imprecision
+// (0.155 → 0.15 en algunos casos), igual que Python `round`. Para
+// alinear con backend usamos string-based rounding via `toFixed` con
+// epsilon: si el dígito siguiente al decimal target es >= 5, incrementa.
+// Patrón requerido por el operador para el despiece textual:
+//   m²/u  = roundHalfUp(base, 2)
+//   m²    = roundHalfUp(m²/u × quantity, 2)
+// Garantiza que frontend display = backend persistido = Paso 2 calculator.
+function roundHalfUp(value: number, decimals = 2): number {
+  if (!Number.isFinite(value)) return 0;
+  const factor = Math.pow(10, decimals);
+  // El epsilon (1e-9) compensa imprecisión binaria del float JS:
+  // 0.155 internamente es 0.15499999... — sin epsilon, Math.round
+  // devuelve 0.15. Con epsilon (que se suma con el signo del valor),
+  // 0.155 + 1.55e-10 redondea a 0.16 como espera el operador.
+  const sign = value < 0 ? -1 : 1;
+  return Math.round(value * factor + sign * 1e-9) / factor;
+}
+
 // Normaliza el shape del payload dual_read: garantiza que sectores/tramos/
 // zocalos sean arrays y que FieldValue no sea null/undefined. Preserva los
 // valores null internos (valor, ml, alto_m) — son señal de "no medí esto"
@@ -695,14 +715,13 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry, lock
       t.zocalos.forEach((z) => {
         const ml = safeNum(z.ml);
         if (ml > 0) {
-          // PR #408 — multiplicar por quantity heredada del tramo padre
-          // cuando el brief textual declaró tipologías repetidas (×N).
-          // Sin esto, el zócalo del Office tipo M1 ×24 contribuye solo
-          // su m²/u al total (0.19 en vez de 4.56) → display visible
-          // del despiece queda mintiendo. `quantity || 1` para retro-
-          // compatibilidad con duals viejos sin el field.
+          // PR #408 — multiplicar por quantity heredada del tramo padre.
+          // PR #409 — round-unit-then-multiply con `roundHalfUp` para
+          // alinear con backend / calculator (caso DYSCON M1 zócalo:
+          // 1.92 × 0.10 = 0.192 → 0.19/u → × 24 = 4.56).
           const qty = z.quantity || 1;
-          zocalosM2 += ml * safeNum(z.alto_m) * qty;
+          const m2Unit = roundHalfUp(ml * safeNum(z.alto_m), 2);
+          zocalosM2 += roundHalfUp(m2Unit * qty, 2);
           zocalosCount += 1;
         }
       });
@@ -741,12 +760,11 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry, lock
           const ml = safeNum(z.ml);
           if (ml <= 0) return;
           const alto = safeNum(z.alto_m);
-          // PR #408 — m² del zócalo multiplicado por quantity. Mismo
-          // tratamiento que el render de filas (más abajo, ~línea 950)
-          // y que el sumario del header (zocalosM2). Si el dual viene
-          // del plano (sin quantity), `quantity || 1` mantiene comportamiento.
+          // PR #408 — m² del zócalo multiplicado por quantity.
+          // PR #409 — round-unit-then-multiply con `roundHalfUp`.
           const qty = z.quantity || 1;
-          const zm2 = ml * alto * qty;
+          const m2Unit = roundHalfUp(ml * alto, 2);
+          const zm2 = roundHalfUp(m2Unit * qty, 2);
           total += zm2;
           const altoDisplay = z.alto_m == null ? MISSING : alto.toFixed(2);
           lines.push(`| Zóc. ${z.lado} | ${ml.toFixed(2)} ml × ${altoDisplay} | ${zm2.toFixed(2)} |`);
@@ -965,13 +983,17 @@ export default function DualReadResult({ data, quoteId, onConfirm, onRetry, lock
                           <span className="text-t4 ml-0.5">m</span>
                         </div>
                         <div className="text-t1 font-medium text-right flex items-center justify-end gap-2">
-                          {/* PR #408 — m² del zócalo en la fila editable
-                              también multiplica por quantity heredada. Si
-                              el zócalo es de un Office tipo M1 ×24, la
-                              fila muestra el m² total del lote (4.56),
-                              consistente con el resumen del header y con
-                              el cálculo del Paso 2 downstream. */}
-                          <span>{(z.ml == null || z.alto_m == null) ? MISSING : (z.ml * z.alto_m * (z.quantity || 1)).toFixed(2)}</span>
+                          {/* PR #408 + #409 — m² del zócalo en la fila
+                              editable: round-unit-then-multiply con
+                              `roundHalfUp`. M1 ×24: 0.19/u × 24 = 4.56. */}
+                          <span>{
+                            (z.ml == null || z.alto_m == null)
+                              ? MISSING
+                              : roundHalfUp(
+                                  roundHalfUp(z.ml * z.alto_m, 2) * (z.quantity || 1),
+                                  2,
+                                ).toFixed(2)
+                          }</span>
                           {/* PR #61 — botón remover siempre disponible, independiente
                               del status (el operador confirma con el cliente si lleva
                               zócalos o no; Dual Read solo sugiere). Hover aumenta

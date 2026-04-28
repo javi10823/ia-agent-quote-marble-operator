@@ -1,28 +1,29 @@
-"""Tests para PR #408 — `m2` propio del zócalo y sufijo `(×N)` en `lado`.
+"""Tests para PR #408 + #409 — `m2` del zócalo con regla
+round-unit-then-multiply usando `_round_half_up`.
 
-**Bug:** PR #405 propagó `quantity` al zócalo como metadata pero:
-  - El backend no calculó un campo `m2` propio del zócalo (solo lo
-    hizo para el tramo).
-  - El display del `lado` del zócalo no llevaba sufijo `(×N)`
-    cuando quantity > 1 (a diferencia del tramo, que sí lo lleva).
+**Bug original (#408):** PR #405 propagó `quantity` al zócalo como
+metadata pero no calculó un campo `m2` propio. La card editable
+mostraba `ml × alto_m` sin multiplicar — caso DYSCON: total 37.71
+en vez de 42.39.
 
-Resultado: la card editable del frontend renderizaba el m² del
-zócalo como `ml × alto_m` sin multiplicar por quantity → caso DYSCON
-mostraba 37.71 m² en vez de 42.39 (faltaban los 4.68 m² de los
-zócalos M1×24, M6×2 y M7×2).
+**Bug de redondeo (#409):** PR #408 usó `round(ml × alto × qty, 2)`
+(multiply-then-round) → M1 ×24 daba 4.61 cuando el operador esperaba
+4.56. Política unificada del operador, alineada con calculator:
 
-Fix:
-  1. Agregar `m2 = ml × alto × quantity` al zócalo (consistente con
-     `tramo.m2.valor` ya multiplicado).
-  2. Sufijo `(×N)` al `lado` cuando quantity > 1.
-  3. Cuando se hereda quantity del tramo padre (tramo qty>1, zócalo
-     qty=1 default), recomputar `m2` y agregar sufijo.
-  4. `m2_total_valor` del sector ahora suma `z.m2` (fuente única).
+    m²/u  = round_half_up(base, 2)
+    m²    = round_half_up(m²/u × quantity, 2)
 
-Nota: el frontend (`DualReadResult.tsx`) también se modifica para
-multiplicar `ml × alto × quantity` al renderizar — sin esto el bug
-visual del despiece persiste aunque el backend tenga los números
-correctos.
+Casos esperados (DYSCON):
+  - M1: 1.92 × 0.10 = 0.192 → round_half_up=0.19 → × 24 = 4.56
+  - M6: 1.55 × 0.10 = 0.155 → round_half_up=0.16 → × 2  = 0.32
+  - M7: 1.50 × 0.10 = 0.150 → round_half_up=0.15 → × 2  = 0.30
+  - Total sector ≈ 42.39 m²
+
+Garantías post-#409:
+  - Backend (text_parser) usa `_round_half_up` (importado de
+    calculator).
+  - Frontend (DualReadResult.tsx) usa `roundHalfUp` JS espejo.
+  - Ambos producen los mismos números que `calculate_m2:717-719`.
 """
 from __future__ import annotations
 
@@ -37,8 +38,10 @@ from app.modules.quote_engine.text_parser import parsed_pieces_to_card
 
 
 class TestZocaloM2WithExplicitQuantity:
-    def test_zocalo_m2_field_multiplied(self):
-        """Zócalo con quantity=24 debe llevar `m2 = ml × alto × 24`."""
+    def test_zocalo_m2_field_multiplied_round_half_up(self):
+        """PR #409: M1 zócalo con quantity=24 debe usar
+        round-unit-then-multiply: 0.19/u × 24 = 4.56 (no 4.61
+        de multiply-then-round que tenía #408)."""
         parsed = {
             "pieces": [
                 {"description": "M1 mesada", "largo": 1.92, "prof": 0.6, "quantity": 24},
@@ -47,9 +50,10 @@ class TestZocaloM2WithExplicitQuantity:
         }
         card = parsed_pieces_to_card(parsed)
         zocalo = card["sectores"][0]["tramos"][0]["zocalos"][0]
-        # 1.92 × 0.10 × 24 = 4.608 → round(2) = 4.61.
-        assert zocalo["m2"] == 4.61, (
-            f"Esperaba m² del zócalo = 4.61, got {zocalo['m2']}"
+        # 1.92 × 0.10 = 0.192 → round_half_up=0.19 → × 24 = 4.56.
+        assert zocalo["m2"] == 4.56, (
+            f"PR #409 regresión: m² del zócalo M1 = {zocalo['m2']}, "
+            f"esperaba 4.56 (round-unit-then-multiply con _round_half_up)"
         )
         assert zocalo["quantity"] == 24
         # Sufijo (×24) en el lado.
@@ -95,8 +99,9 @@ class TestZocaloInheritedQuantity:
         card = parsed_pieces_to_card(parsed)
         zocalo = card["sectores"][0]["tramos"][0]["zocalos"][0]
         assert zocalo["quantity"] == 24
-        # m² recomputed con la quantity heredada.
-        assert zocalo["m2"] == 4.61
+        # PR #409: m² recomputed con round-unit-then-multiply.
+        # 0.19/u × 24 = 4.56 (no 4.61).
+        assert zocalo["m2"] == 4.56
         # Sufijo agregado en herencia.
         assert "(×24)" in zocalo["lado"]
 
@@ -133,22 +138,65 @@ class TestDysconTotalMatchesBackend:
         sector = card["sectores"][0]
         total = sector["m2_total"]["valor"]
 
-        # Sum esperado = mesadas (36.36) + zócalos multiplicados (6.04) ≈ 42.40.
-        # Tolerancia por rounding floor del parser (0.10).
-        assert 42.30 <= total <= 42.45, (
-            f"Total sector regresión: {total} fuera del rango esperado "
-            f"(42.30-42.45). Caso DYSCON debe sumar ~42.39."
+        # PR #409 — Total esperado exacto del operador: 42.39 m².
+        # Round-unit-then-multiply con _round_half_up es la regla.
+        assert total == 42.39, (
+            f"PR #409 regresión: total sector = {total}, esperaba 42.39 "
+            f"(suma exacta del operador con round_half_up unitario)"
         )
 
         # Verificar que los zócalos clave tienen m² correcto.
         # Tramos = solo mesadas (zócalos van como child). 7 mesadas:
         # M1[0], M2[1], M3[2], M4[3], M5[4], M6[5], M7[6].
-        # M1: 1.92 × 0.10 × 24 = 4.608 → 4.61.
-        # M6: 1.55 × 0.10 × 2 = 0.310 → 0.31.
-        # M7: 1.50 × 0.10 × 2 = 0.300 → 0.30.
+        # PR #409 — round-unit-then-multiply con _round_half_up:
+        # M1: round_half_up(1.92×0.10, 2)=0.19 × 24 = 4.56.
+        # M6: round_half_up(1.55×0.10, 2)=0.16 × 2  = 0.32.
+        # M7: round_half_up(1.50×0.10, 2)=0.15 × 2  = 0.30.
         m1_zocalo = sector["tramos"][0]["zocalos"][0]
         m6_zocalo = sector["tramos"][5]["zocalos"][0]
         m7_zocalo = sector["tramos"][6]["zocalos"][0]
-        assert m1_zocalo["m2"] == 4.61
-        assert m6_zocalo["m2"] == 0.31
-        assert m7_zocalo["m2"] == 0.30
+        assert m1_zocalo["m2"] == 4.56, f"M1 zócalo = {m1_zocalo['m2']}, esperaba 4.56"
+        assert m6_zocalo["m2"] == 0.32, f"M6 zócalo = {m6_zocalo['m2']}, esperaba 0.32 (half-up)"
+        assert m7_zocalo["m2"] == 0.30, f"M7 zócalo = {m7_zocalo['m2']}, esperaba 0.30"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PR #409 — política unificada round_half_up unitario primero
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestRoundHalfUpPolicy:
+    def test_half_up_breaks_python_banker_rounding(self):
+        """Caso clave: M6 zócalo. `round(0.155, 2)` con banker's de
+        Python da 0.15 (no 0.16). El operador requiere half-up = 0.16."""
+        parsed = {
+            "pieces": [
+                {"description": "M6 mesada", "largo": 1.55, "prof": 0.6, "quantity": 2},
+                {"description": "M6 zócalo atrás", "largo": 1.55, "alto": 0.10, "quantity": 2},
+            ],
+        }
+        card = parsed_pieces_to_card(parsed)
+        zocalo = card["sectores"][0]["tramos"][0]["zocalos"][0]
+        # round_half_up(0.155, 2) = 0.16. × 2 = 0.32.
+        # Si esto rompe a 0.30, alguien volvió a `round()` (banker's).
+        assert zocalo["m2"] == 0.32, (
+            f"M6 zócalo m² = {zocalo['m2']}, esperaba 0.32. "
+            f"Si volvió a 0.30, regresión: alguien revertió `_round_half_up` "
+            f"a `round()` (banker's de Python). El operador requiere "
+            f"half-up: 0.155 → 0.16 (no 0.15)."
+        )
+
+    def test_mesada_uses_round_half_up_too(self):
+        """Mesada también usa round-unit-then-multiply para mantener
+        consistencia con zócalos y calculator."""
+        parsed = {
+            "pieces": [
+                {"description": "M1 mesada", "largo": 1.92, "prof": 0.6, "quantity": 24},
+            ],
+        }
+        card = parsed_pieces_to_card(parsed)
+        tramo = card["sectores"][0]["tramos"][0]
+        # 1.92 × 0.60 = 1.152 → round_half_up=1.15 → × 24 = 27.60.
+        assert tramo["m2"]["valor"] == 27.60, (
+            f"M1 mesada m² = {tramo['m2']['valor']}, esperaba 27.60"
+        )

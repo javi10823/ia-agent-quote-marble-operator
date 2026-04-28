@@ -9,6 +9,14 @@ import logging
 import anthropic
 
 from app.core.config import settings
+# PR #409 — política de redondeo unificada con calculator. Antes
+# usábamos `round()` (banker's: 0.155 → 0.15), ahora `_round_half_up`
+# (0.155 → 0.16) para alinear con `calculator._round_half_up`. Patrón
+# universal en el despiece textual:
+#   m²/u  = round_half_up(largo × prof, 2)
+#   m²    = round_half_up(m²/u × quantity, 2)
+# Garantiza que backend / frontend / Paso 2 coinciden al peso.
+from app.modules.quote_engine.calculator import _round_half_up
 
 logger = logging.getLogger(__name__)
 
@@ -191,8 +199,13 @@ def parsed_pieces_to_card(parsed: dict) -> dict | None:
             # Es una mesada. m2.valor = largo × prof × quantity (m² total
             # del tramo). Calculator downstream NO debe re-multiplicar:
             # se le pasa `quantity` separado y `largo/prof` por unidad.
-            m2_per_unit = round(largo * prof, 2)
-            m2 = round(m2_per_unit * quantity, 2)
+            #
+            # PR #409 — round_half_up sobre el unitario, después
+            # multiplicar. Esto alinea con calculator (calculate_m2:717):
+            # `m2_piece_2d = _round_half_up(raw_m2, 2); total += m2_piece_2d
+            # × qty`. Ej M1: round_half_up(1.92×0.60, 2)=1.15 × 24 = 27.60.
+            m2_per_unit = _round_half_up(largo * prof, 2)
+            m2 = _round_half_up(m2_per_unit * quantity, 2)
             base_desc = p.get("description") or f"Mesada {len(tramos) + 1}"
             descripcion = f"{base_desc} (×{quantity})" if quantity > 1 else base_desc
             tramo = {
@@ -235,12 +248,19 @@ def parsed_pieces_to_card(parsed: dict) -> dict | None:
             lado_display = f"{base_lado} (×{quantity})" if quantity > 1 else base_lado
             ml_v = float(largo)
             alto_v = float(alto)
+            # PR #408 — m² total del zócalo (ya multiplicado por quantity).
+            # PR #409 — round_half_up sobre m²/u, después multiplicar
+            # por quantity. Antes hacíamos `round(ml × alto × qty, 2)`
+            # (multiply-then-round) que daba 4.61 para M1 (1.92×0.10×24)
+            # cuando el operador esperaba 4.56. La regla unificada es:
+            #   m²/u  = round_half_up(ml × alto, 2)
+            #   m²    = round_half_up(m²/u × quantity, 2)
+            m2_unit_zocalo = _round_half_up(ml_v * alto_v, 2)
             zocalo = {
                 "lado": lado_display,
                 "ml": ml_v,
                 "alto_m": alto_v,
-                # PR #408 — m² total del zócalo (ya multiplicado por quantity).
-                "m2": round(ml_v * alto_v * quantity, 2),
+                "m2": _round_half_up(m2_unit_zocalo * quantity, 2),
                 "status": "CONFIRMADO",
                 "opus_ml": None,
                 "sonnet_ml": None,
@@ -277,8 +297,13 @@ def parsed_pieces_to_card(parsed: dict) -> dict | None:
         for z in t["zocalos"]:
             if z.get("quantity", 1) <= 1:
                 z["quantity"] = t_qty
-                # Recompute m² total con la quantity heredada.
-                z["m2"] = round(z.get("ml", 0) * z.get("alto_m", 0) * t_qty, 2)
+                # PR #409 — round-unit-then-multiply (mismo patrón que
+                # la creación). Antes: `round(ml × alto × qty, 2)` daba
+                # 4.61 para zócalos hereditarios M1×24; ahora 4.56.
+                _m2_unit = _round_half_up(
+                    z.get("ml", 0) * z.get("alto_m", 0), 2
+                )
+                z["m2"] = _round_half_up(_m2_unit * t_qty, 2)
                 # Sufijo (×N) al display del lado (idempotente: solo
                 # agrega si no estaba ya).
                 _lado = z.get("lado") or "trasero"
