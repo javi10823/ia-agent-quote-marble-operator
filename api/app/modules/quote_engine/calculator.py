@@ -945,13 +945,56 @@ def calculate_quote(input_data: dict) -> dict:
 
         # Auto-count piletas from piece descriptions if not provided
         if pileta and pileta_qty <= 1:
+            # PR #407 fix A — sumar `quantity` (no contar 1 por línea).
+            # Antes: una pieza "Mesada con pileta × 24" contaba 1.
+            # Ahora: cuenta 24. Caso DYSCON no se beneficia de este path
+            # (sus descripciones no tienen keywords), pero edificios con
+            # etiquetado correcto ahora sí escalan.
+            _kw_pileta = ["pileta", "bacha", "lavatorio", "kitchenette",
+                          "c/pileta", "c/bacha"]
             auto_pileta_count = sum(
-                1 for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
-                if any(kw in (p.get("description") or "").lower() for kw in ["pileta", "bacha", "lavatorio", "kitchenette", "c/pileta", "c/bacha"])
+                int(p.get("quantity", 1) or 1)
+                for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
+                if any(kw in (p.get("description") or "").lower() for kw in _kw_pileta)
             )
             if auto_pileta_count > 1:
                 pileta_qty = auto_pileta_count
-                logging.info(f"Edificio guardrail: auto-detected {pileta_qty} piletas from piece descriptions")
+                logging.info(
+                    f"Edificio guardrail: auto-detected {pileta_qty} piletas "
+                    f"from piece descriptions (sum of quantities)"
+                )
+            elif input_data.get("_pileta_inferred_by_guardrail"):
+                # PR #407 fix B (acotado por origen) — fallback solo si
+                # la pileta fue **auto-inyectada** por el guardrail
+                # `mo-list-authority` (agent.py:5469). En ese caso el
+                # operador no declaró pileta y no etiquetó piezas; la
+                # convención del operador es que cada mesada del edificio
+                # lleva pileta. Caso DYSCON: 32 mesadas → 32 piletas.
+                #
+                # NO se activa cuando:
+                #   - El operador pasó `pileta_qty` explícito (ya filtra
+                #     el `pileta_qty <= 1` arriba).
+                #   - La pileta vino del operador (sin flag).
+                #   - Hay match por keyword (rama anterior toma precedencia).
+                #   - No hay mesadas con quantity > 1.
+                #
+                # Excluye: zócalos, frentín, regrueso, alzada, faldón —
+                # esas piezas no llevan pileta propia.
+                _kw_excluded = ("zócalo", "zocalo", "frentín", "frentin",
+                                "regrueso", "alzada", "faldón", "faldon")
+                _mesada_qty = sum(
+                    int(p.get("quantity", 1) or 1)
+                    for p in (pp if isinstance(pp, dict) else pp.model_dump() for pp in pieces)
+                    if "mesada" in (p.get("description") or "").lower()
+                    and not any(kw in (p.get("description") or "").lower()
+                                for kw in _kw_excluded)
+                )
+                if _mesada_qty > 1:
+                    pileta_qty = _mesada_qty
+                    logging.info(
+                        f"Edificio + pileta auto-inyectada por mo-list-authority: "
+                        f"pileta_qty={pileta_qty} (suma de quantities de mesadas)"
+                    )
 
         # Auto-calculate frentin_ml from piece descriptions if not provided
         if frentin and not input_data.get("frentin_ml"):
