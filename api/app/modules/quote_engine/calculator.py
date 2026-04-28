@@ -344,6 +344,37 @@ def _find_material(material_name: str) -> dict:
     """Search for material across all catalogs with fuzzy fallback."""
     from app.modules.agent.tools.catalog_tool import _load_catalog
 
+    # PR #410 — Default duro de "Gris Mara" → "GRANITO GRIS MARA EXTRA 2 ESP".
+    # Regla del operador: el granito Gris Mara se vende solo como
+    # variante Extra 2 a menos que el operador pida explícitamente
+    # FIAMATADO o LEATHER. El catálogo tiene 3 variantes (GRISMARA,
+    # GRISIFIAMATADO, MARALEATHER) que el matcher fuzzy puede confundir
+    # cuando el agente Sonnet, leyendo "NO Extra 2" en el brief, infiere
+    # otra variante e inyecta "Granito Gris Mara Fiamatado" al calculator.
+    #
+    # Pre-check determinístico (corre antes del fuzzy):
+    #   - Input contiene "gris mara"
+    #   - Input NO contiene "fiamatado" ni "leather"
+    #   → resolver directo a SKU GRISMARA (Extra 2 ESP).
+    #
+    # Si el operador escribe "fiamatado" o "leather" explícito, este
+    # pre-check no entra y el fuzzy resuelve normalmente a esa variante.
+    _name_norm = (material_name or "").lower()
+    if "gris mara" in _name_norm and "fiamatado" not in _name_norm and "leather" not in _name_norm:
+        from app.modules.agent.tools.catalog_tool import catalog_lookup as _cl
+        _gm = _cl("materials-granito-nacional", "GRISMARA")
+        if _gm.get("found"):
+            logging.info(
+                f"[material-default] Granito Gris Mara → forzado SKU=GRISMARA "
+                f"(EXTRA 2 ESP) por regla de negocio. Input='{material_name}' "
+                "no menciona fiamatado/leather explícito."
+            )
+            _gm["fuzzy_corrected_from"] = material_name
+            _gm["fuzzy_score"] = 100  # determinístico, no fuzzy
+            _gm["fuzzy_catalog"] = "granito-nacional"
+            _gm["fuzzy_family"] = "granito"
+            return _gm
+
     # PR #59 — guard contra material genérico (familia sola sin variante).
     # Caso observado: brief/plano dice "MESADA GRANITO RECTA LINEAL" →
     # Valentina pasa material="GRANITO" solo → fuzzy lo matchea con

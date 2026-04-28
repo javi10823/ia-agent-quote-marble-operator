@@ -1276,31 +1276,53 @@ def _extract_quote_info(user_message: str) -> dict:
 
     # Delimitadores que señalan fin del nombre. "obra" y "proyecto" son
     # límite válido para cortar el nombre del cliente cuando vienen juntos.
+    #
+    # PR #410 — agregar `[:\s]` (acepta `OBRA:` o `OBRA `) en lugar de
+    # solo `\s` (que requería espacio). Caso DYSCON: brief en una sola
+    # línea `CLIENTE: DYSCON S.A. OBRA: Unidad...` no cortaba en `OBRA:`
+    # porque después de OBRA hay `:` (no whitespace) → cliente absorbía
+    # todo. Mismo bug aplica a `MATERIAL:`, `PROYECTO:`, etc.
     _DELIMITERS = (
         r"\s*,|\s+con\s|\s+en\s|\s+lleva|\s+sin\s"
-        r"|\s+proyecto\s|\s+obra\s|\s+presupuesto\s|\s+mesada\s|\s+cocina\s"
+        r"|\s+proyecto[:\s]|\s+obra[:\s]|\s+presupuesto[:\s]|\s+mesada\s|\s+cocina\s"
         r"|\s+ba[ñn]o\s|\s+departamento\s|\s+edificio\s|\s+cotizar\s"
         r"|\s+medidas\s|\s+colocacion\s|\s+colocación\s|\s+z[oó]calo\s"
         r"|\s+anafe\s|\s+bacha\s|\s+pileta\s|\s+flete\s|\s+demora\s"
-        r"|\s+plazo\s|\s+material\s|\s+isla\s|\s+lavadero\s|\s+vanitory\s"
+        r"|\s+plazo\s|\s+material[:\s]|\s+isla\s|\s+lavadero\s|\s+vanitory\s"
         r"|\s+revestimiento\s|\s+frentin\s|\s+frent[ií]n\s|\s+regrueso\s"
         r"|\s+pulido\s|\s+descuento\s|\s+consultar\s"
     )
+
+    # PR #410 helper — preservar capitalización del input cuando viene
+    # 100% en mayúsculas (caso "DYSCON S.A."). `.title()` lo cambiaba
+    # a "Dyscon S.A.", borrando convención del operador. Si el match
+    # tiene letras y todas son mayúsculas, devolver tal cual; si no,
+    # aplicar title como antes.
+    def _preserve_case(text: str) -> str:
+        stripped = text.strip()
+        # Solo letras alfabéticas (excluye dígitos, espacios, puntos, &).
+        letters = [c for c in stripped if c.isalpha()]
+        if letters and all(c.isupper() for c in letters):
+            return stripped
+        return stripped.title()
+
     # 1) "Cliente: X" / "Clienta: X" explícito
     match = re.search(
         rf"(?:cliente|clienta)[:\s]+(.+?)(?:{_DELIMITERS}|\n|$)",
         msg, re.IGNORECASE,
     )
     if match:
-        info["client_name"] = match.group(1).strip().title()
+        info["client_name"] = _preserve_case(match.group(1))
 
-    # 2) "Proyecto: Y" / "Obra: Y" (ambos aceptados)
+    # 2) "Proyecto: Y" / "Obra: Y" (ambos aceptados).
+    # PR #410 — cortar también por `material:` (mismo bug de header
+    # en una sola línea: `OBRA: ... MATERIAL: ...` no cortaba antes).
     proj_match = re.search(
-        r"(?:proyecto|obra)[:\s]+(.+?)(?:\n|,|$)",
+        r"(?:proyecto|obra)[:\s]+(.+?)(?:\s+material[:\s]|\n|,|$)",
         msg, re.IGNORECASE,
     )
     if proj_match:
-        info["project"] = proj_match.group(1).strip().title()
+        info["project"] = _preserve_case(proj_match.group(1))
 
     # 3) Fallback cliente: si no hay keyword "cliente" pero hay estructura
     #    "X, Obra: Y" o "X — Obra Y" → X es el cliente.
@@ -1310,7 +1332,7 @@ def _extract_quote_info(user_message: str) -> dict:
             msg, re.IGNORECASE,
         )
         if m:
-            info["client_name"] = m.group(1).strip().title()
+            info["client_name"] = _preserve_case(m.group(1))
 
     # 4) Fallback adicional: "Nombre / Obra" — separador /
     if not info.get("client_name") and not info.get("project"):
@@ -1319,8 +1341,8 @@ def _extract_quote_info(user_message: str) -> dict:
             msg,
         )
         if m2:
-            info["client_name"] = m2.group(1).strip().title()
-            info["project"] = m2.group(2).strip().title()
+            info["client_name"] = _preserve_case(m2.group(1))
+            info["project"] = _preserve_case(m2.group(2))
 
     # Try to find material name — opera sobre `msg` (ya sin Markdown bold)
     # para que briefs formateados con "**MATERIAL:** Purastone..." extraigan
