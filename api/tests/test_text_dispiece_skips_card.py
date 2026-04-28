@@ -1,20 +1,31 @@
-"""Tests para PR #402 — texto con despiece completo NO debe re-emitir
-la card de Dual Read post-`[CONTEXT_CONFIRMED]`.
+"""Tests para PR #402 + #404 — texto con despiece completo no debe
+mutar tramos en `[CONTEXT_CONFIRMED]`, pero SÍ debe re-emitir el
+chunk para que el frontend tenga el trigger de transición.
 
-**Bug:** cuando el operador pega un brief con despiece textual completo
+**Historia:**
+
+PR #402 detectó que cuando el dual_read viene de texto
 (`text_parser.parsed_pieces_to_card` → `dual_read_result.source="TEXT"`)
-y después confirma contexto, el handler de `[CONTEXT_CONFIRMED]` corre
-`apply_answers()` y los merges de patas/alzada sobre el dual textual,
-corrompiendo los sectores. Al re-emitir el chunk, el frontend renderiza
-una "card fantasma" con tramos pisados (típicamente "Regrueso 60,68 × 1"
-solo, sin los sectores originales).
+y el operador confirmaba contexto, el handler de `[CONTEXT_CONFIRMED]`
+corría `apply_answers()` + los merges de patas/alzada sobre el dual
+textual, corrompiendo los sectores. La card del frontend mostraba
+"Regrueso 60,68 × 1" sola, sin los sectores originales.
 
-**Fix:** detectar `source == "TEXT"` en el handler y:
-  1. Skip `apply_answers` (preserva tramos textuales).
-  2. Skip merges de patas/alzada.
-  3. Skip emit del chunk `dual_read_result`.
-  4. Skip persistencia del assistant turn `__DUAL_READ__` (la card
-     original ya está en messages del primer emit).
+PR #402 fixeó eso pero **fue demasiado agresivo**: además de skipear
+apply_answers/merges, skipeaba también el emit del chunk. Eso
+rompía un contrato implícito con el frontend — ese chunk no es solo
+"render la card", es el trigger de la transición de fase
+("ahora estás en estado: confirmar despiece"). Sin re-emit, el
+operador queda en una UI muerta sin botón "Confirmar despiece"
+activo (logs reales de Railway 28/04/2026 mostraron 7+ minutos de
+polling sin avance tras `[CONTEXT_CONFIRMED]` en TEXT).
+
+**PR #404** restaura el emit del chunk, manteniendo el resto del
+fix de #402:
+  1. Skip `apply_answers` (preserva tramos textuales). [#402]
+  2. Skip merges de patas/alzada. [#402]
+  3. Re-emit del chunk `dual_read_result` con sectores intactos. [#404]
+  4. Persistir assistant turn `__DUAL_READ__` igual que en interactivo. [#404]
 
 **Lo que NO toca este PR:**
   - El cálculo (calculator.py).
@@ -128,33 +139,9 @@ async def _create_quote_with_dual(db_session, source: str) -> str:
 # ─────────────────────────────────────────────────────────────────────
 
 
-class TestTextDispieceSkipsCard:
-    """Path TEXT — despiece textual cerrado, NO debe re-emitir card."""
-
-    @pytest.mark.asyncio
-    async def test_text_source_skips_dual_read_chunk(self, db_session):
-        """`source="TEXT"` + `[CONTEXT_CONFIRMED]` → NO emit chunk
-        `dual_read_result`. Solo emit `done`."""
-        qid = await _create_quote_with_dual(db_session, source="TEXT")
-
-        agent = AgentService()
-        chunks = []
-        async for chunk in agent.stream_chat(
-            quote_id=qid,
-            messages=[],
-            user_message='[CONTEXT_CONFIRMED]{"answers":[]}',
-            plan_bytes=None,
-            plan_filename=None,
-            db=db_session,
-        ):
-            chunks.append(chunk)
-
-        chunk_types = [c.get("type") for c in chunks]
-        assert "dual_read_result" not in chunk_types, (
-            f"Regresión: TEXT no debe re-emitir dual_read_result. "
-            f"Chunks emitidos: {chunk_types}"
-        )
-        assert "done" in chunk_types, f"Falta el emit done. Chunks: {chunks}"
+class TestTextDispiecePreservesSectors:
+    """Path TEXT — apply_answers no debe correr; sectores intactos.
+    Esta era la razón original del fix de #402 y sigue siendo crítica."""
 
     @pytest.mark.asyncio
     async def test_text_source_preserves_dual_read_in_db(self, db_session):
@@ -221,10 +208,77 @@ class TestTextDispieceSkipsCard:
             for t in msg_texts
         ), f"Falta persistencia del user turn `[CONTEXT_CONFIRMED]`. Msgs: {msg_texts}"
 
+
+class TestTextDispieceReemitsChunk:
+    """PR #404 — el chunk `dual_read_result` SÍ se re-emite para que
+    el frontend tenga el trigger de transición. Antes (#402) skipeaba
+    el emit y dejaba el operador con UI muerta sin botón "Confirmar
+    despiece" activo."""
+
     @pytest.mark.asyncio
-    async def test_text_source_does_not_persist_extra_dual_read_assistant(self, db_session):
-        """En TEXT NO debe agregarse un assistant turn `__DUAL_READ__`
-        nuevo — la card original ya está en messages del primer emit."""
+    async def test_text_source_emits_dual_read_chunk(self, db_session):
+        """`source="TEXT"` + `[CONTEXT_CONFIRMED]` → DEBE emitir el
+        chunk `dual_read_result`. Es el trigger que el frontend usa
+        para mostrar el botón "Confirmar despiece" activo y permitir
+        avanzar al `[DUAL_READ_CONFIRMED]`."""
+        qid = await _create_quote_with_dual(db_session, source="TEXT")
+
+        agent = AgentService()
+        chunks = []
+        async for chunk in agent.stream_chat(
+            quote_id=qid,
+            messages=[],
+            user_message='[CONTEXT_CONFIRMED]{"answers":[]}',
+            plan_bytes=None,
+            plan_filename=None,
+            db=db_session,
+        ):
+            chunks.append(chunk)
+
+        chunk_types = [c.get("type") for c in chunks]
+        assert "dual_read_result" in chunk_types, (
+            f"PR #404 regresión: TEXT debe re-emitir dual_read_result "
+            f"para que el frontend pueda transicionar a 'confirmar "
+            f"despiece'. Chunks emitidos: {chunk_types}"
+        )
+        assert "done" in chunk_types
+
+    @pytest.mark.asyncio
+    async def test_text_source_emit_preserves_original_sectors(self, db_session):
+        """El chunk emitido debe llevar los sectores originales del
+        texto, NO los pisados por merges. Esto une la garantía de
+        #402 (no mutar) con el re-emit de #404 — la card que el
+        operador ve post-confirmar-contexto = la card que vio al
+        pegar el brief."""
+        qid = await _create_quote_with_dual(db_session, source="TEXT")
+        original_dual = _build_completed_dual("TEXT")
+
+        agent = AgentService()
+        emitted_chunk = None
+        async for chunk in agent.stream_chat(
+            quote_id=qid,
+            messages=[],
+            user_message='[CONTEXT_CONFIRMED]{"answers":[{"id":"regrueso","value":"5"}]}',
+            plan_bytes=None,
+            plan_filename=None,
+            db=db_session,
+        ):
+            if chunk.get("type") == "dual_read_result":
+                emitted_chunk = chunk
+
+        assert emitted_chunk is not None, "Falta el chunk dual_read_result"
+        emitted_dual = json.loads(emitted_chunk["content"])
+        assert emitted_dual["sectores"] == original_dual["sectores"], (
+            "Regresión PR #402: el chunk emitido tiene sectores mutados. "
+            f"Esperaba {original_dual['sectores']}, "
+            f"encontré {emitted_dual['sectores']}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_text_source_persists_assistant_dual_read(self, db_session):
+        """PR #404: persistir el assistant turn `__DUAL_READ__` en
+        messages igual que el path interactivo. Sin esto, al
+        recargar el quote el frontend pierde la card."""
         qid = await _create_quote_with_dual(db_session, source="TEXT")
 
         # Snapshot inicial: 1 user + 1 assistant DUAL_READ + 1 assistant CONTEXT_ANALYSIS.
@@ -258,9 +312,12 @@ class TestTextDispieceSkipsCard:
             and isinstance(m.get("content"), str)
             and m["content"].startswith("__DUAL_READ__")
         )
-        assert assistant_dual_post == 1, (
-            f"Regresión: TEXT no debe agregar un assistant __DUAL_READ__ extra. "
-            f"Antes: {assistant_dual_pre}, después: {assistant_dual_post}"
+        # Debe haber 2 ahora: la original (primer emit) + la del context-confirmed.
+        assert assistant_dual_post == 2, (
+            f"PR #404: TEXT debe persistir el assistant __DUAL_READ__ "
+            f"post-context-confirm igual que el path interactivo. "
+            f"Antes: {assistant_dual_pre}, después: {assistant_dual_post} "
+            f"(esperaba 2)"
         )
 
 
