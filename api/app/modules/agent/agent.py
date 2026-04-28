@@ -1463,6 +1463,15 @@ RETRY_DELAYS = [5, 10, 15, 20, 30]
 MAX_ITERATIONS = 15  # Safety limit — prevent infinite tool loops
 
 
+# PR #402 — sentinel exception para escape limpio del bloque de merges
+# en el handler de [CONTEXT_CONFIRMED] cuando el dual_read viene de
+# texto (`source="TEXT"`). Evita corromper el despiece textual con
+# merges de patas de isla / alzada que no aplican.
+class _PR402SkipMerges(Exception):
+    """Sentinel — no es un error, control de flow."""
+    pass
+
+
 # ── AGENT SERVICE ─────────────────────────────────────────────────────────────
 
 class AgentService:
@@ -1568,11 +1577,34 @@ class AgentService:
                 _bd_ctx = dict(_bd_ctx_pre)
                 _saved_dual = dict(_bd_ctx.get("dual_read_result") or {})
                 _dual_before = json.loads(json.dumps(_saved_dual, default=str))
-                # Aplicar las respuestas al dual_read_result
-                if _answers and _saved_dual:
+                # PR #402 — Despiece desde texto: el brief lo cerró el
+                # operador, los tramos están explícitos y completos. Las
+                # mutaciones que vienen abajo (`apply_answers` para
+                # frentin/regrueso/zocalos, merges de patas/alzada)
+                # corromperían el despiece — pisarían los sectores
+                # textuales con valores derivados o vacíos.
+                #
+                # Las respuestas top-level del contexto (localidad,
+                # material, etc.) se preservan en `verified_context_analysis`
+                # más abajo y el agente las consume desde ahí cuando arma
+                # `calc_input` para `calculate_quote`. No se pierden.
+                #
+                # Detección: `parsed_pieces_to_card()` setea `source="TEXT"`
+                # al top-level del dual_read (text_parser.py:202). Solo
+                # tagueado por esa función — duals interactivos (Dual Read
+                # del plano) traen otro source o nada.
+                _is_text_dispiece = _saved_dual.get("source") == "TEXT"
+
+                # Aplicar las respuestas al dual_read_result — solo para
+                # duals interactivos. TEXT salta este bloque.
+                if _answers and _saved_dual and not _is_text_dispiece:
                     from app.modules.quote_engine.pending_questions import apply_answers
                     apply_answers(_saved_dual, _answers)
                     # Limpiar pending_questions ya que están respondidas
+                    _saved_dual.pop("pending_questions", None)
+                elif _is_text_dispiece:
+                    # Limpieza defensiva: si por alguna razón el dual TEXT
+                    # tiene pending_questions (no debería), las descartamos.
                     _saved_dual.pop("pending_questions", None)
                 log_apply_answers(
                     quote_id,
@@ -1587,7 +1619,17 @@ class AgentService:
                 # prompt → el operador no las veía en la card. Ahora aparecen
                 # como tramos del sector isla, editables, con flag `_derived`.
                 # Idempotente: reconfirmar contexto reemplaza las viejas.
+                #
+                # PR #402 — Skip merges para despiece TEXT por la misma razón
+                # que `apply_answers`: pisarían los sectores textuales.
+                if _is_text_dispiece:
+                    logging.info(
+                        f"[trace:context-confirmed:{quote_id}] "
+                        "skipping derived-merge (source=TEXT)"
+                    )
                 try:
+                    if _is_text_dispiece:
+                        raise _PR402SkipMerges()
                     from app.modules.quote_engine.dual_reader import (
                         build_derived_isla_pieces,
                         merge_derived_pieces_into_dual_read,
@@ -1624,6 +1666,9 @@ class AgentService:
                         f"[trace:context-confirmed:{quote_id}] alzada "
                         f"active={_alzada_active} alto_m={_alzada_alto}"
                     )
+                except _PR402SkipMerges:
+                    # Path TEXT — escape limpio, no warn.
+                    pass
                 except Exception as _e_merge:
                     logging.warning(
                         f"[context-confirmed:{quote_id}] derived-merge failed: {_e_merge}",
@@ -1650,6 +1695,48 @@ class AgentService:
                     f"[context-confirmed] {quote_id} applied {len(_answers)} answers, "
                     "emitting dual_read_result"
                 )
+                # PR #402 — Despiece desde texto: NO re-emit del chunk
+                # `dual_read_result`. La card original se emitió cuando
+                # el operador pegó el brief (paso inicial del flow text)
+                # y sigue visible en el chat. Re-emitirla acá causaba
+                # que apareciera una "card fantasma" con los tramos
+                # mutados destructivamente por apply_answers/merges.
+                if _is_text_dispiece:
+                    logging.info(
+                        f"[trace:context-confirmed:{quote_id}] "
+                        "skip dual_read_result emit (source=TEXT)"
+                    )
+                    log_sse_structural(quote_id, "done", "")
+                    yield {"type": "done", "content": ""}
+                    # Persistir solo el user turn `[CONTEXT_CONFIRMED]`
+                    # (sin assistant __DUAL_READ__ adicional). El
+                    # __DUAL_READ__ original ya está en messages del
+                    # primer emit cuando el operador pegó el brief.
+                    try:
+                        _turn = [
+                            {
+                                "role": "user",
+                                "content": [{"type": "text", "text": user_message}],
+                            },
+                        ]
+                        if _q_ctx:
+                            _merged = list(_q_ctx.messages or []) + _turn
+                            await db.execute(
+                                update(Quote).where(Quote.id == quote_id).values(
+                                    messages=_merged
+                                )
+                            )
+                            await db.commit()
+                            log_messages_persist(
+                                quote_id,
+                                flow="context-confirmed-text",
+                                added_turns=_turn,
+                                total_count=len(_merged),
+                            )
+                    except Exception:
+                        pass
+                    return
+
                 _dr_chunk = json.dumps(_saved_dual, ensure_ascii=False)
                 log_sse_structural(quote_id, "dual_read_result", _dr_chunk)
                 yield {"type": "dual_read_result", "content": _dr_chunk}
