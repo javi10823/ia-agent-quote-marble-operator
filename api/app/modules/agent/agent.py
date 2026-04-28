@@ -5468,6 +5468,13 @@ class AgentService:
                     )
                     inputs["pileta"] = "empotrada_cliente"
                     inputs.pop("pileta_sku", None)
+                    # PR #407 — flag de origen. El calculator usa esto para
+                    # decidir si activar el fallback de pileta_qty desde
+                    # mesadas (caso DYSCON: 32 mesadas → 32 piletas).
+                    # Si la pileta la pasó el operador explícita, este flag
+                    # NO se setea y el fallback no se activa — se respeta
+                    # el `pileta_qty` del operador, incluso si es 1.
+                    inputs["_pileta_inferred_by_guardrail"] = True
                 if not _mentions_anafe and inputs.get("anafe"):
                     logging.warning(
                         f"[mo-list-authority] Operator listed MO explicitly and "
