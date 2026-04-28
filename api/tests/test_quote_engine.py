@@ -185,21 +185,30 @@ class TestFindMaterial:
         assert result["found"] is True
         assert "FIAMATADO" in result["name"].upper()
 
-    def test_variant_negation_flags_warning(self):
-        """PR #8 — DINALE: brief 'NO Extra 2' pero catálogo solo tiene
-        EXTRA 2 ESP → devolver esa variante + flag variant_negated."""
+    def test_gris_mara_no_extra_2_treated_as_noise(self):
+        """PR #410 (cambio de regla de PR #8) — caso DYSCON: el operador
+        a veces escribe 'NO Extra 2' como aclaración pero EXTRA 2 ES la
+        única variante comercial de Gris Mara según la regla de negocio.
+        El sistema lo trata como **ruido del brief** y resuelve silenciosamente
+        a EXTRA 2 ESP — sin generar `variant_negated` warning, porque
+        no hay contradicción real (no existe otra variante a negar)."""
         result = _find_material("Granito Gris Mara — 25mm (SKU estándar, NO Extra 2)")
         assert result["found"] is True
         assert "EXTRA 2" in result["name"].upper()
-        # Debe flaguear que el operador negó el variant
-        vn = result.get("variant_negated")
-        assert vn is not None, "Esperaba variant_negated cuando brief dice 'NO Extra 2'"
-        assert "extra" in vn["requested"].lower()
-        assert vn["returned"] == result["name"]
+        # Post-#410: Gris Mara default-duro NO genera variant_negated
+        # (regla del operador: 'NO Extra 2' es ruido, no negación válida).
+        assert result.get("variant_negated") is None, (
+            f"Post-#410: Gris Mara no debe generar variant_negated. "
+            f"Got: {result.get('variant_negated')!r}"
+        )
+        # Sí debe quedar trazabilidad del override determinístico:
+        assert result.get("fuzzy_corrected_from") is not None
+        assert result.get("fuzzy_score") == 100
 
-    def test_variant_negated_appears_in_paso2_render(self):
-        """PR #10 — el warning de variant_negated debe terminar en el array
-        `warnings` que renderiza build_deterministic_paso2."""
+    def test_gris_mara_no_extra_2_no_paso2_warning(self):
+        """PR #410 — el Paso 2 también queda limpio (sin warning de
+        variant_negated) porque el override determinístico para Gris
+        Mara reemplaza esa señal."""
         from app.modules.quote_engine.calculator import (
             calculate_quote, build_deterministic_paso2,
         )
@@ -215,14 +224,16 @@ class TestFindMaterial:
             "pileta": "empotrada_cliente",
         })
         assert result.get("ok"), result
-        warnings_text = " ".join(result.get("warnings", []))
-        assert "VARIANT NEGADA" in warnings_text, (
-            f"Expected negation warning in calc warnings, got: {result.get('warnings')}"
+        # Material resuelto a EXTRA 2 ESP (regla de negocio).
+        assert "EXTRA 2" in (result.get("material_name") or "").upper()
+        # No hay warning de VARIANT NEGADA — el override es silencioso.
+        warnings_text = " ".join(result.get("warnings") or [])
+        assert "VARIANT NEGADA" not in warnings_text, (
+            f"Post-#410: Paso 2 NO debe tener VARIANT NEGADA para Gris Mara. "
+            f"Got warnings: {result.get('warnings')}"
         )
         paso2 = build_deterministic_paso2(result)
-        assert "VARIANT NEGADA" in paso2, (
-            f"Paso 2 render must surface negation warning:\n{paso2[-800:]}"
-        )
+        assert "VARIANT NEGADA" not in paso2
 
     def test_no_negation_no_flag(self):
         """Caso sin negación: no debe haber variant_negated."""
