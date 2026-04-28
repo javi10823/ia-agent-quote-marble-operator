@@ -1695,48 +1695,25 @@ class AgentService:
                     f"[context-confirmed] {quote_id} applied {len(_answers)} answers, "
                     "emitting dual_read_result"
                 )
-                # PR #402 — Despiece desde texto: NO re-emit del chunk
-                # `dual_read_result`. La card original se emitió cuando
-                # el operador pegó el brief (paso inicial del flow text)
-                # y sigue visible en el chat. Re-emitirla acá causaba
-                # que apareciera una "card fantasma" con los tramos
-                # mutados destructivamente por apply_answers/merges.
-                if _is_text_dispiece:
-                    logging.info(
-                        f"[trace:context-confirmed:{quote_id}] "
-                        "skip dual_read_result emit (source=TEXT)"
-                    )
-                    log_sse_structural(quote_id, "done", "")
-                    yield {"type": "done", "content": ""}
-                    # Persistir solo el user turn `[CONTEXT_CONFIRMED]`
-                    # (sin assistant __DUAL_READ__ adicional). El
-                    # __DUAL_READ__ original ya está en messages del
-                    # primer emit cuando el operador pegó el brief.
-                    try:
-                        _turn = [
-                            {
-                                "role": "user",
-                                "content": [{"type": "text", "text": user_message}],
-                            },
-                        ]
-                        if _q_ctx:
-                            _merged = list(_q_ctx.messages or []) + _turn
-                            await db.execute(
-                                update(Quote).where(Quote.id == quote_id).values(
-                                    messages=_merged
-                                )
-                            )
-                            await db.commit()
-                            log_messages_persist(
-                                quote_id,
-                                flow="context-confirmed-text",
-                                added_turns=_turn,
-                                total_count=len(_merged),
-                            )
-                    except Exception:
-                        pass
-                    return
-
+                # PR #404 — Re-emitir el chunk `dual_read_result` igual
+                # que en el path interactivo. El skip que hizo PR #402
+                # rompía el contrato con el frontend: ese chunk no es
+                # solo "render la card", es el trigger de la transición
+                # al estado "confirmar despiece". Sin re-emit, el
+                # operador queda en una UI muerta sin botón "Confirmar
+                # despiece" activo (la card original en `messages` es
+                # texto histórico, no widget interactivo).
+                #
+                # Lo que SÍ se mantiene de PR #402 (más arriba en este
+                # mismo handler) — eso solucionaba el bug real:
+                #   1. `apply_answers` no corre cuando source=TEXT
+                #      → los tramos textuales NO se mutan.
+                #   2. `merge_derived_pieces_into_dual_read` y
+                #      `merge_alzada_tramos_into_dual_read` no corren
+                #      → los sectores no se pisan con derivados.
+                # El re-emit de acá ahora sale con el `_saved_dual`
+                # intacto (mismos sectores que el primer emit del brief),
+                # así que ya no hay card fantasma.
                 _dr_chunk = json.dumps(_saved_dual, ensure_ascii=False)
                 log_sse_structural(quote_id, "dual_read_result", _dr_chunk)
                 yield {"type": "dual_read_result", "content": _dr_chunk}
