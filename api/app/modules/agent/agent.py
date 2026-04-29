@@ -31,6 +31,34 @@ def _validate_quote_data(qdata: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
 
+    # PR #432 — modo products_only: el operador pidió cotización
+    # solo de pileta/bacha sin material/MO/instalación. Sin este
+    # skip, los 3 checks de abajo (material, sectors, mo_items)
+    # rebotan generate_documents → operador escribe "Confirmo" y
+    # nunca llega al PDF. Ya pasó tres veces hoy (PRs #427/#431):
+    # `validate_despiece` del validation_tool.py también requirió
+    # skips simétricos. Este es el preflight independiente del
+    # `validate_despiece`. Bug DYSCON 29/04/2026 turno 2.
+    if qdata.get("_quote_mode") == "products_only":
+        # Mínimo set de checks que SÍ aplican en products_only:
+        # cliente presente, total no zero, sinks no vacío.
+        if not qdata.get("client_name"):
+            errors.append("Falta nombre del cliente")
+        if not qdata.get("total_ars") and not qdata.get("total_usd"):
+            errors.append("Totales en $0 — verificar cálculo")
+        if not qdata.get("sinks"):
+            errors.append("products_only sin sinks/productos definidos")
+        # Delivery vague replacement (legítimo en este modo también).
+        _VAGUE_DELIVERY_PO = {"", "a confirmar", "a convenir", "n/a", "n/d", "-", "—", "."}
+        _current_delivery_po = (qdata.get("delivery_days") or "").strip()
+        if _current_delivery_po.lower() in _VAGUE_DELIVERY_PO:
+            try:
+                _cfg_raw = json.loads((BASE_DIR / "catalog" / "config.json").read_text(encoding="utf-8"))
+                qdata["delivery_days"] = _cfg_raw.get("delivery_days", {}).get("display", "30 dias desde la toma de medidas")
+            except Exception:
+                qdata["delivery_days"] = "30 dias desde la toma de medidas"
+        return errors, warnings
+
     # ── Errors (block generation) ──
     if not qdata.get("client_name"):
         errors.append("Falta nombre del cliente")
