@@ -227,6 +227,59 @@ _REGRUESO = re.compile(r"\bregrueso\b", re.IGNORECASE)
 _PULIDO = re.compile(r"\bpulido\b", re.IGNORECASE)
 
 
+# Map de flags que el LLM puede marcar como `true` y que validamos
+# contra el brief literal con word-boundary. PR #425 — fix
+# alucinación del LLM Haiku que confundía "frente regrueso" con
+# "frentín". Ver `_validate_llm_word_mentions` abajo.
+_LLM_WORD_VALIDATIONS = (
+    ("frentin_mentioned", _FRENTIN, "frent[ií]n"),
+    ("regrueso_mentioned", _REGRUESO, "regrueso"),
+    ("pulido_mentioned", _PULIDO, "pulido"),
+)
+
+
+def _validate_llm_word_mentions(brief: str, result: dict) -> None:
+    """Override flags ruidosos del LLM cuando la palabra literal NO
+    aparece word-boundary en el brief.
+
+    **Por qué existe (PR #425, caso DYSCON 29/04/2026):**
+
+    El LLM Haiku marcaba `frentin_mentioned: true` para briefs que
+    contenían "frente regrueso" (interpretaba "frente" como frentín,
+    aunque son dos conceptos distintos en marmolería: frentín =
+    pieza vertical pegada al borde frontal, MO con SKU FALDON;
+    frente regrueso = pieza horizontal que aumenta espesor visual
+    del frente, MO con SKU REGRUESO).
+
+    Endurecer el system prompt es frágil (review feedback: "el
+    system prompt es demasiado frágil en conversaciones largas").
+    Garantía dura: post-process con los mismos regex word-boundary
+    que ya usa el fallback. Si el LLM dice `true` pero la palabra
+    literal NO está en el brief, override a `False` con log.
+
+    **Edge case conocido**: "sin frentín" → `frentin_mentioned: true`
+    porque la palabra literal aparece. Es técnicamente correcto a
+    nivel del analyzer (la mención está). Sonnet maneja la negación
+    contextualmente. No es responsabilidad de este filtro detectar
+    negación — anotado en Issue follow-up.
+
+    Muta `result` in-place. NO tira excepciones — la observabilidad
+    nunca rompe el flow (warning log + continúa).
+    """
+    for flag_key, regex, word_label in _LLM_WORD_VALIDATIONS:
+        if not result.get(flag_key):
+            continue
+        if regex.search(brief):
+            continue  # LLM y regex coinciden — OK
+        # LLM dijo true pero la palabra literal no está → alucinación.
+        logger.warning(
+            f"[brief-analyzer] LLM hallucination override: "
+            f"{flag_key}=true sin literal '{word_label}' en brief. "
+            f"Override → False. Brief snippet: {brief[:150]!r}"
+        )
+        result[flag_key] = False
+
+
 def _extract_material_regex(brief: str) -> str | None:
     low = brief.lower()
     start_idx = -1
@@ -417,4 +470,11 @@ async def analyze_brief(brief: str) -> dict:
         f"{result['pileta_simple_doble']}, anafe_count={result['anafe_count']}, "
         f"isla={result['isla_mentioned']}, es_edificio={result['es_edificio']}"
     )
+
+    # PR #425 — post-process anti-alucinación. Mismas regex word-boundary
+    # que el fallback regex; se ejecuta SOLO en la rama LLM porque el
+    # fallback ya usa los regex como única fuente y no produce false
+    # positives por construcción.
+    _validate_llm_word_mentions(brief, result)
+
     return result
