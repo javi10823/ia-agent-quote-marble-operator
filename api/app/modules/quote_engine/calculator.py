@@ -1915,12 +1915,102 @@ def calculate_quote(input_data: dict) -> dict:
     }
 
 
+def _build_paso2_products_only(calc: dict) -> str:
+    """Markdown del Paso 2 para modo `products_only` — sin material,
+    sin MO, sin "Precio unitario" ni totales en cero.
+
+    **Por qué existe (PR #429, caso DYSCON 29/04/2026):**
+
+    PR #424 puso gates en PDF/Excel para products_only. PR #427 ruteó
+    el flujo upstream. PERO `build_deterministic_paso2` siguió armando
+    el markdown como flujo normal → en el chat el operador veía:
+      - "MATERIAL — — 0,00 m²" (header vacío)
+      - "Precio unitario: $0 | Total: $0"
+      - "DESCUENTO N% sobre material / Total material neto: $0"
+      - "MANO DE OBRA / TOTAL MO: $0"
+      - "Demora: ... | " (pipe colgante con localidad vacía)
+
+    Este builder genera el mismo dato que el PDF/Excel ya muestran
+    correctamente: tabla de productos + línea de descuento + grand
+    total. Sin bloques vacíos.
+    """
+    def fmt_ars(v): return f"${v:,.0f}".replace(",", ".")
+
+    client = (calc.get("client_name") or "").strip()
+    project = (calc.get("project") or "").strip()
+    delivery = (calc.get("delivery_days") or "").strip()
+    localidad = (calc.get("localidad") or "").strip()
+    sinks = calc.get("sinks") or []
+    discount_pct = calc.get("discount_pct") or 0
+    discount_amount = calc.get("discount_amount") or 0
+    total_ars = calc.get("total_ars", 0)
+    warnings = calc.get("warnings") or []
+
+    lines = []
+    # Header — sin pipe colgante si localidad vacía.
+    _header_title_parts = [p for p in (client, project) if p]
+    _header_title = " / ".join(_header_title_parts) if _header_title_parts else "Cotización productos"
+    lines.append(f"## PASO 2 — Cotización de productos — {_header_title}")
+
+    _meta_parts = [f"Fecha: {calc.get('date', '')}", f"Demora: {delivery or 'A confirmar'}"]
+    if localidad:
+        _meta_parts.append(localidad)
+    lines.append(" | ".join(_meta_parts))
+    lines.append("")
+
+    # Tabla de productos.
+    lines.append("**PILETAS / PRODUCTOS**")
+    lines.append("")
+    lines.append("| Item | Cant | Precio c/IVA | Total |")
+    lines.append("|---|---|---|---|")
+    _products_subtotal = 0
+    for s in sinks:
+        _name = s.get("name", "PRODUCTO")
+        _qty = s.get("quantity", 1)
+        _unit = s.get("unit_price", 0)
+        _total = round(_unit * _qty)
+        _products_subtotal += _total
+        lines.append(f"| {_name} | {_qty} | {fmt_ars(_unit)} | {fmt_ars(_total)} |")
+    lines.append("")
+
+    # Descuento (si aplica) — siempre con monto en negativo, "sobre productos".
+    if discount_pct and discount_amount:
+        lines.append(f"**DESCUENTO — {discount_pct}%**")
+        lines.append(f"- -{fmt_ars(discount_amount)} sobre productos")
+        lines.append("")
+
+    # Grand total.
+    lines.append("---")
+    lines.append("")
+    lines.append("## 💰 GRAND TOTAL")
+    lines.append(f"### {fmt_ars(total_ars)}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # Warnings (si los hay) — al final, no en el cuerpo principal.
+    for w in warnings:
+        lines.append(str(w))
+    if warnings:
+        lines.append("")
+
+    lines.append("¿Confirmás para generar PDF y Excel?")
+
+    return "\n".join(lines)
+
+
 def build_deterministic_paso2(calc: dict) -> str:
     """Build Paso 2 markdown from calculate_quote output — 100% deterministic.
 
     This is the source of truth for Paso 2 display. Claude must use this
     text verbatim and NOT modify prices, MO items, or totals.
     """
+    # PR #429 — modo products_only tiene su propio builder. Sin esto,
+    # el flujo normal genera bloques vacíos (MATERIAL/MO en $0) que
+    # confunden al cliente y operador. Ver `_build_paso2_products_only`.
+    if calc.get("_quote_mode") == "products_only":
+        return _build_paso2_products_only(calc)
+
     mat_name = calc.get("material_name", "")
     mat_m2 = calc.get("material_m2", 0)
     price_unit = calc.get("material_price_unit", 0)
@@ -1946,7 +2036,18 @@ def build_deterministic_paso2(calc: dict) -> str:
 
     lines = []
     lines.append(f"## PASO 2 — Validación — {client} / {project}")
-    lines.append(f"Fecha: {calc.get('date', '')} | Demora: {delivery} | {calc.get('localidad', 'Rosario')}")
+    # PR #429 — pipe colgante: si localidad vacía, no agregar el último
+    # ` | ` que quedaba flotando (caso real DYSCON solo-piletas).
+    _localidad = (calc.get("localidad") or "").strip()
+    _meta = f"Fecha: {calc.get('date', '')} | Demora: {delivery}"
+    if _localidad:
+        _meta += f" | {_localidad}"
+    elif not _localidad and not calc.get("_quote_mode"):
+        # En el flujo normal, localidad por default era "Rosario".
+        # Mantenemos retro-compatibilidad para no romper quotes
+        # legacy sin localidad explícita.
+        _meta += " | Rosario"
+    lines.append(_meta)
     lines.append("")
 
     # Material header — display half-up para que coincida con Paso 1.

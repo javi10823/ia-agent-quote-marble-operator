@@ -134,16 +134,29 @@ _DISCOUNT_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Cliente: "CLIENTE: NAME" / "Cliente: Name".
-_CLIENT_RE = re.compile(
-    r"cliente\s*:\s*([^\n]+?)(?:\n|$|\|)",
-    re.IGNORECASE,
+# Cliente / Obra: regex con anchor de keywords. PR #429 — caso DYSCON
+# real: "CLIENTE: DYSCON S.A. OBRA: Unidad Penal N°8 — Piñero PAGO:
+# Contado | ENTREGA: A confirmar". Todo en UNA línea, sin `\n`. El
+# regex previo (`(?:\n|$|\|)` como tope) matcheaba hasta el primer
+# `|`, agarrando "DYSCON S.A. OBRA: Unidad Penal N°8 — Piñero PAGO:
+# Contado" en client_name. Ahora cortamos ante el siguiente label
+# conocido (lookahead).
+#
+# Labels reconocidos como tope: cualquier keyword del header (cliente,
+# obra, proyecto, pago, entrega, archivo, material, demora, plazo).
+_FIELD_LABEL_LOOKAHEAD = (
+    r"(?=\s*(?:cliente|obra|proyecto|pago|entrega|archivo|material|"
+    r"demora|plazo|localidad|forma\s+de\s+pago)\s*:|$|\n|\|)"
 )
 
-# Proyecto/obra: "OBRA: ..." / "Proyecto: ...".
+_CLIENT_RE = re.compile(
+    r"cliente\s*:\s*(.+?)" + _FIELD_LABEL_LOOKAHEAD,
+    re.IGNORECASE | re.DOTALL,
+)
+
 _PROJECT_RE = re.compile(
-    r"(?:obra|proyecto)\s*:\s*([^\n]+?)(?:\n|$|\|)",
-    re.IGNORECASE,
+    r"(?:obra|proyecto)\s*:\s*(.+?)" + _FIELD_LABEL_LOOKAHEAD,
+    re.IGNORECASE | re.DOTALL,
 )
 
 

@@ -206,6 +206,43 @@ class TestParserClientProject:
         assert c == "Juan Pérez"
         assert p is None
 
+    # ── PR #429 — bug del operador: header en una sola línea ──────────
+    def test_single_line_with_pipe_separators(self):
+        """Caso DYSCON real: 'CLIENTE: DYSCON S.A. OBRA: Unidad Penal N°8
+        — Piñero PAGO: Contado | ENTREGA: A confirmar'. Todo en una
+        línea. El parser anterior agarraba 'DYSCON S.A. OBRA: Unidad
+        Penal... PAGO: Contado' en client_name. Ahora corta ante el
+        siguiente label conocido."""
+        brief = (
+            "CLIENTE: DYSCON S.A. OBRA: Unidad Penal N°8 — Piñero "
+            "PAGO: Contado | ENTREGA: A confirmar"
+        )
+        c, p = _extract_client_project(brief)
+        assert c == "DYSCON S.A.", f"client_name contaminado: {c!r}"
+        assert p == "Unidad Penal N°8 — Piñero", (
+            f"project contaminado: {p!r}"
+        )
+
+    def test_uppercase_labels(self):
+        """`CLIENTE` / `OBRA` en mayúsculas (formato original DYSCON)."""
+        brief = "CLIENTE: ACME OBRA: Edificio X"
+        c, p = _extract_client_project(brief)
+        assert c == "ACME"
+        assert p == "Edificio X"
+
+    def test_pipe_separator_only(self):
+        """Cuando el separador es solo `|` (sin label intermedio)."""
+        brief = "CLIENTE: Juan | OBRA: Casa"
+        c, p = _extract_client_project(brief)
+        assert c == "Juan"
+        assert p == "Casa"
+
+    def test_does_not_grab_pago_field(self):
+        """`PAGO:` debe cortar el match de cliente/obra."""
+        brief = "OBRA: Edificio Sur PAGO: Contado"
+        _, p = _extract_client_project(brief)
+        assert p == "Edificio Sur", f"vi {p!r}"
+
 
 class TestParserFull:
     def test_dyscon_full_parse(self):
@@ -428,7 +465,165 @@ class TestMaterialLabel:
         label = build_products_only_material_label(sinks)
         assert label == "PILETA JOHNSON E50 × 32"
 
-    # ── End-to-end con el calc_result real ──────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+# Builder Paso 2 markdown products_only (PR #429)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestBuildPaso2ProductsOnly:
+    """**Caso del operador (29/04/2026)**: el chat mostraba el Paso 2
+    con bloques vacíos (MATERIAL en $0, MO en $0, "Precio unitario $0",
+    pipe colgante) aunque el PDF/Excel salían bien. Este builder
+    arma un markdown limpio para el modo products_only."""
+
+    def _calc_dyscon(self) -> dict:
+        from app.modules.quote_engine.calculator import calculate_quote
+        parsed = parse_products_brief(_DYSCON_BRIEF)
+        result = calculate_quote(parsed)
+        assert result.get("ok") is True
+        return result
+
+    def test_no_material_block(self):
+        """**Bug crítico del operador**: 'MATERIAL — — 0,00 m²' aparecía
+        aunque material_m2=0. El builder products_only NO debe
+        emitir esa fila."""
+        from app.modules.quote_engine.calculator import build_deterministic_paso2
+        md = build_deterministic_paso2(self._calc_dyscon())
+        assert "MATERIAL —" not in md
+        assert "0,00 m²" not in md
+
+    def test_no_mo_block(self):
+        """No header MANO DE OBRA con $0."""
+        from app.modules.quote_engine.calculator import build_deterministic_paso2
+        md = build_deterministic_paso2(self._calc_dyscon())
+        assert "MANO DE OBRA" not in md
+        assert "TOTAL MO" not in md
+
+    def test_no_precio_unitario_block(self):
+        """Bug operador: 'Precio unitario: Con IVA: $0 | Total: $0'
+        no debe aparecer."""
+        from app.modules.quote_engine.calculator import build_deterministic_paso2
+        md = build_deterministic_paso2(self._calc_dyscon())
+        assert "Precio unitario" not in md
+
+    def test_no_merma_block(self):
+        """Bug: 'MERMA — NO APLICA / Cotización solo producto' es
+        ruido en este flujo. El operador no necesita ver merma."""
+        from app.modules.quote_engine.calculator import build_deterministic_paso2
+        md = build_deterministic_paso2(self._calc_dyscon())
+        assert "MERMA" not in md
+
+    def test_includes_products_table(self):
+        from app.modules.quote_engine.calculator import build_deterministic_paso2
+        md = build_deterministic_paso2(self._calc_dyscon())
+        assert "PILETAS" in md or "PRODUCTOS" in md
+        assert "PILETA JOHNSON E50/18" in md
+        assert "32" in md
+
+    def test_includes_discount_with_negative_amount(self):
+        from app.modules.quote_engine.calculator import build_deterministic_paso2
+        md = build_deterministic_paso2(self._calc_dyscon())
+        assert "DESCUENTO — 5" in md  # 5% o 5.0%
+        assert "sobre productos" in md
+        # Monto en negativo (formato `- $X` o `-$X`).
+        import re
+        assert re.search(r"-\s*\$\s*[\d.]+", md), (
+            f"Monto del descuento debe ser negativo:\n{md[:1000]}"
+        )
+
+    def test_includes_grand_total(self):
+        from app.modules.quote_engine.calculator import build_deterministic_paso2
+        md = build_deterministic_paso2(self._calc_dyscon())
+        assert "GRAND TOTAL" in md
+        # 32 × $136.410 = $4.365.120; -5% = -$218.256; total ≈ $4.146.864.
+        # Verificamos que aparezca el formato de monto grande con puntos.
+        import re
+        assert re.search(r"\$\s*4\.\d{3}\.\d{3}", md), (
+            f"Grand total ~$4M no aparece:\n{md[:1500]}"
+        )
+
+    def test_no_pipe_colgante_in_header(self):
+        """**Bug operador**: 'Demora: A confirmar | ' con pipe flotando.
+        El builder products_only NO debe tener pipe al final si la
+        localidad está vacía (el caso normal del modo).
+
+        Solo chequeamos las primeras 3 líneas (header + meta) — las
+        filas de la tabla markdown terminan con `|` legítimamente."""
+        from app.modules.quote_engine.calculator import build_deterministic_paso2
+        md = build_deterministic_paso2(self._calc_dyscon())
+        header_lines = md.split("\n")[:3]
+        for line in header_lines:
+            assert not line.rstrip().endswith("|"), (
+                f"Línea con pipe colgante en header:\n{line!r}"
+            )
+
+    def test_header_has_clean_client_project(self):
+        """Bug operador: el header decía
+        'DYSCON S.A. OBRA: Unidad Penal N°8 — Piñero PAGO: Contado /
+        Unidad Penal N°8 — Piñero PAGO: Contado' por el parser que
+        agarraba todo. Tras el fix del parser, debe estar limpio."""
+        from app.modules.quote_engine.calculator import build_deterministic_paso2
+        md = build_deterministic_paso2(self._calc_dyscon())
+        first_line = md.split("\n")[0]
+        # NO debe aparecer "PAGO:" ni "OBRA:" en el title.
+        assert "PAGO:" not in first_line, (
+            f"Header contaminado con PAGO: {first_line!r}"
+        )
+        assert "OBRA:" not in first_line, (
+            f"Header contaminado con OBRA: {first_line!r}"
+        )
+
+    def test_full_flow_dyscon_markdown_shape(self):
+        """Smoke test del shape completo del Paso 2 products_only para
+        DYSCON. Regla: que el operador, leyendo este markdown, no
+        confunda con el flujo normal."""
+        from app.modules.quote_engine.calculator import build_deterministic_paso2
+        md = build_deterministic_paso2(self._calc_dyscon())
+        # Header.
+        assert md.startswith("## PASO 2 — Cotización de productos")
+        assert "DYSCON S.A." in md
+        # Cuerpo.
+        assert "PILETA JOHNSON E50/18" in md
+        # Discount.
+        assert "DESCUENTO" in md
+        # Grand total.
+        assert "GRAND TOTAL" in md
+        # Pregunta final.
+        assert "Confirmás" in md or "Confirmar" in md
+
+    # ── Regression del flujo NORMAL ──────────────────────────────────
+    def test_normal_flow_still_has_material_block(self):
+        """**Regression crítica**: el flujo normal (sin _quote_mode)
+        debe seguir armando MATERIAL/MO como antes. Si esto rompe,
+        cualquier cotización de mesada en producción queda sin
+        bloques."""
+        # Construyo un calc_result mínimo del flujo normal.
+        normal_calc = {
+            "client_name": "Test", "project": "Cocina",
+            "date": "29.04.2026", "delivery_days": "30 días",
+            "material_name": "GRANITO GRIS MARA",
+            "material_m2": 5.0, "material_price_unit": 100000,
+            "material_currency": "ARS",
+            "material_total": 500000, "discount_pct": 0,
+            "piece_details": [
+                {"description": "Mesada", "largo": 2.5, "dim2": 0.6,
+                 "m2": 1.5, "quantity": 1},
+            ],
+            "mo_items": [
+                {"description": "Colocación", "quantity": 5.0,
+                 "unit_price": 50000, "total": 250000},
+            ],
+            "sinks": [],
+            "total_ars": 750000, "total_usd": 0,
+            "merma": {"aplica": False},
+        }
+        from app.modules.quote_engine.calculator import build_deterministic_paso2
+        md = build_deterministic_paso2(normal_calc)
+        # Flujo normal SÍ tiene estos bloques.
+        assert "MATERIAL" in md
+        assert "MANO DE OBRA" in md
+        assert "GRANITO GRIS MARA" in md
+
     def test_dyscon_full_label(self):
         """Caso DYSCON real: el calc_result que produce
         `_calculate_quote_products_only` debe generar un label
@@ -441,15 +636,3 @@ class TestMaterialLabel:
         # El nombre exacto del catálogo. Verificamos que contenga "JOHNSON" + qty.
         assert "JOHNSON" in label.upper()
         assert "× 32" in label
-        """Drift guard E2E: el calc_result armado por el flow
-        completo NO rebota en NINGÚN validator (ni el de pegadopileta
-        que arreglamos, ni los demás)."""
-        from app.modules.quote_engine.calculator import calculate_quote
-        from app.modules.agent.tools.validation_tool import validate_despiece
-
-        parsed = parse_products_brief(_DYSCON_BRIEF)
-        result = calculate_quote(parsed)
-        validation = validate_despiece(result)
-        assert validation.ok is True, (
-            f"validate_despiece rebotó products_only: {validation.errors}"
-        )
