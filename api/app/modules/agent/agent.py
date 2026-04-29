@@ -2372,6 +2372,133 @@ class AgentService:
 
         _is_system_trigger = user_message and user_message.strip().startswith("[")
 
+        # ── PR #431 — Products-only CONFIRM short-circuit ──
+        # Caso DYSCON 29/04/2026 (turno 2 del operador):
+        # 1. Turno 1: brief solo-piletas → PR #427 short-circuit emite
+        #    Paso 2 + done. ✓
+        # 2. Turno 2: operador escribe "Confirmo" para generar PDF.
+        # 3. **BUG**: caía al flujo normal → Sonnet se invocaba sin
+        #    tener el calc_result en su contexto (solo el markdown del
+        #    Paso 2). Sonnet decidía conservadoramente re-llamar
+        #    `calculate_quote` en lugar de `generate_documents` →
+        #    el operador veía el Paso 2 emitido OTRA VEZ. Loop.
+        #
+        # Fix determinístico: si hay breakdown products_only persistido
+        # Y el mensaje del operador es confirmación explícita
+        # (whitelist `_user_intent`), llamamos `_execute_tool(
+        # "generate_documents", ...)` directo desde código, sin pasar
+        # por Sonnet. El `_canonicalize_quotes_data_from_db` reemplaza
+        # los campos visuales con el calc_result canónico (incluido
+        # `_quote_mode` agregado al `_VISUAL_FIELDS` en PR #424).
+        #
+        # **Importante**: solo dispara con `_user_intent == "confirm"`.
+        # "no, cambiá la cantidad" / "agregá otra pileta" / cualquier
+        # mod intent → caen al flujo normal donde Sonnet maneja la
+        # modificación. La whitelist del PR #416 es estricta —
+        # requiere señal explícita ("confirmo", "dale", "OK generá",
+        # etc.). Esto es exactamente lo que el review feedback pidió.
+        if (
+            not _just_confirmed_dual_read
+            and not plan_bytes
+            and not (extra_files or [])
+            and user_message
+            and not _is_system_trigger
+        ):
+            try:
+                _po_cf_q = await db.execute(
+                    select(Quote).where(Quote.id == quote_id)
+                )
+                _po_cf_quote = _po_cf_q.scalar_one_or_none()
+                _po_cf_bd = (
+                    (_po_cf_quote.quote_breakdown or {})
+                    if _po_cf_quote else {}
+                )
+                _po_cf_is_products = (
+                    _po_cf_bd.get("_quote_mode") == "products_only"
+                )
+                _po_cf_intent = _user_intent(user_message)
+                if _po_cf_is_products and _po_cf_intent == "confirm":
+                    yield {
+                        "type": "action",
+                        "content": "📄 Generando PDF y Excel...",
+                    }
+                    # Armamos el input de generate_documents con el
+                    # calc_result canónico persistido. canonicalize lo
+                    # reemplaza igual, pero pasamos el shape correcto
+                    # por las dudas.
+                    _po_cf_quotes_input = {"quotes": [dict(_po_cf_bd)]}
+                    try:
+                        _po_cf_result = await self._execute_tool(
+                            "generate_documents",
+                            _po_cf_quotes_input,
+                            quote_id=quote_id,
+                            db=db,
+                            conversation_history=messages,
+                            current_user_message=user_message,
+                        )
+                    except Exception as _e_po_gen:
+                        logging.warning(
+                            f"[products-only-confirm] generate_documents "
+                            f"crashed: {_e_po_gen}. Falling back to normal flow."
+                        )
+                        _po_cf_result = None
+
+                    if isinstance(_po_cf_result, dict) and _po_cf_result.get("ok"):
+                        # Persist assistant turn con el resumen + links.
+                        _po_cf_msg_lines = ["✅ PDF y Excel generados."]
+                        for _doc_key, _doc_label in (
+                            ("pdf_url", "PDF"),
+                            ("excel_url", "Excel"),
+                            ("drive_url", "Drive"),
+                        ):
+                            _doc_val = _po_cf_result.get(_doc_key)
+                            if _doc_val:
+                                _po_cf_msg_lines.append(
+                                    f"- {_doc_label}: {_doc_val}"
+                                )
+                        _po_cf_msg = "\n".join(_po_cf_msg_lines)
+                        yield {"type": "text", "content": _po_cf_msg}
+                        try:
+                            await db.execute(
+                                update(Quote).where(
+                                    Quote.id == quote_id
+                                ).values(
+                                    messages=list(_po_cf_quote.messages or []) + [
+                                        {"role": "user", "content": user_message},
+                                        {"role": "assistant", "content": _po_cf_msg},
+                                    ]
+                                )
+                            )
+                            await db.commit()
+                        except Exception as _e_po_persist_cf:
+                            logging.warning(
+                                f"[products-only-confirm] persist failed: "
+                                f"{_e_po_persist_cf}"
+                            )
+                        logging.info(
+                            f"[products-only-confirm] short-circuit OK "
+                            f"for {quote_id}"
+                        )
+                        # Yield done — sin esto, frontend timeoutea
+                        # (mismo bug del PR #430 — siempre emit done
+                        # antes del return).
+                        yield {"type": "done", "content": ""}
+                        return
+                    elif isinstance(_po_cf_result, dict):
+                        # generate_documents rebotó (validator, error, etc).
+                        # NO short-circuit — caemos al flujo normal donde
+                        # Sonnet maneja el error como en cualquier quote.
+                        logging.warning(
+                            f"[products-only-confirm] generate_documents "
+                            f"rejected: {_po_cf_result.get('error', '?')}. "
+                            f"Fallback normal flow."
+                        )
+            except Exception as _e_po_cf_outer:
+                logging.warning(
+                    f"[products-only-confirm] outer crashed: "
+                    f"{_e_po_cf_outer}. Fallback normal flow."
+                )
+
         # ── PR #427 — Products-only short-circuit ──
         # Caso DYSCON 29/04/2026: brief "Pileta Johnson E50 × 32, sin MO,
         # sin flete, descuento 5%". El flujo normal (text-parser →

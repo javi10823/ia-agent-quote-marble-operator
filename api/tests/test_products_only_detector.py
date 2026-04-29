@@ -687,3 +687,181 @@ class TestShortCircuitEmitsDone:
             "no cierra el stream y el operador no puede confirmar. "
             "Ver caso DYSCON 29/04/2026 / PR #430."
         )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Confirm short-circuit (PR #431) — al confirmar genera PDF directo
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestConfirmShortCircuit:
+    """**Bug crítico observado en prod (caso DYSCON 29/04/2026, turno 2):**
+
+    Después de PR #427 (brief solo-piletas → Paso 2 limpio) y PR #430
+    (yield done para que el composer quede habilitado), el operador
+    podía escribir "Confirmo" — pero el agent **no generaba el PDF**.
+
+    Sonnet recibía el "Confirmo" sin tener el calc_result como
+    tool_use en su contexto (solo el markdown del Paso 2). Decidía
+    conservadoramente re-llamar `calculate_quote` → calculator
+    detectaba products_only otra vez → emitía Paso 2 nuevo. Loop.
+
+    **Fix (PR #431):** confirm short-circuit determinístico.
+    Si hay breakdown products_only persistido Y `_user_intent` ==
+    "confirm", llamamos `_execute_tool("generate_documents", ...)`
+    directo desde código, bypaso Sonnet.
+
+    Tests vía `inspect.getsource` (no mockeamos el stream agéntico
+    completo — la lógica crítica es el guard `_user_intent == confirm`
+    y el llamado directo a generate_documents)."""
+
+    def test_user_intent_confirm_passes_strict_whitelist(self):
+        """Recordatorio del whitelist (PR #416): solo confirmaciones
+        explícitas disparan. El review feedback fue claro: la
+        whitelist debe ser estricta para no auto-generar PDF cuando
+        el operador escribe modificaciones."""
+        from app.modules.agent.agent import _user_intent
+        # Confirm explícito → pasa.
+        for msg in ["Confirmo", "confirmo", "Dale", "OK generá",
+                    "Sí", "yes", "perfecto"]:
+            assert _user_intent(msg) == "confirm", (
+                f"{msg!r} debería ser confirm"
+            )
+
+    def test_user_intent_modify_does_NOT_pass(self):
+        """**Caso crítico**: 'no, cambiá la cantidad' / 'agregá otra
+        pileta' / etc. NO deben disparar confirm. El short-circuit
+        chequea exactamente `_user_intent == 'confirm'` — cualquier
+        otro intent (modify, other) cae al flujo normal donde Sonnet
+        maneja la modificación.
+
+        Sin esta estrictez, el operador escribe 'cambiá la cantidad
+        a 33' y el sistema le genera el PDF con la cantidad vieja —
+        bug grave de cobro incorrecto."""
+        from app.modules.agent.agent import _user_intent
+        for msg in [
+            "no, cambiá la cantidad",
+            "agregá otra pileta",
+            "sacá una pileta",
+            "cambiar a 33 unidades",
+            "no, está mal",
+            "modificar el descuento al 10%",
+            "el descuento es del 8%",
+        ]:
+            intent = _user_intent(msg)
+            assert intent != "confirm", (
+                f"{msg!r} NO debería ser confirm, vi intent={intent!r}. "
+                f"Si pasa como confirm, el operador modifica y le "
+                f"generamos PDF viejo → cobro incorrecto."
+            )
+
+    def test_short_circuit_block_exists_in_source(self):
+        """Drift guard: el bloque `[products-only-confirm]` debe
+        existir en `stream_chat`. Si alguien lo borra, este test
+        rompe."""
+        import inspect
+        from app.modules.agent import agent as agent_mod
+        src = inspect.getsource(agent_mod.AgentService.stream_chat)
+        assert "[products-only-confirm] short-circuit OK" in src, (
+            "Falta el log del confirm short-circuit. Sin él, el "
+            "operador escribe 'Confirmo' y Sonnet re-emite el Paso 2 "
+            "(bug DYSCON 29/04/2026 turno 2 / PR #431)."
+        )
+
+    def test_short_circuit_uses_user_intent_confirm_check(self):
+        """Drift guard: el bloque debe chequear `_user_intent` ==
+        "confirm" estrictamente. Si alguien lo cambia a un substring
+        match de "confirm" o algo más laxo, mensajes como
+        'cambiá la cantidad' podrían disparar el PDF y cobrar mal."""
+        import inspect
+        from app.modules.agent import agent as agent_mod
+        src = inspect.getsource(agent_mod.AgentService.stream_chat)
+        idx = src.find("[products-only-confirm] short-circuit OK")
+        assert idx > 0
+        # Buscamos hacia atrás el bloque del confirm short-circuit.
+        # Empieza con el comentario `── PR #431`.
+        idx_block_start = src.rfind("PR #431", 0, idx)
+        assert idx_block_start > 0
+        block = src[idx_block_start:idx]
+        # Debe tener el guard estricto.
+        assert "_user_intent(" in block, (
+            "El confirm short-circuit no usa _user_intent — riesgo de "
+            "matching laxo de 'confirm'."
+        )
+        assert '== "confirm"' in block, (
+            "El check debe ser `_user_intent(...) == 'confirm'` "
+            "estricto (no `in` ni substring). Sin esto el flujo "
+            "podría disparar con 'cambiá' / 'corregí' / etc."
+        )
+
+    def test_short_circuit_calls_generate_documents_directly(self):
+        """Drift guard: el bloque debe llamar `_execute_tool(
+        "generate_documents", ...)`. Si en un refactor alguien lo
+        cambia a `calculate_quote` (el bug original), el operador
+        vuelve a ver Paso 2 en lugar del PDF."""
+        import inspect
+        from app.modules.agent import agent as agent_mod
+        src = inspect.getsource(agent_mod.AgentService.stream_chat)
+        idx_block_start = src.find("PR #431")
+        assert idx_block_start > 0
+        # Rango: desde "PR #431" (encabezado) hasta el header del
+        # bloque siguiente "── PR #427 — Products-only short-circuit"
+        # (el comentario header del otro bloque). NO usamos "PR #427"
+        # solo porque el comentario del #431 menciona ese número.
+        idx_block_end = src.find(
+            "── PR #427 — Products-only short-circuit",
+            idx_block_start,
+        )
+        assert idx_block_end > idx_block_start
+        block = src[idx_block_start:idx_block_end]
+        assert '"generate_documents"' in block, (
+            "El confirm short-circuit no llama generate_documents. "
+            "Sin esto, vuelve el bug DYSCON: Sonnet re-emite Paso 2."
+        )
+
+    def test_short_circuit_yields_done_before_return(self):
+        """Drift guard: yield done antes del return (mismo patrón
+        del PR #430). Buscamos el `yield {"type": "done"` literal
+        después del log del short-circuit. Si está, OK; si no,
+        bug de timeout en frontend."""
+        import inspect
+        from app.modules.agent import agent as agent_mod
+        src = inspect.getsource(agent_mod.AgentService.stream_chat)
+        idx_log = src.find("[products-only-confirm] short-circuit OK")
+        assert idx_log > 0
+        # Marcador de fin del bloque: el header del PR #427 siguiente.
+        idx_block_end = src.find(
+            "── PR #427 — Products-only short-circuit",
+            idx_log,
+        )
+        assert idx_block_end > idx_log
+        between = src[idx_log:idx_block_end]
+        # Buscamos el yield done específico (no `# yield` en comentario).
+        assert 'yield {"type": "done"' in between, (
+            "Falta yield done en el confirm short-circuit. Sin esto "
+            "el frontend timeoutea (bug PR #430 replicado)."
+        )
+
+    def test_short_circuit_only_when_quote_mode_products_only(self):
+        """Drift guard: el bloque debe chequear `_quote_mode ==
+        "products_only"`. Si en un refactor sacan ese guard, el
+        confirm short-circuit dispararía para CUALQUIER quote (con
+        pileta o no), bypaseando el flujo normal."""
+        import inspect
+        from app.modules.agent import agent as agent_mod
+        src = inspect.getsource(agent_mod.AgentService.stream_chat)
+        idx_block_start = src.find("PR #431")
+        # Rango: desde "PR #431" (encabezado) hasta el header del
+        # bloque siguiente "── PR #427 — Products-only short-circuit"
+        # (el comentario header del otro bloque). NO usamos "PR #427"
+        # solo porque el comentario del #431 menciona ese número.
+        idx_block_end = src.find(
+            "── PR #427 — Products-only short-circuit",
+            idx_block_start,
+        )
+        block = src[idx_block_start:idx_block_end]
+        assert '"products_only"' in block, (
+            "El confirm short-circuit no chequea _quote_mode. "
+            "Sin ese guard, dispararía para cualquier quote y "
+            "rompería el flujo normal de mesadas."
+        )
