@@ -220,6 +220,39 @@ def _extract_client_project(brief: str) -> tuple[Optional[str], Optional[str]]:
     return client, project
 
 
+def build_products_only_material_label(sinks: list[dict] | None) -> str:
+    """Construye el label que aparece en la columna 'material' del listado
+    del dashboard para una quote en modo `products_only`.
+
+    **Por qué existe (PR #428):** el `_po_persist` del short-circuit
+    (PR #427) seteaba `material=""` → en el listado se mostraba "—"
+    (em-dash) y el operador no podía identificar qué cotización era
+    al escanear la lista.
+
+    Formato:
+    - 1 sink: ``"<name> × <qty>"`` (ej: "PILETA JOHNSON E50/18 × 32").
+    - N sinks: ``"<first.name> × <first.qty> (+<N-1> más)"`` para
+      indicar que hay más productos. El operador entra al detalle
+      si quiere ver el resto.
+    - 0 sinks: string vacío (defensivo — no debería ocurrir si el
+      flujo de products_only se activó correctamente).
+
+    NO valida el shape de los sinks — confía en lo que produjo
+    `_calculate_quote_products_only` (que ya filtra entradas mal
+    formadas).
+    """
+    if not sinks:
+        return ""
+    first = sinks[0] if isinstance(sinks[0], dict) else {}
+    name = (first.get("name") or "PRODUCTO").strip()
+    qty = first.get("quantity") or 1
+    label = f"{name} × {qty}"
+    extras = len(sinks) - 1
+    if extras > 0:
+        label += f" (+{extras} más)"
+    return label
+
+
 def parse_products_brief(brief: str) -> Optional[dict]:
     """Parsea un brief de "solo producto" a un dict listo para
     `calculate_quote`.

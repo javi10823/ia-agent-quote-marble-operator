@@ -2460,11 +2460,24 @@ class AgentService:
                                 # Persistir breakdown + columnas dedicadas
                                 # (cliente/proyecto) para que aparezca en
                                 # dashboard listado desde el turno 1.
+                                # PR #428 — material descriptivo en el
+                                # listado del dashboard. Antes era "" →
+                                # se mostraba como "—" en la columna
+                                # material y el operador no podía
+                                # identificar qué cotización era. Helper
+                                # vive en `products_only_detector` para
+                                # ser unit-testable sin DB ni Anthropic.
+                                from app.modules.quote_engine.products_only_detector import (
+                                    build_products_only_material_label,
+                                )
+                                _po_label = build_products_only_material_label(
+                                    _po_result.get("sinks")
+                                )
                                 _po_persist = {
                                     "quote_breakdown": dict(_po_result),
                                     "total_ars": _po_result.get("total_ars", 0),
                                     "total_usd": 0,
-                                    "material": "",  # explicit empty
+                                    "material": _po_label,
                                 }
                                 if parsed_po.get("client_name"):
                                     _po_persist["client_name"] = parsed_po["client_name"]
