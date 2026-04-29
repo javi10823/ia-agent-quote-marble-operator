@@ -4002,6 +4002,23 @@ class AgentService:
         MAX_READ_PLAN_CALLS = 3       # Hard limit: max 3 read_plan calls per conversation
         _visual_builder_done = False  # Track if visual builder already processed
 
+        # PR #423 — retry counter (Issue #422). Caso DYSCON observado en
+        # producción: cuando una tool retorna error, Sonnet a veces intenta
+        # auto-fixear inventando valores (en el caso real, infló m² 1755%).
+        # Guardrail-B atrapó ESE caso específico, pero el patrón vuelve con
+        # cualquier validator nuevo que metamos. Lógica aislada en
+        # `retry_guard` para que sea unit-testable sin mockear Anthropic.
+        # Reset implícito: cada llamada nueva a `stream_chat` (turno del
+        # operador) crea un dict nuevo.
+        from app.modules.agent.retry_guard import (
+            build_retry_block_result,
+            increment_failure,
+            is_tool_failure,
+            should_block_retry,
+            DEFAULT_RETRY_THRESHOLD,
+        )
+        _tool_failure_count: dict[str, int] = {}
+
         while True:
             if _loop_iterations >= MAX_ITERATIONS:
                 logging.error(f"Agent exceeded MAX_ITERATIONS ({MAX_ITERATIONS}) for quote {quote_id}")
@@ -4730,18 +4747,47 @@ class AgentService:
                 # el prefix + formato.
                 log_tool_call(quote_id, tool_use.name, tool_use.input)
 
-                try:
-                    result = await self._execute_tool(
-                        tool_use.name,
-                        tool_use.input,
-                        quote_id=quote_id,
-                        db=db,
-                        conversation_history=messages,
-                        current_user_message=user_message,
+                # PR #423 — retry counter (Issue #422). Si esta tool ya
+                # falló threshold veces en este turno del operador, NO la
+                # ejecutamos: devolvemos un error sintético que fuerza a
+                # Sonnet a parar y consultar al operador. Lógica aislada
+                # en `retry_guard` (unit-tests + reuso futuro).
+                if should_block_retry(tool_use.name, _tool_failure_count):
+                    _prior = _tool_failure_count.get(tool_use.name, 0)
+                    result = build_retry_block_result(tool_use.name, _prior)
+                    logging.warning(
+                        f"[retry-block:{quote_id}] tool={tool_use.name} "
+                        f"count={_prior} BLOCKED — forcing operator "
+                        f"consultation"
                     )
-                except Exception as e:
-                    logging.error(f"Tool execution error ({tool_use.name}): {e}", exc_info=True)
-                    result = {"ok": False, "error": f"Error ejecutando {tool_use.name}: {str(e)}"}
+                else:
+                    try:
+                        result = await self._execute_tool(
+                            tool_use.name,
+                            tool_use.input,
+                            quote_id=quote_id,
+                            db=db,
+                            conversation_history=messages,
+                            current_user_message=user_message,
+                        )
+                    except Exception as e:
+                        logging.error(f"Tool execution error ({tool_use.name}): {e}", exc_info=True)
+                        result = {"ok": False, "error": f"Error ejecutando {tool_use.name}: {str(e)}"}
+
+                # PR #423 — contar el fallo (si lo hubo) DESPUÉS de la
+                # ejecución. La pre-block check de arriba ya incluye los
+                # bloqueos sintéticos como "fallo" (tienen ok=False), por
+                # lo que el contador queda monotónicamente creciente
+                # mientras la tool no se recupere. NO reseteamos con
+                # éxitos intermedios — el contador acumula errores totales
+                # por tool en el turno del operador.
+                if is_tool_failure(result):
+                    _new_count = increment_failure(tool_use.name, _tool_failure_count)
+                    _err_preview = str(result.get("error", "?"))[:120]
+                    logging.info(
+                        f"[retry-counter:{quote_id}] tool={tool_use.name} "
+                        f"count={_new_count} error={_err_preview}"
+                    )
 
                 # Log result summary
                 # PR #385 — tool result REAL. El log anterior filtraba a
