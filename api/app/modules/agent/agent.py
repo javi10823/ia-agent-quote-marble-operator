@@ -4356,6 +4356,16 @@ class AgentService:
         )
         _tool_failure_count: dict[str, int] = {}
 
+        # PR #441 (P3.1) — tracking de TODAS las tools llamadas en
+        # este turno del operador (acumulado a través de las
+        # iteraciones del while). Usado por el detector de
+        # alucinaciones cuando el turno cierra: si Sonnet emitió
+        # un claim de cambio ("cambié X", "modifiqué Y") sin haber
+        # llamado ninguna mutation tool, log warning. Issue #422 +
+        # caso DYSCON (29/04/2026 — "cambiá la demora" donde Sonnet
+        # respondía "cambiado" sin tocar nada).
+        _tools_called_this_turn: set[str] = set()
+
         while True:
             if _loop_iterations >= MAX_ITERATIONS:
                 logging.error(f"Agent exceeded MAX_ITERATIONS ({MAX_ITERATIONS}) for quote {quote_id}")
@@ -4565,6 +4575,34 @@ class AgentService:
 
             if not tool_use_blocks:
                 # No tool calls — this is the final response.
+
+                # PR #441 (P3.1) — detector de alucinaciones. Si
+                # Sonnet emitió un claim de cambio ("cambié",
+                # "modifiqué") en el texto pero NO llamó ninguna
+                # mutation tool en todo el turno, log warning. NO
+                # bloquea el turno (el operador igual ve la
+                # respuesta) — solo observabilidad para diagnosticar
+                # frecuencia. Si pasa seguido en prod, P3.2 escala
+                # a notificación visible en la UI.
+                try:
+                    from app.modules.agent.hallucination_detector import (
+                        detect_unsupported_change_claim,
+                    )
+                    _hd_warn = detect_unsupported_change_claim(
+                        full_text or "",
+                        _tools_called_this_turn,
+                    )
+                    if _hd_warn:
+                        logging.warning(
+                            f"[hallucination-detector:{quote_id}] {_hd_warn} "
+                            f"text_preview={(full_text or '')[:200]!r}"
+                        )
+                except Exception as _e_hd:
+                    # Detector nunca rompe el flow — solo observabilidad.
+                    logging.debug(
+                        f"[hallucination-detector:{quote_id}] "
+                        f"check failed: {_e_hd}"
+                    )
 
                 # ── Visual building pipeline: page-by-page zone detection + extraction ──
                 # Only for multipágina CAD buildings (Ventus-type), NOT simple images
@@ -5078,6 +5116,9 @@ class AgentService:
             for tool_use in tool_use_blocks:
                 if tool_use.name == "list_pieces":
                     _list_pieces_called = True
+                # PR #441 (P3.1) — track tool name para el detector
+                # de alucinaciones al cerrar el turno.
+                _tools_called_this_turn.add(tool_use.name)
                 yield {"type": "action", "content": f"⚙️ Ejecutando: {tool_use.name}..."}
                 # PR #385 — tool call con input estructurado. Ya existía un
                 # log ad-hoc; ahora pasa por `log_tool_call` que normaliza
