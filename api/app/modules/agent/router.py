@@ -1142,6 +1142,12 @@ async def patch_quote(
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update")
 
+    # PR #438 — guardar los keys ORIGINALES del patch antes de
+    # cualquier mutación interna (mirror al breakdown, rename
+    # `origin → source`, etc.) para que el response liste lo que
+    # el cliente pidió, no la mecánica interna como `quote_breakdown`.
+    _original_patch_keys = set(updates.keys())
+
     # Map origin -> source
     if "origin" in updates:
         updates["source"] = updates.pop("origin")
@@ -1167,17 +1173,51 @@ async def patch_quote(
     if "delivery_days" in updates:
         breakdown_only_updates["delivery_days"] = updates.pop("delivery_days")
 
-    if breakdown_only_updates:
-        # Leer breakdown actual y mergear los campos breakdown-only.
+    # PR #438 (P1.1) — sync REST → breakdown para campos que tienen
+    # mirror en ambas capas. Antes de este PR, PATCH /quotes cambiaba
+    # solo la columna y el breakdown JSON quedaba viejo → frontend
+    # detail view (que lee del breakdown) mostraba el valor anterior,
+    # PDF re-generado leía el viejo, Paso 2 markdown idem. Bug
+    # latente que solo se evitaba porque el frontend no exponía
+    # EditableField de esos campos. Con P2.1 (próximo PR) se exponen.
+    #
+    # Map: nombre del campo en columna → key en breakdown JSON.
+    # `material` se mapea a `material_name` (rename histórico).
+    # NO incluye `pieces` (requiere recálculo, no es simple mirror)
+    # ni `sink_type` / `client_phone` / `client_email` / `status` /
+    # `notes` / `parent_quote_id` / `conversation_id` / `source`
+    # (no tienen mirror en breakdown).
+    _BREAKDOWN_MIRROR_FIELDS = {
+        "client_name": "client_name",
+        "project": "project",
+        "localidad": "localidad",
+        "colocacion": "colocacion",
+        "pileta": "pileta",
+        "anafe": "anafe",
+        "material": "material_name",  # rename: columna `material` → bd `material_name`
+    }
+    breakdown_mirror_updates: dict = {}
+    for col_key, bd_key in _BREAKDOWN_MIRROR_FIELDS.items():
+        if col_key in updates:
+            breakdown_mirror_updates[bd_key] = updates[col_key]
+
+    if breakdown_only_updates or breakdown_mirror_updates:
+        # Leer breakdown actual y mergear ambos sets de updates al JSON.
         existing_q = await db.execute(select(Quote).where(Quote.id == quote_id))
         existing_quote = existing_q.scalar_one_or_none()
         bd = dict(existing_quote.quote_breakdown or {}) if existing_quote else {}
         for k, v in breakdown_only_updates.items():
             bd[k] = v
+        for k, v in breakdown_mirror_updates.items():
+            bd[k] = v
         # Si ya hay quote_breakdown en `updates` por algún motivo,
         # respetarlo y mergear arriba; si no, crear el patch.
         if "quote_breakdown" in updates and isinstance(updates["quote_breakdown"], dict):
-            updates["quote_breakdown"] = {**updates["quote_breakdown"], **breakdown_only_updates}
+            updates["quote_breakdown"] = {
+                **updates["quote_breakdown"],
+                **breakdown_only_updates,
+                **breakdown_mirror_updates,
+            }
         else:
             updates["quote_breakdown"] = bd
 
@@ -1186,12 +1226,19 @@ async def patch_quote(
         await db.commit()
 
     logger.info(
-        "[patch] Quote %s updated: %s breakdown_only=%s",
-        quote_id, list(updates.keys()), list(breakdown_only_updates.keys()),
+        "[patch] Quote %s updated: %s breakdown_only=%s mirrored=%s",
+        quote_id,
+        list(updates.keys()),
+        list(breakdown_only_updates.keys()),
+        list(breakdown_mirror_updates.keys()),
     )
+    # Response — solo los keys que vinieron en el patch original
+    # (sin `quote_breakdown` interno, sin renames como source/origin).
+    # `delivery_days` está en `_original_patch_keys` aunque
+    # internamente se haya movido a breakdown.
     return {
         "ok": True,
-        "updated": list(updates.keys()) + list(breakdown_only_updates.keys()),
+        "updated": sorted(_original_patch_keys),
     }
 
 
