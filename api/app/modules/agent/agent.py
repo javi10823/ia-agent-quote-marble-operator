@@ -2370,6 +2370,156 @@ class AgentService:
             logging.warning(f"[card-editor] handler exception (non-fatal): {e}", exc_info=True)
             # Fall through al flujo normal de Claude.
 
+        _is_system_trigger = user_message and user_message.strip().startswith("[")
+
+        # ── PR #427 — Products-only short-circuit ──
+        # Caso DYSCON 29/04/2026: brief "Pileta Johnson E50 × 32, sin MO,
+        # sin flete, descuento 5%". El flujo normal (text-parser →
+        # context_analysis → despiece) es ruidoso e inútil para
+        # cotizaciones de producto suelto:
+        # - Genera "Análisis de contexto" con frentin/regrueso/mesadas
+        #   inventadas (alucinación del LLM Haiku).
+        # - Emite card de despiece editable con piezas que no
+        #   corresponden.
+        # - Ridireccionando todo al modo products_only del calculator
+        #   solo después de un Paso 2 confuso.
+        #
+        # Detector + parser determinísticos (3 señales: "solo producto"
+        # + "sin MO" + producto pileta/bacha). Cuando dispara, llamamos
+        # `calculate_quote` directo, emitimos `_paso2_rendered` al
+        # stream y cerramos el turno. Mismo patrón que el PASO 2
+        # short-circuit del while loop más abajo.
+        #
+        # Skipea si: hay plano adjunto, hay system trigger, ya existe
+        # card previa, o el detector NO dispara → fallback al flujo
+        # normal sin tocar nada.
+        if (
+            not _just_confirmed_dual_read
+            and not plan_bytes
+            and not (extra_files or [])
+            and user_message
+            and not _is_system_trigger
+        ):
+            try:
+                from app.modules.quote_engine.products_only_detector import (
+                    is_products_only_brief,
+                    parse_products_brief,
+                )
+                if is_products_only_brief(user_message):
+                    parsed_po = parse_products_brief(user_message)
+                    if parsed_po:
+                        # Quote check — no re-disparar si ya hay breakdown
+                        # products_only persistido (operador re-envía el
+                        # mismo brief o reload del chat).
+                        _po_q = await db.execute(
+                            select(Quote).where(Quote.id == quote_id)
+                        )
+                        _po_quote = _po_q.scalar_one_or_none()
+                        _po_bd = (
+                            (_po_quote.quote_breakdown or {})
+                            if _po_quote else {}
+                        )
+                        _po_already = bool(
+                            _po_bd.get("_quote_mode") == "products_only"
+                        )
+                        if not _po_already and _po_quote is not None:
+                            yield {
+                                "type": "action",
+                                "content": "🛒 Cotización solo producto detectada — calculando...",
+                            }
+                            # Heredar client_name/project del quote si el
+                            # parser no los encontró en el brief.
+                            if not parsed_po.get("client_name"):
+                                parsed_po["client_name"] = (
+                                    _po_quote.client_name or "DYSCON S.A."
+                                )
+                            if not parsed_po.get("project"):
+                                parsed_po["project"] = (
+                                    _po_quote.project or "Cotización productos"
+                                )
+                            try:
+                                from app.modules.quote_engine.calculator import (
+                                    build_deterministic_paso2,
+                                    calculate_quote as _calc_po,
+                                )
+                                _po_result = _calc_po(parsed_po)
+                            except Exception as _e_po_calc:
+                                logging.warning(
+                                    f"[products-only] calculate_quote crashed: "
+                                    f"{_e_po_calc}. Falling back to normal flow."
+                                )
+                                _po_result = {"ok": False, "error": str(_e_po_calc)}
+
+                            if _po_result.get("ok"):
+                                # Build deterministic Paso 2 + persistir
+                                _po_result["_paso2_rendered"] = (
+                                    build_deterministic_paso2(_po_result)
+                                )
+                                _po_result["quote_id"] = quote_id
+
+                                # Persistir breakdown + columnas dedicadas
+                                # (cliente/proyecto) para que aparezca en
+                                # dashboard listado desde el turno 1.
+                                _po_persist = {
+                                    "quote_breakdown": dict(_po_result),
+                                    "total_ars": _po_result.get("total_ars", 0),
+                                    "total_usd": 0,
+                                    "material": "",  # explicit empty
+                                }
+                                if parsed_po.get("client_name"):
+                                    _po_persist["client_name"] = parsed_po["client_name"]
+                                if parsed_po.get("project"):
+                                    _po_persist["project"] = parsed_po["project"]
+                                try:
+                                    await db.execute(
+                                        update(Quote).where(
+                                            Quote.id == quote_id
+                                        ).values(**_po_persist)
+                                    )
+                                    # Emit + persist assistant turn
+                                    _po_paso2 = _po_result.get("_paso2_rendered", "")
+                                    if _po_paso2:
+                                        yield {
+                                            "type": "text",
+                                            "content": _po_paso2,
+                                        }
+                                        await db.execute(
+                                            update(Quote).where(
+                                                Quote.id == quote_id
+                                            ).values(
+                                                messages=list(_po_quote.messages or []) + [
+                                                    {"role": "user", "content": user_message},
+                                                    {"role": "assistant", "content": _po_paso2},
+                                                ]
+                                            )
+                                        )
+                                    await db.commit()
+                                    logging.info(
+                                        f"[products-only] short-circuit OK "
+                                        f"for {quote_id}: qty={parsed_po['pileta_qty']}, "
+                                        f"sku={parsed_po['pileta_sku']}, "
+                                        f"total={_po_result.get('total_ars')}"
+                                    )
+                                    return  # ← end turn, NO contexto/despiece
+                                except Exception as _e_po_persist:
+                                    logging.warning(
+                                        f"[products-only] persist failed: "
+                                        f"{_e_po_persist}. Continuing to normal flow."
+                                    )
+                            else:
+                                # calc rebotó (ej: SKU no encontrado).
+                                # NO short-circuit — caemos al flujo normal
+                                # para que Sonnet maneje el error.
+                                logging.warning(
+                                    f"[products-only] calc rejected: "
+                                    f"{_po_result.get('error')}. Fallback normal."
+                                )
+            except Exception as _e_po_outer:
+                logging.warning(
+                    f"[products-only] detector/parser crashed: "
+                    f"{_e_po_outer}. Fallback normal flow."
+                )
+
         # ── Text-only brief → emit card editable ──
         # Si no hay archivos adjuntos pero el operador mandó texto con medidas,
         # parseamos el texto y emitimos la MISMA card que dual_read. Así el
@@ -2381,7 +2531,6 @@ class AgentService:
         # - No es un trigger de sistema ([DUAL_READ_CONFIRMED], [SYSTEM_TRIGGER])
         # - No hay card previa ya emitida ni medidas confirmadas (dedup)
         # - El parser devuelve ≥1 mesada válida
-        _is_system_trigger = user_message and user_message.strip().startswith("[")
         if (
             not _just_confirmed_dual_read
             and not plan_bytes
