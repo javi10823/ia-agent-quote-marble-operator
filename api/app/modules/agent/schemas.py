@@ -63,6 +63,13 @@ class QuoteDetailResponse(QuoteListResponse):
     # El frontend lo usa para el botón "Copiar solicitud web" — dump literal
     # de lo que mandó el bot externo, útil para debug del bot vs backend.
     web_input: Optional[dict] = None
+    # PR #442 — flag computado: True si el operador editó el quote
+    # después de la última generación/regenerate del PDF. Frontend
+    # muestra banner "PDF desactualizado · Regenerar" cuando se
+    # cumple. Computado en `GET /quotes/{id}` desde change_history
+    # vs updated_at — no es columna persistida.
+    pdf_outdated: Optional[bool] = None
+    pdf_generated_at: Optional[datetime] = None
 
 
 class QuoteCompareItem(BaseModel):

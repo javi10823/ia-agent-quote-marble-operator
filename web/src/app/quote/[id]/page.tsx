@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { fetchQuote, streamChat, markQuoteAsRead, validateQuote, updateQuote, reopenMeasurements, reopenContext, type QuoteDetail, type QuoteEditablePatch } from "@/lib/api";
+import { fetchQuote, streamChat, markQuoteAsRead, validateQuote, updateQuote, regenerateQuoteDocs, reopenMeasurements, reopenContext, type QuoteDetail, type QuoteEditablePatch } from "@/lib/api";
 import { useQuotes } from "@/lib/quotes-context";
 import MessageBubble from "@/components/chat/MessageBubble";
 import CopyButton from "@/components/chat/CopyButton";
@@ -546,8 +546,34 @@ export default function QuotePage() {
   const handleFieldUpdate = useCallback(async (patch: QuoteEditablePatch) => {
     await updateQuote(quoteId, patch);
     setQuote((prev) => (prev ? ({ ...prev, ...patch } as QuoteDetail) : prev));
+    // PR #442 — re-fetch para obtener el flag `pdf_outdated`
+    // computado por el backend tras este edit. Sin esto, el banner
+    // "PDF desactualizado" no aparece hasta el próximo reload.
+    try {
+      const refreshed = await fetchQuote(quoteId);
+      setQuote(refreshed);
+    } catch { /* tolerable, el setQuote anterior ya muestra el cambio */ }
     refreshQuotes();
   }, [quoteId, refreshQuotes]);
+
+  // PR #442 — handler dedicado para "Regenerar PDF" desde el banner
+  // (distinto al handleGenerate que se usa cuando el quote NO tiene
+  // PDF todavía). Después del regenerate exitoso, re-fetch para
+  // limpiar el flag pdf_outdated y mostrar el PDF nuevo.
+  const handleRegenerate = useCallback(async () => {
+    if (generating) return;
+    setGenerating(true);
+    try {
+      await regenerateQuoteDocs(quoteId);
+      const refreshed = await fetchQuote(quoteId);
+      setQuote(refreshed);
+      refreshQuotes();
+    } catch {
+      // Error toast desde api.ts.
+    } finally {
+      setGenerating(false);
+    }
+  }, [quoteId, generating, refreshQuotes]);
 
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
@@ -622,7 +648,7 @@ export default function QuotePage() {
       {/* Content */}
       {tab === "detail" ? (
         <div className="flex-1 overflow-y-auto px-4 md:px-7 py-4 md:py-6">
-          <DetailView quote={quote} breakdown={bd} onSwitchToChat={() => setTab("chat")} onGenerate={quote?.status === "pending" || quote?.status === "draft" ? handleGenerate : undefined} generating={generating} onFieldUpdate={handleFieldUpdate} />
+          <DetailView quote={quote} breakdown={bd} onSwitchToChat={() => setTab("chat")} onGenerate={quote?.status === "pending" || quote?.status === "draft" ? handleGenerate : undefined} onRegenerate={handleRegenerate} generating={generating} onFieldUpdate={handleFieldUpdate} />
           {/* Show modifications section only when quote has breakdown and is not sent */}
           {bd && quote?.status !== "sent" && (
             <Section title="Modificaciones" className="mt-5">
@@ -1147,7 +1173,7 @@ export default function QuotePage() {
 
 // ── DETAIL VIEW ─────────────────────────────────────────────────────────────
 
-function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating, onFieldUpdate }: { quote: QuoteDetail | null; breakdown: Record<string, any> | null; onSwitchToChat: () => void; onGenerate?: () => void; generating?: boolean; onFieldUpdate?: (patch: QuoteEditablePatch) => Promise<void> }) {
+function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, onRegenerate, generating, onFieldUpdate }: { quote: QuoteDetail | null; breakdown: Record<string, any> | null; onSwitchToChat: () => void; onGenerate?: () => void; onRegenerate?: () => void; generating?: boolean; onFieldUpdate?: (patch: QuoteEditablePatch) => Promise<void> }) {
   if (!quote) return null;
 
   const pieces = breakdown?.sectors?.flatMap((s: any) => s.pieces || []) || [];
@@ -1168,6 +1194,41 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating, 
 
   return (
     <div className="flex flex-col gap-5">
+      {/* PR #442 — Banner "PDF desactualizado". Aparece cuando el
+          backend computó `pdf_outdated=true` (operador editó campos
+          después de la última generación/regenerate). Click en
+          "Regenerar ahora" llama POST /quotes/:id/regenerate y
+          refresca el quote (el flag se limpia automáticamente). */}
+      {quote.pdf_outdated && quote.pdf_url && onRegenerate && (
+        <div
+          className="flex items-center gap-3 px-4 py-3 rounded-[10px]"
+          style={{
+            background: "rgba(212, 161, 38, 0.10)",
+            border: "1px solid rgba(212, 161, 38, 0.40)",
+          }}
+        >
+          <span style={{ fontSize: 18 }}>⚠️</span>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-semibold" style={{ color: "#d4a126" }}>
+              PDF desactualizado
+            </div>
+            <div className="text-[11.5px] mt-0.5" style={{ color: "var(--t3)" }}>
+              Hubo cambios después de la última generación. Regenerá para que el PDF / Excel reflejen los datos actuales.
+            </div>
+          </div>
+          <button
+            onClick={onRegenerate}
+            disabled={generating}
+            className="shrink-0 px-3.5 py-1.5 rounded-md text-[12px] font-medium border-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+            style={{
+              background: "#d4a126",
+              color: "#1a1a1a",
+            }}
+          >
+            {generating ? "Regenerando…" : "Regenerar ahora"}
+          </button>
+        </div>
+      )}
       <Section title="Resumen">
         <div className="grid grid-cols-4 gap-4">
           {onFieldUpdate ? (

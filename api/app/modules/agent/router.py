@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from pydantic import BaseModel
 from typing import Optional, List
+from datetime import datetime
 import json
 import logging
 import re
@@ -223,6 +224,87 @@ async def check_quotes(db: AsyncSession = Depends(get_db)):
 
 # ── GET QUOTE DETAIL ─────────────────────────────────────────────────────────
 
+def _compute_pdf_outdated(quote: Quote) -> tuple[bool, Optional[datetime]]:
+    """Devuelve (pdf_outdated, pdf_generated_at) según change_history.
+
+    PR #442 — banner "PDF desactualizado":
+
+    El operador edita campos del quote (PATCH /quotes) sin regenerar
+    el PDF. El detalle del frontend muestra el cambio (lee de
+    breakdown/columnas), pero el PDF guardado en disco/Drive sigue
+    siendo el viejo. Para no engañar al operador, computamos un flag
+    visible.
+
+    Lógica:
+    - Si NO hay `pdf_url` → False (no hay PDF para comparar).
+    - Buscar en `change_history` el último entry con
+      `action in {"regenerate_docs", "generate_docs"}`. Su
+      `timestamp` es `pdf_generated_at`.
+    - `pdf_outdated = updated_at > pdf_generated_at + tolerance`.
+      Tolerancia = 5s para evitar race del propio regenerate (su
+      `update(Quote).values(...)` triggerea `updated_at`).
+    - Si NO hay entries de regenerate/generate pero hay pdf_url:
+      asumir conservadoramente NOT outdated. Quotes viejos sin
+      tracking no se marcan — el operador puede regenerar manual
+      si quiere. Esto evita ruido en presupuestos legacy.
+
+    Returns:
+        (False, None) si no hay PDF.
+        (False, ts) si está al día.
+        (True, ts) si hay edits posteriores.
+    """
+    from datetime import timedelta as _td
+    if not quote.pdf_url:
+        return False, None
+
+    history = quote.change_history or []
+    REGEN_ACTIONS = {"regenerate_docs", "generate_docs"}
+    last_pdf_ts: Optional[datetime] = None
+    for entry in history:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("action") not in REGEN_ACTIONS:
+            continue
+        ts_raw = entry.get("timestamp")
+        if not ts_raw:
+            continue
+        try:
+            ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00")) if isinstance(ts_raw, str) else ts_raw
+        except (TypeError, ValueError):
+            continue
+        if last_pdf_ts is None or ts > last_pdf_ts:
+            last_pdf_ts = ts
+
+    if last_pdf_ts is None:
+        # PDF existe pero no hay tracking en history (quote legacy
+        # pre-#442 o flujos que no logueaban). Conservador: no
+        # marcar como outdated para no spamear al operador con
+        # falsos positivos.
+        return False, None
+
+    # Comparar con `updated_at`. Normalizar tz: si updated_at es
+    # naive, asumimos UTC. Si tiene tz, convertimos last_pdf_ts a
+    # la misma referencia (ambos en UTC).
+    updated_at = quote.updated_at
+    if updated_at is None:
+        return False, last_pdf_ts
+    # Defensivo: si las dos son naive o ambas tz-aware, comparar
+    # directo; si una es naive, normalizar.
+    try:
+        if updated_at.tzinfo is None and last_pdf_ts.tzinfo is not None:
+            from datetime import timezone as _tz
+            updated_at = updated_at.replace(tzinfo=_tz.utc)
+        elif updated_at.tzinfo is not None and last_pdf_ts.tzinfo is None:
+            from datetime import timezone as _tz
+            last_pdf_ts = last_pdf_ts.replace(tzinfo=_tz.utc)
+    except Exception:
+        pass
+
+    TOLERANCE = _td(seconds=5)
+    pdf_outdated = updated_at > (last_pdf_ts + TOLERANCE)
+    return pdf_outdated, last_pdf_ts
+
+
 @router.get("/quotes/{quote_id}")
 async def get_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Quote).where(Quote.id == quote_id))
@@ -230,8 +312,13 @@ async def get_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
     if not quote:
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
 
+    # PR #442 — computar pdf_outdated antes de armar el response.
+    pdf_outdated, pdf_generated_at = _compute_pdf_outdated(quote)
+
     # For building_parent, include children in the response
     response = QuoteDetailResponse.model_validate(quote)
+    response.pdf_outdated = pdf_outdated
+    response.pdf_generated_at = pdf_generated_at
     if quote.quote_kind == "building_parent":
         children_result = await db.execute(
             select(Quote)
