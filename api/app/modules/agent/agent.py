@@ -5723,6 +5723,25 @@ class AgentService:
                 logging.info(f"Saving quote data {target_qid}: {save_vals}")
                 await db.execute(update(Quote).where(Quote.id == target_qid).values(**save_vals))
 
+                # PR #439 (P1.3) — inyectar `notes` desde la columna
+                # `Quote.notes` al qdata antes de generar documentos.
+                # Antes el operador editaba notas via REST/EditableField,
+                # se persistían en columna pero NUNCA llegaban al PDF
+                # ni Excel (`_generate_pdf` / `_generate_excel` leen de
+                # `data["notes"]` pero el handler no lo metía). Caso
+                # observado en el análisis de modificabilidad 29/04/2026.
+                try:
+                    _notes_q = await db.execute(select(Quote).where(Quote.id == target_qid))
+                    _notes_quote = _notes_q.scalar_one_or_none()
+                    if _notes_quote and _notes_quote.notes:
+                        qdata["notes"] = _notes_quote.notes
+                except Exception as _e_notes:
+                    # No bloquear generación si la lectura falla.
+                    logging.warning(
+                        f"[notes-inject] Could not read Quote.notes for "
+                        f"{target_qid}: {_e_notes}"
+                    )
+
                 # Generate PDF + Excel
                 result = await generate_documents(target_qid, qdata)
                 logging.info(f"generate_documents [{idx}] {qdata.get('material_name')}: ok={result.get('ok')}, error={result.get('error')}")

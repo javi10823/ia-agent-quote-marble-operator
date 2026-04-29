@@ -1656,6 +1656,19 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
 
     pdf.ln(3)
 
+    # PR #439 (P1.3) — Notas del operador (visible en el PDF).
+    # Antes el operador editaba notas via REST/EditableField, se
+    # persistían en `Quote.notes` columna pero NUNCA llegaban al PDF.
+    # El handler ahora inyecta `notes` en `qdata` y acá lo
+    # renderizamos antes del bloque de CONDICIONES (más visible).
+    _notes_pdf = (data.get("notes") or "").strip()
+    if _notes_pdf:
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.cell(0, 4, "NOTAS", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 8)
+        pdf.multi_cell(190, 3.5, _notes_pdf, new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(2)
+
     # Conditions (from config.json) — use multi_cell for word wrap
     usable_w = 190  # A4 width (210) minus margins (10+10)
     if co["conditions_general"]:
@@ -2063,6 +2076,23 @@ def _generate_excel(output_path: Path, data: dict) -> None:
         ws.cell(cr, 1).alignment = wrap_align
         ws.merge_cells(f"A{cr}:F{cr}")
         ws.row_dimensions[cr].height = 28
+        cr += 2
+
+    # PR #439 (P1.3) — Notas del operador en Excel. Mismo patrón que
+    # el PDF: aparecen ANTES del bloque CONDICIONES si existen.
+    _notes_xl = (data.get("notes") or "").strip()
+    if _notes_xl:
+        ws.cell(cr, 1).value = "NOTAS"
+        ws.cell(cr, 1).font = Font(name="Arial", bold=True, size=8)
+        ws.merge_cells(f"A{cr}:F{cr}")
+        cr += 1
+        ws.cell(cr, 1).value = _notes_xl
+        ws.cell(cr, 1).font = Font(name="Arial", size=8)
+        ws.cell(cr, 1).alignment = wrap_align
+        ws.merge_cells(f"A{cr}:F{cr}")
+        # Alto de fila proporcional a la longitud (lineas estimadas).
+        _est_lines = max(1, _notes_xl.count("\n") + len(_notes_xl) // 100 + 1)
+        ws.row_dimensions[cr].height = max(15, _est_lines * 14)
         cr += 2
 
     if co.get("conditions_general"):
