@@ -28,6 +28,7 @@ from __future__ import annotations
 import pytest
 
 from app.modules.quote_engine.products_only_detector import (
+    build_products_only_material_label,
     is_products_only_brief,
     parse_products_brief,
     _extract_qty,
@@ -342,6 +343,104 @@ class TestEndToEndDyscon:
         assert result["total_ars"] == expected_total
 
     def test_full_flow_passes_validator(self):
+        """Drift guard E2E: el calc_result armado por el flow
+        completo NO rebota en NINGÚN validator (ni el de pegadopileta
+        que arreglamos, ni los demás)."""
+        from app.modules.quote_engine.calculator import calculate_quote
+        from app.modules.agent.tools.validation_tool import validate_despiece
+
+        parsed = parse_products_brief(_DYSCON_BRIEF)
+        result = calculate_quote(parsed)
+        validation = validate_despiece(result)
+        assert validation.ok is True, (
+            f"validate_despiece rebotó products_only: {validation.errors}"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Material label para listado del dashboard (PR #428)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestMaterialLabel:
+    """**Caso del operador (29/04/2026)**: el listado del dashboard
+    mostraba "—" (em-dash) en la columna material para quotes
+    products_only, porque PR #427 persistía `material=""`. El
+    operador no podía identificar qué cotización era al escanear
+    la lista. Este helper construye un label descriptivo desde
+    los sinks del calc_result."""
+
+    def test_single_sink_format(self):
+        """1 sink → 'NAME × QTY' sin sufijo de "más"."""
+        sinks = [
+            {"name": "PILETA JOHNSON E50/18", "quantity": 32, "unit_price": 100000},
+        ]
+        label = build_products_only_material_label(sinks)
+        assert label == "PILETA JOHNSON E50/18 × 32"
+
+    def test_multiple_sinks_first_plus_extra_count(self):
+        """N sinks → primero + sufijo '(+N-1 más)' para indicar al
+        operador que hay más productos sin ocupar todo el ancho del
+        listado."""
+        sinks = [
+            {"name": "PILETA JOHNSON E50/18", "quantity": 32, "unit_price": 100000},
+            {"name": "PILETA JOHNSON Q71A", "quantity": 5, "unit_price": 80000},
+            {"name": "BACHA AUXILIAR", "quantity": 1, "unit_price": 50000},
+        ]
+        label = build_products_only_material_label(sinks)
+        assert label == "PILETA JOHNSON E50/18 × 32 (+2 más)"
+
+    def test_two_sinks_one_extra(self):
+        """Boundary: exactly 2 sinks → '(+1 más)'."""
+        sinks = [
+            {"name": "PILETA A", "quantity": 1, "unit_price": 100},
+            {"name": "PILETA B", "quantity": 2, "unit_price": 200},
+        ]
+        label = build_products_only_material_label(sinks)
+        assert label == "PILETA A × 1 (+1 más)"
+
+    def test_empty_sinks_returns_empty(self):
+        """Defensivo: products_only no debería llegar acá sin sinks
+        (el calculator rebota antes), pero si pasa, no romper —
+        devolver string vacío para que el listado muestre '—' como
+        antes y no algo confuso."""
+        assert build_products_only_material_label([]) == ""
+
+    def test_none_sinks_returns_empty(self):
+        assert build_products_only_material_label(None) == ""
+
+    def test_sink_without_name_uses_placeholder(self):
+        """Defensivo: sink mal-formado sin name → 'PRODUCTO' como
+        fallback. Mejor un label genérico que un crash o '—'."""
+        sinks = [{"quantity": 5, "unit_price": 1000}]
+        label = build_products_only_material_label(sinks)
+        assert label == "PRODUCTO × 5"
+
+    def test_sink_without_quantity_defaults_to_1(self):
+        sinks = [{"name": "PILETA X", "unit_price": 1000}]
+        label = build_products_only_material_label(sinks)
+        assert label == "PILETA X × 1"
+
+    def test_sink_with_whitespace_in_name_stripped(self):
+        """Edge: nombre con espacios al borde NO debe meterlos en el
+        label. Si los catálogos tienen names con padding, lo limpiamos."""
+        sinks = [{"name": "  PILETA JOHNSON E50  ", "quantity": 32}]
+        label = build_products_only_material_label(sinks)
+        assert label == "PILETA JOHNSON E50 × 32"
+
+    # ── End-to-end con el calc_result real ──────────────────────────
+    def test_dyscon_full_label(self):
+        """Caso DYSCON real: el calc_result que produce
+        `_calculate_quote_products_only` debe generar un label
+        identificable. Reproducimos el flujo completo."""
+        from app.modules.quote_engine.calculator import calculate_quote
+        parsed = parse_products_brief(_DYSCON_BRIEF)
+        result = calculate_quote(parsed)
+        assert result.get("ok") is True
+        label = build_products_only_material_label(result["sinks"])
+        # El nombre exacto del catálogo. Verificamos que contenga "JOHNSON" + qty.
+        assert "JOHNSON" in label.upper()
+        assert "× 32" in label
         """Drift guard E2E: el calc_result armado por el flow
         completo NO rebota en NINGÚN validator (ni el de pegadopileta
         que arreglamos, ni los demás)."""
