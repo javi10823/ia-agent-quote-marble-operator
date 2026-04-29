@@ -1214,7 +1214,7 @@ TOOLS = [
     {"name": "check_architect", "description": "Verifica si cliente es arquitecta con descuento.", "input_schema": {"type": "object", "properties": {"client_name": {"type": "string"}}, "required": ["client_name"]}},
     {"name": "read_plan", "description": "AUXILIAR — zoom táctico en zonas de un plano. NO usar para análisis inicial (usá visión nativa sobre el PDF/imagen adjunto). Solo para: cotas chicas, detalles ilegibles, subregiones específicas. LÍMITE: máximo 2 crops por llamada. Si necesitás más, analizá los primeros 2 y después llamá de nuevo.", "input_schema": {"type": "object", "properties": {"filename": {"type": "string"}, "crop_instructions": {"type": "array", "maxItems": 2, "items": {"type": "object", "properties": {"label": {"type": "string"}, "x1": {"type": "integer"}, "y1": {"type": "integer"}, "x2": {"type": "integer"}, "y2": {"type": "integer"}}}}}, "required": ["filename"]}},
     {"name": "generate_documents", "description": "Genera PDF+Excel. 1 quote por material.", "input_schema": {"type": "object", "properties": {"quotes": {"type": "array", "items": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "date": {"type": "string"}, "delivery_days": {"type": "string"}, "material_name": {"type": "string"}, "material_m2": {"type": "number"}, "material_price_unit": {"type": "number"}, "material_currency": {"type": "string", "enum": ["USD", "ARS"]}, "discount_pct": {"type": "number"}, "sectors": {"type": "array", "items": {"type": "object", "properties": {"label": {"type": "string"}, "pieces": {"type": "array", "items": {"type": "string"}}}}}, "sinks": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "quantity": {"type": "integer"}, "unit_price": {"type": "number"}}}}, "mo_items": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}, "quantity": {"type": "number"}, "unit_price": {"type": "number"}, "total": {"type": "number"}}}}, "total_ars": {"type": "number"}, "total_usd": {"type": "number"}}, "required": ["client_name", "material_name"]}}}, "required": ["quotes"]}},
-    {"name": "update_quote", "description": "Actualiza client_name/project/status en DB.", "input_schema": {"type": "object", "properties": {"quote_id": {"type": "string"}, "updates": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "material": {"type": "string"}, "total_ars": {"type": "number"}, "total_usd": {"type": "number"}, "status": {"type": "string", "enum": ["draft", "validated", "sent"]}}}}, "required": ["quote_id", "updates"]}},
+    {"name": "update_quote", "description": "Actualiza client_name/project/status/delivery_days en DB sin recalcular. Para cambios estructurales (piezas/MO/material) usar calculate_quote.", "input_schema": {"type": "object", "properties": {"quote_id": {"type": "string"}, "updates": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "material": {"type": "string"}, "total_ars": {"type": "number"}, "total_usd": {"type": "number"}, "status": {"type": "string", "enum": ["draft", "validated", "sent"]}, "delivery_days": {"type": "string", "description": "Plazo/demora — ej: '30 días', '60 días', '4 meses'. Se persiste en quote_breakdown.delivery_days. Para cambiar SOLO la demora sin re-cotizar, usar este campo (no llamar a calculate_quote)."}}}}, "required": ["quote_id", "updates"]}},
     {"name": "calculate_quote", "description": "Calcula m², MO, totales. SIEMPRE usar para cálculos.", "input_schema": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "material": {"type": "string"}, "pieces": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}, "largo": {"type": "number"}, "prof": {"type": "number"}, "alto": {"type": "number"}, "quantity": {"type": "integer", "description": "Cantidad de unidades físicas de esta pieza (para edificios con tipologías repetidas). Default 1 si no se pasa."}, "m2_override": {"type": "number", "description": "Usar SOLO cuando el operador declara el m² de la pieza en una Planilla de Cómputo (ej: edificios con valores pre-calculados que incluyen zócalos/frentes). Si se pasa, el calculador NO computa largo×prof — usa directamente este valor. No activar 'fallback de profundidades inversas'."}}, "required": ["description", "largo"]}}, "localidad": {"type": "string"}, "colocacion": {"type": "boolean"}, "is_edificio": {"type": "boolean"}, "pileta": {"type": "string", "enum": ["empotrada_cliente", "empotrada_johnson", "apoyo"]}, "pileta_qty": {"type": "integer"}, "pileta_sku": {"type": "string"}, "anafe": {"type": "boolean"}, "anafe_qty": {"type": "integer", "description": "Cantidad de anafes (para edificios con N tipologías). Default 1."}, "frentin": {"type": "boolean"}, "frentin_ml": {"type": "number"}, "regrueso": {"type": "boolean"}, "regrueso_ml": {"type": "number"}, "inglete": {"type": "boolean"}, "pulido": {"type": "boolean"}, "tomas_qty": {"type": "integer", "description": "Agujeros de toma corriente. REQUIERE alzada en pieces + pedido explícito del operador ('Agujero de toma × N'). NO inferir por anafe/zócalo/revestimiento. Sin alzada el calculator lo ignora con warning."}, "skip_flete": {"type": "boolean", "description": "true SOLO si el cliente retira en fábrica. Default false — siempre cobrar flete."}, "flete_qty": {"type": "integer", "description": "Cantidad de fletes declarada por el operador (ej: '× 5 fletes'). Override del cálculo automático. Usar SOLO cuando el operador lo dice explícito en el enunciado."}, "plazo": {"type": "string"}, "discount_pct": {"type": "number"}, "mo_discount_pct": {"type": "number", "description": "Descuento comercial % sobre MO (excluye flete). Usar SOLO si operador lo pide explícito (ej: '5% sobre MO')."}}, "required": ["client_name", "project", "material", "pieces", "localidad", "plazo"]}},
     {"name": "patch_quote_mo", "description": "Modifica MO sin recalcular. Para agregar/quitar flete, colocación.", "input_schema": {"type": "object", "properties": {"remove_items": {"type": "array", "items": {"type": "string"}}, "add_colocacion": {"type": "boolean"}, "add_flete": {"type": "string"}}, "required": []}},
 ]
@@ -5899,34 +5899,83 @@ class AgentService:
 
         elif name == "update_quote":
             updates = inputs.get("updates", {})
-            allowed = {"client_name", "project", "material", "total_ars", "total_usd", "status"}
-            clean = {k: v for k, v in updates.items() if k in allowed and v is not None}
-            if not clean:
-                return {"ok": False, "error": "No hay campos válidos para actualizar"}
-            logging.info(f"update_quote {quote_id}: {clean}")
+            # PR #436 — `delivery_days` se acepta pero NO va a una columna
+            # de Quote (no existe). Vive solo en `quote_breakdown` JSON.
+            # Operador escribe "cambiá la demora a 30 días" → Sonnet
+            # llama update_quote(delivery_days=...). Antes el handler lo
+            # filtraba silenciosamente del `clean` y respondía "ok" sin
+            # tocar nada → Sonnet le decía al operador "cambiado" mientras
+            # la DB seguía con la demora vieja (caso DYSCON 29/04/2026).
+            _COLUMN_FIELDS = {"client_name", "project", "material", "total_ars", "total_usd", "status"}
+            _BREAKDOWN_ONLY_FIELDS = {"delivery_days"}
+            _ALL_ALLOWED = _COLUMN_FIELDS | _BREAKDOWN_ONLY_FIELDS
 
-            # Also update client_name/project inside the breakdown JSON
+            # Validate: any field that's neither column-allowed nor
+            # breakdown-allowed → reject loud (don't silently drop).
+            _unknown = [k for k in updates if k not in _ALL_ALLOWED and updates[k] is not None]
+            if _unknown:
+                return {
+                    "ok": False,
+                    "error": (
+                        f"Campos no soportados por update_quote: {_unknown}. "
+                        f"Permitidos: {sorted(_ALL_ALLOWED)}. Para cambios "
+                        f"de despiece/MO usar calculate_quote o patch_quote_mo."
+                    ),
+                }
+
+            clean_columns = {
+                k: v for k, v in updates.items()
+                if k in _COLUMN_FIELDS and v is not None
+            }
+            clean_breakdown_only = {
+                k: v for k, v in updates.items()
+                if k in _BREAKDOWN_ONLY_FIELDS and v is not None
+            }
+            if not clean_columns and not clean_breakdown_only:
+                return {"ok": False, "error": "No hay campos válidos para actualizar"}
+
+            logging.info(
+                f"update_quote {quote_id}: columns={clean_columns} "
+                f"breakdown_only={clean_breakdown_only}"
+            )
+
+            # Build the breakdown patch — incluye fields que VIVEN solo
+            # en breakdown (delivery_days) + sincros para client_name/
+            # project que también viven en breakdown como espejo.
             q_result = await db.execute(select(Quote).where(Quote.id == quote_id))
             q_obj = q_result.scalar_one_or_none()
             if q_obj and q_obj.quote_breakdown:
                 bd = dict(q_obj.quote_breakdown)
                 changed = False
-                if "client_name" in clean and bd.get("client_name") != clean["client_name"]:
-                    bd["client_name"] = clean["client_name"]
+                if "client_name" in clean_columns and bd.get("client_name") != clean_columns["client_name"]:
+                    bd["client_name"] = clean_columns["client_name"]
                     changed = True
-                if "project" in clean and bd.get("project") != clean["project"]:
-                    bd["project"] = clean["project"]
+                if "project" in clean_columns and bd.get("project") != clean_columns["project"]:
+                    bd["project"] = clean_columns["project"]
                     changed = True
+                # PR #436 — campos que viven solo en breakdown.
+                for k, v in clean_breakdown_only.items():
+                    if bd.get(k) != v:
+                        bd[k] = v
+                        changed = True
                 if changed:
-                    clean["quote_breakdown"] = bd
+                    clean_columns["quote_breakdown"] = bd
+            elif clean_breakdown_only:
+                # No hay breakdown todavía pero el operador quiere setear
+                # delivery_days. Crear un breakdown mínimo con esos campos.
+                clean_columns["quote_breakdown"] = dict(clean_breakdown_only)
 
-            await db.execute(
-                update(Quote)
-                .where(Quote.id == quote_id)
-                .values(**clean)
-            )
-            await db.commit()
-            return {"ok": True, "updated_fields": list(clean.keys())}
+            if clean_columns:
+                await db.execute(
+                    update(Quote)
+                    .where(Quote.id == quote_id)
+                    .values(**clean_columns)
+                )
+                await db.commit()
+            return {
+                "ok": True,
+                "updated_fields": list(clean_columns.keys()) + list(clean_breakdown_only.keys()),
+            }
         elif name == "calculate_quote":
             save_to_qid = inputs.pop("target_quote_id", None) or quote_id
 
