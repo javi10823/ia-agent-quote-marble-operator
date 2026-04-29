@@ -842,6 +842,90 @@ class TestConfirmShortCircuit:
             "el frontend timeoutea (bug PR #430 replicado)."
         )
 
+    def test_preflight_validate_quote_data_skips_products_only(self):
+        """**Bug del operador (29/04/2026, turno 2):** logs Railway
+        mostraban:
+
+            [products-only-confirm] generate_documents rejected:
+            Pre-flight fallido para :
+            ❌ Falta material
+            ❌ Sin piezas definidas
+            ❌ Sin ítems de mano de obra
+
+        El validator `_validate_quote_data` (preflight de agent.py,
+        distinto al `validate_despiece`) no respetaba el modo
+        products_only y rebotaba con 3 errores.
+
+        Fix: skip en products_only. Solo aplica los checks que sí
+        tienen sentido (cliente, total, sinks)."""
+        from app.modules.agent.agent import _validate_quote_data
+        # Calc result válido products_only (lo que persistió el
+        # short-circuit del PR #427).
+        qdata = {
+            "_quote_mode": "products_only",
+            "client_name": "DYSCON S.A.",
+            "project": "Unidad Penal N°8 — Piñero",
+            "delivery_days": "A confirmar",
+            "material_name": "",  # ← antes rebotaba "Falta material"
+            "material_m2": 0,
+            "sectors": [],         # ← antes rebotaba "Sin piezas"
+            "mo_items": [],        # ← antes rebotaba "Sin ítems MO"
+            "sinks": [
+                {"name": "PILETA JOHNSON E50/18", "quantity": 32, "unit_price": 136410},
+            ],
+            "total_ars": 4146864,
+        }
+        errors, warnings = _validate_quote_data(qdata)
+        assert errors == [], f"Preflight rebotó products_only: {errors}"
+
+    def test_preflight_products_only_without_sinks_fails(self):
+        """En products_only, la lista de sinks es obligatoria — sin
+        eso no hay nada que cotizar. Validator debe fallar."""
+        from app.modules.agent.agent import _validate_quote_data
+        qdata = {
+            "_quote_mode": "products_only",
+            "client_name": "X",
+            "delivery_days": "30 días",
+            "sinks": [],  # ← vacío
+            "total_ars": 0,
+        }
+        errors, _ = _validate_quote_data(qdata)
+        assert any("sinks" in e.lower() or "productos" in e.lower() for e in errors)
+
+    def test_preflight_products_only_without_client_fails(self):
+        """Cliente sigue siendo obligatorio aún en products_only."""
+        from app.modules.agent.agent import _validate_quote_data
+        qdata = {
+            "_quote_mode": "products_only",
+            "client_name": "",
+            "delivery_days": "30 días",
+            "sinks": [{"name": "x", "quantity": 1, "unit_price": 100}],
+            "total_ars": 100,
+        }
+        errors, _ = _validate_quote_data(qdata)
+        assert any("cliente" in e.lower() for e in errors)
+
+    def test_preflight_normal_mode_still_requires_material(self):
+        """**Caso inverso CRÍTICO** (mismo patrón que PR #427): el
+        flujo NORMAL debe seguir requiriendo material/sectors/mo_items.
+        Sin este test, alguien borra el guard de products_only y el
+        flujo normal se rompe sin darse cuenta."""
+        from app.modules.agent.agent import _validate_quote_data
+        qdata = {
+            # Sin _quote_mode → flujo normal
+            "client_name": "X",
+            "delivery_days": "30 días",
+            "material_name": "",  # ← falta
+            "sectors": [],
+            "mo_items": [],
+            "total_ars": 100,
+        }
+        errors, _ = _validate_quote_data(qdata)
+        # Debe rebotar por los 3 checks normales.
+        assert any("material" in e.lower() for e in errors)
+        assert any("piezas" in e.lower() for e in errors)
+        assert any("mano de obra" in e.lower() for e in errors)
+
     def test_short_circuit_only_when_quote_mode_products_only(self):
         """Drift guard: el bloque debe chequear `_quote_mode ==
         "products_only"`. Si en un refactor sacan ese guard, el
