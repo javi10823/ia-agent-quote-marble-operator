@@ -1158,11 +1158,41 @@ async def patch_quote(
     if "sink_type" in updates and body.sink_type is not None:
         updates["sink_type"] = body.sink_type.model_dump()
 
-    await db.execute(update(Quote).where(Quote.id == quote_id).values(**updates))
-    await db.commit()
+    # PR #437 (P1.2) — delivery_days NO es columna en Quote; lo
+    # extraemos del dict de columnas y lo persistimos en el JSON
+    # `quote_breakdown.delivery_days`. Sin este split, SQLAlchemy
+    # tiraría "no such column delivery_days" al hacer
+    # `update(Quote).values(delivery_days=...)`.
+    breakdown_only_updates: dict = {}
+    if "delivery_days" in updates:
+        breakdown_only_updates["delivery_days"] = updates.pop("delivery_days")
 
-    logger.info("[patch] Quote %s updated: %s", quote_id, list(updates.keys()))
-    return {"ok": True, "updated": list(updates.keys())}
+    if breakdown_only_updates:
+        # Leer breakdown actual y mergear los campos breakdown-only.
+        existing_q = await db.execute(select(Quote).where(Quote.id == quote_id))
+        existing_quote = existing_q.scalar_one_or_none()
+        bd = dict(existing_quote.quote_breakdown or {}) if existing_quote else {}
+        for k, v in breakdown_only_updates.items():
+            bd[k] = v
+        # Si ya hay quote_breakdown en `updates` por algún motivo,
+        # respetarlo y mergear arriba; si no, crear el patch.
+        if "quote_breakdown" in updates and isinstance(updates["quote_breakdown"], dict):
+            updates["quote_breakdown"] = {**updates["quote_breakdown"], **breakdown_only_updates}
+        else:
+            updates["quote_breakdown"] = bd
+
+    if updates:
+        await db.execute(update(Quote).where(Quote.id == quote_id).values(**updates))
+        await db.commit()
+
+    logger.info(
+        "[patch] Quote %s updated: %s breakdown_only=%s",
+        quote_id, list(updates.keys()), list(breakdown_only_updates.keys()),
+    )
+    return {
+        "ok": True,
+        "updated": list(updates.keys()) + list(breakdown_only_updates.keys()),
+    }
 
 
 # ── MARK QUOTE AS READ ───────────────────────────────────────────────────────

@@ -118,6 +118,13 @@ class QuotePatchRequest(BaseModel):
     origin: Optional[str] = Field(None, pattern=r"^(web|operator)$")
     notes: Optional[str] = None
     parent_quote_id: Optional[str] = Field(None, max_length=200)
+    # PR #437 (P1.2) — delivery_days NO existe como columna en Quote;
+    # vive solo en `quote_breakdown.delivery_days` (JSON). El endpoint
+    # PATCH lo acepta y el handler lo persiste en el JSON. Sin esto,
+    # el frontend no podía agregar EditableField de demora — el fix
+    # del PR #436 (en `update_quote` del agent) cubría solo la ruta
+    # de chat con Sonnet.
+    delivery_days: Optional[str] = Field(None, max_length=200)
 
 
 class DeriveMaterialRequest(BaseModel):
