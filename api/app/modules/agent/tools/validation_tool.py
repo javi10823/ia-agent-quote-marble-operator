@@ -40,6 +40,7 @@ def validate_despiece(qdata: dict) -> ValidationResult:
         _check_piece_m2,
         _check_mo_item_totals,
         _check_colocacion_qty,
+        _check_regrueso_consistency,  # PR #419 — detecta double-count
     ):
         try:
             errors, warnings = check(qdata)
@@ -328,4 +329,96 @@ def _check_colocacion_qty(qdata: dict) -> tuple[list[str], list[str]]:
             return errors, warnings
 
     warnings.append("Colocación=True pero no se encontró ítem MO de colocación")
+    return errors, warnings
+
+
+# Tolerancia para el check de consistencia regrueso. 5 cm² = 0.05 m².
+# Calibrada para regrueso_ml >= 30 (típico DYSCON-scale: ~60 ml → ~3 m²
+# expected → 1.7% slack relativo, $$ ruido <$15K).
+#
+# TOLERANCIA: 0.05 m² absoluto. Calibrado para regrueso_ml >= 30.
+# Proyectos chicos (regrueso_ml=10 → expected 0.5 m²) tienen 10% slack
+# relativo, pero riesgo monetario absoluto bajo (~$9K máx).
+# Si aparece caso de undercount en proyecto chico, migrar a
+# `max(0.05, 0.02 * expected)` (relativo o absoluto, lo que sea mayor).
+# YAGNI hasta que aparezca el caso.
+_REGRUESO_CONSISTENCY_TOLERANCE_M2 = 0.05
+
+
+def _check_regrueso_consistency(qdata: dict) -> tuple[list[str], list[str]]:
+    """Verifica consistencia entre `regrueso_ml` y suma de m² de las
+    piezas regrueso en `piece_details`.
+
+    **Por qué es ruidoso (errors, no warnings):** caso espejo del
+    DYSCON post-#417 — operador declara `regrueso_ml=60.68` pero
+    incluye solo 5 de 7 piezas regrueso en el despiece (suman 2.17 m²
+    vs expected 3.034 m²). Si fuera silencioso (skip cuantitativo),
+    el cliente termina subfacturado ~$193K sin que nadie se entere
+    en 3 semanas. Errores ruidosos > undercount silencioso.
+
+    Lógica:
+
+    1. Si no hay `regrueso=True` o `regrueso_ml<=0` → no aplica.
+    2. Si `pieces_regrueso_m2 < 0.001` → caso #417 original (regrueso
+       declarado SIN piezas) → calculator ya sumó `regrueso_ml × 0.05`
+       al total. NO chequeamos consistencia (no hay nada que comparar).
+    3. Si hay piezas regrueso en piece_details:
+       - Comparar `sum(piece.m2 × qty for piece regrueso)` vs
+         `regrueso_ml × 0.05`.
+       - Si delta supera la tolerancia (0.05 m²) → error ruidoso.
+       - Si dentro de tolerancia → ok, calculator no double-counteó.
+
+    Tolerancia documentada arriba (`_REGRUESO_CONSISTENCY_TOLERANCE_M2`).
+    """
+    errors, warnings = [], []
+    if not qdata.get("regrueso"):
+        return errors, warnings
+    regrueso_ml = qdata.get("regrueso_ml") or 0
+    try:
+        regrueso_ml = float(regrueso_ml)
+    except (TypeError, ValueError):
+        return errors, warnings
+    if regrueso_ml <= 0:
+        return errors, warnings
+
+    # Import local para no acoplar el módulo a quote_engine en import
+    # time. El validator ya importa otras cosas de quote_engine si fuera
+    # necesario; esta es la única vez que toca regrueso_detect.
+    try:
+        from app.modules.quote_engine.regrueso_detect import sum_regrueso_pieces_m2
+    except Exception as exc:
+        warnings.append(
+            f"_check_regrueso_consistency: no se pudo cargar regrueso_detect: {exc}"
+        )
+        return errors, warnings
+
+    pieces = qdata.get("piece_details") or []
+    pieces_regrueso_m2 = sum_regrueso_pieces_m2(pieces)
+
+    if pieces_regrueso_m2 < 0.001:
+        # Caso #417 baseline: regrueso declarado sin piezas en despiece.
+        # Calculator ya sumó `regrueso_ml × 0.05` al total. No tenemos
+        # contra qué comparar — confiamos en el declarado.
+        return errors, warnings
+
+    expected_m2 = round(regrueso_ml * 0.05, 4)
+    # Redondeo a 4 decimales del delta antes de comparar — sin esto el
+    # boundary `delta == 0.05` es indeterminado por float imprecision
+    # (`abs(0.25 - 0.2)` da 0.04999999999999998 en Python). Con round
+    # el comparador `>` es estable y un cambio futuro a `>=` se
+    # detecta en los tests de boundary.
+    delta = round(abs(pieces_regrueso_m2 - expected_m2), 4)
+    if delta > _REGRUESO_CONSISTENCY_TOLERANCE_M2:
+        # Error ruidoso — bloquea generate_documents. El operador
+        # tiene que decidir: o declaró mal el despiece (faltan piezas
+        # regrueso) o regrueso_ml está mal. NO elegimos por él.
+        errors.append(
+            f"Inconsistencia regrueso: piezas con 'regrueso' en "
+            f"description suman {pieces_regrueso_m2:.4f} m² pero "
+            f"regrueso_ml={regrueso_ml} × 0.05 = {expected_m2:.4f} m². "
+            f"Delta {delta:.4f} m² supera tolerancia "
+            f"{_REGRUESO_CONSISTENCY_TOLERANCE_M2}. "
+            f"O faltan piezas regrueso en el despiece, o regrueso_ml "
+            f"está mal. Confirmar con operador."
+        )
     return errors, warnings

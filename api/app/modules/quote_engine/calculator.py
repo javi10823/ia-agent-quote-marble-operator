@@ -1177,8 +1177,31 @@ def calculate_quote(input_data: dict) -> dict:
     # 2. Calculate m2
     total_m2, piece_details = calculate_m2([p if isinstance(p, dict) else p.model_dump() for p in pieces])
     if regrueso and regrueso_ml > 0:
-        regrueso_m2 = round(regrueso_ml * 0.05, 4)
-        total_m2 = round(total_m2 + regrueso_m2, 4)
+        # PR #419 — fix double-count del regrueso (regression del #417).
+        # Si el operador declaró las piezas "frente regrueso" en el
+        # despiece (caso DYSCON), `calculate_m2` YA las incluyó en
+        # `total_m2`. Sumar `regrueso_ml × 0.05` encima generaba
+        # double-count → cobraba ~3 m² × $224.825 = $675K de más.
+        #
+        # Estrategia: si HAY piezas regrueso en piece_details, no
+        # sumar extra (ya están). El validator
+        # `_check_regrueso_consistency` chequea ruidosamente que la
+        # suma de pieces regrueso ≈ regrueso_ml × 0.05 (tolerancia
+        # 0.05 m²) — si difieren, error y bloquea generate_documents.
+        # NO elegimos silenciosamente — la subfacturación silenciosa
+        # (5 de 7 piezas declaradas, suman 2.17 m² vs expected 3.034)
+        # es peor que el sobrecount ruidoso.
+        from app.modules.quote_engine.regrueso_detect import sum_regrueso_pieces_m2
+        _pieces_regrueso_m2 = sum_regrueso_pieces_m2(piece_details)
+        if _pieces_regrueso_m2 < 0.001:
+            # Caso #417 original: regrueso declarado SIN piezas en el
+            # despiece → sumar el extra para que afecte material total,
+            # merma y discount edificio.
+            regrueso_m2 = round(regrueso_ml * 0.05, 4)
+            total_m2 = round(total_m2 + regrueso_m2, 4)
+        # else: piezas regrueso ya en piece_details → total_m2 las
+        # incluye. La validación de consistencia es responsabilidad
+        # del validator (ruidoso, no acá).
 
     # 3. Merma
     merma = calculate_merma(total_m2, mat_result.get("name", material_name), is_edificio=is_edificio)
