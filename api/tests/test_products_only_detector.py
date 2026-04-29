@@ -949,3 +949,71 @@ class TestConfirmShortCircuit:
             "Sin ese guard, dispararía para cualquier quote y "
             "rompería el flujo normal de mesadas."
         )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# _fmt_pct — formato de porcentaje sin decimales superfluos (PR #433)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestFmtPct:
+    """**Caso operador (29/04/2026):** "podríamos ponerle 5% y no
+    5.0% molesta mucho en el pdf". El parser extrae `discount_pct`
+    como float, los renderers lo imprimían como "5.0%".
+
+    Helper `_fmt_pct` (en calculator.py + document_tool.py):
+    - Entero (5.0, 8) → "5", "8".
+    - Decimales reales (12.5) → "12,5" (coma AR).
+    - None / unparseable → "" (defensivo).
+    """
+
+    def test_integer_float_no_decimal(self):
+        from app.modules.quote_engine.calculator import _fmt_pct
+        assert _fmt_pct(5.0) == "5"
+        assert _fmt_pct(8.0) == "8"
+        assert _fmt_pct(12.0) == "12"
+
+    def test_int_no_decimal(self):
+        from app.modules.quote_engine.calculator import _fmt_pct
+        assert _fmt_pct(5) == "5"
+        assert _fmt_pct(0) == "0"
+
+    def test_real_decimal_argentine_comma(self):
+        from app.modules.quote_engine.calculator import _fmt_pct
+        assert _fmt_pct(12.5) == "12,5"
+        assert _fmt_pct(8.25) == "8,25"
+
+    def test_none_returns_empty(self):
+        from app.modules.quote_engine.calculator import _fmt_pct
+        assert _fmt_pct(None) == ""
+
+    def test_unparseable_returns_empty(self):
+        from app.modules.quote_engine.calculator import _fmt_pct
+        assert _fmt_pct("not a number") == ""
+
+    def test_document_tool_helper_matches(self):
+        """document_tool.py tiene su propio `_fmt_pct` (sin import
+        cruzado). Drift guard: ambos deben dar el mismo resultado."""
+        from app.modules.quote_engine.calculator import _fmt_pct as _calc_pct
+        from app.modules.agent.tools.document_tool import _fmt_pct as _doc_pct
+        for v in [5.0, 5, 12.5, 0, None, "garbage"]:
+            assert _calc_pct(v) == _doc_pct(v), (
+                f"_fmt_pct divergente para {v!r}: "
+                f"calc={_calc_pct(v)!r} doc={_doc_pct(v)!r}"
+            )
+
+    def test_paso2_products_only_uses_fmt_pct(self):
+        """End-to-end: el Paso 2 markdown products_only NO debe
+        contener '5.0%' — debe ser '5%'."""
+        from app.modules.quote_engine.calculator import (
+            calculate_quote, build_deterministic_paso2,
+        )
+        parsed = parse_products_brief(_DYSCON_BRIEF)
+        result = calculate_quote(parsed)
+        md = build_deterministic_paso2(result)
+        assert "5.0%" not in md, (
+            f"Paso 2 contiene '5.0%' (decimal superfluo):\n{md[:1500]}"
+        )
+        assert "DESCUENTO — 5%" in md, (
+            f"Paso 2 debería tener 'DESCUENTO — 5%':\n{md[:1500]}"
+        )
