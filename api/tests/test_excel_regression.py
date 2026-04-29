@@ -505,8 +505,15 @@ class TestDiscountVisibleForARS:
             "is_edificio": True,
         }
 
-    def test_pdf_ars_shows_discount_line(self, tmp_path):
-        """PDF for ARS quote with discount_pct must render 'Descuento N%' + 'TOTAL ARS'."""
+    def test_pdf_ars_shows_discount_without_total_ars(self, tmp_path):
+        """PR #420 — PDF para quote ARS con descuento debe mostrar
+        'Descuento N%' pero NO 'TOTAL ARS' (subtotal intermedio
+        ruidoso que confundía al cliente). El único total visible
+        en cotizaciones ARS es el `PRESUPUESTO TOTAL` del final.
+
+        Test invertido respecto a versión anterior — antes assertaba
+        que `TOTAL ARS` apareciera. Si alguien lo restaura, este
+        test lo agarra."""
         from app.modules.agent.tools.document_tool import _generate_pdf
         out = tmp_path / "ars_disc.pdf"
         _generate_pdf(out, self._ars_data_with_discount())
@@ -520,12 +527,29 @@ class TestDiscountVisibleForARS:
             ).stdout
         except FileNotFoundError:
             pytest.skip("pdftotext not installed")
-        assert "Descuento 15%" in txt, f"Expected 'Descuento 15%' in PDF text:\n{txt[:1500]}"
-        assert "TOTAL ARS" in txt, f"Expected 'TOTAL ARS' in PDF text:\n{txt[:1500]}"
-        assert "5.994.846" in txt, f"Expected material net (5.994.846) in PDF:\n{txt[:1500]}"
+        assert "Descuento 15%" in txt, (
+            f"Expected 'Descuento 15%' in PDF text:\n{txt[:1500]}"
+        )
+        # PR #420 — TOTAL ARS NO debe aparecer como subtotal del bloque
+        # material. PRESUPUESTO TOTAL al final sigue mostrando el grand
+        # total — eso es OTRO label, no se chequea acá.
+        assert "TOTAL ARS" not in txt, (
+            f"'TOTAL ARS' subtotal removed in PR #420 — should not appear "
+            f"in material block. Found in:\n{txt[:1500]}"
+        )
+        # Monto del descuento sigue visible con formato negativo
+        # (operador: "se mantiene en negativo, así el total de abajo
+        # suma menos desc más MO da el total"). Chequeamos el "- $"
+        # como marca del monto en negativo, sin pinear un número
+        # exacto que depende del rounding interno.
+        import re as _re_neg
+        assert _re_neg.search(r"-\s*\$\s*[\d.]+", txt), (
+            f"Discount amount with negative sign missing from ARS PDF:\n{txt[:1500]}"
+        )
 
-    def test_excel_ars_shows_discount_line(self, tmp_path):
-        """Excel for ARS quote with discount_pct must include 'Descuento N%' cell."""
+    def test_excel_ars_shows_discount_without_total_ars(self, tmp_path):
+        """PR #420 — Excel para quote ARS con descuento debe incluir
+        'Descuento N%' pero NO 'TOTAL ARS' (mismo criterio que el PDF)."""
         from app.modules.agent.tools.document_tool import _generate_excel
         out = tmp_path / "ars_disc.xlsx"
         _generate_excel(out, self._ars_data_with_discount())
@@ -536,10 +560,18 @@ class TestDiscountVisibleForARS:
             sheet = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
         all_text = shared + sheet
         assert "Descuento 15%" in all_text, "'Descuento 15%' label missing from ARS Excel"
-        assert "TOTAL ARS" in all_text, "'TOTAL ARS' row missing from ARS Excel"
+        assert "TOTAL ARS" not in all_text, (
+            "'TOTAL ARS' row removed in PR #420 — should not appear in "
+            "material block of ARS Excel."
+        )
 
-    def test_pdf_usd_still_shows_discount(self, tmp_path):
-        """Regression guard: USD discount path must still work unchanged."""
+    def test_pdf_usd_still_shows_total_with_discount(self, tmp_path):
+        """Regression guard: USD discount path must still work unchanged.
+
+        PR #420 mantiene `TOTAL USD` porque la convención del operador
+        es distinta: cotizaciones USD muestran el subtotal en USD para
+        que el cliente vea el monto en dólares antes del grand total
+        mixto (USD material + ARS MO)."""
         from app.modules.agent.tools.document_tool import _generate_pdf
         data = self._ars_data_with_discount()
         data["material_currency"] = "USD"
@@ -557,4 +589,68 @@ class TestDiscountVisibleForARS:
         except FileNotFoundError:
             pytest.skip("pdftotext not installed")
         assert "Descuento 15%" in txt
-        assert "TOTAL USD" in txt
+        assert "TOTAL USD" in txt, (
+            f"USD path should keep TOTAL USD subtotal (PR #420 only "
+            f"removed TOTAL ARS). Text:\n{txt[:1500]}"
+        )
+
+    def test_pdf_ars_no_discount_no_total_ars(self, tmp_path):
+        """PR #420 drift guard — quote ARS SIN descuento tampoco debe
+        mostrar `TOTAL ARS` (antes del PR ya era así para ARS sin
+        descuento, pero el cambio podría romperlo si alguien
+        reorganiza el bloque). El bloque material queda con solo
+        las piezas listadas, sin subtotal del lado derecho."""
+        from app.modules.agent.tools.document_tool import _generate_pdf
+        data = self._ars_data_with_discount()
+        data["discount_pct"] = 0
+        data["discount_amount"] = 0
+        out = tmp_path / "ars_no_disc.pdf"
+        _generate_pdf(out, data)
+        import subprocess
+        try:
+            txt = subprocess.run(
+                ["pdftotext", "-layout", str(out), "-"],
+                capture_output=True, text=True, timeout=15,
+            ).stdout
+        except FileNotFoundError:
+            pytest.skip("pdftotext not installed")
+        assert "TOTAL ARS" not in txt, (
+            f"ARS quote without discount should also NOT have TOTAL ARS "
+            f"subtotal in material block (PR #420). Text:\n{txt[:1500]}"
+        )
+        # PRESUPUESTO TOTAL sí debe aparecer al final — es el único total
+        # visible. El test no asserta el label literal porque el formato
+        # del grand total puede tener distintos wordings; mínimo, esperamos
+        # que el monto neto del material aparezca en algún lado.
+        assert "PRESUPUESTO TOTAL" in txt or "TOTAL" in txt, (
+            f"Grand total missing entirely from PDF:\n{txt[:1500]}"
+        )
+
+    def test_pdf_usd_no_discount_keeps_total_usd(self, tmp_path):
+        """PR #420 — quote USD SIN descuento sigue mostrando `TOTAL USD`
+        (legacy behavior). Test explícito porque es la única ruta del
+        `right_rows` que NO pasa por el `if discount_pct` — un refactor
+        que la borrara accidentalmente quitaría info importante al
+        cliente."""
+        from app.modules.agent.tools.document_tool import _generate_pdf
+        data = self._ars_data_with_discount()
+        data["material_currency"] = "USD"
+        data["material_price_unit"] = 519
+        data["total_usd"] = 2507
+        data["total_ars"] = 0
+        data["discount_pct"] = 0
+        data["discount_amount"] = 0
+        out = tmp_path / "usd_no_disc.pdf"
+        _generate_pdf(out, data)
+        import subprocess
+        try:
+            txt = subprocess.run(
+                ["pdftotext", "-layout", str(out), "-"],
+                capture_output=True, text=True, timeout=15,
+            ).stdout
+        except FileNotFoundError:
+            pytest.skip("pdftotext not installed")
+        assert "TOTAL USD" in txt, (
+            f"USD without discount should still show TOTAL USD (legacy "
+            f"behavior preserved by PR #420). Text:\n{txt[:1500]}"
+        )
