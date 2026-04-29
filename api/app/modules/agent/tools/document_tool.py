@@ -183,6 +183,25 @@ def _fmt_qty(value: float) -> str:
     return f"{value:.2f}".replace(".", ",")
 
 
+def _fmt_pct(pct) -> str:
+    """Formato de porcentaje sin decimales superfluos para PDF/Excel.
+
+    PR #433 — operador reportó "molesta mucho" ver `Descuento 5.0%`
+    en el PDF. El parser extrae `discount_pct` como float; cuando es
+    entero, mostramos sin punto decimal.
+
+    `_fmt_pct(5.0)` → "5", `_fmt_pct(12.5)` → "12,5", `_fmt_pct(None)` → "".
+    """
+    if pct is None:
+        return ""
+    try:
+        if float(pct) == int(pct):
+            return f"{int(pct)}"
+        return str(pct).replace(".", ",")
+    except (TypeError, ValueError):
+        return ""
+
+
 def _normalize_delivery(raw: str) -> str:
     """Ensure delivery text is complete, not just a number or short phrase.
 
@@ -1461,7 +1480,7 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
     if _has_material_block:
         if discount_pct:
             desc_amount = round(total_mat_bruto * discount_pct / 100)
-            right_rows.append(("I", f"Descuento {discount_pct}%", f"- {fmt_price(desc_amount)}"))
+            right_rows.append(("I", f"Descuento {_fmt_pct(discount_pct)}%", f"- {fmt_price(desc_amount)}"))
             if currency == "USD":
                 right_rows.append(("B", f"TOTAL {currency}", fmt_price(total_mat)))
         elif currency == "USD":
@@ -1538,7 +1557,7 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
         _disc_sinks = round(sinks_subtotal * discount_pct / 100)
         f = row_fill()
         pdf.set_font("Helvetica", "I", 9)
-        pdf.cell(w[0] + w[1], rh, f"Descuento {discount_pct}%", fill=f)
+        pdf.cell(w[0] + w[1], rh, f"Descuento {_fmt_pct(discount_pct)}%", fill=f)
         pdf.cell(w[2], rh, "", fill=f)
         pdf.cell(w[3], rh, f"- {_fmt_ars(_disc_sinks)}", align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
         row_done()
@@ -1595,7 +1614,7 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
     if _mo_disc_pct and _mo_disc_amt:
         f = row_fill()
         pdf.set_font("Helvetica", "I", 9)
-        pdf.cell(w[0] + w[1], rh, f"Descuento {_mo_disc_pct}% sobre MO (excluye flete)", fill=f)
+        pdf.cell(w[0] + w[1], rh, f"Descuento {_fmt_pct(_mo_disc_pct)}% sobre MO (excluye flete)", fill=f)
         pdf.cell(w[2], rh, "", fill=f)
         pdf.cell(w[3], rh, f"- {_fmt_ars(_mo_disc_amt)}", align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
         row_done()
@@ -1841,7 +1860,7 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     if _has_material_block:
         if discount_pct:
             desc_amount = round(total_mat * discount_pct / 100)
-            right_rows_xl.append(("I", f"Descuento {discount_pct}%", f"- {_xl_fmt(desc_amount)}"))
+            right_rows_xl.append(("I", f"Descuento {_fmt_pct(discount_pct)}%", f"- {_xl_fmt(desc_amount)}"))
             if currency == "USD":
                 right_rows_xl.append(("B", f"TOTAL {currency}", _xl_fmt(total_mat_net)))
         elif currency == "USD":
@@ -1911,7 +1930,7 @@ def _generate_excel(output_path: Path, data: dict) -> None:
             )
             _disc_sinks = round(sinks_subtotal * discount_pct / 100)
             disc_row = sinks_header_row + 1 + len(sinks)
-            ws.cell(disc_row, 1).value = f"Descuento {discount_pct}%"
+            ws.cell(disc_row, 1).value = f"Descuento {_fmt_pct(discount_pct)}%"
             ws.cell(disc_row, 1).font = italic_sm
             ws.cell(disc_row, 6).value = -_disc_sinks
             ws.cell(disc_row, 6).number_format = ars_fmt
@@ -1987,7 +2006,7 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     if _mo_disc_pct and _mo_disc_amt:
         disc_row = mo_end_row + 1
         ws.insert_rows(disc_row)
-        ws.cell(disc_row, 1).value = f"Descuento {_mo_disc_pct}% sobre MO (excluye flete)"
+        ws.cell(disc_row, 1).value = f"Descuento {_fmt_pct(_mo_disc_pct)}% sobre MO (excluye flete)"
         ws.cell(disc_row, 1).font = italic_sm
         ws.cell(disc_row, 6).value = -_mo_disc_amt
         ws.cell(disc_row, 6).number_format = ars_fmt

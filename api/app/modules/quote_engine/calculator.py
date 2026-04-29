@@ -22,6 +22,36 @@ def _round_half_up(value: float, decimals: int = 2) -> float:
     return float(Decimal(str(value)).quantize(quant, rounding=ROUND_HALF_UP))
 
 
+def _fmt_pct(pct) -> str:
+    """Formato de porcentaje sin decimales superfluos para display.
+
+    PR #433 — el operador reportó "molesta mucho" ver `Descuento 5.0%`
+    en el PDF en lugar de `Descuento 5%`. El parser de descuento del
+    brief (PR #427) extrae `discount_pct` como float ("5%" → 5.0).
+    Cuando el float es entero, lo mostramos sin punto decimal.
+    Cuando tiene decimales reales (12.5%, 8.25%), conserva los
+    dígitos pero con coma decimal (convención AR).
+
+    Examples:
+        >>> _fmt_pct(5.0)
+        '5'
+        >>> _fmt_pct(5)
+        '5'
+        >>> _fmt_pct(12.5)
+        '12,5'
+        >>> _fmt_pct(None)
+        ''
+    """
+    if pct is None:
+        return ""
+    try:
+        if float(pct) == int(pct):
+            return f"{int(pct)}"
+        return str(pct).replace(".", ",")
+    except (TypeError, ValueError):
+        return ""
+
+
 _AMBIENTE_KEYWORDS = {
     "cocina": "Cocina",
     "lavadero": "Lavadero",
@@ -1975,7 +2005,7 @@ def _build_paso2_products_only(calc: dict) -> str:
 
     # Descuento (si aplica) — siempre con monto en negativo, "sobre productos".
     if discount_pct and discount_amount:
-        lines.append(f"**DESCUENTO — {discount_pct}%**")
+        lines.append(f"**DESCUENTO — {_fmt_pct(discount_pct)}%**")
         lines.append(f"- -{fmt_ars(discount_amount)} sobre productos")
         lines.append("")
 
@@ -2120,7 +2150,7 @@ def build_deterministic_paso2(calc: dict) -> str:
 
     # Descuento
     if discount_pct:
-        lines.append(f"**DESCUENTO — {discount_pct}%**")
+        lines.append(f"**DESCUENTO — {_fmt_pct(discount_pct)}%**")
         lines.append(f"- {fmt_usd(discount_amount) if currency == 'USD' else fmt_ars(discount_amount)} sobre material")
         lines.append(f"- Total material neto: {fmt_usd(mat_total_net) if currency == 'USD' else fmt_ars(mat_total_net)}")
     else:
@@ -2181,7 +2211,7 @@ def build_deterministic_paso2(calc: dict) -> str:
             )
         if mo_discount_pct:
             lines.append(
-                f"| **Descuento {mo_discount_pct}% sobre MO (excluye flete)** | | | | **-{fmt_ars(mo_discount_amount)}** |"
+                f"| **Descuento {_fmt_pct(mo_discount_pct)}% sobre MO (excluye flete)** | | | | **-{fmt_ars(mo_discount_amount)}** |"
             )
         lines.append(f"| **TOTAL MO** | | | | **{fmt_ars(_total_mo_subtotal)}** |")
     else:

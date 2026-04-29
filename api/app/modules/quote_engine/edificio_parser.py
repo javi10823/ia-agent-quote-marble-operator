@@ -923,7 +923,9 @@ def render_edificio_paso2(summary: dict, localidad: str = "Rosario") -> dict:
         lines.append(f"| Superficie | {_fmt_num(m2)} m² |")
         lines.append(f"| Subtotal | {cur_sym}{_fmt_num(mr['material_total'], 0)} |")
         if mr["discount_pct"]:
-            lines.append(f"| Descuento {mr['discount_pct']}% | -{cur_sym}{_fmt_num(mr['discount_amount'], 0)} |")
+            # PR #433 — `_fmt_pct` evita "5.0%" en favor de "5%".
+            from app.modules.quote_engine.calculator import _fmt_pct as _pct
+            lines.append(f"| Descuento {_pct(mr['discount_pct'])}% | -{cur_sym}{_fmt_num(mr['discount_amount'], 0)} |")
             lines.append(f"| **Total material** | **{cur_sym}{_fmt_num(mr['material_net'], 0)}** |")
         else:
             lines.append(f"| **Total material** | **{cur_sym}{_fmt_num(mr['material_total'], 0)}** |")
