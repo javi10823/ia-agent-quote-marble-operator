@@ -142,6 +142,15 @@ def _check_iva_mo(qdata: dict) -> tuple[list[str], list[str]]:
 def _check_material_total(qdata: dict) -> tuple[list[str], list[str]]:
     """Verify material_total = round(m2 * price_unit) - discount_amount."""
     errors, warnings = [], []
+
+    # PR #427 — modo products_only: el `discount_amount` aplica sobre
+    # el subtotal de SINKS, no sobre el material (que es 0). Sin este
+    # skip, el check ve `m2=0, price=0, gross=0, discount=N` →
+    # expected=-N, actual=0 → rebota generate_documents. La consistencia
+    # del descuento con sinks ya se valida en `_check_products_only_consistency`.
+    if qdata.get("_quote_mode") == "products_only":
+        return errors, warnings
+
     m2 = qdata.get("material_m2")
     price_unit = qdata.get("material_price_unit")
     total = qdata.get("material_total")
@@ -192,6 +201,16 @@ def _check_merma_rules(qdata: dict) -> tuple[list[str], list[str]]:
 def _check_pegadopileta(qdata: dict) -> tuple[list[str], list[str]]:
     """If pileta is empotrada, exactly 1 pileta MO item should exist."""
     errors, warnings = [], []
+
+    # PR #427 — modo products_only: el operador pidió "sin MO"
+    # explícito. El calculator NO inyecta MO de pileta en ese modo,
+    # pero `pileta` puede quedar seteado en el calc_result si Sonnet
+    # lo pasó como input (costumbre del flujo normal). Sin este skip,
+    # el validator rebota generate_documents → operador no llega al
+    # PDF (caso DYSCON solo-piletas, 29/04/2026).
+    if qdata.get("_quote_mode") == "products_only":
+        return errors, warnings
+
     pileta = qdata.get("pileta") or ""
 
     if pileta not in ("empotrada_johnson", "empotrada_cliente"):
