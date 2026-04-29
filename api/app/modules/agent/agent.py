@@ -6312,6 +6312,25 @@ class AgentService:
 
             calc_result = calculate_quote(inputs)
 
+            # PR #418 — observabilidad: log estructurado del par
+            # (material_m2, piece_details) tal como queda al salir del
+            # calculator. No toca lógica. Sirve para diagnosticar drift
+            # contra `_check_piece_m2` (validador) sin pedirle al
+            # operador un dump del breakdown desde Railway.
+            try:
+                from app.modules.quote_engine.audit import log_m2_audit
+                if calc_result.get("ok"):
+                    log_m2_audit(
+                        quote_id=save_to_qid,
+                        source="calculator",
+                        material_m2=calc_result.get("material_m2"),
+                        piece_details=calc_result.get("piece_details"),
+                    )
+            except Exception as _audit_err:
+                # La observabilidad NUNCA rompe el flow. Si el helper
+                # falla por shape inesperado, seguimos.
+                logging.debug(f"[m2-audit] post-calculate log skipped: {_audit_err}")
+
             # ── Surface variant negations from the brief (PR #10) ──────────
             # El LLM normaliza el material name antes de pasarlo a
             # calculate_quote, por lo que `_find_material` no ve frases como
