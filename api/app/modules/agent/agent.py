@@ -2513,6 +2513,20 @@ class AgentService:
                                         f"sku={parsed_po['pileta_sku']}, "
                                         f"total={_po_result.get('total_ars')}"
                                     )
+                                    # PR #430 — bug crítico observado en
+                                    # prod (caso DYSCON 29/04/2026): el
+                                    # frontend espera un evento `done`
+                                    # para cerrar el stream SSE limpio,
+                                    # des-bloquear el composer y permitir
+                                    # al operador escribir "Confirmo".
+                                    # Sin esto, el frontend timeoutea
+                                    # ("⚠️ servicio saturado"), interpreta
+                                    # el cierre como falla y vuelve al
+                                    # listado. Operador no puede confirmar.
+                                    # Todos los otros short-circuits del
+                                    # archivo emiten `done` — este se
+                                    # olvidó en PR #427.
+                                    yield {"type": "done", "content": ""}
                                     return  # ← end turn, NO contexto/despiece
                                 except Exception as _e_po_persist:
                                     logging.warning(
