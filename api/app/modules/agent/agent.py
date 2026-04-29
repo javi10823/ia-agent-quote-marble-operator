@@ -1216,7 +1216,7 @@ TOOLS = [
     {"name": "generate_documents", "description": "Genera PDF+Excel. 1 quote por material.", "input_schema": {"type": "object", "properties": {"quotes": {"type": "array", "items": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "date": {"type": "string"}, "delivery_days": {"type": "string"}, "material_name": {"type": "string"}, "material_m2": {"type": "number"}, "material_price_unit": {"type": "number"}, "material_currency": {"type": "string", "enum": ["USD", "ARS"]}, "discount_pct": {"type": "number"}, "sectors": {"type": "array", "items": {"type": "object", "properties": {"label": {"type": "string"}, "pieces": {"type": "array", "items": {"type": "string"}}}}}, "sinks": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "quantity": {"type": "integer"}, "unit_price": {"type": "number"}}}}, "mo_items": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}, "quantity": {"type": "number"}, "unit_price": {"type": "number"}, "total": {"type": "number"}}}}, "total_ars": {"type": "number"}, "total_usd": {"type": "number"}}, "required": ["client_name", "material_name"]}}}, "required": ["quotes"]}},
     {"name": "update_quote", "description": "Actualiza client_name/project/status/delivery_days en DB sin recalcular. Para cambios estructurales (piezas/MO/material) usar calculate_quote.", "input_schema": {"type": "object", "properties": {"quote_id": {"type": "string"}, "updates": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "material": {"type": "string"}, "total_ars": {"type": "number"}, "total_usd": {"type": "number"}, "status": {"type": "string", "enum": ["draft", "validated", "sent"]}, "delivery_days": {"type": "string", "description": "Plazo/demora — ej: '30 días', '60 días', '4 meses'. Se persiste en quote_breakdown.delivery_days. Para cambiar SOLO la demora sin re-cotizar, usar este campo (no llamar a calculate_quote)."}}}}, "required": ["quote_id", "updates"]}},
     {"name": "calculate_quote", "description": "Calcula m², MO, totales. SIEMPRE usar para cálculos.", "input_schema": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "material": {"type": "string"}, "pieces": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}, "largo": {"type": "number"}, "prof": {"type": "number"}, "alto": {"type": "number"}, "quantity": {"type": "integer", "description": "Cantidad de unidades físicas de esta pieza (para edificios con tipologías repetidas). Default 1 si no se pasa."}, "m2_override": {"type": "number", "description": "Usar SOLO cuando el operador declara el m² de la pieza en una Planilla de Cómputo (ej: edificios con valores pre-calculados que incluyen zócalos/frentes). Si se pasa, el calculador NO computa largo×prof — usa directamente este valor. No activar 'fallback de profundidades inversas'."}}, "required": ["description", "largo"]}}, "localidad": {"type": "string"}, "colocacion": {"type": "boolean"}, "is_edificio": {"type": "boolean"}, "pileta": {"type": "string", "enum": ["empotrada_cliente", "empotrada_johnson", "apoyo"]}, "pileta_qty": {"type": "integer"}, "pileta_sku": {"type": "string"}, "anafe": {"type": "boolean"}, "anafe_qty": {"type": "integer", "description": "Cantidad de anafes (para edificios con N tipologías). Default 1."}, "frentin": {"type": "boolean"}, "frentin_ml": {"type": "number"}, "regrueso": {"type": "boolean"}, "regrueso_ml": {"type": "number"}, "inglete": {"type": "boolean"}, "pulido": {"type": "boolean"}, "tomas_qty": {"type": "integer", "description": "Agujeros de toma corriente. REQUIERE alzada en pieces + pedido explícito del operador ('Agujero de toma × N'). NO inferir por anafe/zócalo/revestimiento. Sin alzada el calculator lo ignora con warning."}, "skip_flete": {"type": "boolean", "description": "true SOLO si el cliente retira en fábrica. Default false — siempre cobrar flete."}, "flete_qty": {"type": "integer", "description": "Cantidad de fletes declarada por el operador (ej: '× 5 fletes'). Override del cálculo automático. Usar SOLO cuando el operador lo dice explícito en el enunciado."}, "plazo": {"type": "string"}, "discount_pct": {"type": "number"}, "mo_discount_pct": {"type": "number", "description": "Descuento comercial % sobre MO (excluye flete). Usar SOLO si operador lo pide explícito (ej: '5% sobre MO')."}}, "required": ["client_name", "project", "material", "pieces", "localidad", "plazo"]}},
-    {"name": "patch_quote_mo", "description": "Modifica MO sin recalcular. Para agregar/quitar flete, colocación.", "input_schema": {"type": "object", "properties": {"remove_items": {"type": "array", "items": {"type": "string"}}, "add_colocacion": {"type": "boolean"}, "add_flete": {"type": "string"}}, "required": []}},
+    {"name": "patch_quote_mo", "description": "Modifica MO. Cambiar cant flete: add_flete+flete_qty.", "input_schema": {"type": "object", "properties": {"remove_items": {"type": "array", "items": {"type": "string"}}, "add_colocacion": {"type": "boolean"}, "add_flete": {"type": "string"}, "flete_qty": {"type": "integer"}}, "required": []}},
 ]
 
 
@@ -7063,6 +7063,18 @@ class AgentService:
             remove_keywords = [kw.lower() for kw in inputs.get("remove_items", [])]
             add_colocacion = inputs.get("add_colocacion", False)
             add_flete_localidad = inputs.get("add_flete")
+            # PR #443 — `flete_qty` parameter (caso DYSCON 29/04/2026):
+            # operador escribió "modificá flete a 4 fletes". Sonnet
+            # llamó patch_quote_mo con remove_items=['flete'] (eliminó
+            # el viejo) sin add_flete o con add_flete pero qty=1
+            # hardcodeado. Resultado: flete desaparece de mo_items y
+            # el total queda mal por -$300K. Ahora `flete_qty` se
+            # pasa explícito (default 1) y `add_flete` REEMPLAZA el
+            # flete existente en lugar de skipear.
+            try:
+                add_flete_qty = int(inputs.get("flete_qty") or 1)
+            except (TypeError, ValueError):
+                add_flete_qty = 1
 
             try:
                 q_result = await db.execute(select(Quote).where(Quote.id == target_qid))
@@ -7075,10 +7087,20 @@ class AgentService:
                 new_mo = []
                 removed = []
 
-                # Remove items matching keywords
+                # Remove items matching keywords.
+                # PR #443 — si `add_flete` se pasó, NO eliminar el flete
+                # acá (lo reemplazamos abajo). Sin esto, `remove_items=
+                # ['flete']` + `add_flete` borraba el flete y luego el
+                # `add_flete` se ejecutaba aparte — duplicación de
+                # responsabilidad y confusión.
+                _will_replace_flete = bool(add_flete_localidad)
                 for item in original_mo:
                     desc_lower = (item.get("description") or "").lower()
                     should_remove = any(kw in desc_lower for kw in remove_keywords)
+                    if should_remove and _will_replace_flete and "flete" in desc_lower:
+                        # No eliminar acá — `add_flete` abajo lo reemplaza.
+                        new_mo.append(item)
+                        continue
                     if should_remove:
                         removed.append(item["description"])
                     else:
@@ -7099,16 +7121,45 @@ class AgentService:
                             qty = max(bd.get("material_m2", 1), 1.0)
                             new_mo.append({"description": "Colocación", "quantity": round(qty, 2), "unit_price": price, "base_price": base, "total": round(price * qty)})
 
-                # Add flete if requested
+                # Add/replace flete if requested.
+                # PR #443 — IDEMPOTENTE: si ya hay flete, lo REEMPLAZA
+                # (no skipea). Permite "modificar" cantidad sin tener
+                # que pasar `remove_items` previo. Y respeta `flete_qty`
+                # del operador (default 1).
                 if add_flete_localidad:
-                    has_flete = any("flete" in (m.get("description") or "").lower() for m in new_mo)
-                    if not has_flete:
-                        from app.modules.quote_engine.calculator import _find_flete
-                        flete_result = _find_flete(add_flete_localidad)
-                        if flete_result.get("found"):
-                            price = flete_result.get("price_ars", 0)
-                            base = flete_result.get("price_ars_base", price)
-                            new_mo.append({"description": f"Flete + toma medidas {add_flete_localidad}", "quantity": 1, "unit_price": price, "base_price": base, "total": price})
+                    # Drop cualquier flete existente — vamos a agregar
+                    # uno nuevo limpio con la qty correcta.
+                    new_mo = [
+                        m for m in new_mo
+                        if "flete" not in (m.get("description") or "").lower()
+                    ]
+                    from app.modules.quote_engine.calculator import _find_flete
+                    flete_result = _find_flete(add_flete_localidad)
+                    if flete_result.get("found"):
+                        price = flete_result.get("price_ars", 0)
+                        base = flete_result.get("price_ars_base", price)
+                        # `quantity` viene del operador (flete_qty),
+                        # no hardcodeado a 1. Total = price × qty.
+                        new_mo.append({
+                            "description": f"Flete + toma medidas {add_flete_localidad}",
+                            "quantity": add_flete_qty,
+                            "unit_price": price,
+                            "base_price": base,
+                            "total": price * add_flete_qty,
+                        })
+                    else:
+                        # Localidad inválida — error ruidoso. Sin esto,
+                        # Sonnet podría declarar "flete agregado" pero
+                        # el handler ignora silenciosamente (mismo
+                        # patrón Issue #422).
+                        return {
+                            "ok": False,
+                            "error": (
+                                f"⛔ Localidad '{add_flete_localidad}' no "
+                                f"encontrada en delivery-zones. "
+                                f"Verificar nombre o agregar al catálogo."
+                            ),
+                        }
 
                 # Recalculate totals
                 bd["mo_items"] = new_mo
