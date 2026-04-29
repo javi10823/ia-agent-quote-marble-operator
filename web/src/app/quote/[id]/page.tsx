@@ -1156,6 +1156,15 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating, 
   const totalM2 = breakdown?.material_m2 || 0;
   const discountPct = breakdown?.discount_pct || 0;
   const totalMO = moItems.reduce((s: number, m: any) => s + (m.total || 0), 0);
+  // PR #435 — detección del modo "products_only" (PR #424). Sin esto,
+  // el detalle del quote muestra "—" en Material/m²/Precio y NO
+  // renderiza el desglose (sectors=[], mo_items=[]) → operador veía
+  // todo vacío. La rama products_only renderiza tabla de productos
+  // (sinks) + descuento + grand total directamente.
+  const isProductsOnly = breakdown?._quote_mode === "products_only";
+  const sinks = breakdown?.sinks || [];
+  const sinksSubtotal = sinks.reduce((s: number, k: any) => s + ((k.unit_price || 0) * (k.quantity || 0)), 0);
+  const discountAmount = breakdown?.discount_amount || 0;
 
   return (
     <div className="flex flex-col gap-5">
@@ -1281,7 +1290,7 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating, 
         </div>
       )}
 
-      {breakdown && (
+      {breakdown && !isProductsOnly && (
         <Section title="Solicitud">
           <div className="grid grid-cols-2 gap-3">
             <ReqField label="Material" value={breakdown.material_name || DASH} />
@@ -1294,7 +1303,68 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating, 
         </Section>
       )}
 
-      {breakdown && (pieces.length > 0 || moItems.length > 0) ? (
+      {/* PR #435 — products_only: solicitud simplificada (sin material/
+          m²/precio que no aplican). Solo plazo + proyecto. */}
+      {breakdown && isProductsOnly && (
+        <Section title="Solicitud">
+          <div className="grid grid-cols-2 gap-3">
+            <ReqField label="Tipo" value="Solo producto" />
+            <ReqField label="Plazo" value={breakdown.delivery_days || DASH} />
+            <ReqField label="Proyecto" value={breakdown.project || DASH} />
+            <ReqField label="Productos" value={`${sinks.length} ${sinks.length === 1 ? "ítem" : "ítems"}`} />
+          </div>
+        </Section>
+      )}
+
+      {/* PR #435 — products_only: tabla de productos en el detalle.
+          Sin esto, la sección "Desglose" (que requiere pieces o
+          mo_items) no se renderizaba y el operador veía un detalle
+          vacío. */}
+      {breakdown && isProductsOnly && sinks.length > 0 && (
+        <Section title="Productos cotizados">
+          <table className="w-full border-collapse border border-b1 rounded-lg overflow-hidden">
+            <thead><tr className="bg-white/[0.03]">
+              <th className="px-3 py-2 text-[11px] font-semibold text-t3 uppercase tracking-wide text-left border-b border-b1">Producto</th>
+              <th className="px-3 py-2 text-[11px] font-semibold text-t3 uppercase tracking-wide text-right border-b border-b1">Cant</th>
+              <th className="px-3 py-2 text-[11px] font-semibold text-t3 uppercase tracking-wide text-right border-b border-b1">Precio c/IVA</th>
+              <th className="px-3 py-2 text-[11px] font-semibold text-t3 uppercase tracking-wide text-right border-b border-b1">Total</th>
+            </tr></thead>
+            <tbody>
+              {sinks.map((k: any, i: number) => (
+                <tr key={i} className={i % 2 === 1 ? "bg-white/[0.03]" : ""}>
+                  <td className="px-3 py-[9px] text-[13px] text-t2 border-b border-white/[0.04]">{k.name}</td>
+                  <td className="px-3 py-[9px] text-[13px] text-t2 text-right border-b border-white/[0.04]">{k.quantity}</td>
+                  <td className="px-3 py-[9px] text-[13px] text-t2 text-right border-b border-white/[0.04]">{fmtARS(k.unit_price)}</td>
+                  <td className="px-3 py-[9px] text-[13px] text-t2 text-right border-b border-white/[0.04]">{fmtARS((k.unit_price || 0) * (k.quantity || 0))}</td>
+                </tr>
+              ))}
+              <tr className="bg-white/[0.05]">
+                <td className="px-3 py-[9px] text-[13px] font-semibold text-t1">SUBTOTAL</td>
+                <td></td><td></td>
+                <td className="px-3 py-[9px] text-[13px] font-semibold text-t1 text-right">{fmtARS(sinksSubtotal)}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          {discountPct > 0 && discountAmount > 0 && (
+            <div className="mt-3 flex justify-between items-center px-3 py-2 italic text-[13px] text-t2">
+              <span>{`Descuento ${discountPct === Math.floor(discountPct) ? Math.floor(discountPct) : String(discountPct).replace(".", ",")}% sobre productos`}</span>
+              <span>- {fmtARS(discountAmount)}</span>
+            </div>
+          )}
+
+          {(quote.total_ars || quote.total_usd) && (
+            <div className="mt-5 px-5 py-4 rounded-[10px] bg-s3 border border-b2 flex justify-between items-center">
+              <span className="text-sm font-semibold text-t1">PRESUPUESTO TOTAL</span>
+              <div className="text-right">
+                {quote.total_ars ? <div className="text-lg font-bold text-t1">{fmtARS(quote.total_ars)}</div> : null}
+              </div>
+            </div>
+          )}
+        </Section>
+      )}
+
+      {breakdown && !isProductsOnly && (pieces.length > 0 || moItems.length > 0) ? (
         <Section title="Desglose del Presupuesto">
           {pieces.length > 0 && (
             <div className="mb-4">
