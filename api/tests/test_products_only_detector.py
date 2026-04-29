@@ -636,3 +636,54 @@ class TestBuildPaso2ProductsOnly:
         # El nombre exacto del catálogo. Verificamos que contenga "JOHNSON" + qty.
         assert "JOHNSON" in label.upper()
         assert "× 32" in label
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Drift guard — short-circuit emite `done` antes del return (PR #430)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestShortCircuitEmitsDone:
+    """**Bug crítico observado en prod (29/04/2026):**
+
+    Logs Railway mostraban `[products-only] short-circuit OK` pero
+    después: nada. El operador confirmaba y "se cerraba todo, volvía
+    al listado".
+
+    Causa: el short-circuit del PR #427 hacía `return` SIN emitir
+    `yield {"type": "done", "content": ""}`. El frontend espera ese
+    evento para cerrar el stream SSE limpio, des-bloquear el composer
+    y permitir al operador escribir "Confirmo". Sin él, el frontend
+    timeoutea ("⚠️ servicio saturado"), interpreta el cierre como
+    falla y redirige al listado.
+
+    Todos los otros short-circuits del archivo emiten `done` (ver
+    grep `\\"type\\":\\s*\\"done\\"` en agent.py — 10+ matches).
+
+    Este test inspecciona el source de `stream_chat` y verifica que
+    el bloque `[products-only]` SÍ tiene `yield {"type": "done"`
+    antes del `return  # ← end turn` final. Si alguien refactoreriza
+    y se olvida del done de nuevo, este test rompe.
+    """
+
+    def test_short_circuit_yields_done_before_return(self):
+        import inspect
+        from app.modules.agent import agent as agent_mod
+        src = inspect.getsource(agent_mod.AgentService.stream_chat)
+        # Buscar el bloque `[products-only] short-circuit OK` y verificar
+        # que entre ese log y el `return  # ← end turn` haya un yield done.
+        idx_log = src.find("[products-only] short-circuit OK")
+        assert idx_log > 0, "No se encontró el log del short-circuit"
+        # El return del short-circuit es el primero "return  # ← end turn"
+        # después del log.
+        idx_return = src.find("return  # ← end turn", idx_log)
+        assert idx_return > idx_log, (
+            "No se encontró el `return` final del short-circuit"
+        )
+        between = src[idx_log:idx_return]
+        assert '"type": "done"' in between, (
+            "Falta `yield {\"type\": \"done\"}` antes del `return` del "
+            "short-circuit products_only. Sin ese evento, el frontend "
+            "no cierra el stream y el operador no puede confirmar. "
+            "Ver caso DYSCON 29/04/2026 / PR #430."
+        )
