@@ -163,6 +163,12 @@ export interface Quote {
   localidad?: string | null;
   colocacion?: boolean | null;
   anafe?: boolean | null;
+  // PR #442 — flag computado por backend: true si hubo edits del
+  // quote después de la última generación/regenerate del PDF. El
+  // detail view muestra banner "PDF desactualizado · Regenerar"
+  // cuando se cumple.
+  pdf_outdated?: boolean | null;
+  pdf_generated_at?: string | null;
   resumen_obra?: ResumenObraRecord | null;
   condiciones_pdf?: {
     pdf_url: string;

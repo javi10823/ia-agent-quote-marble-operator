@@ -5809,6 +5809,29 @@ class AgentService:
                         QuoteStatus.DRAFT, QuoteStatus.PENDING
                     ):
                         doc_values["status"] = QuoteStatus.VALIDATED.value
+
+                    # PR #442 — append a `change_history` el evento de
+                    # generación para que `_compute_pdf_outdated`
+                    # tenga el timestamp y pueda decidir si el PDF está
+                    # desactualizado tras edits posteriores. Sin esta
+                    # entry, quotes nuevos quedarían sin tracking y el
+                    # banner del frontend no aparecería.
+                    try:
+                        from datetime import datetime as _dt_pdf_track
+                        _gen_history = list(_cur.change_history or []) if _cur else []
+                        _gen_history.append({
+                            "timestamp": _dt_pdf_track.now().isoformat(),
+                            "action": "generate_docs",
+                            "pdf_url": result.get("pdf_url"),
+                            "excel_url": result.get("excel_url"),
+                        })
+                        doc_values["change_history"] = _gen_history
+                    except Exception as _e_hist:
+                        logging.warning(
+                            f"[generate_docs-history] could not append "
+                            f"to change_history for {target_qid}: {_e_hist}"
+                        )
+
                     await db.execute(
                         update(Quote).where(Quote.id == target_qid).values(**doc_values)
                     )
