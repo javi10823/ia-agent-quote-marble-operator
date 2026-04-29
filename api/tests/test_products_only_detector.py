@@ -31,6 +31,7 @@ from app.modules.quote_engine.products_only_detector import (
     build_products_only_material_label,
     is_products_only_brief,
     parse_products_brief,
+    resolve_material_label_for_db,
     _extract_qty,
     _extract_sku,
     _extract_discount,
@@ -623,6 +624,44 @@ class TestBuildPaso2ProductsOnly:
         assert "MATERIAL" in md
         assert "MANO DE OBRA" in md
         assert "GRANITO GRIS MARA" in md
+
+    # ── resolve_material_label_for_db (PR #434) ──────────────────────
+
+    def test_resolve_label_products_only_uses_sinks(self):
+        """**Bug operador (29/04/2026)**: listado mostraba "—" para
+        products_only post-confirm. Causa: handlers de
+        calculate_quote / generate_documents sobrescribían
+        `quote.material = ""` (calc_result.material_name vacío en
+        products_only). Helper unificado evita ese override."""
+        calc = {
+            "_quote_mode": "products_only",
+            "material_name": "",  # ← el bug: handlers usaban esto
+            "sinks": [
+                {"name": "PILETA JOHNSON E50/18", "quantity": 32, "unit_price": 136410},
+            ],
+        }
+        label = resolve_material_label_for_db(calc)
+        assert label == "PILETA JOHNSON E50/18 × 32"
+
+    def test_resolve_label_normal_flow_uses_material_name(self):
+        """Regression: flujo normal sigue usando `material_name`."""
+        calc = {
+            "material_name": "GRANITO GRIS MARA EXTRA 2 ESP",
+            "sinks": [],
+        }
+        label = resolve_material_label_for_db(calc)
+        assert label == "GRANITO GRIS MARA EXTRA 2 ESP"
+
+    def test_resolve_label_no_quote_mode_uses_material_name(self):
+        """Sin `_quote_mode` (calc_result legacy) y con material_name
+        → flujo normal."""
+        calc = {"material_name": "Silestone Blanco"}
+        label = resolve_material_label_for_db(calc)
+        assert label == "Silestone Blanco"
+
+    def test_resolve_label_empty_no_mode(self):
+        """Defensivo: sin nada → string vacío sin crashear."""
+        assert resolve_material_label_for_db({}) == ""
 
     def test_dyscon_full_label(self):
         """Caso DYSCON real: el calc_result que produce

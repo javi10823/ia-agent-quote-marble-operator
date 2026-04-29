@@ -266,6 +266,31 @@ def build_products_only_material_label(sinks: list[dict] | None) -> str:
     return label
 
 
+def resolve_material_label_for_db(calc_result: dict) -> str:
+    """Devuelve el string que va en `Quote.material` (columna DB usada
+    por el listado del dashboard).
+
+    **Por qué existe (PR #434):** sin este helper, los handlers de
+    `calculate_quote` y `generate_documents` hacían
+    `quote.material = calc_result.get("material_name")`. Para
+    products_only `material_name = ""` → sobrescribía el label
+    descriptivo del PR #428 → en el listado se veía "—".
+
+    Reglas:
+    - Si `_quote_mode == "products_only"` → label desde sinks
+      (mismo helper que usa el short-circuit del PR #427).
+    - Si no → `material_name` directo (flujo normal intacto).
+
+    Si el calc_result no tiene `_quote_mode` explícito pero TIENE
+    sinks Y NO tiene material_name (caso defensivo: products_only
+    persistido viejo sin flag), también usa el label de sinks.
+    """
+    if calc_result.get("_quote_mode") == "products_only":
+        return build_products_only_material_label(calc_result.get("sinks"))
+    # Flujo normal: usar material_name directo.
+    return calc_result.get("material_name") or ""
+
+
 def parse_products_brief(brief: str) -> Optional[dict]:
     """Parsea un brief de "solo producto" a un dict listo para
     `calculate_quote`.

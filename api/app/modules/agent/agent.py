@@ -2619,15 +2619,16 @@ class AgentService:
                                 # listado del dashboard. Antes era "" →
                                 # se mostraba como "—" en la columna
                                 # material y el operador no podía
-                                # identificar qué cotización era. Helper
-                                # vive en `products_only_detector` para
-                                # ser unit-testable sin DB ni Anthropic.
+                                # identificar qué cotización era. PR #434:
+                                # usamos `resolve_material_label_for_db`
+                                # — mismo helper que los handlers de
+                                # calculate_quote y generate_documents,
+                                # garantía de que el label sea consistente
+                                # en cualquier ruta de persistencia.
                                 from app.modules.quote_engine.products_only_detector import (
-                                    build_products_only_material_label,
+                                    resolve_material_label_for_db,
                                 )
-                                _po_label = build_products_only_material_label(
-                                    _po_result.get("sinks")
-                                )
+                                _po_label = resolve_material_label_for_db(_po_result)
                                 _po_persist = {
                                     "quote_breakdown": dict(_po_result),
                                     "total_ars": _po_result.get("total_ars", 0),
@@ -5657,8 +5658,15 @@ class AgentService:
                 # placeholder/junk ("O Proyecto", "Proyecto", "Cliente",
                 # "Sin nombre", etc.), lo sobreescribimos con el nuevo.
                 # Eso rescata quotes viejos contaminados por drift previo.
+                # PR #434 — products_only: usar el helper que devuelve
+                # el label desde sinks cuando _quote_mode==products_only.
+                # Sin esto, generate_documents sobrescribía
+                # `quote.material = ""` y el listado mostraba "—".
+                from app.modules.quote_engine.products_only_detector import (
+                    resolve_material_label_for_db,
+                )
                 save_vals = {
-                    "material": qdata.get("material_name"),
+                    "material": resolve_material_label_for_db(qdata),
                     "total_ars": qdata.get("total_ars"),
                     "total_usd": qdata.get("total_usd"),
                     "quote_breakdown": qdata,
@@ -6876,11 +6884,20 @@ class AgentService:
                             if _keep_key in old_quote.quote_breakdown and _keep_key not in _merged_bd:
                                 _merged_bd[_keep_key] = old_quote.quote_breakdown[_keep_key]
 
+                    # PR #434 — modo products_only: `material_name = ""`
+                    # en el calc_result, pero el listado del dashboard
+                    # debe mostrar el label descriptivo (PR #428). Sin
+                    # este helper, este handler de calculate_quote
+                    # sobrescribía con "" cada vez que Sonnet recotaba
+                    # un products_only (turno 2+ del operador).
+                    from app.modules.quote_engine.products_only_detector import (
+                        resolve_material_label_for_db,
+                    )
                     _values = {
                         "quote_breakdown": _merged_bd,
                         "total_ars": calc_result.get("total_ars"),
                         "total_usd": calc_result.get("total_usd"),
-                        "material": calc_result.get("material_name"),
+                        "material": resolve_material_label_for_db(calc_result),
                         "change_history": history,
                     }
                     if calc_result.get("is_edificio"):
