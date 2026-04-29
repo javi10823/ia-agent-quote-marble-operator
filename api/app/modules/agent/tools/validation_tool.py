@@ -245,6 +245,25 @@ def _check_piece_m2(qdata: dict) -> tuple[list[str], list[str]]:
     declared_m2 = qdata.get("material_m2")
     if declared_m2 is not None:
         expected_total = round(total_m2, 2)
+
+        # PR #418 — observabilidad: log estructurado SIEMPRE, no solo
+        # cuando hay error. Así tenemos traza del happy path también
+        # (sirve para diagnosticar regresiones por comparación).
+        # MISMATCH se loguea adentro del helper si delta > 0.01.
+        try:
+            from app.modules.quote_engine.audit import log_m2_audit
+            log_m2_audit(
+                quote_id=qdata.get("quote_id"),
+                source="validator",
+                material_m2=declared_m2,
+                piece_details=pieces,
+                recomputed_total=expected_total,
+            )
+        except Exception:
+            # Observabilidad nunca rompe la validación. El error de
+            # mismatch igual se sigue acumulando abajo si corresponde.
+            pass
+
         if abs(declared_m2 - expected_total) > 0.01:
             errors.append(
                 f"material_m2={declared_m2} no coincide con suma de piezas={expected_total}"
