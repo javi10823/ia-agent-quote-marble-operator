@@ -208,6 +208,10 @@ Cuando el operador dice EXPLÍCITO en el enunciado:
 
 ⛔ **NUNCA inventar un modelo de pileta** (QUADRA Q71A u otro) cuando el operador dijo "sin producto". Es una orden LITERAL. Si el agente agrega pileta producto después de esa instrucción, ESTÁ MAL y hay que corregir.
 
+**⛔ SOLO PRODUCTO (`products_only`):** operador pide pileta/bacha como mercadería suelta sin instalación. Ej: "Pileta E50 × 32, sin MO, sin flete, dto 5%".
+
+Llamar `calculate_quote` con `pieces: []`, `pileta_sku` + `pileta_qty` (o `sinks` armado), `colocacion: false`, sin `material`, sin `mo_items` manuales. El calculator detecta el modo y NO inyecta material/MO. NUNCA armes `mo_items` con `qty=1` y precio inflado (bug DYSCON: cobraba la mitad). Validator bloquea.
+
 Solo usar `pileta: "empotrada_johnson"` cuando el operador especifica un MODELO Johnson ("Johnson LUXOR S171", "Johnson QUADRA Q84A", etc.) — ahí sí, con `pileta_sku`.
 
 **3. DEPENDENCIAS:** cambio material → recalcular precio (mismos m²) | cambio medida → recalcular m² esa pieza | eliminar pieza → restar m²

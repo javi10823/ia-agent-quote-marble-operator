@@ -41,6 +41,7 @@ def validate_despiece(qdata: dict) -> ValidationResult:
         _check_mo_item_totals,
         _check_colocacion_qty,
         _check_regrueso_consistency,  # PR #419 — detecta double-count
+        _check_products_only_consistency,  # PR #424 — modo solo producto
     ):
         try:
             errors, warnings = check(qdata)
@@ -421,4 +422,91 @@ def _check_regrueso_consistency(qdata: dict) -> tuple[list[str], list[str]]:
             f"O faltan piezas regrueso en el despiece, o regrueso_ml "
             f"está mal. Confirmar con operador."
         )
+    return errors, warnings
+
+
+# Tolerancia para el sanity check del total ARS (modo products_only).
+# 1 peso absoluto. Float arithmetic + rounding pueden dejar 0.5-1 peso
+# de drift; mayor que eso indica fórmula rota.
+_PRODUCTS_ONLY_TOTAL_TOLERANCE_ARS = 1.0
+
+
+def _check_products_only_consistency(qdata: dict) -> tuple[list[str], list[str]]:
+    """Verifica que un breakdown en modo `products_only` sea coherente.
+
+    **Por qué existe** (PR #424, caso DYSCON 29/04/2026):
+
+    El operador pidió 32 piletas Johnson "solo producto, sin MO". Sonnet
+    armó un payload con `material vacío + sinks + mo_items inventados +
+    total_ars que no incluía las piletas` → cliente cobrado de menos.
+    El nuevo modo `products_only` lo emite limpio, pero un Sonnet
+    futuro podría intentar mezclar quote normal + products_only y
+    pasar data inconsistente. Este check lo agarra ruidosamente.
+
+    Solo dispara si `_quote_mode == "products_only"`. Verifica:
+
+    1. **`material_m2` debe ser 0.** El modo NO usa material — si
+       llegara con material_m2>0, alguien (Sonnet/refactor futuro)
+       mezcló modos.
+    2. **`mo_items` debe estar vacío.** El modo NO inyecta MO de
+       pileta — el operador lo pidió "sin MO" explícito.
+    3. **`sinks` no puede estar vacío.** Si está vacío, no hay nada
+       que cotizar — error.
+    4. **`total_ars` debe coincidir con `sum(sinks) - discount_amount`.**
+       Drift guard del bug DYSCON: el total NO coincidía con la suma
+       de productos visibles.
+
+    Errores ruidosos (`errors`, no `warnings`) → bloquea
+    `generate_documents` y fuerza al operador a revisar antes de
+    generar PDF con números inconsistentes.
+    """
+    errors, warnings = [], []
+    if qdata.get("_quote_mode") != "products_only":
+        return errors, warnings
+
+    # 1. material_m2 debe ser 0
+    mat_m2 = qdata.get("material_m2") or 0
+    if mat_m2 > 0:
+        errors.append(
+            f"products_only inválido: material_m2={mat_m2} (debe ser 0). "
+            f"El modo solo-producto no cotiza material."
+        )
+
+    # 2. mo_items debe estar vacío
+    mo_items = qdata.get("mo_items") or []
+    if mo_items:
+        descs = [m.get("description", "?") for m in mo_items[:3]]
+        errors.append(
+            f"products_only inválido: mo_items no vacío "
+            f"({len(mo_items)} ítems: {descs}). El operador pidió "
+            f"'sin MO' al activar este modo."
+        )
+
+    # 3. sinks no puede estar vacío
+    sinks = qdata.get("sinks") or []
+    if not sinks:
+        errors.append(
+            "products_only inválido: sinks vacío. Sin productos no hay "
+            "nada que cotizar — revisar el input."
+        )
+        return errors, warnings  # sin sinks no podemos validar el total
+
+    # 4. total_ars == sum(sinks) - discount_amount
+    sinks_subtotal = sum(
+        (s.get("unit_price") or 0) * (s.get("quantity") or 0)
+        for s in sinks
+    )
+    discount_amount = qdata.get("discount_amount") or 0
+    expected_total = sinks_subtotal - discount_amount
+    actual_total = qdata.get("total_ars") or 0
+    delta = abs(actual_total - expected_total)
+    if delta > _PRODUCTS_ONLY_TOTAL_TOLERANCE_ARS:
+        errors.append(
+            f"products_only inválido: total_ars={actual_total} ≠ "
+            f"sum(sinks)-descuento = {sinks_subtotal}-{discount_amount} "
+            f"= {expected_total}. Delta {delta:.0f} ARS supera "
+            f"tolerancia {_PRODUCTS_ONLY_TOTAL_TOLERANCE_ARS}. "
+            f"Sin este check el cliente se cobraría mal (caso DYSCON 29/04/2026)."
+        )
+
     return errors, warnings

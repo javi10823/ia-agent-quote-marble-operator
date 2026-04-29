@@ -1282,6 +1282,15 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
     total_ars = data.get("total_ars", 0)
     total_usd = data.get("total_usd", 0)
 
+    # PR #424 — modo products_only: cotización solo de pileta/bacha
+    # como producto suelto, sin material+MO+colocación. El render gate
+    # cubre el caso aunque el flag no esté presente — basta con que
+    # `material_m2==0 and not material_name` para no emitir bloque
+    # material vacío. Eso protege también casos legacy persistidos
+    # antes de #424 (regen PDF de quote viejo).
+    _is_products_only = data.get("_quote_mode") == "products_only"
+    _has_material_block = bool(mat_name) and (mat_m2 or 0) > 0
+
     co = _load_company_config()
 
     pdf = FPDF(orientation="P", unit="mm", format="A4")
@@ -1391,19 +1400,25 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
     def row_done():
         row_n[0] += 1
 
-    # Material header row
-    f = row_fill()
-    pdf.set_font("Helvetica", "B", 9)
-    # Thickness: use from breakdown, skip if name already contains Nmm/NMM
-    import re as _re
-    _thickness = data.get("thickness_mm", 20)
-    _mat_display = f"{mat_name} - {_thickness}mm" if not _re.search(r'\d+[Mm][Mm]', mat_name) else mat_name
-    pdf.cell(w[0], rh, _mat_display, fill=f)
-    pdf.cell(w[1], rh, _fmt_qty(mat_m2), align="R", fill=f)
-    pdf.set_font("Helvetica", "", 9)
-    pdf.cell(w[2], rh, price_fmt, align="R", fill=f)
-    pdf.cell(w[3], rh, total_mat_fmt, align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
-    row_done()
+    # PR #424 — gate de TODO el bloque material. En modo products_only
+    # (o cualquier data que llegue sin material), NO emitimos el header
+    # del material vacío con $0 ni el overlay de descuento del bloque.
+    # El descuento, si lo hay, se renderiza como línea aparte después
+    # del bloque sinks (más abajo).
+    if _has_material_block:
+        # Material header row
+        f = row_fill()
+        pdf.set_font("Helvetica", "B", 9)
+        # Thickness: use from breakdown, skip if name already contains Nmm/NMM
+        import re as _re
+        _thickness = data.get("thickness_mm", 20)
+        _mat_display = f"{mat_name} - {_thickness}mm" if not _re.search(r'\d+[Mm][Mm]', mat_name) else mat_name
+        pdf.cell(w[0], rh, _mat_display, fill=f)
+        pdf.cell(w[1], rh, _fmt_qty(mat_m2), align="R", fill=f)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.cell(w[2], rh, price_fmt, align="R", fill=f)
+        pdf.cell(w[3], rh, total_mat_fmt, align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
+        row_done()
 
     # Collect all pieces across sectors for consecutive layout
     all_piece_rows = []  # list of (is_sector_header, display_text)
@@ -1438,16 +1453,21 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
     # cotizaciones USD muestran el subtotal en USD en el bloque material
     # para que el cliente vea el monto en dólares antes del grand total
     # mixto (USD material + ARS MO).
+    # PR #424 — `right_rows` (Descuento + TOTAL USD overlay del bloque
+    # material) solo aplican cuando hay bloque material. En modo
+    # products_only el descuento se renderiza más abajo, después del
+    # bloque de sinks (línea aparte, no overlay).
     right_rows = []
-    if discount_pct:
-        desc_amount = round(total_mat_bruto * discount_pct / 100)
-        right_rows.append(("I", f"Descuento {discount_pct}%", f"- {fmt_price(desc_amount)}"))
-        if currency == "USD":
+    if _has_material_block:
+        if discount_pct:
+            desc_amount = round(total_mat_bruto * discount_pct / 100)
+            right_rows.append(("I", f"Descuento {discount_pct}%", f"- {fmt_price(desc_amount)}"))
+            if currency == "USD":
+                right_rows.append(("B", f"TOTAL {currency}", fmt_price(total_mat)))
+        elif currency == "USD":
+            # Keep legacy behavior for USD without discount — always show TOTAL USD
+            # row so the user sees the net material total in the material block.
             right_rows.append(("B", f"TOTAL {currency}", fmt_price(total_mat)))
-    elif currency == "USD":
-        # Keep legacy behavior for USD without discount — always show TOTAL USD
-        # row so the user sees the net material total in the material block.
-        right_rows.append(("B", f"TOTAL {currency}", fmt_price(total_mat)))
 
     # PR #34 — overlay RIGHT COLUMN content (Descuento / TOTAL USD/ARS) en
     # las PRIMERAS filas de piezas, no las últimas. Antes se ponía al final,
@@ -1508,6 +1528,21 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
         pdf.cell(w[3], rh, _fmt_ars(sink['unit_price'] * sink['quantity']), align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
         row_done()
 
+    # PR #424 — Descuento del bloque sinks en modo products_only.
+    # En el flujo normal el descuento se renderiza como overlay del
+    # bloque material; acá no hay bloque material, así que va como
+    # línea propia después de los sinks. Coincide con la convención
+    # del PR #420 (descuento siempre en negativo).
+    if _is_products_only and discount_pct and sinks:
+        sinks_subtotal = sum(s["unit_price"] * s["quantity"] for s in sinks)
+        _disc_sinks = round(sinks_subtotal * discount_pct / 100)
+        f = row_fill()
+        pdf.set_font("Helvetica", "I", 9)
+        pdf.cell(w[0] + w[1], rh, f"Descuento {discount_pct}%", fill=f)
+        pdf.cell(w[2], rh, "", fill=f)
+        pdf.cell(w[3], rh, f"- {_fmt_ars(_disc_sinks)}", align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
+        row_done()
+
     # ── SOBRANTE (merma) — línea separada sumada al grand total ──
     # Regla: "Bloque separado e independiente, subtotal propio. Grand total
     # suma principal + sobrante" (rules/calculation-formulas.md).
@@ -1530,24 +1565,29 @@ def _generate_pdf(pdf_path: Path, data: dict) -> None:
         pdf.cell(w[3], rh, _sob_fmt(sobrante_total_pdf), align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
         row_done()
 
-    # Spacer
-    pdf.ln(2)
+    # PR #424 — Bloque MO solo si hay items. En modo products_only
+    # mo_items=[] y no hay header "MANO DE OBRA" suelto. Esto también
+    # cubre cualquier flujo legacy donde se llegue acá sin MO (raro
+    # pero no rompible).
+    if mo_items:
+        # Spacer
+        pdf.ln(2)
 
-    # MO header
-    f = row_fill()
-    pdf.set_font("Helvetica", "B", 9)
-    pdf.cell(total_w, rh, "MANO DE OBRA", fill=f, new_x="LMARGIN", new_y="NEXT")
-    row_done()
-
-    # MO items
-    for mo in mo_items:
+        # MO header
         f = row_fill()
-        pdf.set_font("Helvetica", "", 9)
-        pdf.cell(w[0], rh, mo["description"], fill=f)
-        pdf.cell(w[1], rh, _fmt_qty(mo["quantity"]), align="R", fill=f)
-        pdf.cell(w[2], rh, _fmt_ars(mo['unit_price']), align="R", fill=f)
-        pdf.cell(w[3], rh, _fmt_ars(round(mo['unit_price'] * mo['quantity'])), align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(total_w, rh, "MANO DE OBRA", fill=f, new_x="LMARGIN", new_y="NEXT")
         row_done()
+
+        # MO items
+        for mo in mo_items:
+            f = row_fill()
+            pdf.set_font("Helvetica", "", 9)
+            pdf.cell(w[0], rh, mo["description"], fill=f)
+            pdf.cell(w[1], rh, _fmt_qty(mo["quantity"]), align="R", fill=f)
+            pdf.cell(w[2], rh, _fmt_ars(mo['unit_price']), align="R", fill=f)
+            pdf.cell(w[3], rh, _fmt_ars(round(mo['unit_price'] * mo['quantity'])), align="R", fill=f, new_x="LMARGIN", new_y="NEXT")
+            row_done()
 
     # MO commercial discount line (edificio "% sobre MO") — before Total PESOS
     _mo_disc_pct = data.get("mo_discount_pct", 0)
@@ -1662,6 +1702,13 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     total_ars = data.get("total_ars", 0)
     total_usd = data.get("total_usd", 0)
 
+    # PR #424 — modo products_only (mismo gate que el PDF). Si no hay
+    # material real, no escribimos nada en row 22 (mat header) ni en
+    # el overlay de descuento del bloque material. Excel y PDF
+    # mantienen consistencia visual.
+    _is_products_only = data.get("_quote_mode") == "products_only"
+    _has_material_block = bool(mat_name) and (mat_m2 or 0) > 0
+
     bold = Font(name="Arial", bold=True, size=10)
     normal = Font(name="Arial", bold=False, size=10)
     small = Font(name="Arial", bold=False, size=9)
@@ -1706,22 +1753,27 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     if discount_pct:
         total_mat_net = total_mat - round(total_mat * discount_pct / 100)
 
-    import re as _re_xl
-    _thickness_xl = data.get("thickness_mm", 20)
-    ws["A22"].value = f"{mat_name} - {_thickness_xl}mm" if not _re_xl.search(r'\d+[Mm][Mm]', mat_name) else mat_name
-    ws["D22"].value = mat_m2
-    ws["D22"].number_format = qty_fmt
-    if currency == "USD":
-        ws["E22"].value = _fmt_usd(mat_price)
-        ws["F22"].value = _fmt_usd(total_mat)  # Bruto (before discount)
-    else:
-        ws["E22"].value = mat_price
-        ws["E22"].number_format = ars_fmt
-        ws["F22"].value = total_mat  # Bruto (before discount)
-        ws["F22"].number_format = ars_fmt
-    # Zebra row 0 (material header) — no fill
-    _apply_zebra(22)
-    _zebra_done()
+    # PR #424 — Material header row solo si hay material. En modo
+    # products_only dejamos row 22 vacío (sin escribir mat_name=""
+    # ni cantidades $0,00 ruidosas). El template ya tiene el grid
+    # dibujado, así que la fila aparece en blanco — limpia.
+    if _has_material_block:
+        import re as _re_xl
+        _thickness_xl = data.get("thickness_mm", 20)
+        ws["A22"].value = f"{mat_name} - {_thickness_xl}mm" if not _re_xl.search(r'\d+[Mm][Mm]', mat_name) else mat_name
+        ws["D22"].value = mat_m2
+        ws["D22"].number_format = qty_fmt
+        if currency == "USD":
+            ws["E22"].value = _fmt_usd(mat_price)
+            ws["F22"].value = _fmt_usd(total_mat)  # Bruto (before discount)
+        else:
+            ws["E22"].value = mat_price
+            ws["E22"].number_format = ars_fmt
+            ws["F22"].value = total_mat  # Bruto (before discount)
+            ws["F22"].number_format = ars_fmt
+        # Zebra row 0 (material header) — no fill
+        _apply_zebra(22)
+        _zebra_done()
 
     # ── ONLY replace .value — NEVER touch .font, .fill, .alignment, .border ──
     # The template has all formatting correct. We just swap the data.
@@ -1749,6 +1801,13 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     # Reservar filas para piletas: 1 header + N rows (si hay piletas).
     sinks_block_size = (1 + len(sinks)) if sinks else 0
     extra_for_sinks = sinks_block_size
+    # PR #424 — reserva 1 fila extra para el descuento de sinks en
+    # modo products_only. Se inserta después del último sink, antes
+    # de SOBRANTE / MO header.
+    extra_for_products_disc = (
+        1 if (_is_products_only and discount_pct and sinks) else 0
+    )
+    extra_for_sinks += extra_for_products_disc
     _sob_m2_pre = data.get("sobrante_m2", 0)
     _sob_total_pre = data.get("sobrante_total", 0)
     extra_for_sobrante_pre = 2 if (_sob_m2_pre and _sob_total_pre) else 0
@@ -1772,16 +1831,21 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     # del operador (mismo cambio que el PDF). USD se mantiene porque
     # aclara al cliente el monto en dólares antes del grand total mixto.
     # Ver document_tool.py:1428 (PDF) para el racional completo.
+    # PR #424 — `right_rows_xl` (Descuento + TOTAL USD overlay del
+    # bloque material) solo si hay bloque material. Mismo criterio
+    # que el PDF: en modo products_only el descuento se renderiza
+    # como línea aparte después del bloque sinks.
     italic_sm = Font(name="Arial", italic=True, size=9)
     _xl_fmt = _fmt_usd if currency == "USD" else _fmt_ars
     right_rows_xl = []
-    if discount_pct:
-        desc_amount = round(total_mat * discount_pct / 100)
-        right_rows_xl.append(("I", f"Descuento {discount_pct}%", f"- {_xl_fmt(desc_amount)}"))
-        if currency == "USD":
+    if _has_material_block:
+        if discount_pct:
+            desc_amount = round(total_mat * discount_pct / 100)
+            right_rows_xl.append(("I", f"Descuento {discount_pct}%", f"- {_xl_fmt(desc_amount)}"))
+            if currency == "USD":
+                right_rows_xl.append(("B", f"TOTAL {currency}", _xl_fmt(total_mat_net)))
+        elif currency == "USD":
             right_rows_xl.append(("B", f"TOTAL {currency}", _xl_fmt(total_mat_net)))
-    elif currency == "USD":
-        right_rows_xl.append(("B", f"TOTAL {currency}", _xl_fmt(total_mat_net)))
 
     # PR #34 — overlay en las PRIMERAS piezas (no las últimas), para que
     # TOTAL USD/ARS aparezca inmediatamente debajo del subtotal del
@@ -1835,6 +1899,26 @@ def _generate_excel(output_path: Path, data: dict) -> None:
             _apply_zebra(srow)
             _zebra_done()
 
+        # PR #424 — descuento de sinks en modo products_only. Igual
+        # criterio que PDF: una fila al final del bloque sinks con
+        # `Descuento N%` y monto en negativo. NO se aplica al modo
+        # normal (donde el descuento ya va en el overlay del bloque
+        # material).
+        if _is_products_only and discount_pct:
+            sinks_subtotal = sum(
+                (s.get("unit_price", 0) or 0) * (s.get("quantity", 0) or 0)
+                for s in sinks
+            )
+            _disc_sinks = round(sinks_subtotal * discount_pct / 100)
+            disc_row = sinks_header_row + 1 + len(sinks)
+            ws.cell(disc_row, 1).value = f"Descuento {discount_pct}%"
+            ws.cell(disc_row, 1).font = italic_sm
+            ws.cell(disc_row, 6).value = -_disc_sinks
+            ws.cell(disc_row, 6).number_format = ars_fmt
+            ws.cell(disc_row, 6).font = italic_sm
+            _apply_zebra(disc_row)
+            _zebra_done()
+
     # ── SOBRANTE (merma) — línea separada al grand total ──
     sobrante_m2_xl = data.get("sobrante_m2", 0)
     sobrante_total_xl = data.get("sobrante_total", 0)
@@ -1868,23 +1952,36 @@ def _generate_excel(output_path: Path, data: dict) -> None:
     if extra_mo > 0:
         ws.insert_rows(MO_START_ROW + TEMPLATE_MO_SLOTS, extra_mo)
 
-    ws.cell(MO_HEADER_ROW, 1).value = "MANO DE OBRA"
-    _apply_zebra(MO_HEADER_ROW)
-    _zebra_done()
-    for i, mo in enumerate(mo_items):
-        row = MO_START_ROW + i
-        ws.cell(row, 1).value = mo["description"]
-        ws.cell(row, 4).value = mo["quantity"]
-        ws.cell(row, 4).number_format = qty_fmt
-        ws.cell(row, 5).value = mo["unit_price"]
-        ws.cell(row, 5).number_format = ars_fmt
-        ws.cell(row, 6).value = f"=D{row}*E{row}"
-        ws.cell(row, 6).number_format = ars_fmt
-        _apply_zebra(row)
+    # PR #424 — MO header solo si hay items. En modo products_only
+    # mo_items=[] y la fila 27 queda vacía (limpia, sin "MANO DE
+    # OBRA" suelto sobre nada).
+    if mo_items:
+        ws.cell(MO_HEADER_ROW, 1).value = "MANO DE OBRA"
+        _apply_zebra(MO_HEADER_ROW)
         _zebra_done()
+        for i, mo in enumerate(mo_items):
+            row = MO_START_ROW + i
+            ws.cell(row, 1).value = mo["description"]
+            ws.cell(row, 4).value = mo["quantity"]
+            ws.cell(row, 4).number_format = qty_fmt
+            ws.cell(row, 5).value = mo["unit_price"]
+            ws.cell(row, 5).number_format = ars_fmt
+            ws.cell(row, 6).value = f"=D{row}*E{row}"
+            ws.cell(row, 6).number_format = ars_fmt
+            _apply_zebra(row)
+            _zebra_done()
 
     # MO commercial discount line (edificio "% sobre MO") — before Total PESOS
-    mo_end_row = MO_START_ROW + len(mo_items) - 1
+    # PR #424 — si no hay mo_items, `mo_end_row` apuntaría al header
+    # del bloque MO (que tampoco se rendereó). Ajustamos para que
+    # `Total PESOS` quede al inicio del bloque MO reservado.
+    if mo_items:
+        mo_end_row = MO_START_ROW + len(mo_items) - 1
+    else:
+        # Sin MO: dejamos el `Total PESOS` justo donde habría ido el
+        # header MO. Saltamos ese row vacío para que no quede
+        # arrastrando demasiado espacio en blanco entre sinks y total.
+        mo_end_row = MO_HEADER_ROW - 1
     _mo_disc_pct = data.get("mo_discount_pct", 0)
     _mo_disc_amt = data.get("mo_discount_amount", 0)
     if _mo_disc_pct and _mo_disc_amt:

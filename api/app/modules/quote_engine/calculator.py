@@ -970,6 +970,181 @@ def calculate_merma(m2_needed: float, material_type: str, is_edificio: bool = Fa
         }
 
 
+def _calculate_quote_products_only(input_data: dict, warnings: list[str]) -> dict:
+    """Cotización SOLO producto (pileta/bacha como mercadería suelta).
+
+    **Por qué existe** (PR #424, caso DYSCON 29/04/2026):
+
+    El operador pidió 32 piletas Johnson E50 "solo producto, sin MO,
+    sin flete, descuento 5%". El flujo principal exige material+pieces;
+    sin eso devolvía un PDF con:
+    - Bloque material vacío $0,00.
+    - "Productos Johnson" como header con un sub-line raro.
+    - MO inventada por Sonnet (qty=1, precio absurdo).
+    - **`Total PESOS` SIN sumar las piletas** → cliente cobrado de menos.
+
+    Este modo:
+    - NO busca material (`material_name` queda vacío).
+    - NO inyecta MO automática (la línea "Agujero y pegado pileta" del
+      flujo normal NO se agrega — el operador la pidió "sin MO").
+    - NO calcula merma ni colocación.
+    - Resuelve los sinks desde el catálogo si vino solo el SKU.
+    - Descuento aplica sobre el subtotal de sinks (línea separada).
+    - `total_ars = sum(sinks) - descuento_amount`.
+    - Devuelve `_quote_mode="products_only"` para que renderers y
+      validators sepan en qué modo quedar.
+
+    El flag `_quote_mode` se persiste con el resto del breakdown vía
+    `_merged_bd = dict(calc_result)` en agent.py y se respeta en
+    `_canonicalize_quotes_data_from_db` (agregado a `_VISUAL_FIELDS`).
+    Eso permite regenerar el PDF de un quote viejo manteniendo el modo.
+
+    **Lo que NO hace:**
+    - No verifica que el cliente sea arquitecta para auto-descuento —
+      una pileta suelta NO es trabajo de arquitecta. Override del
+      `_auto_architect_discount` ya está cubierto en el detector
+      (la función no se llama si `auto_discount_override=True`).
+    - No agrega flete (un producto suelto se entrega o se retira en
+      taller; el operador decide explícitamente si quiere cobrarlo
+      armando un mo_item de flete y mandándolo aparte — fuera del
+      scope de este modo).
+    """
+    from app.modules.agent.tools.catalog_tool import (
+        catalog_lookup,
+        fuzzy_sink_lookup,
+    )
+
+    client_name = (input_data.get("client_name") or "").strip()
+    project = (input_data.get("project") or "").strip()
+    plazo = input_data.get("plazo") or "A confirmar"
+    date_str = input_data.get("date") or datetime.now().strftime("%d.%m.%Y")
+    discount_pct = float(input_data.get("discount_pct") or 0)
+
+    # ── Resolver sinks ─────────────────────────────────────────────
+    # Caminos:
+    # A) Operador (vía Sonnet) ya pasó `sinks: [{"name", "quantity",
+    #    "unit_price"}]` armado → usar verbatim.
+    # B) Solo viene `pileta_sku` y `pileta_qty` → buscar en sinks.json
+    #    (exact match → fuzzy fallback).
+    # C) Mixto: prefiere el sinks explícito si vino, completa con
+    #    pileta_sku si solo hay uno.
+    resolved_sinks: list[dict] = []
+    sinks_in = input_data.get("sinks") or []
+    if sinks_in:
+        # Path A — confiar en lo que pasó Sonnet, pero validar shape
+        # mínimo y filtrar entradas mal formadas.
+        for s in sinks_in:
+            if not isinstance(s, dict):
+                continue
+            name = (s.get("name") or "").strip()
+            qty = int(s.get("quantity") or 0)
+            unit_price = float(s.get("unit_price") or 0)
+            if not name or qty <= 0 or unit_price <= 0:
+                warnings.append(
+                    f"⚠️ Sink ignorado por shape inválido: {s!r}. "
+                    "Verificá name/quantity/unit_price."
+                )
+                continue
+            resolved_sinks.append({
+                "name": name,
+                "quantity": qty,
+                "unit_price": unit_price,
+            })
+    else:
+        # Path B — solo SKU + qty, lookup en catálogo.
+        pileta_sku = input_data.get("pileta_sku")
+        pileta_qty = int(input_data.get("pileta_qty") or 0)
+        if pileta_sku and pileta_qty > 0:
+            sink_result = catalog_lookup("sinks", pileta_sku)
+            if not sink_result or not sink_result.get("found"):
+                sink_result = fuzzy_sink_lookup(pileta_sku)
+                if sink_result and sink_result.get("found"):
+                    warnings.append(
+                        f"Pileta '{pileta_sku}' no encontrada exacta. "
+                        f"Se usó: {sink_result.get('name')}"
+                    )
+            if sink_result and sink_result.get("found"):
+                resolved_sinks.append({
+                    "name": sink_result.get("name", pileta_sku),
+                    "quantity": pileta_qty,
+                    "unit_price": float(sink_result.get("price_ars") or 0),
+                })
+            else:
+                return {
+                    "ok": False,
+                    "error": (
+                        f"⛔ Pileta '{pileta_sku}' no encontrada en el "
+                        f"catálogo de sinks. Verificá el SKU o pasá el "
+                        f"sinks armado con name/quantity/unit_price."
+                    ),
+                }
+
+    if not resolved_sinks:
+        return {
+            "ok": False,
+            "error": (
+                "⛔ Modo solo-producto detectado pero ningún sink/pileta "
+                "válido pudo resolverse. Pasá `sinks: [{name, quantity, "
+                "unit_price}]` o (`pileta_sku` + `pileta_qty`)."
+            ),
+        }
+
+    # ── Totales ────────────────────────────────────────────────────
+    sinks_subtotal = sum(s["unit_price"] * s["quantity"] for s in resolved_sinks)
+    discount_amount = (
+        round(sinks_subtotal * discount_pct / 100) if discount_pct > 0 else 0
+    )
+    total_ars = sinks_subtotal - discount_amount
+
+    return {
+        "ok": True,
+        "_quote_mode": "products_only",  # ← persistido vía _merged_bd
+        "client_name": client_name,
+        "project": project,
+        "date": date_str.replace("/", "."),
+        "delivery_days": plazo,
+        # Material vacío explícito — los renderers chequean estos
+        # campos para no emitir bloque material.
+        "material_name": "",
+        "material_type": "",
+        "thickness_mm": 0,
+        "material_m2": 0,
+        "material_price_unit": 0,
+        "material_price_base": 0,
+        "material_currency": "ARS",
+        "material_total": 0,
+        "discount_pct": discount_pct,
+        "discount_amount": discount_amount,
+        "mo_discount_pct": 0,
+        "mo_discount_amount": 0,
+        "merma": {"aplica": False, "motivo": "Cotización solo producto"},
+        "sobrante_m2": 0,
+        "sobrante_total": 0,
+        "piece_details": [],
+        "sectors": [],
+        "mo_items": [],            # ← cero MO en este modo
+        "total_mo_ars": 0,
+        "sinks": resolved_sinks,
+        "total_ars": total_ars,
+        "total_usd": 0,
+        "has_m2_override": False,
+        "localidad": (input_data.get("localidad") or "").strip(),
+        "colocacion": False,
+        "is_edificio": False,
+        "pileta": input_data.get("pileta"),
+        "pileta_qty": sum(s["quantity"] for s in resolved_sinks),
+        "anafe": False,
+        "frentin": False,
+        "frentin_ml": 0,
+        "regrueso": False,
+        "regrueso_ml": 0,
+        "inglete": False,
+        "pulido": False,
+        "skip_flete": True,  # explícito — no aplica flete en este modo
+        **({"warnings": warnings} if warnings else {}),
+    }
+
+
 def calculate_quote(input_data: dict) -> dict:
     """
     Calculate a complete quote from input data.
@@ -1010,6 +1185,33 @@ def calculate_quote(input_data: dict) -> dict:
                 "antes de calcular: '¿Cuál es el nombre de la obra/proyecto?'."
             ),
         }
+    # PR #424 — modo "products_only" para cotizaciones de pileta/bacha
+    # como producto suelto, sin material+MO+colocación. Caso DYSCON
+    # (29/04/2026): operador pidió 32 piletas Johnson E50 "solo
+    # producto, sin MO, sin flete, descuento 5%". El flujo normal
+    # pedía material + pieces, fallaba con fuzzy match raro y emitía
+    # un PDF con material vacío $0, MO inventada y total que no
+    # incluía las piletas (le cobraba la mitad al cliente).
+    #
+    # Detección automática: pieces vacío + sinks/pileta presente +
+    # NO instalación/regrueso/anafe (que requerirían material). Sin
+    # flag explícito por ahora — YAGNI hasta que aparezca un caso
+    # ambiguo. Si se dispara, hay un branch a una función separada
+    # que NO toca el flujo principal.
+    _pieces_in = input_data.get("pieces") or []
+    _sinks_in = input_data.get("sinks") or []
+    _pileta_qty_check = int(input_data.get("pileta_qty") or 0)
+    _is_products_only = (
+        len(_pieces_in) == 0
+        and (len(_sinks_in) > 0 or _pileta_qty_check > 0)
+        and not input_data.get("colocacion")
+        and not input_data.get("regrueso")
+        and not input_data.get("anafe")
+        and not input_data.get("auto_discount_override")
+    )
+    if _is_products_only:
+        return _calculate_quote_products_only(input_data, warnings)
+
     material_name = input_data["material"]
     pieces = input_data["pieces"]
     localidad = input_data.get("localidad") or "rosario"  # Default Rosario if empty

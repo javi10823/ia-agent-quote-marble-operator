@@ -799,6 +799,11 @@ async def _canonicalize_quotes_data_from_db(
         # era PILETAS block en el PDF con producto que no estaba en la
         # quote recalculada.
         "sinks",
+        # PR #424 — preservar el flag de modo en regeneraciones de PDF.
+        # Sin esto, regenerar el PDF de un quote products_only viejo
+        # haría que el render volviera al flujo normal y emitiera
+        # bloque material vacío + MO inventada.
+        "_quote_mode",
     )
 
     for qdata in quotes_data:
