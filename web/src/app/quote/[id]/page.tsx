@@ -1182,7 +1182,34 @@ function DetailView({ quote, breakdown, onSwitchToChat, onGenerate, generating, 
           )}
           <MetaItem label="Material" value={quote.material || DASH} />
           <MetaItem label="Fecha" value={new Date(quote.created_at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })} />
-          <MetaItem label="Demora" value={breakdown?.delivery_days || DASH} />
+          {/* PR #440 (P2.1) — Demora editable inline. Se persiste en
+              `quote_breakdown.delivery_days` (no hay columna). El handler
+              `PATCH /quotes` desde PR #437 acepta el campo. */}
+          {onFieldUpdate ? (
+            <EditableField
+              label="Demora"
+              type="text"
+              value={breakdown?.delivery_days ?? null}
+              placeholder="Ej: 30 días, 4 meses, A confirmar"
+              onSave={(v) => onFieldUpdate({ delivery_days: v })}
+            />
+          ) : (
+            <MetaItem label="Demora" value={breakdown?.delivery_days || DASH} />
+          )}
+          {/* PR #440 (P2.1) — Localidad editable inline. Sync a
+              breakdown desde PR #438. Antes el operador sólo podía
+              cambiarla via chat con Sonnet. */}
+          {onFieldUpdate ? (
+            <EditableField
+              label="Localidad"
+              type="text"
+              value={quote.localidad ?? null}
+              placeholder="Ej: Rosario, Piñero, Cañada de Gómez"
+              onSave={(v) => onFieldUpdate({ localidad: v })}
+            />
+          ) : (
+            <MetaItem label="Localidad" value={quote.localidad || DASH} />
+          )}
           <MetaItem label="Origen" value={quote.source === "web" ? "Web (chatbot)" : "Operador"} />
           <MetaItem label="Total ARS" value={quote.total_ars ? fmtARS(quote.total_ars) : DASH} highlight />
           <MetaItem label="Total USD" value={quote.total_usd ? fmtUSD(quote.total_usd) : DASH} highlight />

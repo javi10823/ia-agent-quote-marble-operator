@@ -323,9 +323,11 @@ export type QuoteEditablePatch = Partial<{
   project: string;
   notes: string;
   // PR #437 (P1.2) — delivery_days expuesto en el endpoint REST.
-  // Soportado por el backend; el EditableField del frontend lo
-  // expone en P2.1 (PR siguiente).
+  // P2.1 (PR #440) lo conecta a un EditableField del DetailView.
   delivery_days: string;
+  // PR #440 (P2.1) — localidad editable inline. Soportada por el
+  // endpoint REST desde antes; el sync a breakdown llegó en PR #438.
+  localidad: string;
 }>;
 
 export async function updateQuote(id: string, patch: QuoteEditablePatch): Promise<void> {
