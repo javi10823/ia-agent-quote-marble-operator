@@ -627,6 +627,13 @@ export default function QuotePage() {
           {quote?.drive_pdf_url && <FileLink href={quote.drive_pdf_url} label="PDF Drive" cls="border-acc/20 text-acc" />}
           {quote?.drive_excel_url && <FileLink href={quote.drive_excel_url} label="Excel Drive" cls="border-emerald-400/20 text-emerald-400" />}
           {!quote?.drive_pdf_url && quote?.pdf_url && <FileLink href={quote.pdf_url} label="PDF" cls="border-red-400/20 text-red-400" />}
+          {/* Auditoría: link a /admin (uso interno del operador). */}
+          <a
+            href={`/admin/quotes/${quoteId}/audit`}
+            className="text-[11px] px-2 py-1 rounded border border-b1 text-t3 hover:text-t1 hover:border-b2 transition no-underline"
+          >
+            Auditoría
+          </a>
           {/* Regenerar: solo si hay docs ya generados Y hay breakdown para reutilizar */}
           <RegenerateButton
             quoteId={quoteId}

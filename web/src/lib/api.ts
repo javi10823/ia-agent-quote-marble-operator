@@ -999,3 +999,79 @@ export async function deleteUser(id: string): Promise<void> {
     throw new Error(err.detail || "Error al eliminar usuario");
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Observability — auditoría operativa (PR #444)
+// ─────────────────────────────────────────────────────────────────────
+
+export type AuditEvent = {
+  id: string;
+  created_at: string;
+  event_type: string;
+  source: string;
+  quote_id: string | null;
+  session_id: string | null;
+  actor: string;
+  actor_kind: string;
+  request_id: string | null;
+  turn_index: number | null;
+  summary: string;
+  payload: Record<string, unknown>;
+  payload_truncated: boolean;
+  success: boolean;
+  error_message: string | null;
+  elapsed_ms: number | null;
+};
+
+export type AuditTimeline = {
+  quote_id: string;
+  events: AuditEvent[];
+  coverage: { first_event_date: string | null; has_events_for_quote: boolean };
+};
+
+export type AuditGlobalPage = {
+  events: AuditEvent[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type AuditCoverage = {
+  first_event_date: string | null;
+  total_events: number;
+};
+
+export async function fetchQuoteAudit(quoteId: string): Promise<AuditTimeline> {
+  const res = await apiFetch(`${API_BASE}/api/admin/quotes/${quoteId}/audit`, { credentials: "include" });
+  handleAuthError(res);
+  if (!res.ok) throw new Error("Error al cargar auditoría");
+  return res.json();
+}
+
+export async function fetchAuditCoverage(): Promise<AuditCoverage> {
+  const res = await apiFetch(`${API_BASE}/api/admin/audit/coverage`, { credentials: "include" });
+  handleAuthError(res);
+  if (!res.ok) throw new Error("Error al cargar cobertura de auditoría");
+  return res.json();
+}
+
+export async function fetchGlobalAudit(params: {
+  event_type?: string;
+  actor?: string;
+  success?: boolean;
+  quote_id?: string;
+  source?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<AuditGlobalPage> {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== "") qs.append(k, String(v));
+  });
+  const res = await apiFetch(`${API_BASE}/api/admin/observability?${qs.toString()}`, { credentials: "include" });
+  handleAuthError(res);
+  if (!res.ok) throw new Error("Error al cargar observability");
+  return res.json();
+}
