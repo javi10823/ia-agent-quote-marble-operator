@@ -54,6 +54,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
       <div className="flex-1" style={{ padding: "12px 10px" }}>
         <NavRow icon={<InboxIcon />} label="Presupuestos" count={quotes.length} active={path === "/"} onClick={() => navigate("/")} />
         <NavRow icon={<BookIcon />} label="Catálogo" active={path === "/config"} onClick={() => navigate("/config")} />
+        <NavRow icon={<PulseIcon />} label="Auditoría" active={path?.startsWith("/admin/observability") ?? false} onClick={() => navigate("/admin/observability")} />
         <NavRow icon={<CogIcon />} label="Configuración" active={path === "/settings"} onClick={() => navigate("/settings")} />
       </div>
 
@@ -194,4 +195,8 @@ function BookIcon() {
 }
 function CogIcon() {
   return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>;
+}
+function PulseIcon() {
+  // Pulse / activity — para "Auditoría". Línea con pico tipo monitor.
+  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>;
 }
