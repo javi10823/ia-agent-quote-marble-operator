@@ -1088,16 +1088,31 @@ async def regenerate_quote_docs(
     # Audit: docs.regenerated — punto canónico único. Reemplaza el
     # `logging.info` de abajo. Drive info incluida en payload (en lugar
     # de un evento `drive.uploaded` separado, ver desvío del plan).
+    # Honestidad operativa (E2E test #4): si pidió Drive y falló (alguna
+    # URL None), success=False con error_message explícito — no mentir.
+    _drive_failed = not (new_drive_pdf_url and new_drive_excel_url)
+    _missing_parts = []
+    if not new_drive_pdf_url:
+        _missing_parts.append("PDF")
+    if not new_drive_excel_url:
+        _missing_parts.append("Excel")
+    _re_error = (
+        f"Drive upload failed for: {', '.join(_missing_parts)} "
+        f"(local regeneration OK)"
+    ) if _drive_failed else None
     await log_event(
         db, event_type="docs.regenerated", source="router",
-        summary=f"PDF + Excel regenerated (status unchanged)",
+        summary=f"PDF + Excel regenerated{' (drive partial-fail)' if _drive_failed else ''}",
         request=request, quote_id=quote_id,
         payload={
             "pdf_url_before": quote.pdf_url, "pdf_url_after": pdf_url,
             "excel_url_before": quote.excel_url, "excel_url_after": excel_url,
             "drive_pdf_url": new_drive_pdf_url, "drive_excel_url": new_drive_excel_url,
             "drive_file_id": final_drive_file_id,
+            "drive_ok": not _drive_failed,
         },
+        success=not _drive_failed,
+        error_message=_re_error,
     )
     await db.commit()
     return {
