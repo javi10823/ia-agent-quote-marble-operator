@@ -29,6 +29,7 @@ async def init_db():
         # noqa - ensures models are registered in Base.metadata before create_all
         from app.models import quote, user, plan_topology_cache  # noqa: F401
         from app.modules.observability import models as _audit_models  # noqa: F401
+        from app.modules.observability import system_config as _sysconfig_models  # noqa: F401
         await conn.run_sync(Base.metadata.create_all)
 
         # Migrations only needed for PostgreSQL (existing deploys)
@@ -184,6 +185,23 @@ async def init_db():
                     pass
                 else:
                     logging.warning(f"audit index FAILED: {idx_sql[:60]}... → {e}")
+
+        # PR — Phase 2 (global debug mode): columna debug_payload en
+        # audit_events para distinguir events capturados con global_debug=ON.
+        # ⚠️ Mismo aviso del comentario anterior: ALTER TABLE ADD COLUMN IF
+        # NOT EXISTS está OK para columnas aditivas. Cambios destructivos
+        # van en PR dedicado con upgrade path testeado.
+        try:
+            await conn.execute(
+                __import__("sqlalchemy").text(
+                    "ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS "
+                    "debug_payload BOOLEAN NOT NULL DEFAULT FALSE"
+                )
+            )
+        except Exception as e:
+            err_lower = str(e).lower()
+            if "already exists" not in err_lower and "duplicate" not in err_lower:
+                logging.warning(f"audit_events.debug_payload migration FAILED: {e}")
 
         # Add 'pending' value to quotestatus enum if not present
         try:

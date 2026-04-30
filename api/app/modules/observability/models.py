@@ -68,6 +68,13 @@ class AuditEvent(Base):
     payload_truncated: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )
+    # Phase 2 — TRUE cuando este event fue grabado con `global_debug`
+    # activo. Implica que su payload puede pesar hasta 16 KB (vs 2/4
+    # KB normales) y contiene `tool_input` / `tool_result` / brief
+    # text completos. Bundle copy NO incluye payloads de estos events.
+    debug_payload: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
 
     success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

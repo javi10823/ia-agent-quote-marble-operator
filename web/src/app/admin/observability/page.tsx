@@ -16,8 +16,11 @@ import Link from "next/link";
 import {
   fetchAuditCoverage,
   fetchGlobalAudit,
+  fetchGlobalDebugStatus,
+  setGlobalDebug,
   type AuditEvent,
   type AuditCoverage,
+  type GlobalDebugStatus,
 } from "@/lib/api";
 
 const PAGE_SIZE = 50;
@@ -39,6 +42,141 @@ const EVENT_TYPES = [
 
 function formatTs(iso: string): string {
   return new Date(iso).toLocaleString("es-AR", { hour12: false });
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Bloque de toggle del modo debug global
+// ─────────────────────────────────────────────────────────────────────
+
+function GlobalDebugToggle() {
+  const [status, setStatus] = useState<GlobalDebugStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = async () => {
+    try {
+      setStatus(await fetchGlobalDebugStatus());
+    } catch {
+      setStatus(null);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  async function handleToggle(mode: "1h" | "end_of_day" | "manual" | "off") {
+    if (busy) return;
+    if (mode === "manual") {
+      const ok = window.confirm(
+        "Modo manual no expira automáticamente hasta las 24h. " +
+          "Vas a ver un banner rojo en toda la app hasta que lo apagues. " +
+          "¿Continuar?"
+      );
+      if (!ok) return;
+    }
+    setBusy(true);
+    try {
+      const next = await setGlobalDebug(mode);
+      setStatus(next);
+    } catch (e) {
+      alert((e as Error).message || "Error al cambiar modo debug");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const isOn = !!status?.enabled;
+
+  return (
+    <div className="border border-zinc-800 rounded p-4 mb-6 bg-zinc-900/40">
+      <div className="text-xs uppercase tracking-wider text-zinc-500 mb-2">
+        Configuración de auditoría
+      </div>
+      {!isOn ? (
+        <>
+          <div className="text-sm text-zinc-300 mb-3">
+            Estado: <span className="text-zinc-400">⚪ Modo normal</span>{" "}
+            <span className="text-zinc-500">
+              (payloads truncados a 2-4 KB)
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => handleToggle("1h")}
+              className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-sm text-zinc-200 disabled:opacity-50"
+            >
+              Activar 1 hora
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => handleToggle("end_of_day")}
+              className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-sm text-zinc-200 disabled:opacity-50"
+            >
+              Activar hasta fin del día
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => handleToggle("manual")}
+              className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-sm text-zinc-200 disabled:opacity-50"
+            >
+              Activar manual (24h máx)
+            </button>
+          </div>
+          <p className="text-xs text-zinc-500 mt-3 max-w-2xl">
+            Cuando está activo, el sistema captura <code className="text-zinc-400">tool_input</code>,{" "}
+            <code className="text-zinc-400">tool_result</code> y el texto completo del brief
+            en cada evento (hasta 16 KB), permitiendo reproducir bugs sin Railway logs.
+            La sanitización de PII (teléfono, email, dirección, nombre cliente, etc.)
+            sigue activa.
+          </p>
+        </>
+      ) : (
+        <>
+          <div className="text-sm text-zinc-100 mb-3">
+            Estado:{" "}
+            <span className="text-red-400 font-medium">🔴 DEBUG ACTIVO</span>
+            {status?.mode && (
+              <span className="text-zinc-400 ml-2">
+                · modo {status.mode === "1h" ? "1 hora" : status.mode === "end_of_day" ? "fin del día" : "manual"}
+              </span>
+            )}
+          </div>
+          <div className="text-xs text-zinc-500 mb-3 space-y-1">
+            {status?.started_at && (
+              <div>
+                Activado: <span className="font-mono text-zinc-400">{formatTs(status.started_at)}</span>
+                {status.started_by && <> por <span className="text-zinc-400">{status.started_by}</span></>}
+              </div>
+            )}
+            {status?.until ? (
+              <div>
+                Expira: <span className="font-mono text-zinc-400">{formatTs(status.until)}</span>
+                {status.remaining_seconds !== null && (
+                  <span className="text-zinc-500"> · queda {Math.floor(status.remaining_seconds / 60)} min</span>
+                )}
+              </div>
+            ) : (
+              <div>
+                Sin expiración fija. Auto-shutoff a las 24h del activado.
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => handleToggle("off")}
+            className="px-3 py-1.5 bg-red-600 hover:bg-red-500 rounded text-sm text-white font-medium disabled:opacity-50"
+          >
+            {busy ? "Desactivando…" : "Desactivar debug"}
+          </button>
+        </>
+      )}
+    </div>
+  );
 }
 
 export default function ObservabilityPage() {
@@ -116,6 +254,8 @@ export default function ObservabilityPage() {
           </>
         )}
       </p>
+
+      <GlobalDebugToggle />
 
       {/* Filtros */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">

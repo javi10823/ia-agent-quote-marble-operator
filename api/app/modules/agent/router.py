@@ -2102,11 +2102,15 @@ async def chat(
         plan_files=len(plan_files or []),
     )
     # Audit: chat.message_sent — punto canónico único.
+    # Phase 2: en modo debug global, capturamos el texto del brief
+    # completo para reproducir bugs de interpretación. Sin debug,
+    # solo metadata (largo + cantidad de archivos).
     await log_event(
         db, event_type="chat.message_sent", source="router",
         summary=f"Operator sent chat message ({len(message or '')} chars, {len(plan_files or [])} files)",
         request=request, quote_id=quote_id,
         payload={"message_chars": len(message or ""), "plan_files_count": len(plan_files or [])},
+        debug_only_payload={"message_text": message or ""},
     )
 
     # Budget check — read DIRECTLY from DB (not cached config — multi-worker cache stale)

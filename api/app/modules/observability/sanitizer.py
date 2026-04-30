@@ -13,10 +13,9 @@ Dos transformaciones independientes:
    completitud heurística.
 
 2. `truncate_payload(payload, max_bytes)` — si la serialización
-   JSON supera `max_bytes` (default 8 KB), reemplaza por un shape
-   sin valores: `{key: "<truncated>"}`. La UI muestra
-   `payload_truncated=True` y el operador sabe que hay que mirar
-   los logs raw para el detalle.
+   JSON supera `max_bytes` (default 2 KB; 4 KB para eventos pesados;
+   16 KB en modo debug global), reemplaza por un shape sin valores:
+   `{key: "<truncated>"}`. La UI muestra `payload_truncated=True`.
 
 Ambas se exponen como helpers puros: el caller los compone en
 `log_event()`.
@@ -35,6 +34,7 @@ from typing import Any
 # Mantener corta y explícita — agregar acá si aparece un campo nuevo
 # que no debería salir en logs.
 _REDACT_KEY_SUBSTRINGS = (
+    # ── Phase 1 (PR #445) — INTACTAS, no se reemplazan ──
     "password",
     "token",
     "secret",
@@ -50,6 +50,24 @@ _REDACT_KEY_SUBSTRINGS = (
     "dni",
     "cuit",
     "email",  # client_email, user_email — todos PII
+    # ── Phase 2 (modo debug global) — agregadas ──
+    # PII directa: nombre del cliente final.
+    "client_name",
+    "cliente",
+    "nombre_cliente",
+    # Comercial-sensible: precios internos / costos.
+    # NO incluyo `cost` solo (substring) — rompería `cost_breakdown`,
+    # `labor_cost`, `material_cost`, `cost_per_m2` que son LEGÍTIMOS
+    # en debug mode. Si un `internal_cost` aparece sin tag explícito
+    # en el futuro, agregar la key específica.
+    "cost_price",
+    "precio_costo",
+    "internal_price",
+    # Direcciones libres que aparecen como strings dentro de
+    # `pieces[].description` o `notes` — alternativas a `address`.
+    "obra",
+    "ubicacion_obra",
+    "destino",
 )
 
 _REDACTED = "<redacted>"
@@ -98,6 +116,11 @@ def redact_sensitive(value: Any) -> Any:
 # capeado a 4000 chars, no necesita el detalle full acá.
 DEFAULT_MAX_BYTES = 2 * 1024  # 2 KB serializado
 LARGE_PAYLOAD_MAX_BYTES = 4 * 1024  # 4 KB — para quote.calculated, docs.generated
+# Phase 2 — modo debug global. Cuando `global_debug` está activo,
+# log_event() permite payloads hasta este techo. 16 KB es suficiente
+# para `tool_input` + `tool_result` reales sin explotar storage:
+# ver cálculo en PR description (~520 MB/año worst case).
+DEBUG_PAYLOAD_MAX_BYTES = 16 * 1024  # 16 KB
 
 
 def _serialize(payload: Any) -> str:

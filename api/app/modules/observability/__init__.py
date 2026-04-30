@@ -19,7 +19,8 @@ Reglas de uso (acordadas con el operador):
    el evento se pierde y se loggea un warning.
 3. **Sanitizado.** Lista negra de keys (phone, address, password,
    token, etc.) → `<redacted>`. Aplicado recursivamente.
-4. **Truncado.** Payload > 8 KB serializado → `payload_truncated=True`,
+4. **Truncado.** Payload > 2 KB (default) / 4 KB (eventos pesados) /
+   16 KB (modo debug global) serializado → `payload_truncated=True`,
    se guarda shape sin valores.
 5. **No backfill.** Quotes pre-deploy no tienen eventos. Empty state
    explícito en la UI.
