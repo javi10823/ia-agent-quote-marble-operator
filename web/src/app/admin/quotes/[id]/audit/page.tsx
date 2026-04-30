@@ -29,6 +29,13 @@ function formatTs(iso: string): string {
   return d.toLocaleString("es-AR", { hour12: false });
 }
 
+// Phase 2 — política acordada: el bundle copy NUNCA expone payloads
+// de events grabados con `debug_payload=true`. Se ven en la UI con
+// login (auth JWT), pero no se exfiltran al pegar el bundle en
+// tickets/Slack externos.
+const DEBUG_PAYLOAD_PLACEHOLDER =
+  "<debug payload available in /admin/observability, NOT included in bundle>";
+
 function buildBundle(timeline: AuditTimeline): string {
   // Últimos 20 (no primeros+últimos). Razón acordada: para debugging
   // operativo, casi siempre importa el tramo final.
@@ -44,11 +51,18 @@ function buildBundle(timeline: AuditTimeline): string {
     const ms = e.elapsed_ms != null ? `  ms=${e.elapsed_ms}` : "";
     const ok = e.success ? "ok" : "FAIL";
     const turn = e.turn_index != null ? `  turn=${e.turn_index}` : "";
-    let payloadStr = "";
-    try {
-      payloadStr = JSON.stringify(e.payload).slice(0, 200);
-    } catch {
-      payloadStr = "<unserializable>";
+    let payloadStr: string;
+    if (e.debug_payload) {
+      // Política Phase 2: nunca exponer payloads completos en bundles
+      // compartibles. La timeline del evento sí aparece (operador puede
+      // saber QUÉ pasó), pero el payload va a la UI con auth.
+      payloadStr = DEBUG_PAYLOAD_PLACEHOLDER;
+    } else {
+      try {
+        payloadStr = JSON.stringify(e.payload).slice(0, 200);
+      } catch {
+        payloadStr = "<unserializable>";
+      }
     }
     const line =
       `[${formatTs(e.created_at)}] ${e.event_type}  actor=${e.actor}  ` +

@@ -5137,12 +5137,16 @@ class AgentService:
                 # el prefix + formato.
                 log_tool_call(quote_id, tool_use.name, tool_use.input)
                 # Audit: agent.tool_called.
+                # Phase 2 — debug mode captura `tool_input` completo
+                # para reproducir bugs de "qué se le envió al tool".
+                # Sin debug, solo metadata (nombre + keys del input).
                 _tool_started_at = time.monotonic()
                 await _audit(
                     db, event_type="agent.tool_called", source="agent",
                     summary=f"Tool called: {tool_use.name}",
                     request=request, quote_id=quote_id,
                     payload={"tool": tool_use.name, "input_keys": sorted(list((tool_use.input or {}).keys()))},
+                    debug_only_payload={"tool_input": tool_use.input},
                 )
 
                 # PR #423 — retry counter (Issue #422). Si esta tool ya
@@ -5217,6 +5221,10 @@ class AgentService:
                         "tool": tool_use.name,
                         "result_keys": sorted(list(result.keys())) if isinstance(result, dict) else None,
                     },
+                    # Phase 2 — debug mode captura el `result` real del
+                    # tool (precios del catálogo, breakdown del calculator,
+                    # etc.) para reproducir bugs sin Railway logs.
+                    debug_only_payload={"tool_result": result},
                     success=_tool_ok, error_message=_tool_err, elapsed_ms=_tool_elapsed_ms,
                 )
 

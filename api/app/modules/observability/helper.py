@@ -49,16 +49,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.observability.models import AuditEvent
 from app.modules.observability.sanitizer import (
+    DEBUG_PAYLOAD_MAX_BYTES,
     DEFAULT_MAX_BYTES,
     LARGE_PAYLOAD_MAX_BYTES,
     sanitize_for_audit,
+)
+from app.modules.observability.system_config import (
+    GLOBAL_DEBUG_KEY,
+    MANUAL_MODE_HARD_CAP_HOURS,
 )
 
 logger = logging.getLogger(__name__)
 
 # Eventos con payload estructurado pesado (breakdown completo, lista
 # de pieces, links de Drive) → permitimos hasta 4 KB. El resto va al
-# default de 2 KB.
+# default de 2 KB. En modo debug global, todos suben a 16 KB.
 _LARGE_PAYLOAD_EVENT_TYPES = frozenset({
     "quote.calculated",
     "docs.generated",
@@ -66,12 +71,96 @@ _LARGE_PAYLOAD_EVENT_TYPES = frozenset({
 })
 
 
-def _max_bytes_for_event(event_type: str, override: int | None) -> int:
+def _max_bytes_for_event(
+    event_type: str,
+    override: int | None,
+    debug_active: bool = False,
+) -> int:
     if override is not None:
         return override
+    if debug_active:
+        return DEBUG_PAYLOAD_MAX_BYTES
     if event_type in _LARGE_PAYLOAD_EVENT_TYPES:
         return LARGE_PAYLOAD_MAX_BYTES
     return DEFAULT_MAX_BYTES
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Global debug — leer estado desde system_config
+# ─────────────────────────────────────────────────────────────────────
+
+
+async def _is_global_debug_active(db: AsyncSession) -> bool:
+    """Lee `system_config[global_debug]` y devuelve si está activo.
+
+    Lógica del flag (acordada con el operador):
+    - `enabled=False` → no activo, fin.
+    - `enabled=True` y `until > NOW()` → activo (modo timed).
+    - `enabled=True` y `until IS NULL` y
+      `started_at > NOW() - 24h` → activo (modo manual dentro del
+      hard cap de 24h).
+    - `enabled=True` pero expirado (cualquiera de los dos timeouts) →
+      no activo. El cron `/audit/global-debug-shutoff` se encarga
+      de marcar `enabled=False` en la fila — esta función NO muta,
+      solo lee.
+
+    1 SELECT por evento. Si el test de carga lo demanda, agregar
+    cache TTL 60s — pero NO antes (ver F del diagnóstico).
+
+    Fail-safe: si la query falla o no hay fila, devuelve `False`.
+    NUNCA rompe el flow del caller.
+    """
+    try:
+        import json as _json
+
+        from sqlalchemy import text
+
+        result = await db.execute(
+            text("SELECT value FROM system_config WHERE key = :k"),
+            {"k": GLOBAL_DEBUG_KEY},
+        )
+        row = result.scalar_one_or_none()
+        if not row:
+            return False
+        # Postgres JSONB devuelve dict; SQLite JSON column via raw
+        # `text()` devuelve str. Normalizamos.
+        if isinstance(row, str):
+            try:
+                row = _json.loads(row)
+            except (ValueError, TypeError):
+                return False
+        if not isinstance(row, dict) or not row.get("enabled"):
+            return False
+        from datetime import datetime, timedelta, timezone as _tz
+
+        now = datetime.now(_tz.utc)
+        until_iso = row.get("until")
+        started_iso = row.get("started_at")
+
+        # Modo timed: respetar `until`.
+        if until_iso:
+            try:
+                until = datetime.fromisoformat(until_iso.replace("Z", "+00:00"))
+                if until.tzinfo is None:
+                    until = until.replace(tzinfo=_tz.utc)
+                return until > now
+            except (ValueError, TypeError):
+                return False
+
+        # Modo manual: hard cap de 24h desde started_at.
+        if started_iso:
+            try:
+                started = datetime.fromisoformat(started_iso.replace("Z", "+00:00"))
+                if started.tzinfo is None:
+                    started = started.replace(tzinfo=_tz.utc)
+                return (now - started) < timedelta(hours=MANUAL_MODE_HARD_CAP_HOURS)
+            except (ValueError, TypeError):
+                return False
+
+        return False
+    except Exception as e:
+        logger.warning(f"[audit] _is_global_debug_active failed: {e}")
+        return False
 
 
 def _extract_actor(request: Optional[Request]) -> tuple[str, str]:
@@ -125,6 +214,7 @@ async def log_event(
     request_id: Optional[str] = None,
     turn_index: Optional[int] = None,
     payload: Optional[Any] = None,
+    debug_only_payload: Optional[dict] = None,
     success: bool = True,
     error_message: Optional[str] = None,
     elapsed_ms: Optional[int] = None,
@@ -149,11 +239,29 @@ async def log_event(
         if session_id is None:
             session_id = _extract_session_id(request, quote_id)
 
+        # Phase 2: chequear si modo debug global está activo. Esto
+        # activa el techo de 16 KB para `tool_input` / `tool_result`
+        # / brief completos y setea `debug_payload=True` en la fila.
+        debug_active = await _is_global_debug_active(db)
+
+        # Si debug está ON y el caller pasó `debug_only_payload`,
+        # mergearlo al payload base. En modo normal, los datos
+        # grandes (`tool_input`, `tool_result`, `message_text`) NI
+        # SIQUIERA llegan a la fila — se descartan acá.
+        merged_payload = dict(payload) if isinstance(payload, dict) else payload
+        if debug_active and debug_only_payload:
+            if isinstance(merged_payload, dict):
+                merged_payload = {**merged_payload, **debug_only_payload}
+            else:
+                merged_payload = dict(debug_only_payload)
+
         # Sanitización + truncado. Eventos pesados (calculate, docs)
-        # tienen 4 KB; el resto 2 KB. Override explícito si el caller
-        # pasa `payload_max_bytes`.
-        max_bytes = _max_bytes_for_event(event_type, payload_max_bytes)
-        clean_payload, truncated = sanitize_for_audit(payload, max_bytes=max_bytes)
+        # tienen 4 KB; el resto 2 KB. Debug ON → todos a 16 KB.
+        # Override explícito si el caller pasa `payload_max_bytes`.
+        max_bytes = _max_bytes_for_event(
+            event_type, payload_max_bytes, debug_active=debug_active,
+        )
+        clean_payload, truncated = sanitize_for_audit(merged_payload, max_bytes=max_bytes)
 
         event = AuditEvent(
             id=str(uuid.uuid4()),
@@ -179,6 +287,7 @@ async def log_event(
             success=success,
             error_message=error_message,
             elapsed_ms=elapsed_ms,
+            debug_payload=debug_active,
         )
         db.add(event)
         await db.flush()

@@ -163,15 +163,24 @@ class TestLogEvent:
 
     @pytest.mark.asyncio
     async def test_redacts_sensitive_payload(self, db_session):
+        # Phase 2: `client_name` también queda redactado (era PII pero
+        # Phase 1 no lo había agregado a la blacklist).
         event = await log_event(
             db_session,
             event_type="test.with_pii",
             source="test",
             summary="Event with PII",
-            payload={"client_name": "Juan", "client_phone": "+5491133..."},
+            payload={
+                "project": "Cocina",
+                "client_name": "Juan",
+                "client_phone": "+5491133...",
+            },
         )
         await db_session.commit()
-        assert event.payload["client_name"] == "Juan"
+        # `project` NO es PII, queda visible.
+        assert event.payload["project"] == "Cocina"
+        # client_name + client_phone redactados.
+        assert event.payload["client_name"] == "<redacted>"
         assert event.payload["client_phone"] == "<redacted>"
 
     @pytest.mark.asyncio

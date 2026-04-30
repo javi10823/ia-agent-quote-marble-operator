@@ -1018,6 +1018,7 @@ export type AuditEvent = {
   summary: string;
   payload: Record<string, unknown>;
   payload_truncated: boolean;
+  debug_payload: boolean;  // Phase 2 — true si capturado con global_debug ON.
   success: boolean;
   error_message: string | null;
   elapsed_ms: number | null;
@@ -1052,6 +1053,41 @@ export async function fetchAuditCoverage(): Promise<AuditCoverage> {
   const res = await apiFetch(`${API_BASE}/api/admin/audit/coverage`, { credentials: "include" });
   handleAuthError(res);
   if (!res.ok) throw new Error("Error al cargar cobertura de auditoría");
+  return res.json();
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Phase 2 — Modo debug global
+// ─────────────────────────────────────────────────────────────────────
+
+export type GlobalDebugStatus = {
+  enabled: boolean;
+  mode: "1h" | "end_of_day" | "manual" | null;
+  until: string | null;  // ISO timestamp
+  started_at: string | null;
+  started_by: string | null;
+  remaining_seconds: number | null;
+};
+
+export async function fetchGlobalDebugStatus(): Promise<GlobalDebugStatus> {
+  const res = await apiFetch(`${API_BASE}/api/admin/system-config/global-debug`, { credentials: "include" });
+  handleAuthError(res);
+  if (!res.ok) throw new Error("Error al consultar modo debug");
+  return res.json();
+}
+
+export async function setGlobalDebug(mode: "1h" | "end_of_day" | "manual" | "off"): Promise<GlobalDebugStatus> {
+  const res = await apiFetch(`${API_BASE}/api/admin/system-config/global-debug`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
+    credentials: "include",
+  });
+  handleAuthError(res);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Error al cambiar modo debug");
+  }
   return res.json();
 }
 
