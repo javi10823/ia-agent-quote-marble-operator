@@ -55,7 +55,16 @@ export default function GlobalDebugBanner() {
   useEffect(() => {
     refresh();
     const id = setInterval(refresh, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    // Bus de eventos local: cuando el toggle en /admin/observability
+    // muta el estado, dispara `globaldebug:changed` para que el banner
+    // se refresque ANTES del próximo poll de 30s. Sin esto, el operador
+    // prende debug y espera hasta 30s hasta ver el banner — UX confusa.
+    const onChanged = () => refresh();
+    window.addEventListener("globaldebug:changed", onChanged);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("globaldebug:changed", onChanged);
+    };
   }, [refresh]);
 
   // Tick por segundo para el countdown.
@@ -93,6 +102,10 @@ export default function GlobalDebugBanner() {
     try {
       await setGlobalDebug("off");
       await refresh();
+      // Disparar el mismo evento para que la pantalla
+      // /admin/observability (si está montada en otra tab/route) se
+      // re-renderice con el estado actualizado.
+      window.dispatchEvent(new CustomEvent("globaldebug:changed"));
     } catch {
       // Mostrar feedback mínimo si falla.
       alert("No se pudo desactivar el modo debug. Intentá de nuevo.");

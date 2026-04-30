@@ -62,6 +62,11 @@ function GlobalDebugToggle() {
 
   useEffect(() => {
     refresh();
+    // Si el banner global apaga debug (botón "Desactivar" arriba),
+    // este toggle también debe re-renderizar inmediato.
+    const onChanged = () => refresh();
+    window.addEventListener("globaldebug:changed", onChanged);
+    return () => window.removeEventListener("globaldebug:changed", onChanged);
   }, []);
 
   async function handleToggle(mode: "1h" | "end_of_day" | "manual" | "off") {
@@ -78,6 +83,10 @@ function GlobalDebugToggle() {
     try {
       const next = await setGlobalDebug(mode);
       setStatus(next);
+      // Avisar al banner global para que se refresque sin esperar el
+      // polling de 30s. Sin esto, el operador prende debug y queda
+      // confundido hasta 30s sin ver el banner full-width.
+      window.dispatchEvent(new CustomEvent("globaldebug:changed"));
     } catch (e) {
       alert((e as Error).message || "Error al cambiar modo debug");
     } finally {

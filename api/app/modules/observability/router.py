@@ -423,14 +423,38 @@ async def post_global_debug_shutoff(
     - `until < NOW()` (modo timed expirado)
     - `until IS NULL AND started_at < NOW() - 24h` (manual hardcap)
 
-    Loggea `audit.global_debug_auto_disabled` con la razón.
+    Loggea `audit.global_debug_auto_disabled` con la razón cuando
+    apaga, y SIEMPRE loguea `audit.global_debug_shutoff_run` (con
+    `rows_affected`, puede ser 0) — breadcrumb que permite detectar
+    si el cron está silently muerto. Si falta esa fila durante varias
+    horas seguidas, el cron de Railway dejó de correr.
+
     Idempotente.
     """
     now = datetime.now(timezone.utc)
     razones = {"expired": 0, "manual_24h_cap": 0}
 
+    from app.modules.observability.helper import log_event
+
+    async def _log_run(rows_affected: int, reason: str | None = None) -> None:
+        """Breadcrumb del cron, SIEMPRE — incluso con rows=0."""
+        await log_event(
+            db,
+            event_type="audit.global_debug_shutoff_run",
+            source="observability",
+            summary=(
+                f"Shutoff cron run: rows_affected={rows_affected}"
+                + (f" (reason={reason})" if reason else "")
+            ),
+            actor="system",
+            actor_kind="system",
+            payload={"rows_affected": rows_affected, "reason": reason},
+        )
+
     value = await _read_global_debug_value(db)
     if not value.get("enabled"):
+        await _log_run(0)
+        await db.commit()
         return GlobalDebugShutoffResponse(apagados=0, razones=razones)
 
     reason: Optional[str] = None
@@ -458,6 +482,8 @@ async def post_global_debug_shutoff(
 
     if reason is None:
         # Está activo y dentro del límite — no hacer nada.
+        await _log_run(0, reason="within_window")
+        await db.commit()
         return GlobalDebugShutoffResponse(apagados=0, razones=razones)
 
     # Apagar.
@@ -478,7 +504,6 @@ async def post_global_debug_shutoff(
 
     razones[reason] = 1
 
-    from app.modules.observability.helper import log_event
     await log_event(
         db,
         event_type="audit.global_debug_auto_disabled",
@@ -491,5 +516,8 @@ async def post_global_debug_shutoff(
             "previous_state": value,
         },
     )
+    # Breadcrumb adicional del cron (siempre se loguea, incluso en
+    # paths con apagado). Permite detectar silencios del cron.
+    await _log_run(1, reason=reason)
     await db.commit()
     return GlobalDebugShutoffResponse(apagados=1, razones=razones)
