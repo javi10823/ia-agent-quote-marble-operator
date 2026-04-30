@@ -317,6 +317,257 @@ class TestGlobalDebugEndpoints:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# end_of_day — zona horaria Argentina (UTC-3)
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Caso reportado por el operador: si Marina prende `end_of_day` un
+# viernes a las 22:00 AR, el `until` debe ser viernes 23:59 AR =
+# sábado 02:59 UTC. Si guardamos sin convertir, el cron en UTC
+# apaga 3h antes de tiempo.
+
+
+class TestEndOfDayTimezone:
+    """Lockea el cómputo de `until` para `mode=end_of_day` en zona AR.
+
+    Mockea `datetime.now()` en el módulo del router para simular la
+    hora de Marina. Verifica:
+    1. `until` guardado en DB es la hora UTC correcta (NO la AR raw).
+    2. El cron en UTC NO apaga durante el período válido.
+    3. El cron SÍ apaga después del cutoff UTC real.
+    """
+
+    @pytest.mark.asyncio
+    async def test_end_of_day_at_22_ar_stores_correct_utc_until(
+        self, client, db_session, monkeypatch,
+    ):
+        """Marina toca el toggle viernes 22:00 AR (= sábado 01:00 UTC).
+        until debe ser sábado 02:59 UTC (= viernes 23:59 AR)."""
+        from datetime import datetime, timezone
+        import app.modules.observability.router as router_mod
+
+        # Sábado 01:00 UTC == viernes 22:00 AR.
+        fake_now_utc = datetime(2026, 5, 2, 1, 0, 0, tzinfo=timezone.utc)
+
+        class _MockDateTime:
+            @staticmethod
+            def now(tz=None):
+                if tz is None:
+                    return fake_now_utc.replace(tzinfo=None)
+                return fake_now_utc.astimezone(tz)
+
+            @staticmethod
+            def fromisoformat(s):
+                return datetime.fromisoformat(s)
+
+        monkeypatch.setattr(router_mod, "datetime", _MockDateTime)
+
+        r = await client.post(
+            "/api/admin/system-config/global-debug",
+            json={"mode": "end_of_day"},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        # `until` debe ser sábado 02:59 UTC (= viernes 23:59 AR).
+        until = datetime.fromisoformat(body["until"].replace("Z", "+00:00"))
+        if until.tzinfo is None:
+            until = until.replace(tzinfo=timezone.utc)
+        # Verificación dura: el día UTC debe ser sábado (2 de mayo)
+        # y la hora UTC debe ser 02:59 (≈ 23:59 AR).
+        assert until.day == 2, f"Día UTC esperado 2 (sábado), got {until.day}"
+        assert until.hour == 2, f"Hora UTC esperada 2 (=23 AR), got {until.hour}"
+        assert until.minute == 59
+        # Check explícito en zona AR para que la intención sea legible.
+        from datetime import timedelta
+        ar_until = until.astimezone(timezone(timedelta(hours=-3)))
+        assert ar_until.hour == 23 and ar_until.minute == 59, (
+            f"En zona AR el until debe ser 23:59. got {ar_until.isoformat()}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_cron_does_not_shutoff_within_end_of_day_window(
+        self, client, db_session,
+    ):
+        """Marina prende end_of_day. El cron corre 30 min después →
+        NO debe apagar.
+
+        Plant directo en DB para evitar el monkeypatching del POST.
+        """
+        from datetime import datetime, timedelta, timezone
+        from app.modules.observability.system_config import (
+            SystemConfig, GLOBAL_DEBUG_KEY,
+        )
+
+        # Setup: until = ahora + 3h (modo end_of_day típico, 22 AR + 5h).
+        now_utc = datetime.now(timezone.utc)
+        until = now_utc + timedelta(hours=3)
+        started = now_utc - timedelta(hours=1)
+        db_session.add(SystemConfig(
+            key=GLOBAL_DEBUG_KEY,
+            value={
+                "enabled": True,
+                "mode": "end_of_day",
+                "until": until.isoformat(),
+                "started_at": started.isoformat(),
+                "started_by": "marina",
+            },
+            updated_by="marina",
+        ))
+        await db_session.commit()
+
+        r = await client.post("/api/admin/audit/global-debug-shutoff")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["apagados"] == 0, "El cron apagó dentro del window."
+
+    @pytest.mark.asyncio
+    async def test_cron_DOES_shutoff_after_end_of_day_window(
+        self, client, db_session,
+    ):
+        """Pasó el `until`. El cron debe apagar."""
+        from datetime import datetime, timedelta, timezone
+        from app.modules.observability.system_config import (
+            SystemConfig, GLOBAL_DEBUG_KEY,
+        )
+
+        now_utc = datetime.now(timezone.utc)
+        # until expirado hace 30 min.
+        until = now_utc - timedelta(minutes=30)
+        started = now_utc - timedelta(hours=5)
+        db_session.add(SystemConfig(
+            key=GLOBAL_DEBUG_KEY,
+            value={
+                "enabled": True,
+                "mode": "end_of_day",
+                "until": until.isoformat(),
+                "started_at": started.isoformat(),
+                "started_by": "marina",
+            },
+            updated_by="marina",
+        ))
+        await db_session.commit()
+
+        r = await client.post("/api/admin/audit/global-debug-shutoff")
+        body = r.json()
+        assert body["apagados"] == 1
+        assert body["razones"]["expired"] == 1
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Breadcrumb del cron de shutoff
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestShutoffBreadcrumb:
+    """Para detectar silencios del cron: cada run loguea
+    `audit.global_debug_shutoff_run` con `rows_affected` (puede ser 0).
+
+    Si el cron se cae silenciosamente (excepción tragada, container
+    OOM, etc.), la falta de filas durante varias horas seguidas es la
+    señal.
+    """
+
+    async def _last_run_event(self, db_session):
+        from sqlalchemy import select
+        from app.modules.observability.models import AuditEvent
+        result = await db_session.execute(
+            select(AuditEvent)
+            .where(AuditEvent.event_type == "audit.global_debug_shutoff_run")
+            .order_by(AuditEvent.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    @pytest.mark.asyncio
+    async def test_run_logged_when_nothing_to_shutoff(
+        self, client, db_session,
+    ):
+        """Sin debug activo → breadcrumb con rows_affected=0."""
+        from app.modules.observability.system_config import (
+            SystemConfig, GLOBAL_DEBUG_KEY,
+        )
+
+        # Asegurar que NO hay debug activo.
+        db_session.add(SystemConfig(
+            key=GLOBAL_DEBUG_KEY,
+            value={"enabled": False},
+            updated_by="test",
+        ))
+        await db_session.commit()
+
+        r = await client.post("/api/admin/audit/global-debug-shutoff")
+        assert r.status_code == 200
+        # Breadcrumb persistido.
+        ev = await self._last_run_event(db_session)
+        assert ev is not None, "Falta breadcrumb del cron — silencio fatal."
+        assert ev.payload["rows_affected"] == 0
+        assert ev.actor == "system"
+
+    @pytest.mark.asyncio
+    async def test_run_logged_when_within_window(
+        self, client, db_session,
+    ):
+        """Debug activo dentro del window → breadcrumb con rows=0,
+        reason=within_window."""
+        from datetime import datetime, timedelta, timezone
+        from app.modules.observability.system_config import (
+            SystemConfig, GLOBAL_DEBUG_KEY,
+        )
+
+        now_utc = datetime.now(timezone.utc)
+        until = now_utc + timedelta(hours=2)
+        db_session.add(SystemConfig(
+            key=GLOBAL_DEBUG_KEY,
+            value={
+                "enabled": True,
+                "mode": "1h",
+                "until": until.isoformat(),
+                "started_at": now_utc.isoformat(),
+                "started_by": "marina",
+            },
+            updated_by="marina",
+        ))
+        await db_session.commit()
+
+        r = await client.post("/api/admin/audit/global-debug-shutoff")
+        ev = await self._last_run_event(db_session)
+        assert ev is not None
+        assert ev.payload["rows_affected"] == 0
+        assert ev.payload.get("reason") == "within_window"
+
+    @pytest.mark.asyncio
+    async def test_run_logged_when_actually_shutoff(
+        self, client, db_session,
+    ):
+        """Apagado real → breadcrumb con rows=1, reason=expired."""
+        from datetime import datetime, timedelta, timezone
+        from app.modules.observability.system_config import (
+            SystemConfig, GLOBAL_DEBUG_KEY,
+        )
+
+        now_utc = datetime.now(timezone.utc)
+        until = now_utc - timedelta(minutes=10)
+        db_session.add(SystemConfig(
+            key=GLOBAL_DEBUG_KEY,
+            value={
+                "enabled": True,
+                "mode": "1h",
+                "until": until.isoformat(),
+                "started_at": (now_utc - timedelta(hours=2)).isoformat(),
+                "started_by": "marina",
+            },
+            updated_by="marina",
+        ))
+        await db_session.commit()
+
+        r = await client.post("/api/admin/audit/global-debug-shutoff")
+        assert r.json()["apagados"] == 1
+        ev = await self._last_run_event(db_session)
+        assert ev is not None
+        assert ev.payload["rows_affected"] == 1
+        assert ev.payload.get("reason") == "expired"
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Cron shutoff endpoint
 # ═══════════════════════════════════════════════════════════════════════
 
