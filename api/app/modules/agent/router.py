@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Query
+from fastapi import APIRouter, Depends, Request, UploadFile, File, Form, HTTPException, Query
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
@@ -20,6 +20,7 @@ MAX_FILES = 10
 from app.core.database import get_db
 from app.models.quote import Quote, QuoteStatus
 from app.modules.agent.agent import AgentService
+from app.modules.observability import log_event
 from app.modules.agent.schemas import (
     CreateQuoteRequest,
     QuoteListResponse,
@@ -436,6 +437,7 @@ async def compare_pdf(quote_id: str, db: AsyncSession = Depends(get_db)):
 async def update_status(
     quote_id: str,
     body: QuoteStatusUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Quote).where(Quote.id == quote_id))
@@ -453,6 +455,12 @@ async def update_status(
         update(Quote)
         .where(Quote.id == quote_id)
         .values(status=body.status)
+    )
+    await log_event(
+        db, event_type="quote.status_changed", source="router",
+        summary=f"Status changed {current} → {target}",
+        request=request, quote_id=quote_id,
+        payload={"from": current, "to": target},
     )
     await db.commit()
     return {"ok": True}
@@ -478,6 +486,7 @@ async def update_status(
 @router.post("/quotes/{quote_id}/reopen-measurements")
 async def reopen_measurements(
     quote_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Resetea el quote a Paso 1 para permitir edición post-confirmación.
@@ -582,6 +591,15 @@ async def reopen_measurements(
         msgs_count_post=len(new_messages),
         truncate_matched=truncate_matched,
     )
+    # Audit: quote.reopened — payload distingue kind=measurements|context.
+    await log_event(
+        db, event_type="quote.reopened", source="router",
+        summary=f"Quote reopened (kind=measurements, msgs {len(msgs_pre)}→{len(new_messages)})",
+        request=request, quote_id=quote_id,
+        payload={"kind": "measurements", "msgs_pre": len(msgs_pre), "msgs_post": len(new_messages),
+                 "truncate_matched": truncate_matched},
+    )
+    await db.commit()
 
     # Refetch para devolver shape consistente con el listado.
     refreshed = await db.execute(select(Quote).where(Quote.id == quote_id))
@@ -611,6 +629,7 @@ async def reopen_measurements(
 @router.post("/quotes/{quote_id}/reopen-context")
 async def reopen_context(
     quote_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Resetea el quote al estado pre-confirmación del contexto.
@@ -710,6 +729,14 @@ async def reopen_context(
         msgs_count_post=len(new_messages),
         truncate_matched=truncate_matched,
     )
+    await log_event(
+        db, event_type="quote.reopened", source="router",
+        summary=f"Quote reopened (kind=context, msgs {len(msgs_pre)}→{len(new_messages)})",
+        request=request, quote_id=quote_id,
+        payload={"kind": "context", "msgs_pre": len(msgs_pre), "msgs_post": len(new_messages),
+                 "truncate_matched": truncate_matched},
+    )
+    await db.commit()
 
     refreshed = await db.execute(select(Quote).where(Quote.id == quote_id))
     q = refreshed.scalar_one()
@@ -940,6 +967,7 @@ def _build_regenerate_doc_data(quote: Quote, bd: dict) -> dict:
 @router.post("/quotes/{quote_id}/regenerate")
 async def regenerate_quote_docs(
     quote_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Re-generate PDF/Excel from existing breakdown. No recalc, no status change."""
@@ -1057,9 +1085,21 @@ async def regenerate_quote_docs(
     await db.execute(
         update(Quote).where(Quote.id == quote_id).values(**update_values)
     )
+    # Audit: docs.regenerated — punto canónico único. Reemplaza el
+    # `logging.info` de abajo. Drive info incluida en payload (en lugar
+    # de un evento `drive.uploaded` separado, ver desvío del plan).
+    await log_event(
+        db, event_type="docs.regenerated", source="router",
+        summary=f"PDF + Excel regenerated (status unchanged)",
+        request=request, quote_id=quote_id,
+        payload={
+            "pdf_url_before": quote.pdf_url, "pdf_url_after": pdf_url,
+            "excel_url_before": quote.excel_url, "excel_url_after": excel_url,
+            "drive_pdf_url": new_drive_pdf_url, "drive_excel_url": new_drive_excel_url,
+            "drive_file_id": final_drive_file_id,
+        },
+    )
     await db.commit()
-
-    logging.info(f"[regenerate] Quote {quote_id} docs regenerated (status unchanged)")
     return {
         "ok": True,
         "pdf_url": pdf_url,
@@ -1218,6 +1258,7 @@ async def derive_material(
 async def patch_quote(
     quote_id: str,
     body: QuotePatchRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     # Verify quote exists
@@ -1310,6 +1351,15 @@ async def patch_quote(
 
     if updates:
         await db.execute(update(Quote).where(Quote.id == quote_id).values(**updates))
+        # Audit: quote.patched. Solo registramos las keys del patch
+        # original (no las internas tipo quote_breakdown). Sanitizer
+        # redacta valores sensibles (phone, email).
+        await log_event(
+            db, event_type="quote.patched", source="router",
+            summary=f"Quote patched (fields: {sorted(_original_patch_keys)})",
+            request=request, quote_id=quote_id,
+            payload={"fields": sorted(_original_patch_keys)},
+        )
         await db.commit()
 
     logger.info(
@@ -1649,6 +1699,7 @@ async def generate_resumen_obra_endpoint(
 
 @router.post("/quotes")
 async def create_quote(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     body: Optional[CreateQuoteRequest] = None,
 ):
@@ -1665,6 +1716,12 @@ async def create_quote(
         status=body.status if body and body.status else QuoteStatus.DRAFT,
     )
     db.add(quote)
+    await log_event(
+        db, event_type="quote.created", source="router",
+        summary=f"Quote created (status={quote.status.value})",
+        request=request, quote_id=quote.id,
+        payload={"status": quote.status.value},
+    )
     await db.commit()
     return {"id": quote.id}
 
@@ -2012,6 +2069,7 @@ async def dual_read_retry(
 @router.post("/quotes/{quote_id}/chat")
 async def chat(
     quote_id: str,
+    request: Request,
     message: str = Form(...),
     plan_files: List[UploadFile] = File([]),
     db: AsyncSession = Depends(get_db),
@@ -2027,6 +2085,13 @@ async def chat(
         "POST /quotes/:id/chat",
         message_preview=(message or "")[:200].replace("\n", " "),
         plan_files=len(plan_files or []),
+    )
+    # Audit: chat.message_sent — punto canónico único.
+    await log_event(
+        db, event_type="chat.message_sent", source="router",
+        summary=f"Operator sent chat message ({len(message or '')} chars, {len(plan_files or [])} files)",
+        request=request, quote_id=quote_id,
+        payload={"message_chars": len(message or ""), "plan_files_count": len(plan_files or [])},
     )
 
     # Budget check — read DIRECTLY from DB (not cached config — multi-worker cache stale)
@@ -2266,6 +2331,7 @@ async def chat(
                 plan_filename=plan_filename,
                 extra_files=extra_files,
                 db=db,
+                request=request,
             ):
                 if chunk["type"] == "ping":
                     # SSE keepalive comment — prevents proxy timeout

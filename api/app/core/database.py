@@ -28,6 +28,7 @@ async def init_db():
     async with engine.begin() as conn:
         # noqa - ensures models are registered in Base.metadata before create_all
         from app.models import quote, user, plan_topology_cache  # noqa: F401
+        from app.modules.observability import models as _audit_models  # noqa: F401
         await conn.run_sync(Base.metadata.create_all)
 
         # Migrations only needed for PostgreSQL (existing deploys)
@@ -135,6 +136,54 @@ async def init_db():
                 )
             """)
         )
+
+        # ──────────────────────────────────────────────────────────────
+        # PR — Observability: audit_events + índices
+        # ──────────────────────────────────────────────────────────────
+        # ⚠️ Schema changes require careful migration.
+        # `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` is supported on
+        # Postgres ≥ 9.6, but if you ever need to rename, drop, or
+        # change a column type, **don't do it inline here** — open a
+        # dedicated PR with a tested upgrade path (and consider
+        # introducing alembic for that). The init_db() pattern is
+        # acceptable for additive changes only. See diagnostic §F10.
+        await conn.execute(
+            __import__("sqlalchemy").text("""
+                CREATE TABLE IF NOT EXISTS audit_events (
+                    id VARCHAR(64) PRIMARY KEY,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    event_type VARCHAR(64) NOT NULL,
+                    source VARCHAR(32) NOT NULL,
+                    quote_id VARCHAR(64),
+                    session_id VARCHAR(64),
+                    actor VARCHAR(120) NOT NULL,
+                    actor_kind VARCHAR(20) NOT NULL,
+                    request_id VARCHAR(64),
+                    turn_index INTEGER,
+                    summary TEXT NOT NULL,
+                    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    payload_truncated BOOLEAN NOT NULL DEFAULT FALSE,
+                    success BOOLEAN NOT NULL DEFAULT TRUE,
+                    error_message TEXT,
+                    elapsed_ms INTEGER
+                )
+            """)
+        )
+        for idx_sql in [
+            "CREATE INDEX IF NOT EXISTS idx_audit_quote_created ON audit_events (quote_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_audit_event_created ON audit_events (event_type, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_audit_actor_created ON audit_events (actor, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_audit_request_created ON audit_events (request_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_events (created_at DESC)",
+        ]:
+            try:
+                await conn.execute(__import__("sqlalchemy").text(idx_sql))
+            except Exception as e:
+                err_lower = str(e).lower()
+                if "already exists" in err_lower or "duplicate" in err_lower:
+                    pass
+                else:
+                    logging.warning(f"audit index FAILED: {idx_sql[:60]}... → {e}")
 
         # Add 'pending' value to quotestatus enum if not present
         try:

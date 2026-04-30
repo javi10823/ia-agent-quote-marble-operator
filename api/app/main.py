@@ -15,7 +15,9 @@ from app.core.config import settings
 from app.core.database import init_db, cleanup_empty_drafts, get_db
 # mount_static_files removed — files served via authenticated endpoint
 from app.core.auth import auth_middleware
+from app.core.request_context import request_context_middleware
 from app.modules.agent.router import router as agent_router, files_router
+from app.modules.observability.router import router as observability_router
 from app.modules.catalog.router import router as catalog_router
 from app.modules.quote_engine.router import router as quote_engine_router
 from app.modules.auth.router import router as auth_router
@@ -105,6 +107,13 @@ app = FastAPI(
 # lo bloquea, y la UI ve un error genérico en vez del 401 real.
 app.middleware("http")(auth_middleware)
 
+# Request context middleware (corre DESPUÉS de auth porque está
+# registrado ANTES — orden inverso). Asigna `request.state.request_id`
+# (UUID4) y `request.state.session_id` (None por default; se setea
+# explícitamente en handlers que ya tengan sesión modelada). El audit
+# helper los lee de ahí.
+app.middleware("http")(request_context_middleware)
+
 # ProxyHeadersMiddleware — Railway termina TLS antes de llegar a uvicorn.
 # Sin esto, cualquier redirect que FastAPI genere (ej. trailing-slash:
 # /api/catalog → /api/catalog/) sale con `Location: http://...` porque
@@ -137,6 +146,7 @@ app.include_router(usage_router, prefix="/api")
 app.include_router(agent_router, prefix="/api")
 app.include_router(catalog_router, prefix="/api")
 app.include_router(quote_engine_router, prefix="/api")
+app.include_router(observability_router, prefix="/api")
 # PR #398 — endpoint público de reglas de negocio v0 para el bot web.
 from app.modules.business_rules.router import router as business_rules_router
 app.include_router(business_rules_router, prefix="/api")

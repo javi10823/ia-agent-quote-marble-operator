@@ -4,6 +4,7 @@ import json
 import base64
 import logging
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator, Optional
@@ -12,6 +13,7 @@ from sqlalchemy import update, select
 
 from app.core.config import settings
 from app.models.quote import Quote, QuoteStatus
+from app.modules.observability import log_event as _audit
 from app.modules.agent.tools.catalog_tool import catalog_lookup, catalog_batch_lookup, check_stock, check_architect, get_ai_config
 from app.modules.agent.tools.plan_tool import read_plan, save_plan_to_temp
 from app.modules.agent.tools.document_tool import generate_documents
@@ -1785,6 +1787,7 @@ class AgentService:
         plan_filename: Optional[str],
         extra_files: Optional[list] = None,
         db: AsyncSession = None,
+        request=None,  # FastAPI Request — opcional, usado por audit log_event.
     ) -> AsyncGenerator[dict, None]:
         # PR #385 — traza de entrada al loop agéntico. Sabemos qué llega
         # del frontend (mensaje, adjuntos) y qué estado del breakdown
@@ -1813,6 +1816,15 @@ class AgentService:
             plan_bytes=plan_bytes,
             extra_files=extra_files,
             bd_pre=_bd_enter,
+        )
+        # Audit: agent.stream_started — entrada del loop agéntico.
+        await _audit(
+            db, event_type="agent.stream_started", source="agent",
+            summary=f"Agent stream started ({len(messages)} prior msgs, {len(user_message or '')} chars)",
+            request=request, quote_id=quote_id,
+            turn_index=len(messages),
+            payload={"prior_msgs": len(messages), "msg_chars": len(user_message or ""),
+                     "has_plan": bool(plan_bytes), "extra_files": len(extra_files or [])},
         )
 
         # ── PR #395 — Handle [SYSTEM_TRIGGER:process_saved_plan]
@@ -5124,6 +5136,14 @@ class AgentService:
                 # log ad-hoc; ahora pasa por `log_tool_call` que normaliza
                 # el prefix + formato.
                 log_tool_call(quote_id, tool_use.name, tool_use.input)
+                # Audit: agent.tool_called.
+                _tool_started_at = time.monotonic()
+                await _audit(
+                    db, event_type="agent.tool_called", source="agent",
+                    summary=f"Tool called: {tool_use.name}",
+                    request=request, quote_id=quote_id,
+                    payload={"tool": tool_use.name, "input_keys": sorted(list((tool_use.input or {}).keys()))},
+                )
 
                 # PR #423 — retry counter (Issue #422). Si esta tool ya
                 # falló threshold veces en este turno del operador, NO la
@@ -5147,6 +5167,7 @@ class AgentService:
                             db=db,
                             conversation_history=messages,
                             current_user_message=user_message,
+                            request=request,
                         )
                     except Exception as e:
                         logging.error(f"Tool execution error ({tool_use.name}): {e}", exc_info=True)
@@ -5178,6 +5199,26 @@ class AgentService:
                     log_tool_result(quote_id, tool_use.name, result)
                 except Exception:
                     pass
+                # Audit: agent.tool_result. Capturamos elapsed + success
+                # flag (derivado de result.ok cuando aplica). Output
+                # serializado lo limita el sanitizer (2 KB default).
+                _tool_elapsed_ms = int((time.monotonic() - _tool_started_at) * 1000)
+                _tool_ok = (
+                    bool(result.get("ok", True)) if isinstance(result, dict) else True
+                )
+                _tool_err = None
+                if isinstance(result, dict) and result.get("ok") is False:
+                    _tool_err = str(result.get("error", ""))[:500]
+                await _audit(
+                    db, event_type="agent.tool_result", source="agent",
+                    summary=f"Tool result: {tool_use.name} ({'ok' if _tool_ok else 'fail'}, {_tool_elapsed_ms}ms)",
+                    request=request, quote_id=quote_id,
+                    payload={
+                        "tool": tool_use.name,
+                        "result_keys": sorted(list(result.keys())) if isinstance(result, dict) else None,
+                    },
+                    success=_tool_ok, error_message=_tool_err, elapsed_ms=_tool_elapsed_ms,
+                )
 
                 # ── M2 surface validator: compare list_pieces total vs planilla ──
                 if tool_use.name == "list_pieces" and isinstance(result, dict) and result.get("ok"):
@@ -5443,7 +5484,7 @@ class AgentService:
         log_sse_structural(quote_id, "done", "")
         yield {"type": "done", "content": ""}
 
-    async def _execute_tool(self, name: str, inputs: dict, quote_id: str, db: AsyncSession, conversation_history: list | None = None, current_user_message: str = "") -> dict:
+    async def _execute_tool(self, name: str, inputs: dict, quote_id: str, db: AsyncSession, conversation_history: list | None = None, current_user_message: str = "", request=None) -> dict:
         logging.info(f"Tool call: {name} | quote: {quote_id}")
         if name == "list_pieces":
             # Detect is_edificio from the breakdown if persisted
@@ -5922,6 +5963,23 @@ class AgentService:
                     except Exception as e:
                         logging.warning(f"files_v2 persist failed for {target_qid}: {e}")
 
+                # Audit: docs.generated. Punto canónico único por quote;
+                # incluye drive ids → cubre lo que sería `drive.uploaded`.
+                await _audit(
+                    db, event_type="docs.generated", source="docs",
+                    summary=f"Documents generated for {qdata.get('material_name','?')} ({'ok' if result.get('ok') else 'fail'})",
+                    request=request, quote_id=target_qid,
+                    payload={
+                        "material": qdata.get("material_name"),
+                        "pdf_url": result.get("pdf_url"),
+                        "excel_url": result.get("excel_url"),
+                        "drive_pdf_url": _drive_pdf_url,
+                        "drive_excel_url": _drive_excel_url,
+                        "drive_file_id": first_drive_file_id,
+                    },
+                    success=bool(result.get("ok")),
+                    error_message=str(result.get("error", ""))[:500] if not result.get("ok") else None,
+                )
                 # Single atomic commit per quote — all DB changes together
                 try:
                     await db.commit()
@@ -7037,6 +7095,22 @@ class AgentService:
                     await db.execute(
                         update(Quote).where(Quote.id == save_to_qid).values(**_values)
                     )
+                    # Audit: quote.calculated. Punto canónico único.
+                    await _audit(
+                        db, event_type="quote.calculated", source="calculator",
+                        summary=f"Quote calculated: {calc_result.get('material_name','?')} | "
+                                f"ARS {change_entry['total_ars_before']}→{change_entry['total_ars_after']}",
+                        request=request, quote_id=save_to_qid,
+                        payload={
+                            "material": calc_result.get("material_name"),
+                            "total_ars_before": change_entry["total_ars_before"],
+                            "total_ars_after": change_entry["total_ars_after"],
+                            "total_usd_before": change_entry["total_usd_before"],
+                            "total_usd_after": change_entry["total_usd_after"],
+                            "is_edificio": bool(calc_result.get("is_edificio")),
+                            "validation_ok": not bool(calc_result.get("_validation_errors")),
+                        },
+                    )
                     await db.commit()
                     logging.info(f"Saved breakdown for {save_to_qid} after calculate_quote | ARS: {change_entry['total_ars_before']} → {change_entry['total_ars_after']}")
                     # PR #385 — diff del breakdown post-calculate_quote. Clave
@@ -7203,6 +7277,21 @@ class AgentService:
                         total_usd=bd["total_usd"],
                         change_history=history,
                     )
+                )
+                # Audit: quote.patched_mo. Punto canónico único.
+                await _audit(
+                    db, event_type="quote.patched_mo", source="agent",
+                    summary=f"MO patched (removed={removed}, "
+                            f"add_colocacion={add_colocacion}, add_flete={add_flete_localidad})",
+                    request=request, quote_id=target_qid,
+                    payload={
+                        "removed": removed,
+                        "add_colocacion": bool(add_colocacion),
+                        "add_flete_localidad": add_flete_localidad,
+                        "add_flete_qty": add_flete_qty,
+                        "total_ars_before": target_quote.total_ars,
+                        "total_ars_after": bd["total_ars"],
+                    },
                 )
                 await db.commit()
 
