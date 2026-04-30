@@ -5965,9 +5965,35 @@ class AgentService:
 
                 # Audit: docs.generated. Punto canónico único por quote;
                 # incluye drive ids → cubre lo que sería `drive.uploaded`.
+                #
+                # Honestidad operativa (E2E test #4): `success` cubre
+                # **tanto** la generación local como el upload a Drive.
+                # Si la generación local OK pero Drive falló (drive_pdf_url
+                # IS NULL después de intentar subir), success=False con
+                # error_message explícito. Antes mentíamos `success=True`
+                # aunque Drive fallara silenciosamente.
+                _gen_ok = bool(result.get("ok"))
+                _drive_attempted = result.get("ok") is True
+                _drive_failed = (
+                    _drive_attempted and not (_drive_pdf_url and _drive_excel_url)
+                )
+                _audit_success = _gen_ok and not _drive_failed
+                _audit_error: str | None = None
+                if not _gen_ok:
+                    _audit_error = str(result.get("error", ""))[:500]
+                elif _drive_failed:
+                    _missing = []
+                    if not _drive_pdf_url:
+                        _missing.append("PDF")
+                    if not _drive_excel_url:
+                        _missing.append("Excel")
+                    _audit_error = (
+                        f"Drive upload failed for: {', '.join(_missing)} "
+                        f"(local generation OK, Drive returned no url)"
+                    )
                 await _audit(
                     db, event_type="docs.generated", source="docs",
-                    summary=f"Documents generated for {qdata.get('material_name','?')} ({'ok' if result.get('ok') else 'fail'})",
+                    summary=f"Documents generated for {qdata.get('material_name','?')} ({'ok' if _audit_success else 'partial-fail'})",
                     request=request, quote_id=target_qid,
                     payload={
                         "material": qdata.get("material_name"),
@@ -5976,9 +6002,11 @@ class AgentService:
                         "drive_pdf_url": _drive_pdf_url,
                         "drive_excel_url": _drive_excel_url,
                         "drive_file_id": first_drive_file_id,
+                        "local_gen_ok": _gen_ok,
+                        "drive_ok": not _drive_failed,
                     },
-                    success=bool(result.get("ok")),
-                    error_message=str(result.get("error", ""))[:500] if not result.get("ok") else None,
+                    success=_audit_success,
+                    error_message=_audit_error,
                 )
                 # Single atomic commit per quote — all DB changes together
                 try:

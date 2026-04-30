@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import Request
@@ -156,6 +157,14 @@ async def log_event(
 
         event = AuditEvent(
             id=str(uuid.uuid4()),
+            # `created_at` se asigna client-side para preservar el orden
+            # de inserción dentro de una misma transacción. El default
+            # server-side `NOW()` de Postgres devuelve el mismo timestamp
+            # para todos los inserts en la TX → el ORDER BY created_at
+            # del timeline daba orden arbitrario. Sub-millisegundo de
+            # diferencia entre cliente y servidor es aceptable para
+            # auditoría operativa.
+            created_at=datetime.now(timezone.utc),
             event_type=event_type,
             source=source,
             quote_id=quote_id,
