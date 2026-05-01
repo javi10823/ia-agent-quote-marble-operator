@@ -1091,6 +1091,53 @@ export async function setGlobalDebug(mode: "1h" | "end_of_day" | "manual" | "off
   return res.json();
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Lista agrupada por quote (PR refactor UX) — endpoint nuevo, separado
+// del endpoint legacy `/observability` que sigue sirviendo eventos
+// sueltos para Phase 3 agente.
+// ─────────────────────────────────────────────────────────────────────
+
+export type ObservabilityQuoteRow = {
+  quote_id: string;
+  client_name: string | null;
+  actor: string | null;
+  events_count: number;
+  errors_count: number;
+  has_debug_payloads: boolean;
+  first_event_at: string;
+  last_event_at: string;
+};
+
+export type ObservabilityQuotesPage = {
+  quotes: ObservabilityQuoteRow[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export async function fetchObservabilityQuotes(params: {
+  q?: string;
+  actor?: string;
+  has_errors?: boolean;
+  has_debug?: boolean;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<ObservabilityQuotesPage> {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== "") qs.append(k, String(v));
+  });
+  const res = await apiFetch(
+    `${API_BASE}/api/admin/observability/quotes?${qs.toString()}`,
+    { credentials: "include" },
+  );
+  handleAuthError(res);
+  if (!res.ok) throw new Error("Error al cargar quotes de observability");
+  return res.json();
+}
+
 export async function fetchGlobalAudit(params: {
   event_type?: string;
   actor?: string;

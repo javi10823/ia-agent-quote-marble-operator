@@ -10,35 +10,36 @@
  * (acordado con el operador — sin roles ni filtros por actor).
  */
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   fetchAuditCoverage,
-  fetchGlobalAudit,
   fetchGlobalDebugStatus,
+  fetchObservabilityQuotes,
   setGlobalDebug,
-  type AuditEvent,
   type AuditCoverage,
   type GlobalDebugStatus,
+  type ObservabilityQuoteRow,
 } from "@/lib/api";
 
 const PAGE_SIZE = 50;
+const SEARCH_DEBOUNCE_MS = 300;
 
-const EVENT_TYPES = [
-  "quote.created",
-  "quote.calculated",
-  "quote.patched",
-  "quote.patched_mo",
-  "quote.status_changed",
-  "quote.reopened",
-  "docs.generated",
-  "docs.regenerated",
-  "agent.stream_started",
-  "agent.tool_called",
-  "agent.tool_result",
-  "chat.message_sent",
-];
+/** "hace 5 min" / "hace 2h" / "hace 3 días" para timestamps recientes;
+ * fecha completa para más viejos. */
+function formatRelative(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0 || Number.isNaN(ms)) return new Date(iso).toLocaleString("es-AR", { hour12: false });
+  const min = Math.floor(ms / 60_000);
+  if (min < 1) return "hace segundos";
+  if (min < 60) return `hace ${min} min`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `hace ${hr}h`;
+  const days = Math.floor(hr / 24);
+  if (days < 7) return `hace ${days} día${days > 1 ? "s" : ""}`;
+  return new Date(iso).toLocaleDateString("es-AR");
+}
 
 function formatTs(iso: string): string {
   return new Date(iso).toLocaleString("es-AR", { hour12: false });
@@ -189,7 +190,8 @@ function GlobalDebugToggle() {
 }
 
 export default function ObservabilityPage() {
-  const [events, setEvents] = useState<AuditEvent[]>([]);
+  const router = useRouter();
+  const [quotes, setQuotes] = useState<ObservabilityQuoteRow[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [coverage, setCoverage] = useState<AuditCoverage | null>(null);
@@ -197,11 +199,24 @@ export default function ObservabilityPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Filtros
-  const [eventType, setEventType] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [actor, setActor] = useState("");
-  const [quoteIdFilter, setQuoteIdFilter] = useState("");
-  const [source, setSource] = useState("");
-  const [successFilter, setSuccessFilter] = useState<"" | "true" | "false">("");
+  const [hasErrors, setHasErrors] = useState(false);
+  const [hasDebug, setHasDebug] = useState(false);
+
+  // Debounce del search input — 300ms.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(searchInput);
+      setOffset(0);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [searchInput]);
 
   useEffect(() => {
     fetchAuditCoverage()
@@ -212,20 +227,20 @@ export default function ObservabilityPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchGlobalAudit({
-      event_type: eventType || undefined,
+    fetchObservabilityQuotes({
+      q: debouncedSearch || undefined,
       actor: actor || undefined,
-      quote_id: quoteIdFilter || undefined,
-      source: source || undefined,
-      success: successFilter === "" ? undefined : successFilter === "true",
+      has_errors: hasErrors || undefined,
+      has_debug: hasDebug || undefined,
       limit: PAGE_SIZE,
       offset,
     })
       .then((page) => {
         if (!cancelled) {
-          setEvents(page.events);
+          setQuotes(page.quotes);
           setTotal(page.total);
           setLoading(false);
+          setError(null);
         }
       })
       .catch((e: Error) => {
@@ -237,11 +252,11 @@ export default function ObservabilityPage() {
     return () => {
       cancelled = true;
     };
-  }, [eventType, actor, quoteIdFilter, source, successFilter, offset]);
+  }, [debouncedSearch, actor, hasErrors, hasDebug, offset]);
 
   const isEmpty = useMemo(
-    () => !loading && events.length === 0 && total === 0,
-    [loading, events.length, total],
+    () => !loading && quotes.length === 0 && total === 0,
+    [loading, quotes.length, total],
   );
 
   return (
@@ -250,16 +265,17 @@ export default function ObservabilityPage() {
         Observability
       </h1>
       <p className="text-sm text-zinc-500 mb-6">
-        Auditoría operativa del sistema — eventos persistidos en{" "}
+        Auditoría operativa del sistema — quotes con eventos en{" "}
         <code className="text-zinc-400">audit_events</code>.
         {coverage?.first_event_date && (
           <>
             {" "}
             Disponible desde{" "}
             <span className="font-mono">
-              {formatTs(coverage.first_event_date)}
-            </span>{" "}
-            · Total: {coverage.total_events.toLocaleString("es-AR")}.
+              {new Date(coverage.first_event_date).toLocaleString("es-AR", { hour12: false })}
+            </span>
+            {" · "}
+            {coverage.total_events.toLocaleString("es-AR")} eventos totales.
           </>
         )}
       </p>
@@ -267,22 +283,13 @@ export default function ObservabilityPage() {
       <GlobalDebugToggle />
 
       {/* Filtros */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-        <select
-          value={eventType}
-          onChange={(e) => {
-            setEventType(e.target.value);
-            setOffset(0);
-          }}
-          className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-sm text-zinc-200"
-        >
-          <option value="">Todos los tipos</option>
-          {EVENT_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 items-center">
+        <input
+          placeholder="🔍 Buscar (quote_id o cliente)…"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          className="md:col-span-2 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm text-zinc-200"
+        />
         <input
           placeholder="Actor (username)"
           value={actor}
@@ -290,54 +297,43 @@ export default function ObservabilityPage() {
             setActor(e.target.value);
             setOffset(0);
           }}
-          className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-sm text-zinc-200"
+          className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm text-zinc-200"
         />
-        <input
-          placeholder="Quote ID"
-          value={quoteIdFilter}
-          onChange={(e) => {
-            setQuoteIdFilter(e.target.value);
-            setOffset(0);
-          }}
-          className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-sm text-zinc-200"
-        />
-        <input
-          placeholder="Source (router/agent/...)"
-          value={source}
-          onChange={(e) => {
-            setSource(e.target.value);
-            setOffset(0);
-          }}
-          className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-sm text-zinc-200"
-        />
-        <select
-          value={successFilter}
-          onChange={(e) => {
-            setSuccessFilter(e.target.value as "" | "true" | "false");
-            setOffset(0);
-          }}
-          className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-sm text-zinc-200"
-        >
-          <option value="">Todos</option>
-          <option value="true">Éxito</option>
-          <option value="false">Fallos</option>
-        </select>
+        <div className="flex items-center gap-3 text-sm text-zinc-300">
+          <label className="inline-flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={hasErrors}
+              onChange={(e) => {
+                setHasErrors(e.target.checked);
+                setOffset(0);
+              }}
+              className="accent-red-500"
+            />
+            <span>solo errores</span>
+          </label>
+          <label className="inline-flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={hasDebug}
+              onChange={(e) => {
+                setHasDebug(e.target.checked);
+                setOffset(0);
+              }}
+              className="accent-orange-500"
+            />
+            <span>solo debug</span>
+          </label>
+          {loading && <span className="text-xs text-zinc-500 ml-auto">cargando…</span>}
+        </div>
       </div>
 
-      {error && (
-        <div className="text-red-400 mb-4">Error: {error}</div>
-      )}
+      {error && <div className="text-red-400 mb-4">Error: {error}</div>}
 
       {isEmpty ? (
         <div className="text-zinc-400 p-6 border border-zinc-800 rounded">
           {coverage?.first_event_date ? (
-            <>
-              Auditoría disponible desde{" "}
-              <span className="font-mono">
-                {formatTs(coverage.first_event_date)}
-              </span>
-              . Sin eventos que coincidan con los filtros actuales.
-            </>
+            <>No hay quotes que matcheen los filtros actuales.</>
           ) : (
             <>Aún no hay eventos registrados.</>
           )}
@@ -345,7 +341,7 @@ export default function ObservabilityPage() {
       ) : (
         <>
           <div className="text-xs text-zinc-500 mb-2">
-            {total.toLocaleString("es-AR")} resultados · página{" "}
+            {total.toLocaleString("es-AR")} quote{total !== 1 ? "s" : ""} · página{" "}
             {Math.floor(offset / PAGE_SIZE) + 1} de{" "}
             {Math.max(1, Math.ceil(total / PAGE_SIZE))}
           </div>
@@ -353,54 +349,54 @@ export default function ObservabilityPage() {
             <table className="w-full text-sm">
               <thead className="bg-zinc-900 text-zinc-400 text-xs uppercase">
                 <tr>
-                  <th className="px-3 py-2 text-left">Hora</th>
-                  <th className="px-3 py-2 text-left">Tipo</th>
-                  <th className="px-3 py-2 text-left">Source</th>
-                  <th className="px-3 py-2 text-left">Actor</th>
                   <th className="px-3 py-2 text-left">Quote</th>
-                  <th className="px-3 py-2 text-left">Resumen</th>
-                  <th className="px-3 py-2 text-left">ms</th>
-                  <th className="px-3 py-2 text-left">OK</th>
+                  <th className="px-3 py-2 text-left">Cliente</th>
+                  <th className="px-3 py-2 text-left">Actor</th>
+                  <th className="px-3 py-2 text-right">Events</th>
+                  <th className="px-3 py-2 text-left">Errores</th>
+                  <th className="px-3 py-2 text-left">Debug</th>
+                  <th className="px-3 py-2 text-left">Últ. act.</th>
                 </tr>
               </thead>
               <tbody>
-                {events.map((e) => (
+                {quotes.map((q) => (
                   <tr
-                    key={e.id}
-                    className="border-t border-zinc-800 text-zinc-300"
+                    key={q.quote_id}
+                    onClick={() =>
+                      router.push(`/admin/quotes/${q.quote_id}/audit`)
+                    }
+                    className="border-t border-zinc-800 text-zinc-300 hover:bg-zinc-900/50 cursor-pointer"
                   >
                     <td className="px-3 py-2 font-mono text-xs">
-                      {formatTs(e.created_at)}
+                      {q.quote_id.slice(0, 12)}…
                     </td>
-                    <td className="px-3 py-2 font-mono text-xs">
-                      {e.event_type}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-zinc-500">
-                      {e.source}
-                    </td>
-                    <td className="px-3 py-2 text-xs">{e.actor}</td>
                     <td className="px-3 py-2 text-xs">
-                      {e.quote_id ? (
-                        <Link
-                          href={`/admin/quotes/${e.quote_id}/audit`}
-                          className="text-zinc-300 hover:text-zinc-100 underline"
-                        >
-                          {e.quote_id.slice(0, 8)}…
-                        </Link>
+                      {q.client_name || <span className="text-zinc-600">—</span>}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {q.actor || <span className="text-zinc-600">—</span>}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-right">
+                      {q.events_count}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {q.errors_count > 0 ? (
+                        <span className="px-1.5 py-0.5 bg-red-500/20 text-red-300 rounded text-[10px] font-medium">
+                          ⚠ {q.errors_count}
+                        </span>
                       ) : (
                         <span className="text-zinc-600">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-xs">{e.summary}</td>
-                    <td className="px-3 py-2 text-xs text-zinc-500">
-                      {e.elapsed_ms ?? "—"}
-                    </td>
                     <td className="px-3 py-2 text-xs">
-                      {e.success ? (
-                        <span className="text-emerald-500">✓</span>
+                      {q.has_debug_payloads ? (
+                        <span className="text-orange-400" title="contiene events con debug payload">🔴</span>
                       ) : (
-                        <span className="text-red-500">✗</span>
+                        <span className="text-zinc-600">—</span>
                       )}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-zinc-500">
+                      {formatRelative(q.last_event_at)}
                     </td>
                   </tr>
                 ))}
