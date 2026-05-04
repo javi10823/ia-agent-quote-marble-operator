@@ -5678,7 +5678,14 @@ class AgentService:
                     error_list = "\n".join(f"❌ {e}" for e in errors)
                     return {
                         "ok": False,
-                        "error": f"Pre-flight fallido para {qdata.get('material_name', '?')}:\n{error_list}\n\nCorregir estos datos antes de generar.",
+                        "error": (
+                            f"Pre-flight fallido para {qdata.get('material_name', '?')}:\n"
+                            f"{error_list}\n\n"
+                            f"PASOS OBLIGATORIOS (en este mismo turno, NO cierres el turno hasta completar):\n"
+                            f"1. Corregí los datos faltantes/incorrectos arriba.\n"
+                            f"2. Llamá `generate_documents` DE NUEVO con los datos completos.\n"
+                            f"NO emitas texto explicativo final hasta que `generate_documents` haya devuelto OK."
+                        ),
                     }
                 all_warnings.extend(warnings)
 
@@ -5688,7 +5695,14 @@ class AgentService:
                     error_list = "\n".join(f"❌ {e}" for e in deep.errors)
                     return {
                         "ok": False,
-                        "error": f"Validación profunda fallida para {qdata.get('material_name', '?')}:\n{error_list}\n\nRecalcular antes de generar.",
+                        "error": (
+                            f"Validación profunda fallida para {qdata.get('material_name', '?')}:\n"
+                            f"{error_list}\n\n"
+                            f"PASOS OBLIGATORIOS PARA CORREGIR (en este mismo turno, NO termines la respuesta hasta completarlos):\n"
+                            f"1. Llamá `calculate_quote` con las piezas correctas para obtener material_m2 y totales actualizados.\n"
+                            f"2. Después del recálculo, llamá `generate_documents` DE NUEVO con los datos del nuevo cálculo.\n"
+                            f"NO emitas texto explicativo ni cierres el turno hasta que `generate_documents` haya devuelto OK."
+                        ),
                     }
                 all_warnings.extend(deep.warnings)
 
