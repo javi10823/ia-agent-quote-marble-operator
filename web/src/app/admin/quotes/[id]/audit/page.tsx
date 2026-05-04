@@ -313,7 +313,8 @@ export default function QuoteAuditPage() {
   const firstEventDate = timeline.coverage.first_event_date;
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className="flex-1 overflow-y-auto p-8 w-full">
+      <div className="max-w-5xl mx-auto">
       <div className="flex items-baseline justify-between mb-2 flex-wrap gap-3">
         <div>
           <button
@@ -393,6 +394,7 @@ export default function QuoteAuditPage() {
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }
