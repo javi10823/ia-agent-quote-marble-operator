@@ -5,6 +5,14 @@ Internal tool for the operator — FastAPI + Next.js 14 + Claude API.
 
 ---
 
+## Screenshots
+
+| Quotes dashboard | New quote — chat | Validated quote detail |
+|---|---|---|
+| ![Quotes list](docs/screenshots/01-presupuestos-list.png) | ![New quote chat](docs/screenshots/02-chat-nuevo.png) | ![Validated detail](docs/screenshots/03-detalle-validado.png) |
+
+---
+
 ## Stack
 
 | Layer | Technology |
@@ -20,6 +28,85 @@ Internal tool for the operator — FastAPI + Next.js 14 + Claude API.
 | Drive | Google Drive API (Service Account) |
 | Deploy API | Railway |
 | Deploy Web | Vercel |
+
+---
+
+## Architecture
+
+```
+┌──────────────────┐         ┌────────────────────┐
+│  Operator (web)  │ ──────▶ │  Next.js  (web/)   │
+│   browser UI     │ ◀────── │     on Vercel      │
+└──────────────────┘         └─────────┬──────────┘
+                                       │ HTTPS + SSE
+                                       ▼
+                             ┌────────────────────┐
+                             │  FastAPI  (api/)   │
+                             │     on Railway     │
+                             └─────────┬──────────┘
+                                       │
+        ┌──────────────────────────────┼──────────────────────────────┐
+        ▼                              ▼                              ▼
+ ┌────────────────┐           ┌────────────────┐           ┌────────────────┐
+ │  PostgreSQL    │           │   Claude API   │           │  Google Drive  │
+ │  quotes +      │           │  (agentic loop │           │   (PDF + xlsx  │
+ │  audit_events  │           │   + tool use)  │           │    deliveries) │
+ └────────────────┘           └────────────────┘           └────────────────┘
+```
+
+**Agentic loop** — `api/app/modules/agent/agent.py`:
+
+```
+operator brief / blueprint
+        │
+        ▼
+┌──────────────────────────────┐
+│  AgentService.stream_chat()  │ ◄── system prompt = CONTEXT.md + rules/*.md + examples/*.md
+└────────────┬─────────────────┘
+             │  Claude API (streaming + tool use)
+             ▼
+   ┌─────────┴──────────┐
+   │     tool calls     │
+   ├────────────────────┤
+   │  catalog_lookup    │ → reads catalog/*.json + applies IVA
+   │  check_stock       │ → stock.json
+   │  read_plan         │ → PDF rasterized at 300 DPI, crop per countertop
+   │  generate_documents│ → PDF (WeasyPrint) + Excel (openpyxl, fixed template)
+   │  upload_to_drive   │ → year/month folder layout
+   └────────────────────┘
+             │
+             ▼
+  SSE chunks back to the chat (thinking · text · tool calls · final docs)
+```
+
+---
+
+## Philosophy — the model reasons, the code validates
+
+Valentina is the LLM, and she's good at *understanding*: parsing a brief, reading a blueprint, picking the right material from a hint, deciding when a job is "edificio" (building) vs "obra" (residential), choosing a sink. She is **not** the source of truth for prices or arithmetic.
+
+Anything that has to be exact runs in code:
+
+- **Prices and IVA** come from `api/catalog/*.json` via the `catalog_lookup` tool — never from the model's memory. All catalogs are stored without IVA; the tool applies `×1.21` and the USD/ARS rounding rules.
+- **Math** (linear meters, sink counts, freight per piece, architect discount, waste %) lives in `api/app/modules/agent/tools/calculate_tool.py`, not in the prompt.
+- **Document layout** (PDF + Excel) is rendered from a fixed template in `api/templates/`. The model fills slots; it does not author free-form HTML or spreadsheets.
+- **Business rules** (Negro Brasil never has waste, Johnson always uses pegadopileta, edificios skip installation and divide MO by 1.05, etc.) are enforced in tool code, with the same rules surfaced in `api/rules/*.md` so the model knows *when* to invoke them.
+
+The split is what makes the output auditable: a wrong number traces to a wrong catalog entry or a wrong tool input, not to a hallucination.
+
+---
+
+## Observability
+
+Every quote keeps a full audit trail. The operator panel at **`/admin/observability`** (sidebar → *Auditoría*) exposes:
+
+- **Per-quote timeline** — every model turn, tool call, document generation, status transition, and Drive upload, in order. Sourced from the `audit_events` table written by `api/app/modules/observability/helper.py::log_event`.
+- **Global view** — the same events across all quotes for incident triage and cron breadcrumbs.
+- **On-demand debug mode** — toggleable from the panel; captures full request/response payloads for a bounded window. Off by default so cost and storage stay flat.
+- **PII + secret scrubbing** — `observability/sanitizer.py` redacts known sensitive keys and truncates oversized payloads before write (truncation, not drop).
+- **Retention** — old events are removed by `observability/cleanup.py` on a cron.
+
+Surfaced under `/api/admin/audit/*` and `/api/admin/observability/*`. Tests in `api/tests/test_observability*.py` cover the load, e2e, and quotes-endpoint paths.
 
 ---
 
