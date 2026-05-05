@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>16 · Despiece · Empty state lateral (sin brief ni contexto)</title>
+<meta name="viewport" content="width=1440" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400;1,9..144,500&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="operator-shared.css">
+<template id="__bundler_thumbnail" data-bg-color="#0f1318">
+<svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="800" fill="#0f1318"/>
+  <rect x="500" y="280" width="200" height="160" rx="12" fill="none" stroke="#6d7682" stroke-width="3" stroke-dasharray="8 6"/>
+  <text x="600" y="380" font-family="monospace" font-size="60" fill="#6d7682" text-anchor="middle">∅</text>
+  <text x="600" y="540" font-family="Georgia,serif" font-style="italic" font-size="56" fill="#e8ede5" text-anchor="middle">Sin contexto todavía</text>
+  <text x="600" y="600" font-family="monospace" font-size="20" fill="#6d7682" text-anchor="middle" letter-spacing="2">16 · DESPIECE · EMPTY LATERAL</text>
+</svg>
+</template>
+<style>
+  /* Estilos locales: ninguno — todo migrado a operator-shared.css (Sprint 1) */
+  /* Override stepper para que pasos 1/2 sean .pending — chrome.js los marca .done por defecto */
+  .stepper .step.force-pending.done .n {
+    background: transparent !important;
+    border: 1px dashed var(--ink-mute) !important;
+    color: var(--ink-mute) !important;
+  }
+  .stepper .step.force-pending.done .n::before { content: none !important; }
+  .stepper .step.force-pending { opacity: 0.45; }
+  .stepper .step.force-pending::after {
+    content: " · pendiente";
+    font-family: var(--mono); font-size: 9.5px;
+    color: var(--ink-mute); letter-spacing: 0.4px;
+    text-transform: uppercase; margin-left: 4px;
+  }
+</style>
+</head>
+<body data-step="despiece" data-state="A" data-audit="off" data-empty-prev="true" data-screen-label="16 Despiece · empty state lateral">
+<div class="frame-label"><span class="num">16</span> Despiece · Desktop 1440 <span class="state">Empty state lateral — Marina entró sin brief ni contexto</span></div>
+
+<div class="page">
+  <main class="main">
+    <div class="body">
+      <div class="col">
+
+        <div class="section-head">
+          <div>
+            <div class="meta">Paso 3 de 5 · Despiece <span class="hint">· entraste sin pasar por brief ni contexto</span></div>
+            <h2>Despiece de piezas</h2>
+          </div>
+        </div>
+
+        <div class="empty-hero">
+          <div class="glyph">∅</div>
+          <h3>Acá todavía no hay piezas que despiezar</h3>
+          <p class="lead">
+            Llegaste al paso 3 sin completar brief ni contexto. <em>Valentina</em> no puede proponer un despiece sin saber qué ambiente está mirando. Elegí cómo seguir:
+          </p>
+
+          <div class="empty-paths">
+            <div class="path primary">
+              <div class="icon-wrap">
+                <div class="icon">↑</div>
+                <div class="ttl">Procesar con Valentina</div>
+                <div class="badge-rec">recomendado</div>
+              </div>
+              <div class="desc">
+                Subí el brief, el plano, o ambos. <em>Valentina</em> identifica las piezas y propone el despiece completo. Después podés editar lo que quieras.
+              </div>
+              <div class="meta">→ vuelve al paso 1 · procesa con IA</div>
+            </div>
+
+            <div class="path">
+              <div class="icon-wrap">
+                <div class="icon">+</div>
+                <div class="ttl">Cargar piezas a mano</div>
+              </div>
+              <div class="desc">
+                Empezás con una tabla vacía y vas agregando piezas una por una con sus medidas. Sin ayuda de Valentina hasta que confirmes contexto.
+              </div>
+              <div class="meta">→ tabla editable inline · sin cálculo automático</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="col">
+        <aside class="chat empty fit">
+          <div class="head">
+            <div class="vbubble"></div>
+            <div>
+              <div class="title">Ayuda con Despiece</div>
+              <div class="sub">Sin contexto · inactivo</div>
+            </div>
+            <span class="x">×</span>
+          </div>
+          <div class="empty-body">
+            <div class="vmuted">∅</div>
+            <div class="msg-empty">
+              <em>Valentina</em> no tiene contexto del quote todavía. Cargá el brief o las piezas para que pueda ayudarte.
+            </div>
+            <div class="sub">El chat se activa cuando haya al menos brief o piezas confirmadas</div>
+          </div>
+          <div class="scope">
+            <span class="lbl">Lo que voy a ver</span>
+            <span class="pill">Brief · pendiente</span>
+            <span class="pill">Contexto · pendiente</span>
+            <span class="pill">Piezas · 0</span>
+          </div>
+          <div class="composer">
+            <div class="field">
+              <input placeholder="Cargá brief o piezas para activar el chat" disabled />
+              <button class="send" disabled>↑</button>
+            </div>
+            <div class="hint">Chat inactivo</div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="chrome.js"></script>
+<script>
+  // Marcar pasos 1 y 2 del stepper como .pending después de que chrome.js los renderee
+  setTimeout(() => {
+    const steps = document.querySelectorAll('.stepper .step');
+    if (steps[0]) steps[0].classList.add('force-pending');
+    if (steps[1]) steps[1].classList.add('force-pending');
+  }, 50);
+</script>
+</body>
+</html>

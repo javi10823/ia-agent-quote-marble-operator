@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>07 · Paso 4 / Cálculo · Estado A</title>
+<meta name="viewport" content="width=1440" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400;1,9..144,500&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="operator-shared.css">
+<template id="__bundler_thumbnail" data-bg-color="#0f1318">
+<svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="800" fill="#0f1318"/>
+  <circle cx="600" cy="340" r="120" fill="#a9c1d6"/>
+  <circle cx="565" cy="305" r="40" fill="#ffffff" opacity="0.45"/>
+  <text x="600" y="540" font-family="Georgia,serif" font-style="italic" font-size="56" fill="#e8ede5" text-anchor="middle">Operator · AI Scoped</text>
+  <text x="600" y="600" font-family="monospace" font-size="20" fill="#6d7682" text-anchor="middle" letter-spacing="2">07 · PASO 4 · A</text>
+</svg>
+</template>
+</head>
+<body data-step="paso4" data-state="A" data-audit="off" data-iva="on" data-tipo="particular" data-screen-label="07 Paso 4 · A · IA propuso" data-quote-id="PRES-2026-018" data-quote-client="Cueto-Heredia Arquitectura" data-quote-project="cocina U + isla · Belgrano">
+<div class="frame-label"><span class="num">07</span> Paso 4 · Cálculo · Desktop 1440 <span class="state">Estado A — Valentina calculó</span></div>
+
+<div class="page">
+  <main class="main">
+    <div class="body no-chat">
+      <div class="col">
+
+        <div class="section-head">
+          <div>
+            <div class="meta">Paso 4 de 5 · Cálculo</div>
+            <h2>Presupuesto calculado</h2>
+          </div>
+          <div class="right">
+            <div class="tipo-toggle" role="radiogroup" aria-label="Tipo de cliente">
+              <button class="tt-btn on" onclick="document.body.dataset.tipo='particular';this.classList.add('on');this.nextElementSibling.classList.remove('on')">Particular</button>
+              <button class="tt-btn" onclick="document.body.dataset.tipo='edificio';this.classList.add('on');this.previousElementSibling.classList.remove('on')">Edificio</button>
+            </div>
+            <label class="iva-toggle">
+              <input type="checkbox" checked onchange="document.body.dataset.iva = this.checked ? 'on' : 'off'">
+              <span class="lbl">Desglose IVA</span>
+            </label>
+            <button class="btn ghost sm">↻ Re-calcular</button>
+          </div>
+        </div>
+
+        <!-- Banner híbrido: línea 1 sistema, línea 2 ajustes Valentina -->
+        <div class="calc-banner">
+          <div class="l1">
+            <span class="ok">✓</span>
+            <span><strong>Calculado</strong> · Silestone Blanco Norte · 6,50 m²</span>
+            <span class="sep">·</span>
+            <span>Total <strong>$660.739</strong> ARS + <strong>USD 1.538</strong></span>
+          </div>
+          <div class="l2">
+            <span class="vmini"></span>
+            <span>
+              <em>Valentina</em> aplicó:
+              <span class="adj-list">
+                <strong>5% descuento arquitecta</strong> (Cueto-Heredia, match exacto)
+                <span class="pt">·</span>
+                <strong>"EN 2 TRAMOS"</strong> en mesada de 3,20m
+                <span class="pt">·</span>
+                <strong>+1 TOMAS</strong> automático por zócalo de 12cm (regla &gt;10cm)
+                <span class="pt">·</span>
+                <strong>+1 TOMAS</strong> por alzada <a href="04-despiece-A-ia-propuso.html#R4" class="link-inline" title="Ver pieza R4 alzada salpicadero en paso 3">(pieza R4)</a>
+              </span>
+            </span>
+          </div>
+        </div>
+
+        <!-- 1 · MATERIAL -->
+        <div class="calc-section">
+          <div class="sh">
+            <span class="tag">01</span>
+            <span class="ttl">Material</span>
+            <span class="meta">Silestone Blanco Norte 20mm · cuarzo · USD · placa 4,20 m² (media 2,10)</span>
+          </div>
+          <div class="sb">
+            <div class="row-line">
+              <div class="lbl">Silestone Blanco Norte 20mm
+                <span class="sub">6,50 m² reales del trabajo · USD 249 c/IVA · piezas en <a href="04-despiece-A-ia-propuso.html" class="link-inline">paso 3 →</a></span>
+              </div>
+              <div class="num">6,50 m²</div>
+              <div class="num">USD 249</div>
+              <div class="total">USD 1.619</div>
+            </div>
+            <div class="row-line discount">
+              <div class="lbl"><em>Valentina</em> · descuento arquitecta Cueto-Heredia
+                <span class="sub">−5% sobre material importado · architects.json match exacto</span>
+              </div>
+              <div class="num">−5%</div>
+              <div class="num">—</div>
+              <div class="total">−USD 81</div>
+            </div>
+            <div class="subtotal">
+              <span class="lbl">Subtotal material</span>
+              <span class="val">USD 1.538</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2 · MERMA -->
+        <div class="calc-section">
+          <div class="sh">
+            <span class="tag">02</span>
+            <span class="ttl">Merma / Sobrante</span>
+            <span class="chip-info">APLICA · sobrante opcional</span>
+            <label class="merma-stock">
+              <input type="checkbox">
+              <span>stock confirmado en taller</span>
+            </label>
+          </div>
+          <div class="sb">
+            <div class="merma-na">
+              <span>Silestone se vende en media placa (2,10 m²) o entera (4,20 m²). Solo se cobra sobrante si desperdicio ≥1 m².</span>
+            </div>
+            <div class="row-line">
+              <div class="lbl">Cálculo placa
+                <span class="sub">ceil(6,50 / 2,10) = 4 medias placas → 8,40 m² · desperdicio <strong>1,90 m²</strong> ≥ 1 m² → aplica sobrante</span>
+              </div>
+              <div class="num">—</div>
+              <div class="num">—</div>
+              <div class="total muted fw-400">—</div>
+            </div>
+            <div class="sobrante-opt">
+              <input type="checkbox" id="sobrante">
+              <label for="sobrante" class="sobrante-lbl">Ofrecer sobrante al cliente (0,95 m² a mitad de precio · USD 124,55 → USD 118)</label>
+              <span class="num">+USD 118</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3 · MANO DE OBRA -->
+        <div class="calc-section">
+          <div class="sh">
+            <span class="tag">03</span>
+            <span class="ttl">Mano de obra</span>
+            <span class="meta">labor.json · 25/03/2026 · base s/IVA × 1,21</span>
+          </div>
+        </div>
+        <div class="etable cols-mo">
+          <div class="colh">
+            <div>SKU</div>
+            <div>Descripción</div>
+            <div>Cant</div>
+            <div class="col-base">Base s/IVA</div>
+            <div class="col-iva">×1,21</div>
+            <div>Total c/IVA</div>
+            <div></div>
+          </div>
+
+          <div class="row">
+            <div class="cell sku">COLOCACION</div>
+            <div class="cell label-cell">Colocación en obra
+              <span class="sub">6,50 m² · cuarzo 20mm usa SKU estándar (no DEKTON)</span>
+            </div>
+            <div class="cell num">6,50</div>
+            <div class="cell num base">$ 49.698</div>
+            <div class="cell iva">×1,21</div>
+            <div class="cell num">$ 390.875</div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell sku">PEGADOPILETA</div>
+            <div class="cell label-cell">Pegado de pileta empotrada
+              <span class="sub">1 pileta · cliente la trae · grifería incluida</span>
+            </div>
+            <div class="cell num">1</div>
+            <div class="cell num base">$ 53.840</div>
+            <div class="cell iva">×1,21</div>
+            <div class="cell num">$ 65.147</div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell sku">ANAFE</div>
+            <div class="cell label-cell">Corte para anafe
+              <span class="sub">1 corte · marcado en plano (cuadrado en R2)</span>
+            </div>
+            <div class="cell num">1</div>
+            <div class="cell num base">$ 35.617</div>
+            <div class="cell iva">×1,21</div>
+            <div class="cell num">$ 43.097</div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell sku">REGRUESO</div>
+            <div class="cell label-cell">Regrueso de canto frontal
+              <span class="sub">4,98 ml · cuarzo 20mm usa REGRUESO (no FALDON+CORTE45)</span>
+            </div>
+            <div class="cell num">4,98 ml</div>
+            <div class="cell num base">$ 13.810</div>
+            <div class="cell iva">×1,21</div>
+            <div class="cell num">$ 83.216</div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell sku">TOMAS</div>
+            <div class="cell label-cell">Agujero tomacorriente
+              <span class="sub">2 unid. · 1 alzada (auto, <a href="04-despiece-A-ia-propuso.html#R4" class="link-inline">pieza R4</a>) + 1 zócalo 12cm (auto, regla &gt;10cm)</span>
+            </div>
+            <div class="cell num">2</div>
+            <div class="cell num base">$ 6.461</div>
+            <div class="cell iva">×1,21</div>
+            <div class="cell num">$ 15.636</div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row subtotal-mo">
+            <div class="cell sku">—</div>
+            <div class="cell label-cell subtotal-lbl">Subtotal mano de obra · 5 ítems</div>
+            <div class="cell num base muted">$ 494.190</div>
+            <div class="cell iva muted">×1,21</div>
+            <div class="cell num bold">$ 597.970</div>
+            <div class="cell action"></div>
+          </div>
+        </div>
+
+        <!-- 4 · PILETAS (compacta inline cuando cliente la trae) -->
+        <div class="calc-section piletas-inline">
+          <div class="sh">
+            <span class="tag">04</span>
+            <span class="ttl">Piletas</span>
+            <span class="chip-na">Cliente la trae · solo PEGADOPILETA en MO</span>
+            <span class="meta">1 pileta empotrada · grifería incluida</span>
+          </div>
+        </div>
+
+        <!-- 5 · FLETE -->
+        <div class="calc-section">
+          <div class="sh">
+            <span class="tag">05</span>
+            <span class="ttl">Flete</span>
+            <span class="meta">delivery-zones.json · particular · 1 viaje</span>
+          </div>
+          <div class="sb">
+            <div class="row-line">
+              <div class="lbl">Flete Rosario
+                <span class="sub">SKU ENVIOROS · 1 viaje · ida y vuelta</span>
+              </div>
+              <div class="num">1 viaje</div>
+              <div class="num">$ 52.000</div>
+              <div class="total">$ 62.920</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- GRAND TOTAL bicurrency -->
+        <div class="grand-total">
+          <div class="col">
+            <div class="lbl">ARS <span class="sub">mano de obra + flete</span></div>
+            <div class="val">$ 660.890</div>
+            <div class="meta">MO <strong>$ 597.970</strong> · flete <strong>$ 62.920</strong></div>
+          </div>
+          <div class="div"></div>
+          <div class="col">
+            <div class="lbl">USD <span class="sub">material (importado)</span></div>
+            <div class="val">USD 1.538</div>
+            <div class="meta">6,50 m² × USD 249 − 5% arq.</div>
+          </div>
+        </div>
+
+        <!-- DATOS DEL PDF · plegable -->
+        <details class="datos-pdf">
+          <summary>
+            <span class="dp-tag">PDF</span>
+            <span class="dp-ttl">Datos del PDF</span>
+            <span class="dp-meta">plazo · anticipo · notas · envío</span>
+            <span class="dp-chev">▾</span>
+          </summary>
+          <div class="dp-body">
+            <div class="dp-row">
+              <label class="dp-lbl">Plazo de entrega</label>
+              <input type="text" value="3 semanas" class="dp-inp">
+              <span class="dp-hint">desde confirmación de medidas en obra</span>
+            </div>
+            <div class="dp-row">
+              <label class="dp-lbl">Anticipo</label>
+              <div class="dp-inline">
+                <input type="text" value="50" class="dp-inp dp-inp-sm">
+                <span class="dp-unit">%</span>
+                <span class="dp-hint">$ 330.445 ARS al confirmar</span>
+              </div>
+            </div>
+            <div class="dp-row">
+              <label class="dp-lbl">Saldo</label>
+              <div class="dp-inline">
+                <span class="dp-readonly">contra entrega · 50%</span>
+                <span class="dp-hint">$ 330.445 ARS al instalar</span>
+              </div>
+            </div>
+            <div class="dp-row">
+              <label class="dp-lbl">Datos de envío</label>
+              <input type="text" value="Cueto-Heredia · Belgrano · 4° piso (con ascensor)" class="dp-inp">
+            </div>
+            <div class="dp-row">
+              <label class="dp-lbl">Notas internas</label>
+              <textarea class="dp-ta" placeholder="visible solo internamente, no aparece en PDF cliente">Confirmar bacha 38×48 con cliente antes de cortar — pidió Acero pero quizás cambia a porcelana.</textarea>
+            </div>
+          </div>
+        </details>
+
+        <div class="confirm-bar">
+          <div class="summary">
+            <strong>5 ítems MO</strong> · material USD · MO+flete ARS · IVA 21% incluido · vigencia <input type="text" value="7" class="input vig-input"> días
+          </div>
+          <button class="btn ghost">💬 Ayuda con esta sección</button>
+          <button class="btn primary">Confirmar y generar PDF →</button>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="chrome.js"></script>
+</body>
+</html>

@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>01 · Contexto · Estado A — IA propuso</title>
+<meta name="viewport" content="width=1440" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400;1,9..144,500&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="operator-shared.css">
+<template id="__bundler_thumbnail" data-bg-color="#0f1318">
+<svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="800" fill="#0f1318"/>
+  <circle cx="600" cy="340" r="120" fill="#a9c1d6"/>
+  <circle cx="565" cy="305" r="40" fill="#ffffff" opacity="0.45"/>
+  <text x="600" y="540" font-family="Georgia,serif" font-style="italic" font-size="56" fill="#e8ede5" text-anchor="middle">Operator · AI Scoped</text>
+  <text x="600" y="600" font-family="monospace" font-size="20" fill="#6d7682" text-anchor="middle" letter-spacing="2">CARGANDO MOCKUP</text>
+</svg>
+</template>
+</head>
+<body data-step="contexto" data-state="A" data-audit="off" data-quote-id="PRES-2026-018" data-quote-client="Cueto-Heredia Arquitectura" data-quote-project="cocina U + isla · Belgrano">
+<div class="frame-label"><span class="num">01</span> Contexto · Desktop 1440 <span class="state">Estado A — Valentina extrajo, sin edición humana</span></div>
+
+<div class="page">
+  <main class="main">
+
+    <div class="body no-chat">
+      <div class="col">
+
+        <div class="section-head">
+          <div>
+            <div class="meta">Paso 2 de 5 · Contexto</div>
+            <h2>Contexto del presupuesto</h2>
+          </div>
+          <div class="right">
+            <div class="regen-wrap">
+              <div class="regen-split">
+                <button class="main">↻ Re-generar campos no editados</button>
+                <button class="kebab" onclick="this.parentElement.nextElementSibling.classList.toggle('open')">⋮</button>
+              </div>
+              <div class="regen-menu">
+                <div class="item danger">
+                  Re-generar TODO desde el brief
+                  <span class="desc">descarta lo que hayas editado · pide confirmación</span>
+                </div>
+                <div class="item">
+                  Volver al brief original
+                  <span class="desc">ver lo que Valentina extrajo inicialmente</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ia-banner">
+          <div class="vbubble"></div>
+          <div class="text">
+            <em>Valentina</em> extrajo del brief: <strong>cliente Cueto-Heredia</strong> (match arquitecta · −5%) · cocina con <strong>pileta empotrada</strong> · zócalo 12cm activa <strong>TOMAS automático</strong>. Revisalo y editá lo que haga falta.
+            <div class="sub">Click en cualquier campo para editar · vmini al lado de los inferidos · Tab/Enter confirma · Esc cancela</div>
+          </div>
+        </div>
+
+        <!-- ───────────── GRUPO 1: CLIENTE ───────────── -->
+        <div class="ctx-group-head">
+          <span>Cliente</span>
+          <span class="ctx-count">4 campos</span>
+        </div>
+
+        <div class="etable cols-220-1fr-140-60 mb-16">
+          <div class="colh">
+            <div>Campo</div>
+            <div>Valor</div>
+            <div>Origen</div>
+            <div></div>
+          </div>
+
+          <div class="row">
+            <div class="cell label-cell">
+              Cliente
+              <span class="sub">arquitecta / razón social</span>
+            </div>
+            <div class="cell value-with-chip">
+              <input class="input" value="Cueto-Heredia Arquitectura" />
+              <span class="vmini-chip" data-tip="Valentina · matcheé contra architects.json — Cueto-Heredia tiene 5% de descuento sobre material importado. Aplicado en paso 4.">
+                <span class="vmini"></span>
+                <span class="lbl">match arquitecta · −5%</span>
+              </span>
+            </div>
+            <div class="cell"><span class="k k-match">MATCH</span></div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell label-cell">
+              Contacto
+              <span class="sub">teléfono / email</span>
+            </div>
+            <div class="cell"><input class="input" value="+54 11 4823-1140 · estudio@cuetoheredia.com" /></div>
+            <div class="cell"><span class="k">DEL BRIEF</span></div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell label-cell">
+              Localidad
+              <span class="sub">obra · ciudad</span>
+            </div>
+            <div class="cell"><input class="input" value="Belgrano, CABA" /></div>
+            <div class="cell"><span class="k">DEL BRIEF</span></div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell label-cell">
+              Plazo de entrega
+              <span class="sub">desde confirmación de medidas</span>
+            </div>
+            <div class="cell empty-cell"><input class="input" placeholder="A definir con cliente" /></div>
+            <div class="cell"><span class="k">FALTA</span></div>
+            <div class="cell action">⋯</div>
+          </div>
+        </div>
+
+        <!-- ───────────── GRUPO 2: PROYECTO ───────────── -->
+        <div class="ctx-group-head">
+          <span>Proyecto</span>
+          <span class="ctx-count">3 campos</span>
+        </div>
+
+        <div class="etable cols-220-1fr-140-60 mb-16">
+          <div class="colh">
+            <div>Campo</div>
+            <div>Valor</div>
+            <div>Origen</div>
+            <div></div>
+          </div>
+
+          <div class="row">
+            <div class="cell label-cell">
+              Tipología
+              <span class="sub">cocina, baño, mesa, etc.</span>
+            </div>
+            <div class="cell"><input class="input" value="Cocina en U + isla central" /></div>
+            <div class="cell"><span class="k">DEL BRIEF</span></div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell label-cell">
+              Tipo de obra
+              <span class="sub">define colocación + flete</span>
+            </div>
+            <div class="cell value-with-chip">
+              <span class="toggle-sw">
+                <span class="opt active">Particular</span>
+                <span class="opt">Edificio</span>
+              </span>
+              <span class="vmini-chip" data-tip="Valentina · default Particular (no detecté nombre de desarrolladora ni 'edificio' en el enunciado, ni m² > 15). Si es obra de edificio, marcalo manualmente: aplico ÷1.05 a MO y agrupo flete por ceil(piezas/6).">
+                <span class="vmini"></span>
+                <span class="lbl">default · sin señales de edificio</span>
+              </span>
+            </div>
+            <div class="cell"><span class="k">DEFAULT</span></div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell label-cell">
+              Material
+              <span class="sub">piedra o engineered</span>
+            </div>
+            <div class="cell"><input class="input" value="Granito Negro Brasil" /></div>
+            <div class="cell"><span class="k">DEL BRIEF</span></div>
+            <div class="cell action">⋯</div>
+          </div>
+        </div>
+
+        <!-- ───────────── GRUPO 3: DETALLES DEL TRABAJO ───────────── -->
+        <div class="ctx-group-head">
+          <span>Detalles del trabajo</span>
+          <span class="ctx-count">4 campos · concentra inferencias de Valentina</span>
+        </div>
+
+        <div class="etable cols-220-1fr-140-60 mb-16">
+          <div class="colh">
+            <div>Campo</div>
+            <div>Valor</div>
+            <div>Origen</div>
+            <div></div>
+          </div>
+
+          <div class="row">
+            <div class="cell label-cell">
+              Pileta
+              <span class="sub">tipo + origen</span>
+            </div>
+            <div class="cell value-with-chip">
+              <span class="input-group">
+                <span class="toggle-sw yn-sw">
+                  <span class="opt active">Empotrada</span>
+                  <span class="opt">Apoyo</span>
+                </span>
+                <span class="ig-sub">
+                  <span>origen</span>
+                  <span class="toggle-sw yn-sw">
+                    <span class="opt active">Cliente la trae</span>
+                    <span class="opt">Johnson</span>
+                  </span>
+                </span>
+              </span>
+              <span class="vmini-chip" data-tip="Valentina · brief dice 'cocina' → empotrada por default (regla del taller). Apoyo es exclusivo de baños — si marcás apoyo en cocina te aviso.">
+                <span class="vmini"></span>
+                <span class="lbl">inferí empotrada porque cocina</span>
+              </span>
+            </div>
+            <div class="cell"><span class="k">INFERIDO</span></div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell label-cell">
+              Zócalo
+              <span class="sub">contra pared · si/no + alto</span>
+            </div>
+            <div class="cell value-with-chip">
+              <span class="input-group">
+                <span class="toggle-sw yn-sw">
+                  <span class="opt active">Sí</span>
+                  <span class="opt">No</span>
+                </span>
+                <span class="ig-sub">
+                  <span>alto</span>
+                  <input class="input" value="12" />
+                  <span class="ig-unit">cm</span>
+                </span>
+              </span>
+              <span class="vmini-chip" data-tip="Valentina · zócalo > 10cm activa MO TOMAS automático en paso 3 (regla del catálogo). Vi 'zócalo de 12' en el brief.">
+                <span class="vmini"></span>
+                <span class="lbl">12cm → activa TOMAS auto</span>
+              </span>
+            </div>
+            <div class="cell"><span class="k">DEL BRIEF</span></div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell label-cell">
+              Frentín / Regrueso
+              <span class="sub">borde frontal grueso</span>
+            </div>
+            <div class="cell">
+              <span class="toggle-sw yn-sw">
+                <span class="opt">Sí</span>
+                <span class="opt active">No</span>
+              </span>
+            </div>
+            <div class="cell"><span class="k">DEFAULT</span></div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell label-cell">
+              Anafe
+              <span class="sub">define MO ANAFE en paso 3</span>
+            </div>
+            <div class="cell value-with-chip">
+              <span class="toggle-sw yn-sw">
+                <span class="opt active">Sí</span>
+                <span class="opt">No</span>
+              </span>
+              <span class="vmini-chip" data-tip="Valentina · vi 'anafe Whirlpool 4 hornallas' en el brief. Activa MO ANAFE (corte + apoyo) en paso 3.">
+                <span class="vmini"></span>
+                <span class="lbl">vi 'anafe Whirlpool' en brief</span>
+              </span>
+            </div>
+            <div class="cell"><span class="k">DEL BRIEF</span></div>
+            <div class="cell action">⋯</div>
+          </div>
+        </div>
+
+        <!-- Status + Confirmar -->
+        <div class="confirm-bar">
+          <div class="summary">
+            <strong>11 campos</strong> · 7 del brief · 4 inferidos por Valentina · 1 a completar (plazo)
+          </div>
+          <button class="btn ghost">💬 Ayuda con esta sección</button>
+          <button class="btn primary">Confirmar y seguir →</button>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  window.__stepSpecificFields = function () {
+  return {
+    step: 'contexto',
+    detected_chips: [...document.querySelectorAll('.vmini-chip, .ctx-chip')].map(c => c.textContent.trim()).slice(0, 30),
+    audit_open: document.body.dataset.audit === 'on',
+  };
+};
+</script>
+<script src="bug-report.js"></script>
+<script src="chrome.js"></script>
+</body>
+</html>

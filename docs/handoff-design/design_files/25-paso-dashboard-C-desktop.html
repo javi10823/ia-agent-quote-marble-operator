@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>25 · Dashboard · Desktop · Tabla de quotes</title>
+<meta name="viewport" content="width=1440">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400;1,9..144,500&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="operator-shared.css">
+<template id="__bundler_thumbnail" data-bg-color="#0f1318">
+<svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="800" fill="#0f1318"/>
+  <rect x="100" y="200" width="500" height="120" rx="8" fill="#262d36" stroke="#3a4248"/>
+  <rect x="620" y="200" width="500" height="120" rx="8" fill="#262d36" stroke="#3a4248"/>
+  <text x="160" y="260" font-family="Georgia,serif" font-size="48" fill="#e8ede5">3</text>
+  <text x="680" y="260" font-family="Georgia,serif" font-size="48" fill="#e8ede5">4</text>
+  <rect x="100" y="360" width="1020" height="280" rx="4" fill="#1a1f26" stroke="#3a4248"/>
+  <text x="600" y="720" font-family="Georgia,serif" font-style="italic" font-size="32" fill="#e8ede5" text-anchor="middle">Dashboard desktop</text>
+</svg>
+</template>
+</head>
+<body data-step="dashboard" data-state="A" data-audit="off" data-screen-label="25 dashboard desktop">
+<div class="frame-label">
+  <span class="num">25</span> Dashboard · Desktop 1440 ·
+  <span class="state">Tabla de quotes (acciones rápidas)</span>
+</div>
+
+<div class="page">
+  <main class="main">
+
+    <!-- ─── DASHBOARD HEADER ────────────────────────────── -->
+    <header class="dashboard-head">
+      <div class="dh-meta">
+        <div class="eyebrow">Presupuestos</div>
+        <h1>Hola Marina</h1>
+        <div class="greet">Tenés <strong id="head-pending-action">5</strong> presupuestos que requieren acción</div>
+      </div>
+      <div class="dh-actions">
+        <span class="conn-status online">
+          <span class="dot"></span>online
+        </span>
+        <a class="btn primary" href="00-paso1-A-vacio.html">+ Nuevo presupuesto</a>
+      </div>
+    </header>
+
+    <!-- ─── KPI BAND (2 cards) ──────────────────────────── -->
+    <section class="kpi-band">
+      <div class="kpi-card urgent" id="kpi-expire-soon" data-kpi="expire-soon">
+        <div class="kpi-lbl">Vencidos próximos 7 días</div>
+        <div class="kpi-val" id="kpi-1-val">—</div>
+        <div class="kpi-sub">Acción: renovar vigencia o reenviar</div>
+        <div class="kpi-action">→ Filtrar tabla</div>
+      </div>
+      <div class="kpi-card warn" id="kpi-no-response" data-kpi="no-response">
+        <div class="kpi-lbl">Enviados sin respuesta &gt;5 días</div>
+        <div class="kpi-val" id="kpi-2-val">—</div>
+        <div class="kpi-sub">Acción: follow-up por WhatsApp</div>
+        <div class="kpi-action">→ Filtrar tabla</div>
+      </div>
+    </section>
+
+    <!-- ─── BODY: filtros + tabla ─────────────────────── -->
+    <section class="dash-body">
+
+      <!-- Sidebar filtros -->
+      <aside class="dash-filters">
+        <div class="filter-group">
+          <div class="filter-lbl">Buscador</div>
+          <div class="msearch-input">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input id="search-input" type="text" placeholder="Cliente…">
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <div class="filter-lbl">Estado</div>
+          <div id="status-filters">
+            <!-- render JS -->
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <button class="btn ghost sm" id="clear-all" type="button">Limpiar filtros</button>
+        </div>
+      </aside>
+
+      <!-- Tabla -->
+      <div class="dash-main">
+        <div class="dash-toolbar">
+          <div class="results-count">
+            <strong id="results-n">—</strong> resultados<span id="results-filter-info"></span>
+          </div>
+          <div class="results-sort">
+            ordenado por <strong>última actividad</strong> ↓
+          </div>
+        </div>
+
+        <table class="quote-table" id="quote-table">
+          <thead>
+            <tr>
+              <th class="col-client sortable">Cliente</th>
+              <th class="sortable">Material</th>
+              <th class="right sortable">m²</th>
+              <th class="right sortable">Monto</th>
+              <th class="sortable">Estado</th>
+              <th class="sortable">Vigencia</th>
+              <th class="sortable active">Última actividad <span class="sort-arr">↓</span></th>
+              <th class="right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="table-body">
+            <!-- render JS -->
+          </tbody>
+        </table>
+      </div>
+
+    </section>
+
+  </main>
+</div>
+
+<script src="dashboard-dataset.js"></script>
+<script>
+(function () {
+  const QUOTES = window.DASHBOARD_QUOTES;
+  const COUNTS = window.DASHBOARD_COUNTS;
+
+  // ─── Estado UI ───
+  let activeStatuses = new Set();      // si vacío = todos
+  let searchQuery = '';
+  let kpiFilter = null;                // 'expire-soon' | 'no-response' | null
+
+  // ─── KPI math · derivado del dataset ───
+  // Vencidos próximos 7 días = sent con daysToExpire <= 7 + expired (todos vencen ≤ 7d desde "ahora" si ya pasó)
+  const expiringSoon = QUOTES.filter(q =>
+    (q.status === 'sent' && q.daysToExpire <= 7) || q.status === 'expired'
+  );
+  // Enviados sin respuesta > 5 días = sent con lastActivityDays > 5
+  const noResponse = QUOTES.filter(q =>
+    q.status === 'sent' && q.lastActivityDays > 5
+  );
+
+  document.getElementById('kpi-1-val').textContent = expiringSoon.length;
+  document.getElementById('kpi-2-val').textContent = noResponse.length;
+  document.getElementById('head-pending-action').textContent =
+    new Set([...expiringSoon, ...noResponse].map(q => q.id)).size;
+
+  // ─── Filter checks (sidebar) ───
+  const filterEl = document.getElementById('status-filters');
+  const statusList = [
+    { id: 'draft',           label: 'Draft' },
+    { id: 'sent',            label: 'Enviado' },
+    { id: 'expired',         label: 'Vencido' },
+    { id: 'lost',            label: 'Perdido' },
+  ];
+  function renderFilters () {
+    filterEl.innerHTML = statusList.map(s => `
+      <label class="filter-check ${activeStatuses.has(s.id) ? 'active' : ''}">
+        <input type="checkbox" data-status="${s.id}" ${activeStatuses.has(s.id) ? 'checked' : ''}>
+        <span>${s.label}</span>
+        <span class="count">${COUNTS[s.id]}</span>
+      </label>
+    `).join('');
+    filterEl.querySelectorAll('input[type="checkbox"]').forEach(input => {
+      input.addEventListener('change', () => {
+        const st = input.dataset.status;
+        if (input.checked) activeStatuses.add(st); else activeStatuses.delete(st);
+        kpiFilter = null;          // un filtro manual cancela el filtro KPI
+        renderFilters();
+        renderTable();
+      });
+    });
+  }
+
+  // ─── Tabla ───
+  const bodyEl = document.getElementById('table-body');
+
+  function statusLabel (s) {
+    return ({
+      draft: 'draft',
+      sent: 'enviado',
+      expired: 'vencido',
+      lost: 'perdido'
+    })[s];
+  }
+
+  function vigenciaTxt (q) {
+    switch (q.status) {
+      case 'draft':           return '—';
+      case 'sent':
+        return q.daysToExpire <= 0
+          ? 'vence hoy'
+          : (q.daysToExpire === 1 ? 'vence mañana' : `vence en ${q.daysToExpire}d`);
+      case 'expired':
+        return `vencido hace ${Math.abs(q.daysToExpire)}d`;
+      case 'lost':
+        return `enviado ${q.sentDate || '—'}`;
+    }
+  }
+
+  function activityTxt (q) {
+    if (q.status === 'lost') return `perdido ${q.lostDate}`;
+    return q.lastActivityDays === 0 ? 'hoy' : `hace ${q.lastActivityDays}d`;
+  }
+
+  function fmtAmount (q) {
+    if (q.currency === 'USD') {
+      return `USD ${q.amount.toLocaleString('en-US')}`;
+    }
+    return `$ ${q.amount.toLocaleString('es-AR')}`;
+  }
+
+  function applyKpiFilter (rows) {
+    if (kpiFilter === 'expire-soon') {
+      return rows.filter(q =>
+        (q.status === 'sent' && q.daysToExpire <= 7) || q.status === 'expired'
+      );
+    }
+    if (kpiFilter === 'no-response') {
+      return rows.filter(q =>
+        q.status === 'sent' && q.lastActivityDays > 5
+      );
+    }
+    return rows;
+  }
+
+  function getFiltered () {
+    let rows = QUOTES;
+    if (kpiFilter) rows = applyKpiFilter(rows);
+    if (activeStatuses.size > 0) {
+      rows = rows.filter(q => activeStatuses.has(q.status));
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      rows = rows.filter(x => x.client.toLowerCase().includes(q));
+    }
+    return rows;
+  }
+
+  function renderTable () {
+    const rows = getFiltered();
+    document.getElementById('results-n').textContent = rows.length;
+
+    let info = '';
+    if (kpiFilter === 'expire-soon') info = ' · vencidos próximos 7d';
+    if (kpiFilter === 'no-response') info = ' · enviados sin respuesta >5d';
+    document.getElementById('results-filter-info').textContent = info;
+
+    if (rows.length === 0) {
+      bodyEl.innerHTML = `
+        <tr><td colspan="8">
+          <div class="dash-empty">
+            Sin resultados con estos filtros
+            <div><button class="btn ghost sm" id="clear-empty">Limpiar filtros</button></div>
+          </div>
+        </td></tr>
+      `;
+      const btn = document.getElementById('clear-empty');
+      if (btn) btn.addEventListener('click', clearAll);
+      return;
+    }
+
+    bodyEl.innerHTML = rows.map(q => {
+      // Acciones disponibles según estado
+      let actions = `
+        <button class="row-act" title="Abrir detalle" data-act="open" data-id="${q.id}">↗</button>
+      `;
+      if (q.status === 'expired') {
+        actions += `<button class="row-act" title="Renovar vigencia" data-act="renew" data-id="${q.id}">↻</button>`;
+      }
+      if (q.status === 'sent' || q.status === 'expired') {
+        actions += `<button class="row-act danger" title="Marcar como perdido" data-act="lose" data-id="${q.id}">✕</button>`;
+      }
+
+      return `
+        <tr data-id="${q.id}">
+          <td class="col-client">${q.client}</td>
+          <td class="muted">${q.material}</td>
+          <td class="right mono">${q.m2.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+          <td class="right mono">${fmtAmount(q)}</td>
+          <td>
+            <span class="status-chip ${q.status}">
+              <span class="dot"></span>${statusLabel(q.status)}
+            </span>
+          </td>
+          <td class="muted">${vigenciaTxt(q)}</td>
+          <td class="muted mono">${activityTxt(q)}</td>
+          <td class="col-actions">${actions}</td>
+        </tr>
+      `;
+    }).join('');
+
+    // Wire row actions
+    bodyEl.querySelectorAll('.row-act').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const act = btn.dataset.act;
+        const id = btn.dataset.id;
+        if (act === 'open') {
+          // Solo Pereyra (PRES-2026-017) tiene detalle implementado, los demás placeholder
+          if (id === 'PRES-2026-017') {
+            window.location.href = '24-paso-dashboard-B-mobile-detalle.html';
+          } else {
+            btn.classList.add('flash');
+            setTimeout(() => btn.classList.remove('flash'), 200);
+          }
+        } else if (act === 'renew') {
+          // Modal placeholder
+          const ok = confirm(`Renovar vigencia de "${id}" por 15 días más?`);
+          if (ok) btn.textContent = '✓';
+        } else if (act === 'lose') {
+          const ok = confirm(`Marcar "${id}" como perdido? (esta acción no se puede deshacer)`);
+          if (ok) btn.closest('tr').remove();
+        }
+      });
+    });
+  }
+
+  // ─── KPI cards · click → filtra tabla ───
+  document.getElementById('kpi-expire-soon').addEventListener('click', () => {
+    kpiFilter = (kpiFilter === 'expire-soon') ? null : 'expire-soon';
+    activeStatuses.clear();
+    renderFilters();
+    renderTable();
+    document.querySelectorAll('.kpi-card').forEach(c => c.classList.remove('active'));
+    if (kpiFilter) document.getElementById('kpi-expire-soon').classList.add('active');
+  });
+  document.getElementById('kpi-no-response').addEventListener('click', () => {
+    kpiFilter = (kpiFilter === 'no-response') ? null : 'no-response';
+    activeStatuses.clear();
+    renderFilters();
+    renderTable();
+    document.querySelectorAll('.kpi-card').forEach(c => c.classList.remove('active'));
+    if (kpiFilter) document.getElementById('kpi-no-response').classList.add('active');
+  });
+
+  // ─── Search ───
+  document.getElementById('search-input').addEventListener('input', (e) => {
+    searchQuery = e.target.value;
+    renderTable();
+  });
+
+  // ─── Clear all ───
+  function clearAll () {
+    activeStatuses.clear();
+    searchQuery = '';
+    kpiFilter = null;
+    document.getElementById('search-input').value = '';
+    document.querySelectorAll('.kpi-card').forEach(c => c.classList.remove('active'));
+    renderFilters();
+    renderTable();
+  }
+  document.getElementById('clear-all').addEventListener('click', clearAll);
+
+  // ─── Init ───
+  renderFilters();
+  renderTable();
+})();
+</script>
+</body>
+</html>
