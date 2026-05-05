@@ -1,0 +1,148 @@
+{
+  "_metadata": {
+    "description": "Catálogo de piletas y accesorios vendidos por D'Angelo Marmolería",
+    "rules": [
+      "D'Angelo solo vende piletas EMPOTRADAS — las de apoyo las trae el cliente",
+      "Cuando el cliente compra la pileta en D'Angelo: agregar línea separada ARS (este catálogo) + cobrar MO de pegado/agujero por separado",
+      "Cuando el cliente trae su propia pileta empotrada: solo cobrar MO de pegado/agujero",
+      "Pileta de apoyo: nunca aparece en este catálogo, solo cobrar AGUJEROAPOYO o PILETAAPOYODEKTON/NEO"
+    ],
+    "price_includes_vat": true,
+    "currency": "ARS",
+    "price_note": "Precios en price_ars SIN IVA. Aplicar x1.21 al generar presupuesto."
+  },
+  "items": [
+    {
+      "sku": "REJILLA",
+      "name": "BANDEJA REJILLA BARE E44",
+      "category": "accessory",
+      "price_ars": 74000.0,
+      "currency": "ARS",
+      "price_includes_vat": false,
+      "sold_by_dangelo": true,
+      "sink_type": null,
+      "last_updated": "01/01/2026"
+    },
+    {
+      "sku": "CASELU",
+      "name": "CANASTO SECAPLATO LUXOR",
+      "category": "accessory",
+      "price_ars": 79000.0,
+      "currency": "ARS",
+      "price_includes_vat": false,
+      "sold_by_dangelo": true,
+      "sink_type": null,
+      "last_updated": "01/01/2026"
+    },
+    {
+      "sku": "ESACC",
+      "name": "CANASTO SECAPLATOS",
+      "category": "accessory",
+      "price_ars": 142000.0,
+      "currency": "ARS",
+      "price_includes_vat": false,
+      "sold_by_dangelo": true,
+      "sink_type": null,
+      "last_updated": "01/01/2026"
+    },
+    {
+      "sku": "QUADRAQ71A",
+      "name": "PILETA QUADRA Q71A",
+      "category": "sink",
+      "price_ars": 60000.0,
+      "currency": "ARS",
+      "price_includes_vat": false,
+      "sold_by_dangelo": true,
+      "sink_type": "empotrada",
+      "last_updated": "01/01/2026"
+    },
+    {
+      "sku": "CESTILLO",
+      "name": "CUBRE CESTILLO",
+      "category": "accessory",
+      "price_ars": 91000.0,
+      "currency": "ARS",
+      "price_includes_vat": false,
+      "sold_by_dangelo": true,
+      "sink_type": null,
+      "last_updated": "01/01/2026"
+    },
+    {
+      "sku": "DOSI",
+      "name": "DOSIFICADOR",
+      "category": "accessory",
+      "price_ars": 135000.0,
+      "currency": "ARS",
+      "price_includes_vat": false,
+      "sold_by_dangelo": true,
+      "sink_type": null,
+      "last_updated": "01/01/2026"
+    },
+    {
+      "sku": "DOSBLACK",
+      "name": "DOSIFICADOR BLACK",
+      "category": "accessory",
+      "price_ars": 92000.0,
+      "currency": "ARS",
+      "price_includes_vat": false,
+      "sold_by_dangelo": true,
+      "sink_type": null,
+      "last_updated": "01/01/2026"
+    },
+    {
+      "sku": "DOSCUBO",
+      "name": "DOSIFICADOR CUBO",
+      "category": "accessory",
+      "price_ars": 131000.0,
+      "currency": "ARS",
+      "price_includes_vat": false,
+      "sold_by_dangelo": true,
+      "sink_type": null,
+      "last_updated": "01/01/2026"
+    },
+    {
+      "sku": "ESAC E3",
+      "name": "ESCURREPLATO ESSAC E3",
+      "category": "accessory",
+      "price_ars": 55000.0,
+      "currency": "ARS",
+      "price_includes_vat": false,
+      "sold_by_dangelo": true,
+      "sink_type": null,
+      "last_updated": "01/01/2026"
+    },
+    {
+      "sku": "ESAC E4",
+      "name": "ESCURREPLATOS ESAC E4",
+      "category": "accessory",
+      "price_ars": 112000.0,
+      "currency": "ARS",
+      "price_includes_vat": false,
+      "sold_by_dangelo": true,
+      "sink_type": null,
+      "last_updated": "01/01/2026"
+    },
+    {
+      "sku": "ESCESAC",
+      "name": "ESCURREPLATOS ESAC Q37-Q40",
+      "category": "accessory",
+      "price_ars": 162000.0,
+      "currency": "ARS",
+      "price_includes_vat": false,
+      "sold_by_dangelo": true,
+      "sink_type": null,
+      "last_updated": "01/01/2026"
+    },
+    {
+      "sku": "ESCURREESACQ",
+      "name": "ESCURREPLATOS ESAC Q71",
+      "category": "accessory",
+      "price_ars": 166000.0,
+      "currency": "ARS",
+      "price_includes_vat": false,
+      "sold_by_dangelo": true,
+      "sink_type": null,
+      "last_updated": "01/01/2026"
+    }
+  ]
+}

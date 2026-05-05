@@ -1,0 +1,67 @@
+[
+  {
+    "sku": "GRAAMA",
+    "name": "GRANITO AMADEUS - 20MM ESPESOR",
+    "material_type": "granito",
+    "category": "piedra_natural",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_ars": 415200.0,
+    "currency": "ARS",
+    "origin": "nacional"
+  },
+  {
+    "sku": "GRAPUMA",
+    "name": "GRANITO BEIGE PUMA",
+    "material_type": "granito",
+    "category": "piedra_natural",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_ars": 194400.0,
+    "currency": "ARS",
+    "origin": "nacional"
+  },
+  {
+    "sku": "COSMIK",
+    "name": "GRANITO BLACK COSMIK 2 ESP",
+    "material_type": "granito",
+    "category": "piedra_natural",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_ars": 235200.0,
+    "currency": "ARS",
+    "origin": "nacional"
+  },
+  {
+    "sku": "GRACOSMIKLEATHER",
+    "name": "GRANITO BLACK COSMIK LEATHER - 2CM ESP",
+    "material_type": "granito",
+    "category": "piedra_natural",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_ars": 919200.0,
+    "currency": "ARS",
+    "origin": "nacional"
+  },
+  {
+    "sku": "GRA COSMIKLEATHER",
+    "name": "GRANITO COISMIK LEATHER",
+    "material_type": "granito",
+    "category": "piedra_natural",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_ars": 416400.0,
+    "currency": "ARS",
+    "origin": "nacional"
+  }
+]

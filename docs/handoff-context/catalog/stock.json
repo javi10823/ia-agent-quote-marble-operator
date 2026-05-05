@@ -1,0 +1,80 @@
+{
+  "_metadata": {
+    "descripcion": "Inventario de stock de retazos en taller D'Angelo",
+    "uso": "Consultar antes de cotizar para: 1) ofrecer materiales disponibles primero, 2) verificar si el trabajo entra en algún retazo (sin merma). Si en_stock=true y el trabajo entra en m2_total → no aplica merma.",
+    "fuente": "Excel taller D'Angelo — actualizar manualmente cuando cambia el stock",
+    "nota": "Las piezas son retazos de chapas anteriores. Verificar disponibilidad antes de confirmar al cliente."
+  },
+  "stock": [
+    {
+      "nombre": "DEKTON AURA 12MM",
+      "piezas": [
+        {
+          "largo": "1.07",
+          "ancho": "0.73",
+          "m2": 0.78
+        },
+        {
+          "largo": "1.94",
+          "ancho": "0.65",
+          "m2": 1.26
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 2.04
+    },
+    {
+      "nombre": "SILESTONE BLANCO ZEUS 20MM",
+      "piezas": [
+        {
+          "largo": "1.20",
+          "ancho": "0.60",
+          "m2": 0.72
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.72
+    },
+    {
+      "nombre": "GRANITO NEGRO ABSOLUTO 20MM",
+      "piezas": [
+        {
+          "largo": "0.85",
+          "ancho": "0.50",
+          "m2": 0.43
+        },
+        {
+          "largo": "1.10",
+          "ancho": "0.40",
+          "m2": 0.44
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 0.87
+    },
+    {
+      "nombre": "PURASTONE BLANCO PALOMA 20MM",
+      "piezas": [
+        {
+          "largo": "2.00",
+          "ancho": "0.60",
+          "m2": 1.2
+        }
+      ],
+      "en_stock": true,
+      "m2_total": 1.2
+    },
+    {
+      "nombre": "MARMOL CARRARA 20MM",
+      "piezas": [
+        {
+          "largo": "0.95",
+          "ancho": "0.55",
+          "m2": 0.52
+        }
+      ],
+      "en_stock": false,
+      "m2_total": 0.0
+    }
+  ]
+}
