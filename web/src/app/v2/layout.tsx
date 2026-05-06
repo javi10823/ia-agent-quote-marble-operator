@@ -23,8 +23,13 @@
  * `docs/tech-debt/css-migration.md`).
  */
 import { Fraunces, Inter_Tight, JetBrains_Mono } from "next/font/google";
-import "./globals.css";
+// Orden crítico: operator-shared.css declara su propio :root con string
+// literals para --serif/--sans/--mono. globals.css se carga DESPUÉS para
+// que su :root con `var(--font-*)` (next/font) gane el cascade y los
+// componentes legacy (.qhead, .vbubble, etc.) rendeen con Fraunces real
+// y no con el fallback Georgia. Fix-up del audit del PR #456.
 import "./operator-shared.css";
+import "./globals.css";
 
 // Fraunces — serif italic para hero "Hola, soy Valentina", importes
 // editoriales, acentos tipográficos cálidos. Optical size cubre 13-42px.
