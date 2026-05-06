@@ -65,3 +65,27 @@ export function getCurrentStep(pathname: string): StepId {
   if (pathname.includes("/pdf")) return "pdf";
   return "brief"; // default · paso 1 si no matchea ninguno
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Sprint 2 paso-2-contexto · CANONICAL_CONTEXT
+   ════════════════════════════════════════════════════════════════════════
+   Espejo de Master §13 cifras canon Cueto-Heredia + mockup 01-A
+   (11 campos visibles en el grid del paso 2). Los `origin` reflejan el
+   path de extracción que Valentina usaría: BRIEF (texto/PDF directo) o
+   INFERIDO (cruzando catálogos / reglas). */
+
+import type { ContextResponse } from "../api";
+
+export const CANONICAL_CONTEXT: ContextResponse = {
+  cliente: { value: "Cueto-Heredia Arquitectura", origin: "BRIEF" },
+  contacto: { value: "estudio@cueto-heredia.ar", origin: "INFERIDO" },
+  localidad: { value: "Belgrano · CABA", origin: "BRIEF" },
+  plazo: { value: "3 semanas", origin: "BRIEF" },
+  tipologia: { value: "cocina U + isla", origin: "BRIEF" },
+  tipo_obra: { value: "particular", origin: "INFERIDO" },
+  material: { value: "Silestone Blanco Norte 20mm", origin: "BRIEF" },
+  pileta: { value: "empotrada · Franke FX110-50 (cliente)", origin: "BRIEF" },
+  zocalo: { value: "contra pared · 12 cm", origin: "BRIEF" },
+  regrueso: { value: "frontal · 4 cm", origin: "INFERIDO" },
+  anafe: { value: true, origin: "INFERIDO" },
+};
