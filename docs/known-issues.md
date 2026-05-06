@@ -26,6 +26,24 @@ Reglas:
 
 Detectado en audit independiente PR #457 NICE-TO-HAVE 5. Inline `style={{...}}` en algún componente del chrome shell. Cleanup: Sprint 5.
 
+### sprint-2/paso-2-contexto (PR #458) · MINOR · Mock streamChat incompleto
+
+**Detectado:** audit independiente PR #458, 06.05.2026, NICE-TO-HAVE 1.
+
+**Descripción:** El mock client `streamChat()` en `web/src/lib/v2/api.ts` solo emite 3 event types: `text`, `done`, `error`. El SSE spec real del backend (verificado en `docs/handoff-context/sse-spec.md`) tiene 7 event types totales:
+
+- `text` ✅ implementado
+- `done` ✅ implementado
+- `error` ✅ implementado
+- `action` ⚠️ falta
+- `context_analysis` ⚠️ falta
+- `dual_read_result` ⚠️ falta
+- `zone_selector` ⚠️ falta
+
+**Impacto:** El mock chat de Sprint 2 funciona correctamente para conversación básica. Pero cuando se conecte al backend real en `sprint-3/api-integration`, el `useChatScoped.send()` actual NO maneja los 4 event types adicionales — la respuesta de Valentina puede perder información si el backend emite alguno de esos types.
+
+**Plan:** durante `sprint-3/api-integration`, extender el switch del `useChatScoped.send()` para los 4 event types adicionales según el shape definido en `docs/handoff-context/sse-spec.md`. Es PR de bajo costo (extender un switch existente).
+
 ## Resueltos
 
 _(vacío al inicio)_
