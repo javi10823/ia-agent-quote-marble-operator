@@ -7,8 +7,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "lint:v2": "eslint src/app/v2 src/components/v2 src/lib/v2 tests --ext .ts,.tsx --no-error-on-unmatched-pattern",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:unit": "vitest run --config vitest.config.v2.ts",
+    "test:unit:watch": "vitest --config vitest.config.v2.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "format": "prettier --write \"src/app/v2/**/*.{ts,tsx,json}\" \"src/components/v2/**/*.{ts,tsx}\" \"src/lib/v2/**/*.{ts,tsx}\" \"tests/**/*.{ts,tsx}\""
   },
   "dependencies": {
     "@codemirror/lang-json": "^6.0.2",
@@ -32,8 +39,13 @@
     "typescript": "^5.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.48.0",
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.35",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.2.1",
+    "jsdom": "^25.0.1",
+    "prettier": "^3.3.3",
     "vitest": "^2.1.9"
   }
 }
