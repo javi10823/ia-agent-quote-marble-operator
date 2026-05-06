@@ -1,15 +1,14 @@
 /**
  * Placeholder del listado de quotes en v2 (`/v2/quotes`).
  *
- * Sprint 2 scaffold: stub. El dashboard real (Master §6 mockups
- * `23-paso-dashboard-A-mobile`, `25-paso-dashboard-C-desktop`) se
- * implementa en Sprint 4 según el partition del Master.
+ * Sprint 2 design-system-migration: aplicado bg + tokens. El dashboard
+ * real (Master §6 mockups 23/24/25) se implementa en Sprint 4.
  */
 export default function V2QuotesPage() {
   return (
-    <main style={{ padding: 24 }}>
-      <h1>v2 — Quotes</h1>
-      <p>Placeholder. Pendiente de implementación.</p>
+    <main className="p-8">
+      <h1 className="text-2xl font-sans text-ink">v2 — Quotes</h1>
+      <p className="mt-2 text-ink-soft">Placeholder. Pendiente de implementación.</p>
     </main>
   );
 }
