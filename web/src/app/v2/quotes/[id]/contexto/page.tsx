@@ -1,18 +1,20 @@
 /**
- * Paso 2 · Contexto — placeholder.
+ * Paso 2 · Contexto — implementación del flujo (mockups 01/02/03).
  *
- * Implementación real (chat scoped panel + extracción de cliente/
- * ambiente/medidas) en sub-PR `sprint-2/paso-2-contexto`.
+ * Reemplaza el placeholder del PR #456 chrome-refactor. Renderiza el
+ * container client `ContextView` que coordina el form de 11 campos
+ * con el chat scoped 480px.
+ *
+ * Mock-first: el client simulado en lib/v2/api.ts cubre los endpoints
+ * dedicados que están marcados como faltantes en
+ * docs/handoff-context/missing-endpoints.md (PATCH context + chat scoped).
  */
-export default function ContextoPage() {
-  return (
-    <div className="col placeholder-section">
-      <h2 className="font-serif italic" style={{ marginBottom: 8 }}>
-        Paso 2 · Contexto
-      </h2>
-      <p className="font-serif italic text-ink-soft">
-        Placeholder. Implementación viene en sprint-2/paso-2-contexto.
-      </p>
-    </div>
-  );
+import { ContextView } from "@/components/v2/contexto/ContextView";
+
+interface Props {
+  params: { id: string };
+}
+
+export default function ContextoPage({ params }: Props) {
+  return <ContextView quoteId={params.id} />;
 }
