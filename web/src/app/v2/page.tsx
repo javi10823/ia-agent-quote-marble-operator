@@ -5,7 +5,12 @@
  * operator-shared.css están cableados. Texto y estilos son demo
  * exclusivamente del sistema de design — no datos funcionales. El
  * dashboard real va en Sprint 4 (mockups 23/25 del Master §6).
+ *
+ * Sprint 2 paso-1-brief-upload: agregamos CTA "Nuevo presupuesto"
+ * para que el flow paso 1 sea navegable desde la home v2.
  */
+import Link from "next/link";
+
 export default function V2HomePage() {
   return (
     <main className="p-8">
@@ -21,11 +26,11 @@ export default function V2HomePage() {
         DEMO · token mono
       </p>
 
-      {/* Botones demo de la convención IA-celeste / Humano-púrpura */}
+      {/* CTA "Nuevo presupuesto" — entry point al paso 1 */}
       <div className="mt-6 flex gap-2">
-        <button type="button" className="rounded-r-md bg-accent px-4 py-2 text-bg">
-          Acción IA
-        </button>
+        <Link href="/v2/quotes/new" className="btn primary" data-testid="cta-new-quote">
+          + Nuevo presupuesto
+        </Link>
         <button
           type="button"
           className="rounded-r-md border border-human bg-human-bg px-4 py-2 text-human"
