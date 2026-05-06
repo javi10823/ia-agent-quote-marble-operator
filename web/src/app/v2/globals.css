@@ -1,0 +1,82 @@
+/* ─────────────────────────────────────────────────────────
+   V2 globals · Sprint 2 design system migration
+
+   Espejo de los tokens de docs/handoff-design/design_tokens.ts
+   en CSS vars. Compartido con operator-shared.css (que declara
+   las mismas vars en su propio :root) y con tailwind.config.ts
+   (que las consume vía `var(...)`).
+
+   Si en el futuro cambia un token, se actualiza acá Y en los
+   otros dos lados (o se centraliza). Ver docs/tech-debt/css-
+   migration.md para el plan de cleanup.
+   ───────────────────────────────────────────────────────── */
+
+:root {
+  /* ── Surfaces ───────────────────────────────────────────── */
+  /* `--bg` ya está definido por el legacy con el mismo valor
+     (#0f1318) — lo dejamos pasar como compartido. Las demás
+     surfaces son nombres nuevos sin colisión. */
+  --bg-muted: #161b22;
+  --surface: #1c2129;
+  --surface-2: #232932;
+  --line: rgba(232, 237, 229, 0.08);
+  --line-strong: rgba(232, 237, 229, 0.14);
+  --line-soft: rgba(232, 237, 229, 0.06);
+
+  /* ── Ink ────────────────────────────────────────────────── */
+  --ink: #e8ede5;
+  --ink-soft: #b9c0c8;
+  --ink-mute: #6d7682;
+
+  /* ── Semantic ───────────────────────────────────────────── */
+  --accent: #a9c1d6; /* celeste polvo · IA / primary */
+  --ok: oklch(0.78 0.13 150);
+  --warn: oklch(0.84 0.13 75);
+  --info: oklch(0.82 0.09 255);
+  --human: oklch(0.74 0.09 300); /* púrpura · editado por humano */
+  --human-bg: oklch(0.7 0.09 300 / 0.1);
+  --human-bd: oklch(0.7 0.09 300 / 0.32);
+  --error: oklch(0.72 0.16 25);
+
+  /* ── Border radius ─────────────────────────────────────── */
+  /* No pisamos rounded-sm/md/lg defaults de Tailwind (legacy
+     los usa). En v2 se accede via arbitrary value
+     `rounded-[var(--r-md)]` o `rounded-r-md` (custom token). */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-pill: 999px;
+
+  /* ── Layout ─────────────────────────────────────────────── */
+  --topbar-h: 56px;
+  --sidebar-w: 240px;
+  --chat-w: 480px;
+  --page-min-w: 1440px;
+  --mobile-w: 375px;
+
+  /* ── Motion ─────────────────────────────────────────────── */
+  --ease-default: ease-in-out;
+  --d-pulse: 1.6s;
+  --d-think: 2.4s;
+  --d-skel: 1.4s;
+  --d-cursor-blink: 1s;
+}
+
+/* ─────────────────────────────────────────────────────────
+   Bridging fonts cargados por next/font/google a las CSS vars
+   que usa operator-shared.css (--serif, --sans, --mono).
+
+   El root layout legacy ya define --font-serif/sans/mono via
+   next/font/google en src/app/fonts.ts. El layout v2 (este PR)
+   también las carga (per task brief, aplicado al div root
+   del v2 layout). Acá redirigimos las vars cortas que usa
+   operator-shared.css → vars de next/font.
+
+   Importante: este :root está scoped al chunk de v2, NO
+   al legacy (Next.js carga el CSS solo cuando se navega a /v2).
+   ───────────────────────────────────────────────────────── */
+:root {
+  --serif: var(--font-serif), Georgia, serif;
+  --sans: var(--font-sans), -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --mono: var(--font-mono), ui-monospace, monospace;
+}
