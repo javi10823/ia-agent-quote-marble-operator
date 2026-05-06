@@ -1,0 +1,72 @@
+[
+  {
+    "sku": "LAMCRISTAL",
+    "name": "LAMIINATTO CRISTAL GOLD - 12MM",
+    "material_type": "laminatto",
+    "category": "piedra_sinterizada",
+    "thickness_mm": 12,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 715.0,
+    "currency": "USD",
+    "plate_size": "especial",
+    "plate_m2": 5.12
+  },
+  {
+    "sku": "LAMCEMENTO",
+    "name": "LAMINATO CEMENTO GRIGIO - 12MM -PULIDO",
+    "material_type": "laminatto",
+    "category": "piedra_sinterizada",
+    "thickness_mm": 12,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 518.0,
+    "currency": "USD",
+    "plate_size": "especial",
+    "plate_m2": 5.12
+  },
+  {
+    "sku": "LAMAMAZOMNITA",
+    "name": "LAMINATTO AMAZONITA - PULIDO - 12MM",
+    "material_type": "laminatto",
+    "category": "piedra_sinterizada",
+    "thickness_mm": 12,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 785.0,
+    "currency": "USD",
+    "plate_size": "especial",
+    "plate_m2": 5.12
+  },
+  {
+    "sku": "LAMAMBER",
+    "name": "LAMINATTO AMBER PULIDO - 12MM",
+    "material_type": "laminatto",
+    "category": "piedra_sinterizada",
+    "thickness_mm": 12,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 277.0,
+    "currency": "USD",
+    "plate_size": "especial",
+    "plate_m2": 5.12
+  },
+  {
+    "sku": "LAM",
+    "name": "LAMINATTO BIANCO PURO - PULIDO - 12MM",
+    "material_type": "laminatto",
+    "category": "piedra_sinterizada",
+    "thickness_mm": 12,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 546.0,
+    "currency": "USD",
+    "plate_size": "especial",
+    "plate_m2": 5.12
+  }
+]

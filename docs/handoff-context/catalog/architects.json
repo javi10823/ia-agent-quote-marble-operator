@@ -1,0 +1,58 @@
+[
+  {
+    "name": "ARQ. PLACEHOLDER 01",
+    "firm": null,
+    "discount": true,
+    "discount_percentage": null,
+    "notes": "Placeholder sanitizado — usar porcentaje de config.json"
+  },
+  {
+    "name": "ARQ. PLACEHOLDER 02",
+    "firm": "Estudio Placeholder 02",
+    "discount": true,
+    "discount_percentage": null,
+    "notes": "Placeholder sanitizado — usar porcentaje de config.json"
+  },
+  {
+    "name": "ARQ. PLACEHOLDER 03",
+    "firm": "Estudio Placeholder 03",
+    "discount": true,
+    "discount_percentage": null,
+    "notes": "Placeholder sanitizado — usar porcentaje de config.json"
+  },
+  {
+    "name": "ARQ. PLACEHOLDER 04",
+    "firm": null,
+    "discount": true,
+    "discount_percentage": null,
+    "notes": "Placeholder sanitizado — usar porcentaje de config.json"
+  },
+  {
+    "name": "ARQ. PLACEHOLDER 05",
+    "firm": null,
+    "discount": true,
+    "discount_percentage": null,
+    "notes": "Placeholder sanitizado — usar porcentaje de config.json"
+  },
+  {
+    "name": "ARQ. PLACEHOLDER 06",
+    "firm": "Estudio Placeholder 06",
+    "discount": true,
+    "discount_percentage": null,
+    "notes": "Placeholder sanitizado — usar porcentaje de config.json"
+  },
+  {
+    "name": "CUETO-HEREDIA ARQUITECTAS",
+    "firm": "Cueto-Heredia Arquitectas",
+    "discount": true,
+    "discount_percentage": null,
+    "notes": "Estudio canónico — usar porcentaje de config.json (5% importado)"
+  },
+  {
+    "name": "ARQ. PLACEHOLDER 07",
+    "firm": "Estudio Placeholder 07",
+    "discount": true,
+    "discount_percentage": null,
+    "notes": "Placeholder sanitizado — usar porcentaje de config.json"
+  }
+]

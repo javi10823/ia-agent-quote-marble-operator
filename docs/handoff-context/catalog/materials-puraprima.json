@@ -1,0 +1,72 @@
+[
+  {
+    "sku": "PRIMACALA",
+    "name": "PRA PRIMA CALACATTA VAGLI - PULIDO- 12MM",
+    "material_type": "puraprima",
+    "category": "piedra_sinterizada",
+    "thickness_mm": 12,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 583.0,
+    "currency": "USD",
+    "plate_size": "especial",
+    "plate_m2": 5.12
+  },
+  {
+    "sku": "PRIMAONIX",
+    "name": "PURA PRIIMA ONIX WHITE - MATE - 12MM",
+    "material_type": "puraprima",
+    "category": "piedra_sinterizada",
+    "thickness_mm": 12,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 452.0,
+    "currency": "USD",
+    "plate_size": "especial",
+    "plate_m2": 5.12
+  },
+  {
+    "sku": "PRIMAABSOLUTE",
+    "name": "PURA PRIMA ABSOLUTE BLACK - MATE - 12MM ESPESOR",
+    "material_type": "puraprima",
+    "category": "piedra_sinterizada",
+    "thickness_mm": 12,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 469.0,
+    "currency": "USD",
+    "plate_size": "especial",
+    "plate_m2": 5.12
+  },
+  {
+    "sku": "PRIMAALP",
+    "name": "PURA PRIMA ALPHINUS WHITE - MATE - 12MM",
+    "material_type": "puraprima",
+    "category": "piedra_sinterizada",
+    "thickness_mm": 12,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 769.0,
+    "currency": "USD",
+    "plate_size": "especial",
+    "plate_m2": 5.12
+  },
+  {
+    "sku": "PRIMABRES",
+    "name": "PURA PRIMA BRESCIA IMPERIALE - 12MM",
+    "material_type": "puraprima",
+    "category": "piedra_sinterizada",
+    "thickness_mm": 12,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 276.0,
+    "currency": "USD",
+    "plate_size": "especial",
+    "plate_m2": 5.12
+  }
+]
