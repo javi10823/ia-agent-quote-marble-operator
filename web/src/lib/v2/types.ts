@@ -15,3 +15,18 @@ export interface BriefFormData {
   photos: File[];
   briefText: string;
 }
+
+/* ─── Sprint 2 paso-2-contexto · chat scoped + context form ─────────── */
+
+export type ContextFormState = "loading" | "idle" | "saving" | "error";
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "valentina";
+  content: string;
+  timestamp: string;
+  /** true mientras la respuesta de Valentina se está streameando. */
+  partial?: boolean;
+}
+
+export type ChatPanelState = "closed" | "open" | "streaming";
