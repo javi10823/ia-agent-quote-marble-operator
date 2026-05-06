@@ -1,0 +1,8 @@
+Placeholder — el chrome shell (Sidebar, Topbar, Stepper, QuoteHeader)
+se implementa en sub-PR `sprint-2/chrome-refactor`.
+
+Inventario esperado (handoff-design/README.md §8):
+- Sidebar.tsx       — 240px ancho fijo, brand + nav + footer
+- Topbar.tsx        — 56px alto, crumbs + ico-btn cluster
+- QuoteHeader.tsx   — eyebrow + h1 serif italic + sub mono + actions
+- Stepper.tsx       — 5 pasos con states done/now/pending
