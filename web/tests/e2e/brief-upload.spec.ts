@@ -16,8 +16,8 @@ async function uploadPdf(page: Page, file: string = FIXTURE_PDF) {
   await page.locator('[data-testid="brief-dropzone-input"]').setInputFiles(file);
 }
 
-test("estado A — dropzone vacío al cargar /v2/quotes/new", async ({ page }) => {
-  await page.goto("/v2/quotes/new");
+test("estado A — dropzone vacío al cargar /quotes/new", async ({ page }) => {
+  await page.goto("/quotes/new");
   await expect(page.locator('[data-testid="brief-dropzone"]')).toBeVisible();
   await expect(page.locator('[data-testid="brief-plan-loaded"]')).not.toBeVisible();
   await expect(page.locator('[data-testid="brief-status-bar"]')).not.toBeVisible();
@@ -25,7 +25,7 @@ test("estado A — dropzone vacío al cargar /v2/quotes/new", async ({ page }) =
 });
 
 test("estado A → B — al subir un PDF aparece el form con el filename", async ({ page }) => {
-  await page.goto("/v2/quotes/new");
+  await page.goto("/quotes/new");
   await uploadPdf(page);
   await expect(page.locator('[data-testid="brief-plan-loaded"]')).toBeVisible();
   await expect(page.locator('[data-testid="brief-plan-name"]')).toHaveText("sample.pdf");
@@ -34,7 +34,7 @@ test("estado A → B — al subir un PDF aparece el form con el filename", async
 });
 
 test("validación — PDF tipo inválido (txt) rechazado en estado A", async ({ page }) => {
-  await page.goto("/v2/quotes/new");
+  await page.goto("/quotes/new");
   await page.locator('[data-testid="brief-dropzone-input"]').setInputFiles({
     name: "wrong.txt",
     mimeType: "text/plain",
@@ -47,7 +47,7 @@ test("validación — PDF tipo inválido (txt) rechazado en estado A", async ({ 
 });
 
 test("validación — PDF > 20MB rechazado en estado A", async ({ page }) => {
-  await page.goto("/v2/quotes/new");
+  await page.goto("/quotes/new");
   // Buffer de 21MB en memoria — react-dropzone rechaza por size sin
   // necesidad de un PDF real
   const big = Buffer.alloc(21 * 1024 * 1024, 0);
@@ -61,7 +61,7 @@ test("validación — PDF > 20MB rechazado en estado A", async ({ page }) => {
 });
 
 test("validación — foto tipo inválido rechazada", async ({ page }) => {
-  await page.goto("/v2/quotes/new");
+  await page.goto("/quotes/new");
   await uploadPdf(page);
   await page.locator('[data-testid="photo-input"]').setInputFiles({
     name: "wrong.gif",
@@ -72,7 +72,7 @@ test("validación — foto tipo inválido rechazada", async ({ page }) => {
 });
 
 test("estado B → C — click Procesar muestra skeleton + status-bar", async ({ page }) => {
-  await page.goto("/v2/quotes/new");
+  await page.goto("/quotes/new");
   await uploadPdf(page);
   await page.locator('[data-testid="brief-submit"]').click();
   await expect(page.locator('[data-testid="brief-status-bar"]')).toBeVisible();
@@ -81,7 +81,7 @@ test("estado B → C — click Procesar muestra skeleton + status-bar", async ({
 });
 
 test("cancel — estado C → vuelve a B con planFile preservado", async ({ page }) => {
-  await page.goto("/v2/quotes/new");
+  await page.goto("/quotes/new");
   await uploadPdf(page);
   await page.locator('[data-testid="brief-submit"]').click();
   await expect(page.locator('[data-testid="brief-status-bar"]')).toBeVisible();
@@ -92,10 +92,10 @@ test("cancel — estado C → vuelve a B con planFile preservado", async ({ page
   await expect(page.locator('[data-testid="brief-status-bar"]')).not.toBeVisible();
 });
 
-test("success path — completar el flujo navega a /v2/quotes/PRES-2026-018/contexto", async ({
+test("success path — completar el flujo navega a /quotes/PRES-2026-018/contexto", async ({
   page,
 }) => {
-  await page.goto("/v2/quotes/new");
+  await page.goto("/quotes/new");
   await uploadPdf(page);
   await page.locator('[data-testid="brief-text"]').fill("Cocina U + isla, 3,20m");
   await page.locator('[data-testid="brief-submit"]').click();
@@ -105,9 +105,9 @@ test("success path — completar el flujo navega a /v2/quotes/PRES-2026-018/cont
   await expect(page.locator(".stepper")).toHaveAttribute("data-current-step", "contexto");
 });
 
-test("CTA en /v2 navega a /v2/quotes/new", async ({ page }) => {
-  await page.goto("/v2");
+test("CTA en /v2 navega a /quotes/new", async ({ page }) => {
+  await page.goto("/");
   await page.locator('[data-testid="cta-new-quote"]').click();
-  await page.waitForURL("**/v2/quotes/new");
+  await page.waitForURL("**/quotes/new");
   await expect(page.locator('[data-testid="brief-dropzone"]')).toBeVisible();
 });

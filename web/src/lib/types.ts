@@ -1,7 +1,32 @@
-export interface UIMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  isStreaming?: boolean;
-  attachmentName?: string;
+/**
+ * Tipos compartidos del v2.
+ *
+ * Sprint 2 paso-1-brief-upload: tipos del state machine del paso 1.
+ * Más tipos van a salir de `docs/handoff-context/schemas/*.md` en
+ * sub-PRs siguientes (paso-2-contexto, paso-3-despiece, etc.).
+ */
+
+/** Estado del state machine del paso 1 (mockups 00 A/B/C). */
+export type BriefUploadState = "idle" | "submitting" | "error";
+
+/** Form data del paso 1 antes de submit. */
+export interface BriefFormData {
+  planFile: File | null;
+  photos: File[];
+  briefText: string;
 }
+
+/* ─── Sprint 2 paso-2-contexto · chat scoped + context form ─────────── */
+
+export type ContextFormState = "loading" | "idle" | "saving" | "error";
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "valentina";
+  content: string;
+  timestamp: string;
+  /** true mientras la respuesta de Valentina se está streameando. */
+  partial?: boolean;
+}
+
+export type ChatPanelState = "closed" | "open" | "streaming";

@@ -1,127 +1,82 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* ─────────────────────────────────────────────────────────
+   V2 globals · Sprint 2 design system migration
+
+   Espejo de los tokens de docs/handoff-design/design_tokens.ts
+   en CSS vars. Compartido con operator-shared.css (que declara
+   las mismas vars en su propio :root) y con tailwind.config.ts
+   (que las consume vía `var(...)`).
+
+   Si en el futuro cambia un token, se actualiza acá Y en los
+   otros dos lados (o se centraliza). Ver docs/tech-debt/css-
+   migration.md para el plan de cleanup.
+   ───────────────────────────────────────────────────────── */
 
 :root {
-  /* Paleta "Pizarra & acero" — carbón azulado muy oscuro (cercano a
-     negro) con acento celeste polvo. La diferencia bg/s1 es mínima
-     (~1% luminance) para que la sidebar no se separe visualmente del
-     main — look editorial. Tinta crema fría para reducir glare sobre
-     fondos oscuros. */
-  /* Valores exactos del design handoff v2 — TOKENS de shared.jsx */
-  --bg:    #0f1318;       /* bg */
-  --s1:    #141923;       /* bgMuted */
-  --s2:    #1a1f26;       /* surface */
-  --s3:    #232934;       /* surface2 */
-  --b1:    rgba(232,237,229,0.07);  /* line */
-  --b2:    rgba(232,237,229,0.14);  /* lineStrong */
-  --b3:    rgba(232,237,229,0.20);
-  --t1:    #e8ede5;
-  --t2:    rgba(232,237,229,0.66);
-  --t3:    rgba(232,237,229,0.42);
-  --t4:    rgba(232,237,229,0.22);
-  /* Acento: "añil sobrio" (swatch 2 de la paleta del design). Lo
-     elegimos en lugar del "celeste polvo" default porque pasa WCAG
-     AA large text con `text-white` en botones primarios (ratio
-     ~3.9:1). Swap a celeste polvo requiere migrar text-white →
-     text-acc-ink en ~33 sitios. */
-  --acc:        #5f7da0;
-  --acc2:       rgba(95,125,160,0.14);
-  --acc3:       rgba(95,125,160,0.22);
-  --acc-ink:    #0f1318;
-  --acc-hover:  #4d678a;
-  --acc-shadow: rgba(95,125,160,0.30);
-  --grn:   #5cb38f;
-  --grn2:  rgba(92,179,143,0.14);
-  --amb:   #d9a25a;
-  --amb2:  rgba(217,162,90,0.14);
-  --red:   #d46b60;
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* ── Surfaces ───────────────────────────────────────────── */
+  /* `--bg` ya está definido por el legacy con el mismo valor
+     (#0f1318) — lo dejamos pasar como compartido. Las demás
+     surfaces son nombres nuevos sin colisión. */
+  --bg-muted: #161b22;
+  --surface: #1c2129;
+  --surface-2: #232932;
+  --line: rgba(232, 237, 229, 0.08);
+  --line-strong: rgba(232, 237, 229, 0.14);
+  --line-soft: rgba(232, 237, 229, 0.06);
+
+  /* ── Ink ────────────────────────────────────────────────── */
+  --ink: #e8ede5;
+  --ink-soft: #b9c0c8;
+  --ink-mute: #6d7682;
+
+  /* ── Semantic ───────────────────────────────────────────── */
+  --accent: #a9c1d6; /* celeste polvo · IA / primary */
+  --ok: oklch(0.78 0.13 150);
+  --warn: oklch(0.84 0.13 75);
+  --info: oklch(0.82 0.09 255);
+  --human: oklch(0.74 0.09 300); /* púrpura · editado por humano */
+  --human-bg: oklch(0.7 0.09 300 / 0.1);
+  --human-bd: oklch(0.7 0.09 300 / 0.32);
+  --error: oklch(0.72 0.16 25);
+
+  /* ── Border radius ─────────────────────────────────────── */
+  /* No pisamos rounded-sm/md/lg defaults de Tailwind (legacy
+     los usa). En v2 se accede via arbitrary value
+     `rounded-[var(--r-md)]` o `rounded-r-md` (custom token). */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-pill: 999px;
+
+  /* ── Layout ─────────────────────────────────────────────── */
+  --topbar-h: 56px;
+  --sidebar-w: 240px;
+  --chat-w: 480px;
+  --page-min-w: 1440px;
+  --mobile-w: 375px;
+
+  /* ── Motion ─────────────────────────────────────────────── */
+  --ease-default: ease-in-out;
+  --d-pulse: 1.6s;
+  --d-think: 2.4s;
+  --d-skel: 1.4s;
+  --d-cursor-blink: 1s;
 }
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; overflow: hidden; }
+/* ─────────────────────────────────────────────────────────
+   Bridging fonts cargados por next/font/google a las CSS vars
+   que usa operator-shared.css (--serif, --sans, --mono).
 
-/* Native form controls follow dark theme + accent color */
-:root { color-scheme: dark; accent-color: var(--acc); }
+   El root layout legacy ya define --font-serif/sans/mono via
+   next/font/google en src/app/fonts.ts. El layout v2 (este PR)
+   también las carga (per task brief, aplicado al div root
+   del v2 layout). Acá redirigimos las vars cortas que usa
+   operator-shared.css → vars de next/font.
 
-/* Mobile-specific */
-@media (max-width: 767px) {
-  html { font-size: 14px; }
-}
-
-body {
-  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  background: var(--bg);
-  color: var(--t1);
-  font-size: 15px;
-  -webkit-font-smoothing: antialiased;
-}
-
-/* Noise texture overlay */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
-  pointer-events: none;
-  z-index: 9999;
-}
-
-/* Scrollbar — wider on touch devices */
-::-webkit-scrollbar { width: 3px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 2px; }
-@media (pointer: coarse) {
-  ::-webkit-scrollbar { width: 6px; }
-  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
-}
-
-/* Chat streaming cursor */
-.streaming-cursor::after {
-  content: "▋";
-  animation: blink 1s step-end infinite;
-  color: var(--acc);
-  font-size: 11px;
-  margin-left: 2px;
-}
-
-/* Animations */
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-@keyframes pulse { 0%,100%{opacity:.25;transform:scale(.7)} 50%{opacity:1;transform:scale(1)} }
-@keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
-@keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.msg-anim { animation: fadeUp 0.25s ease; }
-
-/* Mobile drawer slide-in */
-@keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
-
-/* Valentina avatar — 3 layer animated sphere (breathing ring +
-   conic shimmer + pulsing core). La esfera no se mueve de posición,
-   el efecto es actividad interna. Respetamos prefers-reduced-motion
-   congelando las 3 animaciones. Ver components/ui/VAvatar.tsx */
-@keyframes vring { 0%, 100% { opacity: 0.35; transform: scale(0.96); } 50% { opacity: 0.85; transform: scale(1.06); } }
-@keyframes vspin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-@keyframes vcore { 0%, 100% { opacity: 0.3; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.04); } }
-
-/* PR #358 — Feedback visual al aplicar una candidata sugerida.
-   El row del tramo actualizado recibe la clase `candidate-apply-pulse`
-   por 2s. Arranca con background sutil + inset ring de acento para
-   localizar visualmente el tramo, y se desvanece. */
-.candidate-apply-pulse {
-  animation: candidateApplyPulse 2s ease-out;
-}
-@keyframes candidateApplyPulse {
-  0%   { background-color: rgba(95, 125, 160, 0.22); box-shadow: inset 0 0 0 2px rgba(95, 125, 160, 0.50); }
-  100% { background-color: transparent; box-shadow: inset 0 0 0 2px transparent; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
+   Importante: este :root está scoped al chunk de v2, NO
+   al legacy (Next.js carga el CSS solo cuando se navega a /v2).
+   ───────────────────────────────────────────────────────── */
+:root {
+  --serif: var(--font-serif), Georgia, serif;
+  --sans: var(--font-sans), -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --mono: var(--font-mono), ui-monospace, monospace;
 }

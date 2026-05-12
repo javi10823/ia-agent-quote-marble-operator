@@ -1,1160 +1,279 @@
-// Llamamos DIRECTO al backend (cross-origin) en vez de pasar por el
-// rewrite de Next.js. Motivo: el rewrite con destino externo en Vercel
-// a veces proxyea y a veces redirige (depende del endpoint, headers,
-// etc.) — ingobernable. Con cross-origin explícito + CORS configurado
-// en el backend + SameSite=None en el cookie, todo flow es predecible:
-//   POST /api/auth/login desde vercel.app → railway.app
-//   → Set-Cookie con domain=railway.app, SameSite=None
-//   → subsecuentes fetches desde vercel.app con credentials:"include"
-//     y SameSite=None → cookie viaja → 200
-//
-// `NEXT_PUBLIC_API_URL` debe apuntar a la URL completa del backend
-// (ej: https://ia-agent-quote-marble-operator-production.up.railway.app).
-// En dev lo resolvemos a localhost:8000.
-function resolveApiBase(): string {
-  if (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, "");
-  }
-  return "http://localhost:8000";
-}
-
-const API_BASE = resolveApiBase();
-
 /**
- * Historia: PR antiguo redirigía a /login en CUALQUIER 401 → bug con
- * 401 transientes (cross-origin cookie issues, expired token en un
- * endpoint pero no en otros). Desde entonces era no-op: ningún 401 se
- * atendía y el user quedaba en UI zombi cuando la sesión vencía.
+ * Mock client v2 — Sprint 2 paso 1 brief upload.
  *
- * PR #389: detectar solo los 401 **determinísticos del backend** (los
- * strings exactos que emite `auth.py` del middleware cuando el token
- * no existe o expiró) y en ese caso limpiar + redirigir. Cualquier otro
- * 401 (rutas privadas que devuelven 401 por otra razón, 401 transiente
- * cross-origin raro) sigue siendo no-op → preserva la robustez
- * histórica contra falsos positivos.
+ * Mock-first per Master §21.7 decisión 4 + endpoint dedicado del paso 1
+ * marcado como "P2 · NO EXISTE" en docs/handoff-context/missing-endpoints.md
+ * (`POST /api/quotes/{id}/brief`). Este client simula el response de
+ * creación de draft con latencia 2-5s y soporte de AbortController.
+ * Retorna las cifras canon Cueto-Heredia (Master §13).
  *
- * Side-effect: el backend con sliding refresh ahora extiende la sesión
- * en cada request mientras el token esté vivo. Solo vas a llegar a
- * `handleAuthError` si DE VERDAD dejaste el navegador inactivo >24h
- * después del último refresh.
+ * TODO sprint-3/api-integration: switch al cliente HTTP real cuando
+ * el backend implemente el endpoint dedicado, o cuando se decida
+ * pasarlo dentro del primer turno del chat (Opción A en
+ * missing-endpoints.md).
  */
-const AUTH_EXPIRED_DETAILS = new Set([
-  "Sesión expirada",
-  "No autenticado",
-]);
+import { CANONICAL_QUOTE } from "./mocks/canonicalQuote";
 
-function handleAuthError(res: Response): void {
-  if (res.status !== 401) return;
-  if (typeof window === "undefined") return;
-  // Evitar que 3 fetchs concurrentes (ej: /quotes + /quotes/check + /usage)
-  // disparen 3 redirects en paralelo. sessionStorage dura lo que la pestaña.
-  try {
-    if (window.sessionStorage.getItem("dangelo:redirecting") === "1") return;
-  } catch { /* storage inaccessible — seguir igual */ }
+export const V2_API_BASE = "/api";
 
-  // Clonar para no consumir el body del caller. Sin await: fire-and-forget.
-  res.clone().json().then((body) => {
-    const detail = typeof body?.detail === "string" ? body.detail : "";
-    if (!AUTH_EXPIRED_DETAILS.has(detail)) return;
-    try { window.sessionStorage.setItem("dangelo:redirecting", "1"); } catch {}
-    try { localStorage.removeItem("dangelo:token"); } catch {}
-    // Si ya estamos en /login no hace falta navegar — evita loops cuando
-    // el propio /api/auth/check durante el login devuelve 401.
-    const path = window.location?.pathname || "";
-    if (path.startsWith("/login")) return;
-    window.location.href = "/login?reason=expired";
-  }).catch(() => { /* body no parseable — no redirigir por las dudas */ });
+export interface CreateDraftQuoteInput {
+  planFile: File;
+  photos?: File[];
+  briefText?: string;
 }
 
-/**
- * Inyecta `Authorization: Bearer <token>` si hay token en localStorage.
- * Exportado para usar en flows que no pasan por apiFetch (SSE con fetch
- * directo, principalmente `streamChat`). Si ya viene un header Authorization
- * en `init.headers`, NO lo sobreescribe.
- */
-export function withAuthHeader(init?: RequestInit): RequestInit {
-  if (typeof window === "undefined") return init || {};
-  let token: string | null = null;
-  try { token = localStorage.getItem("dangelo:token"); } catch {}
-  if (!token) return init || {};
-
-  // Normalizar headers a un objeto mutable sin perder los headers originales.
-  const headers = new Headers(init?.headers);
-  if (!headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-  return { ...init, headers };
-}
-
-/**
- * Wrap `fetch()` → si tira TypeError "Failed to fetch" (red caída / CORS /
- * backend inalcanzable), el browser muestra un mensaje crudo horrible en
- * los toasts. Lo traducimos a algo accionable.
- *
- * También inyecta el header `Authorization: Bearer <token>` cuando hay un
- * JWT en localStorage — fallback para clientes donde la cookie cross-origin
- * no viaja (iOS Safari con ITP). En desktop el backend prefiere la cookie
- * igual, así que el header es redundancia inofensiva.
- *
- * Uso: `apiFetch(url, init)` en lugar de `fetch(url, init)`.
- */
-export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  let res: Response;
-  try {
-    res = await fetch(input, withAuthHeader(init));
-  } catch (err: any) {
-    // TypeError: Failed to fetch (Chrome/Safari) / NetworkError (Firefox)
-    if (err instanceof TypeError || err?.name === "NetworkError") {
-      throw new Error("No pude conectar con el servidor. Revisá tu conexión e intentalo de nuevo.");
-    }
-    throw err;
-  }
-  // PR #389 — sliding session refresh. Si al token le quedaban <24h, el
-  // backend emite un JWT nuevo en el header `X-Refreshed-Token` (además
-  // de Set-Cookie). Sincronizamos el fallback de localStorage — es lo
-  // que usa `withAuthHeader` cuando la cookie cross-origin no viaja
-  // (iOS Safari con ITP). Sin esto, el fallback se quedaba con el token
-  // viejo post-expiración y recién al vencer el fallback iba a /login.
-  try {
-    const refreshed = res.headers.get("X-Refreshed-Token");
-    if (refreshed && typeof window !== "undefined") {
-      localStorage.setItem("dangelo:token", refreshed);
-    }
-  } catch { /* ignore storage errors */ }
-  return res;
-}
-
-export interface ResumenObraRecord {
-  pdf_url: string;
-  drive_url: string | null;
-  drive_file_id?: string | null;
-  notes: string;
-  generated_at: string;
-  quote_ids: string[];
-  client_name: string;
-  project: string;
-}
-
-export interface Quote {
+export interface CreateDraftQuoteResponse {
   id: string;
-  client_name: string;
-  project: string;
-  material: string | null;
-  total_ars: number | null;
-  total_usd: number | null;
-  status: "draft" | "pending" | "validated" | "sent";
-  pdf_url: string | null;
-  excel_url: string | null;
-  drive_url: string | null;
-  drive_pdf_url: string | null;
-  drive_excel_url: string | null;
-  parent_quote_id: string | null;
-  quote_kind: "standard" | "building_parent" | "building_child_material" | "variant_option" | null;
-  is_building?: boolean | null;
-  comparison_group_id: string | null;
-  source: string | null;
-  is_read: boolean;
-  notes: string | null;
-  sink_type: { basin_count: "simple" | "doble"; mount_type: "arriba" | "abajo" } | null;
-  // PR #400 — campos que el backend ya devuelve en QuoteListResponse pero
-  // no estaban tipados en el cliente. Se usan en `buildWebRequestSnapshot`
-  // para volcar la derivación del backend (pileta resuelto, etc.).
-  pileta?: string | null;
-  localidad?: string | null;
-  colocacion?: boolean | null;
-  anafe?: boolean | null;
-  // PR #442 — flag computado por backend: true si hubo edits del
-  // quote después de la última generación/regenerate del PDF. El
-  // detail view muestra banner "PDF desactualizado · Regenerar"
-  // cuando se cumple.
-  pdf_outdated?: boolean | null;
-  pdf_generated_at?: string | null;
-  resumen_obra?: ResumenObraRecord | null;
-  condiciones_pdf?: {
-    pdf_url: string;
-    drive_url?: string | null;
-    drive_file_id?: string | null;
-    generated_at: string;
-    plazo: string;
-  } | null;
-  created_at: string;
+  status: "draft";
+  createdAt: string;
 }
 
-export interface SourceFile {
-  filename: string;
-  type: string;
-  size: number;
-  url: string;
-  uploaded_at: string;
-}
-
-export interface MOItem {
-  description: string;
-  quantity: number;
-  unit_price: number;
-  base_price?: number;
-  total: number;
-}
-
-export interface QuoteBreakdown {
-  client_name?: string;
-  project?: string;
-  date?: string;
-  delivery_days?: string;
-  material_name?: string;
-  material_type?: string;
-  material_m2?: number;
-  material_price_unit?: number;
-  material_price_base?: number;
-  material_currency?: "USD" | "ARS";
-  material_total?: number;
-  discount_pct?: number;
-  discount_amount?: number;
-  merma?: { aplica: boolean; desperdicio: number; sobrante_m2: number; motivo: string };
-  piece_details?: { description: string; largo: number; dim2: number; m2: number }[];
-  sectors?: { label: string; pieces: string[] }[];
-  sinks?: { name: string; quantity: number; unit_price: number }[];
-  mo_items?: MOItem[];
-  total_ars?: number;
-  total_usd?: number;
-  /** PR #378 — Presente cuando el operador ya confirmó medidas (Paso 2).
-   *  Usado por el frontend como flag para lockear edits inline del
-   *  despiece y mostrar el botón "Editar despiece". */
-  verified_context?: string;
-  /** PR #383 — Presente cuando el operador ya confirmó el contexto
-   *  (card `__CONTEXT_ANALYSIS__`). Se usa como flag para mostrar el
-   *  botón "Editar contexto" (gemelo de "Editar despiece" pero para
-   *  el paso anterior). */
-  verified_context_analysis?: { answers?: unknown[] } | null;
-}
-
-export interface QuoteDetail extends Quote {
-  messages: Message[];
-  quote_breakdown: QuoteBreakdown | null;
-  source_files: SourceFile[] | null;
-  children?: Quote[];  // building_child_material quotes for building_parent
-  /** PR #400 — Snapshot raw del body POST /api/v1/quote (solo source="web").
-   *  Usado por el botón "Copiar solicitud web" en el detalle: dump literal
-   *  de lo que mandó el bot externo, antes de derivaciones del backend.
-   *  Null para quotes operator y para web pre-#400. */
-  web_input?: Record<string, unknown> | null;
-}
-
-export interface Message {
-  role: "user" | "assistant";
-  content: string | ContentBlock[];
-}
-
-export interface ContentBlock {
-  type: "text" | "image" | "document" | "tool_use" | "tool_result";
-  text?: string;
-}
-
-// ── Quotes ────────────────────────────────────────────────────────────────────
-
-export async function fetchQuotes(): Promise<Quote[]> {
-  const res = await apiFetch(`${API_BASE}/api/quotes`, { credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error al cargar presupuestos");
-  return res.json();
-}
-
-export interface QuotesCheck {
-  count: number;
-  last_updated_at: string | null;
-}
-
-export async function checkQuotes(): Promise<QuotesCheck> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/check`, { credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error al verificar presupuestos");
-  return res.json();
-}
-
-export async function fetchQuote(id: string): Promise<QuoteDetail> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/${id}`, { credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = new Error("Presupuesto no encontrado");
-    if (res.status === 404) (err as any).code = "QUOTE_NOT_FOUND";
-    throw err;
-  }
-  return res.json();
-}
-
-export async function createQuote(
-  options?: { status?: Quote["status"] }
-): Promise<{ id: string }> {
-  const hasBody = options?.status != null;
-  const res = await apiFetch(`${API_BASE}/api/quotes`, {
-    method: "POST",
-    credentials: "include",
-    ...(hasBody && {
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: options!.status }),
-    }),
-  });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error al crear presupuesto");
-  return res.json();
-}
-
-export async function updateQuoteStatus(
-  id: string,
-  status: Quote["status"]
-): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/${id}/status`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status }),
-    credentials: "include",
-  });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error al actualizar estado");
-}
-
-export async function deleteQuote(id: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/${id}`, { method: "DELETE", credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error al eliminar presupuesto");
-}
-
-export async function markQuoteAsRead(id: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/${id}/read`, { method: "PATCH", credentials: "include" });
-  if (!res.ok) throw new Error("Error al marcar como leído");
-}
-
-export type QuoteEditablePatch = Partial<{
-  client_name: string;
-  project: string;
-  notes: string;
-  // PR #437 (P1.2) — delivery_days expuesto en el endpoint REST.
-  // P2.1 (PR #440) lo conecta a un EditableField del DetailView.
-  delivery_days: string;
-  // PR #440 (P2.1) — localidad editable inline. Soportada por el
-  // endpoint REST desde antes; el sync a breakdown llegó en PR #438.
-  localidad: string;
-}>;
-
-export async function updateQuote(id: string, patch: QuoteEditablePatch): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-    credentials: "include",
-  });
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al actualizar presupuesto");
+export class ApiError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+    public status?: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
   }
 }
 
-// ── Derive Material ─────────────────────────────────────────────────────────
+/** Validaciones declarativas (defensa en profundidad — la UI también valida). */
+export const VALIDATION = {
+  PLAN_MAX_BYTES: 20 * 1024 * 1024, // 20 MB
+  PLAN_MIME: ["application/pdf"] as const,
+  PHOTO_MAX_BYTES: 5 * 1024 * 1024, // 5 MB
+  PHOTO_MIME: ["image/jpeg", "image/png"] as const,
+  PHOTOS_MAX_COUNT: 5,
+  BRIEF_MAX_CHARS: 2000,
+} as const;
 
-export interface DeriveMaterialPayload {
-  material: string;
-  thickness_mm?: number;
-}
-
-export interface DeriveMaterialResponse {
-  ok: boolean;
-  quote_id: string;
-  material: string;
-  total_ars: number;
-  total_usd: number;
-  derived_from: string;
-}
-
-export async function deriveMaterial(quoteId: string, payload: DeriveMaterialPayload): Promise<DeriveMaterialResponse> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/${quoteId}/derive-material`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    credentials: "include",
-  });
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al derivar presupuesto");
+function validateInput(input: CreateDraftQuoteInput): void {
+  if (!VALIDATION.PLAN_MIME.includes(input.planFile.type as "application/pdf")) {
+    throw new ApiError("INVALID_MIME", "El plan debe ser un PDF", 422);
   }
-  return res.json();
-}
-
-// ── Resumen de obra (consolidated multi-quote summary) ───────────────────────
-
-export interface ResumenObraRequest {
-  quote_ids: string[];
-  notes?: string;
-  force_same_client?: boolean;
-}
-
-export async function generateResumenObra(
-  payload: ResumenObraRequest
-): Promise<ResumenObraRecord> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/resumen-obra`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    credentials: "include",
-  });
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al generar resumen de obra");
+  if (input.planFile.size > VALIDATION.PLAN_MAX_BYTES) {
+    throw new ApiError("FILE_TOO_LARGE", "El plan supera 20MB", 413);
   }
-  return res.json();
-}
-
-// ── Client fuzzy match + merge ───────────────────────────────────────────────
-
-export interface ClientMatchCheckResult {
-  same: boolean;
-  reason: "exact" | "fuzzy" | "ambiguous";
-  distinct_names: string[];
-}
-
-export async function clientMatchCheck(
-  quoteIds: string[]
-): Promise<ClientMatchCheckResult> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/client-match-check`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ quote_ids: quoteIds }),
-    credentials: "include",
-  });
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al verificar el cliente");
-  }
-  return res.json();
-}
-
-export interface MergeClientResult {
-  ok: boolean;
-  updated_ids: string[];
-  client_name: string;
-  quote_ids: string[];
-}
-
-export async function mergeClient(
-  quoteIds: string[],
-  canonicalClientName: string
-): Promise<MergeClientResult> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/merge-client`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      quote_ids: quoteIds,
-      canonical_client_name: canonicalClientName,
-    }),
-    credentials: "include",
-  });
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al unificar clientes");
-  }
-  return res.json();
-}
-
-// ── Email draft (AI-generated client email) ──────────────────────────────────
-
-export interface EmailDraft {
-  subject: string;
-  body: string;
-  generated_at: string;
-  validated: boolean;
-  quote_updated_at_snapshot: string;
-  resumen_updated_at_snapshot: string | null;
-  sibling_updated_at_snapshots: Record<string, string>;
-}
-
-export async function fetchEmailDraft(quoteId: string): Promise<EmailDraft> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/${quoteId}/email-draft`, {
-    credentials: "include",
-  });
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al cargar el email");
-  }
-  return res.json();
-}
-
-export async function regenerateEmailDraft(
-  quoteId: string
-): Promise<EmailDraft> {
-  const res = await apiFetch(
-    `${API_BASE}/api/quotes/${quoteId}/email-draft/regenerate`,
-    { method: "POST", credentials: "include" }
-  );
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al regenerar el email");
-  }
-  return res.json();
-}
-
-// ── Quote Comparison ─────────────────────────────────────────────────────────
-
-export interface QuoteCompareItem {
-  id: string;
-  material: string | null;
-  total_ars: number | null;
-  total_usd: number | null;
-  status: string;
-  pdf_url: string | null;
-  excel_url: string | null;
-  drive_url: string | null;
-  quote_breakdown: QuoteBreakdown | null;
-}
-
-export interface QuoteCompareResponse {
-  parent_id: string;
-  client_name: string;
-  project: string;
-  quotes: QuoteCompareItem[];
-}
-
-export async function fetchQuoteComparison(id: string): Promise<QuoteCompareResponse | null> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/${id}/compare`, { credentials: "include" });
-  if (res.status === 404) return null;
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error al cargar comparación");
-  return res.json();
-}
-
-// ── Generate Documents ───────────────────────────────────────────────────────
-
-export async function generateQuoteDocuments(id: string): Promise<{ ok: boolean; pdf_url?: string; excel_url?: string; drive_url?: string }> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/${id}/generate`, { method: "POST", credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al generar documentos");
-  }
-  return res.json();
-}
-
-export async function validateQuote(id: string): Promise<{ ok: boolean; pdf_url?: string; excel_url?: string; drive_url?: string }> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/${id}/validate`, { method: "POST", credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al validar presupuesto");
-  }
-  return res.json();
-}
-
-/**
- * PR #378 — Reabre la edición del despiece después de haber confirmado
- * medidas. Limpia el Paso 2 (material + MO + totales + contexto verificado)
- * y deja el quote en estado Paso 1 editable. El operador corrige,
- * reconfirma, y Valentina regenera Paso 2 limpio.
- *
- * Errores:
- *  - 404: quote no existe.
- *  - 409: status es `validated` o `sent` (PDF ya entregado, no se reabre).
- *  - 400: no había confirmación previa (nada que reabrir).
- */
-export async function reopenMeasurements(id: string): Promise<void> {
-  const res = await apiFetch(
-    `${API_BASE}/api/quotes/${id}/reopen-measurements`,
-    { method: "POST", credentials: "include" },
-  );
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al reabrir edición del despiece");
-  }
-}
-
-/**
- * PR #383 — Reabre la edición del contexto después de haber confirmado
- * la card de análisis. Limpia Paso 2 + `verified_context_analysis` y
- * corta el historial desde la card `__CONTEXT_ANALYSIS__` (inclusive),
- * regenerándola con los data_known + assumptions + pending_questions
- * que el operador vio en el momento original.
- *
- * Errores:
- *  - 404: quote no existe.
- *  - 409: status es `validated` o `sent` (PDF ya entregado).
- *  - 400: no había confirmación de contexto previa.
- */
-export async function reopenContext(id: string): Promise<void> {
-  const res = await apiFetch(
-    `${API_BASE}/api/quotes/${id}/reopen-context`,
-    { method: "POST", credentials: "include" },
-  );
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al reabrir edición del contexto");
-  }
-}
-
-/**
- * Regenera PDF y Excel del presupuesto usando los datos ya guardados en DB.
- * NO re-corre Valentina, NO recalcula precios ni m², NO cambia el status.
- * Solo aplica el template actual sobre el breakdown persistido.
- */
-export async function regenerateQuoteDocs(id: string): Promise<{
-  ok: boolean;
-  pdf_url: string;
-  excel_url: string;
-  drive_url: string | null;
-  regenerated_at: string;
-}> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/${id}/regenerate`, { method: "POST", credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al regenerar archivos");
-  }
-  return res.json();
-}
-
-// ── Usage ────────────────────────────────────────────────────────────────────
-
-export async function fetchUsageDashboard() {
-  const res = await apiFetch(`${API_BASE}/api/usage/dashboard`, { credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error cargando uso de API");
-  return res.json();
-}
-
-export async function fetchUsageDaily() {
-  const res = await apiFetch(`${API_BASE}/api/usage/daily`, { credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error cargando detalle diario");
-  return res.json();
-}
-
-export async function updateUsageBudget(data: { monthly_budget_usd?: number; enable_hard_limit?: boolean }) {
-  const res = await apiFetch(`${API_BASE}/api/usage/budget`, {
-    method: "PATCH", credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error actualizando presupuesto");
-  return res.json();
-}
-
-// ── Chat SSE ──────────────────────────────────────────────────────────────────
-
-export interface ChatChunk {
-  type: "text" | "action" | "done" | "zone_selector" | "dual_read_result" | "context_analysis";
-  content: string;
-}
-
-// ── Zone Select ──
-
-export async function selectZone(
-  quoteId: string,
-  bbox: { x1: number; y1: number; x2: number; y2: number },
-  pageNum: number = 1,
-) {
-  // Path absoluto con API_BASE — el rewrite de Next.js proxea a Railway pero
-  // no arrastra la cookie (dominio distinto), así que un path relativo devuelve
-  // 401. Tiene que ir cross-origin directo, igual que streamChat / fetchQuote.
-  const res = await apiFetch(`${API_BASE}/api/quotes/${quoteId}/zone-select`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({ bbox_normalized: bbox, page_num: pageNum }),
-  });
-  if (!res.ok) throw new Error(`zone-select failed: ${res.status}`);
-  return res.json();
-}
-
-// Retry del dual-read invocando a Opus (más caro, más preciso). Usado cuando
-// las medidas del primer pass no convencen al operador. MISMA regla que
-// selectZone: URL absoluta con API_BASE — el rewrite proxy no pasa la cookie
-// en el setup cross-origin (PR #322), así que un path relativo falla 401.
-export async function dualReadRetry(quoteId: string): Promise<unknown> {
-  const res = await apiFetch(`${API_BASE}/api/quotes/${quoteId}/dual-read-retry`, {
-    method: "POST",
-    credentials: "include",
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({} as { detail?: string }));
-    throw new Error((err as { detail?: string }).detail || `HTTP ${res.status}`);
-  }
-  return res.json();
-}
-
-export async function* streamChat(
-  quoteId: string,
-  message: string,
-  files?: File[],
-  signal?: AbortSignal
-): AsyncGenerator<ChatChunk> {
-  const formData = new FormData();
-  formData.append("message", message);
-  if (files) {
-    for (const f of files) {
-      formData.append("plan_files", f);
+  if (input.photos) {
+    if (input.photos.length > VALIDATION.PHOTOS_MAX_COUNT) {
+      throw new ApiError("TOO_MANY_PHOTOS", "Máximo 5 fotos", 422);
     }
-  }
-
-  // Abort if no response within 60s (connection timeout)
-  const controller = new AbortController();
-  const { CONNECT_TIMEOUT } = await import("@/lib/constants");
-  const connectTimeout = setTimeout(() => controller.abort(), CONNECT_TIMEOUT);
-  // Forward external abort signal if provided
-  if (signal) signal.addEventListener("abort", () => controller.abort(), { once: true });
-
-  let res: Response;
-  try {
-    // withAuthHeader inyecta Authorization: Bearer <token> si hay sesión en
-    // localStorage — imprescindible en iOS Safari (la cookie cross-origin
-    // no viaja), inofensivo en desktop (cookie tiene precedencia server-side).
-    res = await fetch(`${API_BASE}/api/quotes/${quoteId}/chat`, withAuthHeader({
-      method: "POST",
-      body: formData,
-      credentials: "include",
-      signal: controller.signal,
-    }));
-  } catch (e: any) {
-    clearTimeout(connectTimeout);
-    if (e.name === "AbortError") {
-      throw new Error("El servidor tardó demasiado en responder. Intentá de nuevo.");
-    }
-    throw new Error("No se pudo conectar con Valentina. Intentá de nuevo.");
-  }
-  clearTimeout(connectTimeout);
-
-  // PR #389 — mismo capture de refresh token + detección 401 que apiFetch.
-  // streamChat hace fetch directo (sin apiFetch) porque el body es un
-  // ReadableStream (SSE), pero igual participa en el sliding session flow.
-  try {
-    const refreshed = res.headers.get("X-Refreshed-Token");
-    if (refreshed && typeof window !== "undefined") {
-      localStorage.setItem("dangelo:token", refreshed);
-    }
-  } catch { /* ignore */ }
-  handleAuthError(res);
-
-  if (!res.ok) {
-    if (res.status === 400) {
-      try {
-        const err = await res.json();
-        throw new Error(err.detail || "Error en los archivos adjuntos.");
-      } catch (e) {
-        if (e instanceof Error && e.message !== "Error en los archivos adjuntos.") throw e;
-        throw new Error("Error en los archivos adjuntos.");
+    for (const photo of input.photos) {
+      if (!VALIDATION.PHOTO_MIME.includes(photo.type as "image/jpeg" | "image/png")) {
+        throw new ApiError("INVALID_PHOTO_MIME", "Las fotos deben ser JPG o PNG", 422);
+      }
+      if (photo.size > VALIDATION.PHOTO_MAX_BYTES) {
+        throw new ApiError("PHOTO_TOO_LARGE", "Cada foto debe ser menor a 5MB", 413);
       }
     }
-    if (res.status === 404) {
-      // Presupuesto borrado: tagear el error para que el caller redirija
-      // al dashboard y corte el spam de POSTs inútiles.
-      const err = new Error(
-        "Este presupuesto ya no existe. Volviendo al listado…"
-      );
-      (err as any).code = "QUOTE_NOT_FOUND";
-      throw err;
-    }
-    if (res.status === 502 || res.status === 503 || res.status === 504) {
-      throw new Error("El servidor está reiniciando. Esperá unos segundos e intentá de nuevo.");
-    }
-    throw new Error("No se pudo conectar con Valentina. Intentá de nuevo.");
   }
-  if (!res.body) throw new Error("El servidor no envió respuesta. Intentá de nuevo.");
+  if (input.briefText && input.briefText.length > VALIDATION.BRIEF_MAX_CHARS) {
+    throw new ApiError("BRIEF_TOO_LONG", "El brief no puede superar 2000 caracteres", 422);
+  }
+}
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
+/**
+ * Crea un draft quote a partir de un PDF + fotos + brief.
+ *
+ * Mock: simula latencia 2-5s. Si llega `signal.aborted`, rechaza con
+ * `AbortError` para que el UI pueda volver al estado B (form cargado).
+ */
+export async function createDraftQuote(
+  input: CreateDraftQuoteInput,
+  options?: { signal?: AbortSignal },
+): Promise<CreateDraftQuoteResponse> {
+  validateInput(input);
 
-  // Stall timeout: abort if no data received during streaming
-  const { STALL_TIMEOUT } = await import("@/lib/constants");
-  let stallTimer: ReturnType<typeof setTimeout> | null = null;
-  const resetStallTimer = () => {
-    if (stallTimer) clearTimeout(stallTimer);
-    stallTimer = setTimeout(() => {
-      reader.cancel();
-    }, STALL_TIMEOUT);
+  const latency = 2000 + Math.random() * 3000;
+  await new Promise<void>((resolve, reject) => {
+    if (options?.signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const timeout = setTimeout(resolve, latency);
+    options?.signal?.addEventListener("abort", () => {
+      clearTimeout(timeout);
+      reject(new DOMException("Aborted", "AbortError"));
+    });
+  });
+
+  return {
+    id: CANONICAL_QUOTE.id,
+    status: "draft",
+    createdAt: new Date().toISOString(),
   };
+}
 
-  try {
-    resetStallTimer();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+/* ════════════════════════════════════════════════════════════════════════
+   Sprint 2 paso-2-contexto · mock client de contexto + chat scoped
+   ════════════════════════════════════════════════════════════════════════
+   Endpoints `PATCH /api/v1/quotes/{id}/context` y `POST /api/v1/quotes/{id}/chat`
+   marcados como missing/parcial en docs/handoff-context/missing-endpoints.md.
+   El mock cubre la brecha temporal hasta sprint-3/api-integration. */
 
-      resetStallTimer();
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+/** Origen del valor de cada campo del contexto (Master §10 data model). */
+export type ContextOrigin =
+  | "BRIEF" // extraído del brief original (PDF + textarea)
+  | "INFERIDO" // inferido por Valentina al cruzar catálogos / regla
+  | "DEFAULT" // valor por defecto (ej. zócalo 5cm)
+  | "EDITADO" // Marina lo tocó manualmente
+  | "FALTA"; // no extraído ni inferido — requiere input humano
 
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const chunk: ChatChunk = JSON.parse(line.slice(6));
-            yield chunk;
-          } catch (e) {
-            console.warn("SSE parse error:", line, e);
-          }
-        }
-      }
+export interface ContextField<T = string | number | boolean | null> {
+  value: T;
+  origin: ContextOrigin;
+  edited?: boolean;
+}
+
+/** Los 11 campos del contexto (Master §6 mockup 01-A). */
+export interface ContextData {
+  cliente: string; // arquitecta / razón social
+  contacto: string; // teléfono / email
+  localidad: string; // obra · ciudad
+  plazo: string; // desde confirmación de medidas
+  tipologia: string; // cocina, baño, mesa
+  tipo_obra: "particular" | "edificio";
+  material: string; // piedra o engineered
+  pileta: string; // tipo + origen
+  zocalo: string; // contra pared · si/no + alto
+  regrueso: string; // borde frontal grueso
+  anafe: boolean; // define MO ANAFE en paso 3
+}
+
+export type ContextResponse = {
+  [K in keyof ContextData]: ContextField<ContextData[K]>;
+};
+
+/** In-memory store para que updates persistan dentro de la sesión del browser. */
+const _contextStore = new Map<string, ContextResponse>();
+
+/** Reset helper (útil para tests / reset entre quotes en dev). */
+export function _resetContextStore() {
+  _contextStore.clear();
+}
+
+async function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
     }
-  } finally {
-    if (stallTimer) clearTimeout(stallTimer);
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(t);
+      reject(new DOMException("Aborted", "AbortError"));
+    });
+  });
+}
+
+/**
+ * GET context para un quote. Mock retorna CANONICAL_CONTEXT (Master §13)
+ * la primera vez, luego cualquier estado guardado en la sesión.
+ */
+export async function getContextForQuote(
+  quoteId: string,
+  options?: { signal?: AbortSignal },
+): Promise<ContextResponse> {
+  await delay(150 + Math.random() * 200, options?.signal);
+  const existing = _contextStore.get(quoteId);
+  if (existing) return existing;
+  // Lazy import para evitar circular en build (canonicalQuote re-importa types).
+  const { CANONICAL_CONTEXT } = await import("./mocks/canonicalQuote");
+  const seeded = JSON.parse(JSON.stringify(CANONICAL_CONTEXT)) as ContextResponse;
+  _contextStore.set(quoteId, seeded);
+  return seeded;
+}
+
+/**
+ * PATCH parcial del contexto. Marca cada campo recibido como
+ * `origin: 'EDITADO'` + `edited: true` (regla Master §4 #3).
+ */
+export async function updateContextForQuote(
+  quoteId: string,
+  partial: Partial<ContextData>,
+  options?: { signal?: AbortSignal },
+): Promise<ContextResponse> {
+  await delay(120 + Math.random() * 180, options?.signal);
+  const current = await getContextForQuote(quoteId);
+  // Cast a Record para permitir asignación dinámica por key — la mapped
+  // type ContextResponse rechaza writes heterogéneos sin narrowing.
+  const next = { ...current } as Record<keyof ContextData, ContextField>;
+  for (const k of Object.keys(partial) as (keyof ContextData)[]) {
+    const value = partial[k];
+    if (value === undefined) continue;
+    next[k] = {
+      value: value as string | number | boolean | null,
+      origin: "EDITADO",
+      edited: true,
+    };
   }
+  const result = next as ContextResponse;
+  _contextStore.set(quoteId, result);
+  return result;
 }
 
-// ── Catalog ───────────────────────────────────────────────────────────────────
+/* ─── Chat scoped streaming (mock SSE via ReadableStream) ─────────── */
 
-export async function fetchCatalogs() {
-  // Trailing slash obligatorio: el endpoint FastAPI está registrado como
-  // `@router.get("/")` con prefix `/catalog`, así que la ruta real es
-  // `/api/catalog/` (con slash). Sin slash, FastAPI responde 307 con
-  // `Location: .../api/catalog/`. El browser sigue el redirect, y si
-  // Vercel lo procesa como redirect cross-origin (no proxy), terminamos
-  // en origen Railway donde la cookie SameSite=Lax no viaja → 401 →
-  // handleAuthError redirige a /login → usuario ve "sesión cerrada".
-  //
-  // Con el slash vamos directo al handler — zero redirects, zero jumps
-  // cross-origin, cookie viaja.
-  const res = await apiFetch(`${API_BASE}/api/catalog/`, { credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error al cargar catálogos");
-  return res.json();
+export type ChatScope = "contexto" | "despiece" | "calculo" | "pdf";
+
+export interface ChatStreamChunk {
+  type: "text" | "done" | "error";
+  content?: string;
+  message?: string;
 }
 
-export async function fetchCatalog(name: string) {
-  const res = await apiFetch(`${API_BASE}/api/catalog/${name}`, { credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Catálogo no encontrado");
-  return res.json();
-}
-
-export async function validateCatalog(name: string, content: unknown) {
-  const res = await apiFetch(`${API_BASE}/api/catalog/${name}/validate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content }),
-    credentials: "include",
-  });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error al validar catálogo");
-  return res.json();
-}
-
-export async function updateCatalog(name: string, content: unknown) {
-  const res = await apiFetch(`${API_BASE}/api/catalog/${name}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content }),
-    credentials: "include",
-  });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error al guardar catálogo");
-  return res.json();
-}
-
-// ── Catalog Import ──────────────────────────────────────────────────────────
-
-export interface ImportDiffItem {
-  sku: string;
-  name: string;
-  old_price?: number;
-  new_price?: number;
-  change_pct?: number;
-  price?: number;
-}
-
-export interface ImportCatalogDiff {
-  catalog: string;
-  currency: string;
-  file_currency: string;
-  price_field: string;
-  updated: ImportDiffItem[];
-  normalized: ImportDiffItem[];
-  new: ImportDiffItem[];
-  missing: ImportDiffItem[];
-  zero_price: ImportDiffItem[];
-  unchanged: number;
-  warnings: string[];
-  total_in_file: number;
-  total_in_catalog: number;
-}
-
-export interface ImportPreviewResult {
-  format: string;
-  total_items: number;
-  catalogs: Record<string, ImportCatalogDiff>;
-  unmatched: { sku: string; name: string; price: number | null }[];
-  iva_warning: boolean;
-  currency_mismatch: boolean;
-  warnings: string[];
-}
-
-export interface ImportApplyResult {
-  ok: boolean;
-  results: Record<string, { ok: boolean; updated?: number; added?: number; skipped_zero?: number; error?: string }>;
-  source_file: string;
-}
-
-export interface BackupEntry {
-  id: number;
-  created_at: string | null;
-  source_file: string | null;
-  stats: { items_before?: number; updated?: number; new?: number; reason?: string } | null;
-}
-
-export async function importPreview(file: File): Promise<ImportPreviewResult> {
-  const form = new FormData();
-  form.append("file", file);
-  const res = await apiFetch(`${API_BASE}/api/catalog/import-preview`, {
-    method: "POST",
-    body: form,
-    credentials: "include",
-  });
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al analizar archivo");
+/** Frases canónicas rioplatenses para mock — varían según scope. */
+function pickResponse(scope: ChatScope, message: string): string {
+  const lower = message.toLowerCase();
+  if (scope === "contexto") {
+    if (lower.includes("anafe")) {
+      return "Marqué anafe porque en el plano se ve el dibujo del símbolo en la mesada. Si no es así, lo desmarcás vos y se recalcula la MO en el paso 3.";
+    }
+    if (lower.includes("descuento") || lower.includes("arquitec")) {
+      return "Cueto-Heredia matchea con architects.json (5% sobre material importado). Lo aplico solo en el material que sea importado, no sobre la MO ni el flete.";
+    }
+    if (lower.includes("pileta") || lower.includes("bacha")) {
+      return "Inferí pileta empotrada porque el brief dice que la trae el cliente. Si fuera apoyada cambia el corte y tengo que rehacer despiece.";
+    }
+    if (lower.includes("material") || lower.includes("silestone")) {
+      return "Silestone Blanco Norte salió del brief textual. Es engineered importado, así que aplica descuento arquitecta y NO tiene merma cero (sintéticos sí mermean a diferencia de Negro Brasil).";
+    }
   }
-  return res.json();
+  return "Te puedo ayudar con eso. Decime qué campo querés revisar y te explico de dónde lo saqué.";
 }
 
-export async function importApply(file: File, catalogs: string[], includeNew: boolean, sourceFile: string): Promise<ImportApplyResult> {
-  const form = new FormData();
-  form.append("file", file);
-  form.append("catalogs", JSON.stringify(catalogs));
-  form.append("include_new", String(includeNew));
-  form.append("source_file", sourceFile);
-  const res = await apiFetch(`${API_BASE}/api/catalog/import-apply`, {
-    method: "POST",
-    body: form,
-    credentials: "include",
+/**
+ * Mock SSE del chat scoped — emite chunks de texto cada 50-100ms para
+ * simular streaming token-por-token. Soporta abort via signal.
+ */
+export function streamChat(
+  _quoteId: string,
+  message: string,
+  scope: ChatScope,
+  options?: { signal?: AbortSignal },
+): ReadableStream<ChatStreamChunk> {
+  const text = pickResponse(scope, message);
+  const tokens = text.split(/(\s+)/); // split conservando whitespace
+
+  return new ReadableStream<ChatStreamChunk>({
+    async start(controller) {
+      try {
+        for (const token of tokens) {
+          await delay(50 + Math.random() * 50, options?.signal);
+          controller.enqueue({ type: "text", content: token });
+        }
+        controller.enqueue({ type: "done" });
+        controller.close();
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          controller.close();
+          return;
+        }
+        controller.enqueue({ type: "error", message: "stream-error" });
+        controller.close();
+      }
+    },
   });
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al importar");
-  }
-  return res.json();
-}
-
-export async function listBackups(catalogName: string): Promise<BackupEntry[]> {
-  const res = await apiFetch(`${API_BASE}/api/catalog/backups/${catalogName}`, { credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error al cargar backups");
-  return res.json();
-}
-
-export async function restoreBackup(backupId: number): Promise<{ ok: boolean; catalog: string }> {
-  const res = await apiFetch(`${API_BASE}/api/catalog/backups/${backupId}/restore`, {
-    method: "POST",
-    credentials: "include",
-  });
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al restaurar backup");
-  }
-  return res.json();
-}
-
-// ── Users ────────────────────────────────────────────────────────────────────
-
-export interface UserInfo {
-  id: string;
-  username: string;
-  created_at: string | null;
-}
-
-export async function fetchUsers(): Promise<UserInfo[]> {
-  const res = await apiFetch(`${API_BASE}/api/auth/users`, { credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error al cargar usuarios");
-  return res.json();
-}
-
-export async function apiCreateUser(username: string, password: string): Promise<{ ok: boolean; id: string }> {
-  const res = await apiFetch(`${API_BASE}/api/auth/create-user`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-    credentials: "include",
-  });
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al crear usuario");
-  }
-  return res.json();
-}
-
-export async function deleteUser(id: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/auth/users/${id}`, { method: "DELETE", credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al eliminar usuario");
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// Observability — auditoría operativa (PR #444)
-// ─────────────────────────────────────────────────────────────────────
-
-export type AuditEvent = {
-  id: string;
-  created_at: string;
-  event_type: string;
-  source: string;
-  quote_id: string | null;
-  session_id: string | null;
-  actor: string;
-  actor_kind: string;
-  request_id: string | null;
-  turn_index: number | null;
-  summary: string;
-  payload: Record<string, unknown>;
-  payload_truncated: boolean;
-  debug_payload: boolean;  // Phase 2 — true si capturado con global_debug ON.
-  success: boolean;
-  error_message: string | null;
-  elapsed_ms: number | null;
-};
-
-export type AuditTimeline = {
-  quote_id: string;
-  events: AuditEvent[];
-  coverage: { first_event_date: string | null; has_events_for_quote: boolean };
-};
-
-export type AuditGlobalPage = {
-  events: AuditEvent[];
-  total: number;
-  limit: number;
-  offset: number;
-};
-
-export type AuditCoverage = {
-  first_event_date: string | null;
-  total_events: number;
-};
-
-export async function fetchQuoteAudit(quoteId: string): Promise<AuditTimeline> {
-  const res = await apiFetch(`${API_BASE}/api/admin/quotes/${quoteId}/audit`, { credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error al cargar auditoría");
-  return res.json();
-}
-
-export async function fetchAuditCoverage(): Promise<AuditCoverage> {
-  const res = await apiFetch(`${API_BASE}/api/admin/audit/coverage`, { credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error al cargar cobertura de auditoría");
-  return res.json();
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// Phase 2 — Modo debug global
-// ─────────────────────────────────────────────────────────────────────
-
-export type GlobalDebugStatus = {
-  enabled: boolean;
-  mode: "1h" | "end_of_day" | "manual" | null;
-  until: string | null;  // ISO timestamp
-  started_at: string | null;
-  started_by: string | null;
-  remaining_seconds: number | null;
-};
-
-export async function fetchGlobalDebugStatus(): Promise<GlobalDebugStatus> {
-  const res = await apiFetch(`${API_BASE}/api/admin/system-config/global-debug`, { credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error al consultar modo debug");
-  return res.json();
-}
-
-export async function setGlobalDebug(mode: "1h" | "end_of_day" | "manual" | "off"): Promise<GlobalDebugStatus> {
-  const res = await apiFetch(`${API_BASE}/api/admin/system-config/global-debug`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode }),
-    credentials: "include",
-  });
-  handleAuthError(res);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Error al cambiar modo debug");
-  }
-  return res.json();
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// Lista agrupada por quote (PR refactor UX) — endpoint nuevo, separado
-// del endpoint legacy `/observability` que sigue sirviendo eventos
-// sueltos para Phase 3 agente.
-// ─────────────────────────────────────────────────────────────────────
-
-export type ObservabilityQuoteRow = {
-  quote_id: string;
-  client_name: string | null;
-  actor: string | null;
-  events_count: number;
-  errors_count: number;
-  has_debug_payloads: boolean;
-  first_event_at: string;
-  last_event_at: string;
-};
-
-export type ObservabilityQuotesPage = {
-  quotes: ObservabilityQuoteRow[];
-  total: number;
-  limit: number;
-  offset: number;
-};
-
-export async function fetchObservabilityQuotes(params: {
-  q?: string;
-  actor?: string;
-  has_errors?: boolean;
-  has_debug?: boolean;
-  from?: string;
-  to?: string;
-  limit?: number;
-  offset?: number;
-}): Promise<ObservabilityQuotesPage> {
-  const qs = new URLSearchParams();
-  Object.entries(params).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== "") qs.append(k, String(v));
-  });
-  const res = await apiFetch(
-    `${API_BASE}/api/admin/observability/quotes?${qs.toString()}`,
-    { credentials: "include" },
-  );
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error al cargar quotes de observability");
-  return res.json();
-}
-
-export async function fetchGlobalAudit(params: {
-  event_type?: string;
-  actor?: string;
-  success?: boolean;
-  quote_id?: string;
-  source?: string;
-  from?: string;
-  to?: string;
-  limit?: number;
-  offset?: number;
-}): Promise<AuditGlobalPage> {
-  const qs = new URLSearchParams();
-  Object.entries(params).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== "") qs.append(k, String(v));
-  });
-  const res = await apiFetch(`${API_BASE}/api/admin/observability?${qs.toString()}`, { credentials: "include" });
-  handleAuthError(res);
-  if (!res.ok) throw new Error("Error al cargar observability");
-  return res.json();
 }
