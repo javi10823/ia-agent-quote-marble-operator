@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>15 · IA error — "esto no me sirve"</title>
+<meta name="viewport" content="width=1440" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400;1,9..144,500&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="operator-shared.css">
+<template id="__bundler_thumbnail" data-bg-color="#2a1a1a">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect x="120" y="200" width="960" height="60" rx="4" fill="#3a1518" stroke="#7a2832" stroke-width="2"/>
+    <circle cx="600" cy="400" r="80" fill="none" stroke="#c44" stroke-width="6"/>
+    <line x1="555" y1="355" x2="645" y2="445" stroke="#c44" stroke-width="6"/>
+    <text x="600" y="600" font-family="Georgia,serif" font-style="italic" font-size="40" fill="#e8ede5" text-anchor="middle">IA error</text>
+  </svg>
+</template>
+</head>
+<body data-step="despiece" data-state="A" data-audit="off">
+<div class="frame-label"><span class="num">15</span> Extra · IA error <span class="state">"esto no me sirve" — feedback de Marina</span></div>
+
+<div class="page">
+  <main class="main">
+    <div class="body">
+      <div class="col">
+
+        <div class="section-head">
+          <div>
+            <div class="meta">Paso 3 de 5 · Despiece</div>
+            <h2>Despiece de piezas</h2>
+          </div>
+        </div>
+
+        <!-- Banner de rechazo -->
+        <div class="ia-banner error">
+          <div class="vbubble"></div>
+          <div class="text">
+            Marina marcó este despiece como <strong>"esto no me sirve"</strong>.
+            <div class="sub">Valentina toma nota y te ofrece tres caminos abajo</div>
+          </div>
+          <div class="actions">
+            <button class="btn ghost sm">Cerrar</button>
+          </div>
+        </div>
+
+        <!-- Despiece tachado, marcado como descartado -->
+        <div class="etable cols-despiece discarded">
+          <div class="colh">
+            <div>#</div>
+            <div>Pieza · <span class="discarded-tag">descartado</span></div>
+            <div>Largo</div><div>Ancho</div><div>Cant.</div><div>m² unit.</div><div>m² total</div><div></div>
+          </div>
+          <div class="row">
+            <div class="cell">R1</div><div class="cell label-cell">Mesada · brazo izq</div>
+            <div class="cell num">285</div><div class="cell num">62</div><div class="cell num">1</div>
+            <div class="cell num">1.77</div><div class="cell num">1.77</div><div class="cell action">⋯</div>
+          </div>
+          <div class="row">
+            <div class="cell">R2</div><div class="cell label-cell">Mesada · brazo derecho</div>
+            <div class="cell num">240</div><div class="cell num">62</div><div class="cell num">1</div>
+            <div class="cell num">1.49</div><div class="cell num">1.49</div><div class="cell action">⋯</div>
+          </div>
+          <div class="row">
+            <div class="cell">R3</div><div class="cell label-cell">Mesada · fondo</div>
+            <div class="cell num">180</div><div class="cell num">62</div><div class="cell num">1</div>
+            <div class="cell num">1.12</div><div class="cell num">1.12</div><div class="cell action">⋯</div>
+          </div>
+        </div>
+
+        <!-- Pregunta + 3 caminos -->
+        <div class="recovery-block">
+          <div class="v-msg">
+            <div class="vbubble"></div>
+            <div>
+              <div class="name">Valentina · IA</div>
+              <div class="body">
+                Entendido — tirá esto. ¿Qué te falta o sobra?<br>
+                <span class="sub">Cuanto más concreta seas, mejor lo rehago.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="recovery-paths">
+            <button class="rpath">
+              <div class="label">A · Rehacer con detalle</div>
+              <div class="desc">Decime qué cambia (medidas, voladizos, bachas) y armo otro despiece desde cero.</div>
+            </button>
+            <button class="rpath">
+              <div class="label">B · Rehacer 1 pieza</div>
+              <div class="desc">Si sólo está mal R4 (la isla, por ej.), te corrijo esa y dejo el resto.</div>
+            </button>
+            <button class="rpath muted">
+              <div class="label">C · Cargo a mano</div>
+              <div class="desc">Vacío todo y lo hacés vos. Yo me callo hasta que me llames.</div>
+            </button>
+          </div>
+
+          <div class="recovery-composer">
+            <input placeholder="O contame qué está mal — texto libre…" />
+            <button class="btn primary sm">Enviar feedback</button>
+          </div>
+        </div>
+
+        <!-- Trace para retro -->
+        <div class="trace-row">
+          <span>ⓘ</span>
+          <span>Tu feedback se guarda como <strong>trace q_8f2a · rejected</strong> — el equipo lo revisa para mejorar prompts. Tu nombre no se comparte.</span>
+        </div>
+
+      </div>
+
+      <div class="col">
+        <aside class="chat fit">
+          <div class="head">
+            <div class="vbubble"></div>
+            <div>
+              <div class="title">Ayuda con Despiece</div>
+              <div class="sub">Scoped · cerrado</div>
+            </div>
+            <span class="x">→</span>
+          </div>
+          <div class="empty-cta">
+            <div class="msg">
+              Si querés rehacer hablando, abrime —<br>te pregunto lo que necesite.
+            </div>
+            <div class="cta">
+              <button class="btn ghost sm">Abrir chat ↗</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="chrome.js"></script>
+</body>
+</html>

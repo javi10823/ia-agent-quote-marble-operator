@@ -1,0 +1,301 @@
+{
+  "iva": {
+    "multiplier": 1.21,
+    "percentage": 21
+  },
+  "delivery_days": {
+    "_comment": "Plazo de entrega desde toma de medidas. Se elige por tier según m² total.",
+    "default": 30,
+    "range_enabled": false,
+    "range_min": 20,
+    "range_max": 30,
+    "display": "30 dias desde la toma de medidas",
+    "tiers": [
+      {
+        "max_m2": 3,
+        "days": 20,
+        "display": "20 dias desde la toma de medidas"
+      },
+      {
+        "max_m2": 6,
+        "days": 30,
+        "display": "30 dias desde la toma de medidas"
+      },
+      {
+        "max_m2": 999,
+        "days": 40,
+        "display": "40 dias desde la toma de medidas"
+      }
+    ]
+  },
+  "discount": {
+    "imported_percentage": 5,
+    "national_percentage": 8,
+    "min_m2_threshold": 6,
+    "applies_to": "material_only",
+    "building_percentage": 18,
+    "building_min_m2_threshold": 15,
+    "building_applies_to": "material_only"
+  },
+  "materials": {
+    "_comment": "Clasificacion de materiales por familia",
+    "sinteticos": [
+      "silestone",
+      "dekton",
+      "neolith",
+      "puraprima",
+      "purastone",
+      "laminatto"
+    ],
+    "sinterizados": [
+      "dekton",
+      "neolith",
+      "puraprima",
+      "laminatto"
+    ],
+    "merma_media_placa": [
+      "silestone"
+    ],
+    "merma_placa_entera": [
+      "purastone",
+      "puraprima",
+      "dekton",
+      "neolith",
+      "laminatto"
+    ],
+    "plate_material_map": {
+      "silestone": "estandar",
+      "purastone": "estandar",
+      "dekton": "especial",
+      "neolith": "especial",
+      "puraprima": "especial",
+      "laminatto": "especial"
+    }
+  },
+  "measurements": {
+    "default_depth": 0.6,
+    "default_zocalo_height": 0.07,
+    "tall_zocalo_threshold": 0.1
+  },
+  "colocacion": {
+    "min_quantity": 1.0
+  },
+  "pricing": {
+    "usd_rounding": "floor",
+    "ars_rounding": "round"
+  },
+  "merma": {
+    "small_piece_threshold_m2": 1.0
+  },
+  "plate_sizes": {
+    "estandar": {
+      "largo": 3.0,
+      "ancho": 1.4,
+      "m2": 4.2
+    },
+    "especial": {
+      "largo": 3.2,
+      "ancho": 1.6,
+      "m2": 5.12
+    }
+  },
+  "stock": {
+    "_comment": "Si el material está en stock, NO aplica merma. true = en stock, false = no en stock.",
+    "default": false
+  },
+  "building": {
+    "_comment": "Reglas para obras de edificio",
+    "colocacion": false,
+    "flete_mesadas_per_trip": 6,
+    "discount_percentage": 18,
+    "discount_min_m2": 15
+  },
+  "company": {
+    "name": "D'ANGELO",
+    "subtitle": "MARMOLERIA",
+    "address": "SAN NICOLAS 1160",
+    "phone": "341-3082996",
+    "email": "marmoleriadangelo@gmail.com"
+  },
+  "conditions": {
+    "general": "*PRESUPUESTO SUJETO A VARIACION DE PRECIO\n*MATERIALES IMPORTADOS SEGUN COTIZACION DOLAR VENTA BANCO NACION AL MOMENTO DE LA CONFIRMACION\n*LA TOMA DE MEDIDAS NO PODRA SUPERAR LOS 30 DIAS DESDE LA CONFIRMACION, CASO CONTRARIO EL 20% RESTANTE SE ACTUALIZARA SEGUN INDICE LA CONSTRUCCION\n*PRESUPUESTO DEFINITIVO SEGUN MEDIDAS TOMADAS EN OBRA\n*LOS PRECIOS INCLUYEN IVA",
+    "payment": "*Materiales Importados: 80% seña, 20% restante contra entrega (cotizacion dolar venta BCO NACION).\n*Materiales Nacionales: 80% seña, 20% restante contra entrega.\nPago contado / transferencia / debito / credito / cheques 15 dias para importados y 30 dias para nacionales\nTARJETAS DE CREDITO CONSULTAR PLANES"
+  },
+  "ai_engine": {
+    "use_opus_for_plans": true,
+    "rotate_plan_images": false,
+    "max_examples": 1,
+    "dual_read_enabled": true,
+    "multi_crop_enabled": true,
+    "plan_rasterization_dpi": 300
+  },
+  "zone_aliases": {
+    "_comment": "sku: SKU en delivery-zones.json. pulido_extra: true si hay colocación cobra pulido de cantos (= flete/2). Zonas cercanas a Rosario: false.",
+    "rosario": {
+      "sku": "ENVIOROS",
+      "pulido_extra": false
+    },
+    "funes": {
+      "sku": "ENVFUNES",
+      "pulido_extra": false
+    },
+    "roldan": {
+      "sku": "FLETEROLD",
+      "pulido_extra": false
+    },
+    "perez": {
+      "sku": "ENVPEREZ",
+      "pulido_extra": true
+    },
+    "san lorenzo": {
+      "sku": "ENVSANLORENZO",
+      "pulido_extra": true
+    },
+    "villa gobernador galvez": {
+      "sku": "ENVVILLA",
+      "pulido_extra": true
+    },
+    "ibarlucea": {
+      "sku": "ENVIBAR",
+      "pulido_extra": true
+    },
+    "soldini": {
+      "sku": "ENVSOLDINI",
+      "pulido_extra": true
+    },
+    "ricardone": {
+      "sku": "ENVRICARDONE",
+      "pulido_extra": true
+    },
+    "san nicolas": {
+      "sku": "ENVSANNICO",
+      "pulido_extra": true
+    },
+    "alvear": {
+      "sku": "ENVALVEAR",
+      "pulido_extra": true
+    },
+    "arroyo seco": {
+      "sku": "ENVARROYO",
+      "pulido_extra": true
+    },
+    "galvez": {
+      "sku": "FLEGALVEZ",
+      "pulido_extra": true
+    },
+    "carcarana": {
+      "sku": "FLECARRERAS",
+      "pulido_extra": true
+    },
+    "andino": {
+      "sku": "FLETEAND",
+      "pulido_extra": true
+    },
+    "victoria": {
+      "sku": "ENVVICTORIA",
+      "pulido_extra": true
+    },
+    "san martin": {
+      "sku": "ENVSANMARTIN",
+      "pulido_extra": true
+    },
+    "puerto san martin": {
+      "sku": "ENVSANMARTIN",
+      "pulido_extra": true
+    },
+    "puerto gral san martin": {
+      "sku": "ENVSANMARTIN",
+      "pulido_extra": true
+    },
+    "pto san martin": {
+      "sku": "ENVSANMARTIN",
+      "pulido_extra": true
+    },
+    "general lagos": {
+      "sku": "ENVGRAL",
+      "pulido_extra": true
+    },
+    "hudsson": {
+      "sku": "ENVHUD",
+      "pulido_extra": true
+    },
+    "las parejas": {
+      "sku": "ENVLASPAREJAS",
+      "pulido_extra": true
+    },
+    "maciel": {
+      "sku": "ENVMACIEL",
+      "pulido_extra": true
+    },
+    "carmen": {
+      "sku": "ENVCARMEN",
+      "pulido_extra": true
+    },
+    "baigorria": {
+      "sku": "ENVBAI",
+      "pulido_extra": true
+    },
+    "bermudez": {
+      "sku": "ENVBER",
+      "pulido_extra": true
+    },
+    "salto grande": {
+      "sku": "ENVSALTOGDE",
+      "pulido_extra": true
+    },
+    "esther": {
+      "sku": "ENVESTHER",
+      "pulido_extra": true
+    },
+    "aldao": {
+      "sku": "ENVALDAO",
+      "pulido_extra": true
+    },
+    "piñero": {
+      "sku": "ENVPIÑERO",
+      "pulido_extra": true
+    },
+    "pinero": {
+      "sku": "ENVPIÑERO",
+      "pulido_extra": true
+    },
+    "cañada de gomez": {
+      "sku": "FLETE CAÑADA",
+      "pulido_extra": true
+    },
+    "cañada": {
+      "sku": "FLETE CAÑADA",
+      "pulido_extra": true
+    },
+    "canada de gomez": {
+      "sku": "FLETE CAÑADA",
+      "pulido_extra": true
+    }
+  },
+  "material_aliases": {
+    "granito new beige": "Marmol Sahara",
+    "new beige": "Marmol Sahara",
+    "cuarzo blanco norte": "Silestone Blanco Norte",
+    "blanco norte": "Silestone Blanco Norte",
+    "granito blanco ceara": "Granito Ceara",
+    "blanco ceara": "Granito Ceara",
+    "ceara": "Granito Ceara"
+  },
+  "condiciones_edificio": {
+    "_comment": "Template de Condiciones de Contratación que se genera como PDF aparte para cada presupuesto de edificio. Variables: {cliente}, {obra}, {fecha}, {plazo}. Editable desde el panel de Configuración.",
+    "title": "CONDICIONES CONTRATACIÓN MARMOLERIA",
+    "header_line": "Cliente: {cliente} - {obra} - {fecha}",
+    "items": [
+      "El presupuesto enviado es estimativo según medidas de planos. El presupuesto definitivo se ajustará según medidas relevadas en obra.",
+      "Plazo de entrega estimado {plazo}. Se realizan entregas parciales cada 15/20 días por certificación.",
+      "Por ser el granito un material de la naturaleza las partidas pueden venir con vetas, tonalidades o variaciones propias del material.",
+      "En cada una de las entregas se deberá firmar un remito con detalle de dicha entrega. Este será controlado por parte del cliente y una vez firmado conformidad no se aceptarán reclamos de piezas faltantes o rotura de material.",
+      "Condiciones de pago material y mano de obra: El presupuesto se seña con el 80% de acopio, pago contado o cheques 0-15-30. El 20% contra certificación de entrega 0-15-30.",
+      "Material presupuestado calidad EXTRA - 20MM ESPESOR.",
+      "LAS MESADAS SE DEJAN EN PIE DE OBRA.",
+      "NO INCLUYE COLOCACIÓN DE MESADAS.",
+      "NO INCLUYE PILETAS."
+    ],
+    "default_plazo": "60 DIAS HÁBILES DESDE LA TOMA DE MEDIDAS EN OBRA"
+  }
+}

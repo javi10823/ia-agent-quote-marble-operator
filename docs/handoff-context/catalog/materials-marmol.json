@@ -1,0 +1,62 @@
+[
+  {
+    "sku": "MARMETRA",
+    "name": "MARMETA TRAVERTINO CLASICO MATE SIN TAPONAR - 12MM",
+    "material_type": "marmol",
+    "category": "piedra_natural",
+    "thickness_mm": 12,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 549.0,
+    "currency": "USD"
+  },
+  {
+    "sku": "ANTRADARK",
+    "name": "MARMOL ANTRACITE DARK",
+    "material_type": "marmol",
+    "category": "piedra_natural",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 234.0,
+    "currency": "USD"
+  },
+  {
+    "sku": "MARMOLARABESCATO",
+    "name": "MARMOL ARABESCATO",
+    "material_type": "marmol",
+    "category": "piedra_natural",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 332.0,
+    "currency": "USD"
+  },
+  {
+    "sku": "MARMOLBLANCOTURCO",
+    "name": "MARMOL BLANCO TURCO",
+    "material_type": "marmol",
+    "category": "piedra_natural",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 254.0,
+    "currency": "USD"
+  },
+  {
+    "sku": "MARMOLBOTTICCINO",
+    "name": "MARMOL BOTTICCINO",
+    "material_type": "marmol",
+    "category": "piedra_natural",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 322.0,
+    "currency": "USD"
+  }
+]

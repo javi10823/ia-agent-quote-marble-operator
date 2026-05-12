@@ -1,0 +1,72 @@
+[
+  {
+    "sku": "PURACANA",
+    "name": "PURA STONE BLANCO CANA",
+    "material_type": "purastone",
+    "category": "cuarzo",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 157.0,
+    "currency": "USD",
+    "plate_size": "estandar",
+    "plate_m2": 4.2
+  },
+  {
+    "sku": "PURABLANCO GLITTER",
+    "name": "PURA STONE BLANCO GLITTER",
+    "material_type": "purastone",
+    "category": "cuarzo",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 474.0,
+    "currency": "USD",
+    "plate_size": "estandar",
+    "plate_m2": 4.2
+  },
+  {
+    "sku": "PURANUBE",
+    "name": "PURA STONE BLANCO NUBE",
+    "material_type": "purastone",
+    "category": "cuarzo",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 196.0,
+    "currency": "USD",
+    "plate_size": "estandar",
+    "plate_m2": 4.2
+  },
+  {
+    "sku": "PURATOPO",
+    "name": "PURA STONE GRIS TOPO",
+    "material_type": "purastone",
+    "category": "cuarzo",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 729.0,
+    "currency": "USD",
+    "plate_size": "estandar",
+    "plate_m2": 4.2
+  },
+  {
+    "sku": "PURANEGROGLITTER",
+    "name": "PURA STONE NEGRO GLITTER",
+    "material_type": "purastone",
+    "category": "cuarzo",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 310.0,
+    "currency": "USD",
+    "plate_size": "especial",
+    "plate_m2": 5.12
+  }
+]

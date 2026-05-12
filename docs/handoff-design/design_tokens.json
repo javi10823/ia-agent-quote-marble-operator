@@ -1,0 +1,186 @@
+{
+  "$schema": "design-tokens",
+  "color": {
+    "surface": {
+      "bg": {
+        "value": "#0f1318",
+        "description": "Fondo base de la app"
+      },
+      "bg-muted": {
+        "value": "#161b22",
+        "description": "Sidebar, table headers, tracks"
+      },
+      "surface": {
+        "value": "#1c2129",
+        "description": "Cards, modals, chat panel"
+      },
+      "surface-2": {
+        "value": "#232932",
+        "description": "Hover state, raised surface"
+      }
+    },
+    "line": {
+      "line": {
+        "value": "rgba(232,237,229,0.08)",
+        "description": "Divisores estándar"
+      },
+      "line-strong": {
+        "value": "rgba(232,237,229,0.14)",
+        "description": "Bordes prominentes"
+      },
+      "line-soft": {
+        "value": "rgba(232,237,229,0.06)",
+        "description": "Divisores muy sutiles"
+      }
+    },
+    "ink": {
+      "ink": {
+        "value": "#e8ede5",
+        "description": "Texto primario"
+      },
+      "ink-soft": {
+        "value": "#b9c0c8",
+        "description": "Texto secundario"
+      },
+      "ink-mute": {
+        "value": "#6d7682",
+        "description": "Texto deshabilitado / metadata"
+      }
+    },
+    "semantic": {
+      "accent": {
+        "value": "#a9c1d6",
+        "description": "IA / primary · celeste polvo"
+      },
+      "ok": {
+        "value": "oklch(0.78 0.13 150)",
+        "description": "Éxito, confirmación"
+      },
+      "warn": {
+        "value": "oklch(0.84 0.13 75)",
+        "description": "Warning, fallback IA"
+      },
+      "info": {
+        "value": "oklch(0.82 0.09 255)",
+        "description": "Info neutro"
+      },
+      "human": {
+        "value": "oklch(0.74 0.09 300)",
+        "description": "Editado por humano · púrpura"
+      },
+      "human-bg": {
+        "value": "oklch(0.70 0.09 300 / 0.10)",
+        "description": "Background fila editada"
+      },
+      "human-bd": {
+        "value": "oklch(0.70 0.09 300 / 0.32)",
+        "description": "Border fila editada"
+      },
+      "error": {
+        "value": "oklch(0.72 0.16 25)",
+        "description": "Validation error"
+      }
+    }
+  },
+  "typography": {
+    "family": {
+      "serif": {
+        "value": "'Fraunces', Georgia, serif",
+        "usage": "Display headings, italic eyebrows IA"
+      },
+      "sans": {
+        "value": "'Inter Tight', system-ui, sans-serif",
+        "usage": "Body, labels, UI"
+      },
+      "mono": {
+        "value": "'JetBrains Mono', ui-monospace, monospace",
+        "usage": "Numéricos, eyebrows, metadata, SKUs"
+      }
+    },
+    "size": {
+      "base": {
+        "value": "14px",
+        "description": "Body default"
+      },
+      "h1": {
+        "value": "26px",
+        "description": "qhead h1 (serif italic)"
+      },
+      "h2": {
+        "value": "22px",
+        "description": "section-head h2"
+      },
+      "h3": {
+        "value": "19px",
+        "description": "modal h3"
+      },
+      "label": {
+        "value": "13px",
+        "description": "Form labels"
+      },
+      "small": {
+        "value": "12.5px",
+        "description": "Helper text"
+      },
+      "micro": {
+        "value": "10.5px",
+        "description": "Eyebrows mono, metadata"
+      }
+    }
+  },
+  "radius": {
+    "sm": {
+      "value": "6px"
+    },
+    "md": {
+      "value": "10px"
+    },
+    "lg": {
+      "value": "14px"
+    },
+    "pill": {
+      "value": "999px"
+    }
+  },
+  "spacing": {
+    "scale": "Múltiplos de 4 — 4 / 6 / 8 / 10 / 12 / 14 / 16 / 18 / 22 / 24 / 28 / 32px",
+    "topbar-h": {
+      "value": "56px"
+    },
+    "sidebar-w": {
+      "value": "240px"
+    },
+    "chat-w": {
+      "value": "480px"
+    },
+    "page-min-w": {
+      "value": "1440px"
+    },
+    "mobile-w": {
+      "value": "375px"
+    }
+  },
+  "motion": {
+    "ease": "ease-in-out",
+    "pulse": {
+      "duration": "1.6s",
+      "loop": true,
+      "description": "audit banner dot"
+    },
+    "think": {
+      "duration": "2.4s",
+      "loop": true,
+      "description": "vbubble IA pensando"
+    },
+    "skel": {
+      "duration": "1.4s",
+      "loop": true,
+      "description": "loading skeleton"
+    },
+    "cursor-blink": {
+      "duration": "1s",
+      "loop": true,
+      "description": "typing cursor en celdas editadas"
+    }
+  }
+}

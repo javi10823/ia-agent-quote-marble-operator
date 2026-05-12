@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>08 · Paso 4 / Cálculo · Estado B · Error validación</title>
+<meta name="viewport" content="width=1440" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400;1,9..144,500&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="operator-shared.css">
+<template id="__bundler_thumbnail" data-bg-color="#0f1318">
+<svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="800" fill="#0f1318"/>
+  <circle cx="600" cy="340" r="120" fill="oklch(0.84 0.13 75)"/>
+  <text x="600" y="360" font-family="monospace" font-size="120" fill="#0f1318" text-anchor="middle" font-weight="700">!</text>
+  <text x="600" y="540" font-family="Georgia,serif" font-style="italic" font-size="56" fill="#e8ede5" text-anchor="middle">Error validación</text>
+  <text x="600" y="600" font-family="monospace" font-size="20" fill="#6d7682" text-anchor="middle" letter-spacing="2">08 · PASO 4 · B</text>
+</svg>
+</template>
+</head>
+<body data-step="paso4" data-state="B" data-audit="off" data-iva="on" data-tipo="particular" data-screen-label="08 Paso 4 · B · Error post-PATCH" data-quote-id="PRES-2026-018" data-quote-client="Cueto-Heredia Arquitectura" data-quote-project="cocina U + isla · Belgrano">
+<div class="frame-label"><span class="num">08</span> Paso 4 · Cálculo · Desktop 1440 <span class="state">Estado B — error validación post-PATCH</span></div>
+
+<div class="page">
+  <main class="main">
+    <div class="body no-chat">
+      <div class="col">
+
+        <div class="section-head">
+          <div>
+            <div class="meta">Paso 4 de 5 · Cálculo · <span class="warn-inline">⚠ presupuesto modificado</span></div>
+            <h2>Presupuesto calculado</h2>
+          </div>
+          <div class="right">
+            <div class="tipo-toggle" role="radiogroup" aria-label="Tipo de cliente">
+              <button class="tt-btn on">Particular</button>
+              <button class="tt-btn">Edificio</button>
+            </div>
+            <label class="iva-toggle">
+              <input type="checkbox" checked>
+              <span class="lbl">Desglose IVA</span>
+            </label>
+            <button class="btn ghost sm">↻ Re-calcular</button>
+          </div>
+        </div>
+
+        <!-- Banner PATCH: Valentina detectó inconsistencia. Filosofía surgical primero. -->
+        <div class="patch-banner">
+          <div class="icon">!</div>
+          <div class="pb-body">
+            <div class="head">
+              <span>⚠ Inconsistencia detectada · modo edición</span>
+              <span class="trace">trace #q-2026-0287 · patch sobre v1 · 14:23</span>
+            </div>
+            <div class="msg">
+              <em>Valentina</em> · cambiaste material de <span class="strike">Silestone Blanco Norte</span> a <span class="new">Granito Negro Brasil</span>, pero quedó <strong>una fila de merma del cálculo anterior</strong> (1,20 m² sobrante, $146.410). <strong>Granito Negro Brasil nunca lleva merma</strong> — es piedra natural, se compra el m² exacto. Dejá que la elimine y listo; el resto del cálculo (MO con SKUs nuevos, descuento arquitecta, total) ya quedó bien.
+            </div>
+            <div class="actions">
+              <button class="btn-warn">✕ Eliminar merma</button>
+              <button class="btn-warn ghost" title="Abre drawer derecho 400px con tabla side-by-side v1↔v2: muestra ítems removidos (rojo strike-through), cambios de cantidad/precio (púrpura), nuevos ítems (verde). Botón 'Cerrar' arriba. Mismo patrón se reusará en paso 5 versionado.">Ver diff con v1</button>
+              <a href="#" class="recalc-link">Recalcular todo desde cero (descarta cambios) →</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sin calc-banner: hay error duro, no se muestra el resumen optimista -->
+
+        <!-- 1 · MATERIAL (Negro Brasil → USD, importado) -->
+        <div class="calc-section">
+          <div class="sh">
+            <span class="tag">01</span>
+            <span class="ttl">Material</span>
+            <span class="meta">Granito Negro Brasil 20mm · piedra natural · USD · placa entera (sin medias)</span>
+          </div>
+          <div class="sb">
+            <div class="row-line">
+              <div class="lbl">Granito Negro Brasil 20mm
+                <span class="sub">6,50 m² reales · USD 168 c/IVA · piezas en <a href="04-despiece-A-ia-propuso.html" class="link-inline">paso 3 →</a></span>
+              </div>
+              <div class="num">6,50 m²</div>
+              <div class="num">USD 168</div>
+              <div class="total">USD 1.092</div>
+            </div>
+            <div class="row-line discount">
+              <div class="lbl"><em>Valentina</em> · descuento arquitecta Cueto-Heredia
+                <span class="sub">−5% sobre material importado · architects.json match exacto</span>
+              </div>
+              <div class="num">−5%</div>
+              <div class="num">—</div>
+              <div class="total">−USD 55</div>
+            </div>
+            <div class="subtotal">
+              <span class="lbl">Subtotal material</span>
+              <span class="val">USD 1.037</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2 · MERMA con error (la fila fantasma del cálculo previo Silestone) -->
+        <div class="calc-section has-error">
+          <div class="sh">
+            <span class="tag">02</span>
+            <span class="ttl">Merma / Sobrante</span>
+            <span class="chip-error">Error · merma fantasma</span>
+            <label class="merma-stock disabled">
+              <input type="checkbox" disabled>
+              <span>stock confirmado en taller</span>
+            </label>
+          </div>
+          <div class="sb">
+            <div class="merma-na warn">
+              <span><strong>Granito Negro Brasil nunca lleva merma.</strong> Es piedra natural — se compra el m² exacto del trabajo. Sin embargo quedó esta fila del cálculo anterior con Silestone:</span>
+            </div>
+            <div class="merma-row-error">
+              <div class="lbl">
+                <strong>⚠ Sobrante 1,20 m² a mitad de precio</strong> (heredado de cálculo previo Silestone)
+                <span class="sub">SKU REGRUESO · USD 124,55 × 1,20 m² → $ 146.410 ARS @ cotiz. blue 980 · DEBE ELIMINARSE</span>
+              </div>
+              <div class="ghost-amount">$ 146.410</div>
+              <button class="fix-btn">✕ Eliminar merma</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3 · MANO DE OBRA (granito → SKUs estándar, no DEKTON) -->
+        <div class="calc-section">
+          <div class="sh">
+            <span class="tag">03</span>
+            <span class="ttl">Mano de obra</span>
+            <span class="meta">labor.json · 25/03/2026 · base s/IVA × 1,21 · granito → SKU estándar</span>
+          </div>
+        </div>
+        <div class="etable cols-mo">
+          <div class="colh">
+            <div>SKU</div>
+            <div>Descripción</div>
+            <div>Cant</div>
+            <div class="col-base">Base s/IVA</div>
+            <div class="col-iva">×1,21</div>
+            <div>Total c/IVA</div>
+            <div></div>
+          </div>
+
+          <div class="row">
+            <div class="cell sku">COLOCACION</div>
+            <div class="cell label-cell">Colocación en obra
+              <span class="sub">6,50 m² · granito usa SKU estándar (sin DEKTON)</span>
+            </div>
+            <div class="cell num">6,50</div>
+            <div class="cell num base">$ 49.698</div>
+            <div class="cell iva">×1,21</div>
+            <div class="cell num">$ 390.875</div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell sku">PEGADOPILETA</div>
+            <div class="cell label-cell">Pegado de pileta empotrada
+              <span class="sub">1 pileta · cliente la trae</span>
+            </div>
+            <div class="cell num">1</div>
+            <div class="cell num base">$ 53.840</div>
+            <div class="cell iva">×1,21</div>
+            <div class="cell num">$ 65.147</div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell sku">ANAFE</div>
+            <div class="cell label-cell">Corte para anafe
+              <span class="sub">1 corte · marcado en plano</span>
+            </div>
+            <div class="cell num">1</div>
+            <div class="cell num base">$ 35.617</div>
+            <div class="cell iva">×1,21</div>
+            <div class="cell num">$ 43.097</div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell sku">FALDON</div>
+            <div class="cell label-cell">Faldón frontal
+              <span class="sub">4,98 ml · granito 20mm usa FALDON (no FALDONDEKTON)</span>
+            </div>
+            <div class="cell num">4,98 ml</div>
+            <div class="cell num base">$ 18.558</div>
+            <div class="cell iva">×1,21</div>
+            <div class="cell num">$ 111.832</div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell sku">CORTE45</div>
+            <div class="cell label-cell">Corte 45° (ingletes)
+              <span class="sub">9,96 ml · faldón × 2 (junta superior + frontal)</span>
+            </div>
+            <div class="cell num">9,96 ml</div>
+            <div class="cell num base">$ 7.423</div>
+            <div class="cell iva">×1,21</div>
+            <div class="cell num">$ 89.451</div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row">
+            <div class="cell sku">TOMAS</div>
+            <div class="cell label-cell">Agujero tomacorriente
+              <span class="sub">2 unid. · 1 alzada (auto, pieza R3) + 1 zócalo 12cm (auto, regla &gt;10cm)</span>
+            </div>
+            <div class="cell num">2</div>
+            <div class="cell num base">$ 6.461</div>
+            <div class="cell iva">×1,21</div>
+            <div class="cell num">$ 15.636</div>
+            <div class="cell action">⋯</div>
+          </div>
+
+          <div class="row subtotal-mo">
+            <div class="cell sku">—</div>
+            <div class="cell label-cell subtotal-lbl">Subtotal mano de obra · 6 ítems</div>
+            <div class="cell num base muted">$ 591.768</div>
+            <div class="cell iva muted">×1,21</div>
+            <div class="cell num bold">$ 716.038</div>
+            <div class="cell action"></div>
+          </div>
+        </div>
+
+        <!-- 4 · PILETAS -->
+        <div class="calc-section piletas-inline">
+          <div class="sh">
+            <span class="tag">04</span>
+            <span class="ttl">Piletas</span>
+            <span class="chip-na">Cliente la trae · solo PEGADOPILETA en MO</span>
+            <span class="meta">1 pileta empotrada</span>
+          </div>
+        </div>
+
+        <!-- 5 · FLETE -->
+        <div class="calc-section">
+          <div class="sh">
+            <span class="tag">05</span>
+            <span class="ttl">Flete</span>
+            <span class="meta">delivery-zones.json · particular · 1 viaje</span>
+          </div>
+          <div class="sb">
+            <div class="row-line">
+              <div class="lbl">Flete Rosario
+                <span class="sub">SKU ENVIOROS · 1 viaje · ida y vuelta</span>
+              </div>
+              <div class="num">1 viaje</div>
+              <div class="num">$ 52.000</div>
+              <div class="total">$ 62.920</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- GRAND TOTAL bicurrency (con error visible) -->
+        <div class="grand-total has-warn">
+          <div class="col">
+            <div class="lbl warn-tone">ARS <span class="sub">MO + flete + <strong class="error-tone">merma fantasma</strong></span></div>
+            <div class="val">$ 925.368</div>
+            <div class="meta">MO <strong>$ 716.038</strong> · flete <strong>$ 62.920</strong> · <span class="error-tone">merma <strong>$ 146.410</strong> ⚠</span></div>
+          </div>
+          <div class="div"></div>
+          <div class="col">
+            <div class="lbl">USD <span class="sub">material (importado)</span></div>
+            <div class="val">USD 1.037</div>
+            <div class="meta">6,50 m² × USD 168 − 5% arq.</div>
+          </div>
+        </div>
+
+        <div class="confirm-bar warn-bar">
+          <div class="summary">
+            <span class="warn-tone">⚠ <strong>No se puede confirmar</strong></span> · resolvé la merma fantasma antes de generar PDF
+          </div>
+          <button class="btn ghost">💬 Ayuda con esta sección</button>
+          <button class="btn primary disabled" disabled>Confirmar y generar PDF →</button>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  window.__stepSpecificFields = function () {
+  return {
+    step: 'paso4',
+    iva: document.body.dataset.iva || null,
+    tipo: document.body.dataset.tipo || null,
+    audit_open: document.body.dataset.audit === 'on',
+  };
+};
+</script>
+<script src="bug-report.js"></script>
+<script src="chrome.js"></script>
+</body>
+</html>

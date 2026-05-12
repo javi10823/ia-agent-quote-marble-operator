@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>13 · Audit banner ON</title>
+<meta name="viewport" content="width=1440" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400;1,9..144,500&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="operator-shared.css">
+<template id="__bundler_thumbnail" data-bg-color="#1a2a1f">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect x="120" y="180" width="960" height="80" rx="6" fill="#2d3a1f" stroke="#5a7a3a" stroke-width="2"/>
+    <circle cx="180" cy="220" r="14" fill="#a4d65e"/>
+    <text x="600" y="540" font-family="Georgia,serif" font-style="italic" font-size="40" fill="#e8ede5" text-anchor="middle">Audit banner ON</text>
+  </svg>
+</template>
+<style>
+  /* Audit tray local — solo en este mockup (debug exclusivo) */
+  .audit-tray {
+    background: oklch(0.30 0.10 25 / 0.55);
+    border-bottom: 1px solid oklch(0.55 0.18 25 / 0.40);
+    padding: 16px 24px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 24px;
+    font-family: var(--mono); font-size: 11.5px;
+    color: oklch(0.92 0.06 25);
+  }
+  .audit-tray .col h4 {
+    margin: 0 0 8px; font-size: 10.5px; letter-spacing: 0.5px;
+    text-transform: uppercase; color: oklch(0.78 0.10 25); font-weight: 600;
+  }
+  .audit-tray .kv { display: flex; gap: 8px; padding: 3px 0; }
+  .audit-tray .kv .k { color: oklch(0.78 0.10 25); width: 80px; flex-shrink: 0; }
+  .audit-tray .kv .v { color: var(--ink); }
+  .audit-tray a { text-decoration: underline; color: oklch(0.92 0.06 25); }
+</style>
+</head>
+<body data-step="despiece" data-state="A" data-audit="on">
+<div class="frame-label"><span class="num">13</span> Extra · Audit banner ON <span class="state">debug · auditoría visible · sólo dev/QA</span></div>
+
+<div class="page">
+  <main class="main">
+    <div class="audit-tray">
+      <div class="col">
+        <h4>· Última llamada IA</h4>
+        <div class="kv"><span class="k">model</span><span class="v">claude-sonnet-4</span></div>
+        <div class="kv"><span class="k">scope</span><span class="v">despiece · 5 piezas + contexto confirmado</span></div>
+        <div class="kv"><span class="k">tokens</span><span class="v">in 1.842 · out 612</span></div>
+        <div class="kv"><span class="k">latency</span><span class="v">4.2s</span></div>
+      </div>
+      <div class="col">
+        <h4>· Trazabilidad</h4>
+        <div class="kv"><span class="k">trace_id</span><span class="v">q_8f2a · <a href="#">ver tree</a></span></div>
+        <div class="kv"><span class="k">prompt_v</span><span class="v">despiece.v3.2</span></div>
+        <div class="kv"><span class="k">temp</span><span class="v">0.2 · seed fixed</span></div>
+        <div class="kv"><span class="k">cache</span><span class="v">prompt cache hit (84%)</span></div>
+      </div>
+      <div class="col">
+        <h4>· Eventos en sesión</h4>
+        <div class="kv"><span class="k">10:04:12</span><span class="v">contexto.confirm</span></div>
+        <div class="kv"><span class="k">10:04:14</span><span class="v">despiece.draft.start</span></div>
+        <div class="kv"><span class="k">10:04:18</span><span class="v">despiece.draft.partial (5/7)</span></div>
+        <div class="kv"><span class="k">10:04:22</span><span class="v">despiece.draft.calc (R6, R7)</span></div>
+      </div>
+    </div>
+
+    <div class="body">
+      <div class="col">
+        <div class="section-head">
+          <div>
+            <div class="meta">Paso 3 de 5 · Despiece</div>
+            <h2>Despiece de piezas</h2>
+          </div>
+        </div>
+
+        <div class="ia-banner">
+          <div class="vbubble"></div>
+          <div class="text">
+            Audit ON: cada respuesta de Valentina te muestra contexto, modelo, tokens y trace_id arriba.
+            <div class="sub">Sólo visible para usuarios con rol dev / QA · togglable desde Configuración</div>
+          </div>
+        </div>
+
+        <div class="etable cols-despiece">
+          <div class="colh">
+            <div>#</div><div>Pieza</div><div>Largo</div><div>Ancho</div><div>Cant.</div><div>m² unit.</div><div>m² total</div><div></div>
+          </div>
+          <div class="row">
+            <div class="cell">R1</div><div class="cell label-cell">Mesada · brazo izq</div>
+            <div class="cell num">285</div><div class="cell num">62</div><div class="cell num">1</div>
+            <div class="cell num">1.77</div><div class="cell num">1.77</div><div class="cell action">⋯</div>
+          </div>
+          <div class="row">
+            <div class="cell">R2</div><div class="cell label-cell">Mesada · brazo derecho</div>
+            <div class="cell num">240</div><div class="cell num">62</div><div class="cell num">1</div>
+            <div class="cell num">1.49</div><div class="cell num">1.49</div><div class="cell action">⋯</div>
+          </div>
+          <div class="row">
+            <div class="cell">R3</div><div class="cell label-cell">Mesada · fondo</div>
+            <div class="cell num">180</div><div class="cell num">62</div><div class="cell num">1</div>
+            <div class="cell num">1.12</div><div class="cell num">1.12</div><div class="cell action">⋯</div>
+          </div>
+          <div class="row">
+            <div class="cell">R4</div><div class="cell label-cell">Isla central</div>
+            <div class="cell num">220</div><div class="cell num">100</div><div class="cell num">1</div>
+            <div class="cell num">2.20</div><div class="cell num">2.20</div><div class="cell action">⋯</div>
+          </div>
+          <div class="row">
+            <div class="cell">R5</div><div class="cell label-cell">Zócalo perimetral</div>
+            <div class="cell num">705</div><div class="cell num">10</div><div class="cell num">1</div>
+            <div class="cell num">0.71</div><div class="cell num">0.71</div><div class="cell action">⋯</div>
+          </div>
+        </div>
+
+        <div class="confirm-bar">
+          <div class="summary"><strong>5 piezas</strong> · 7.29 m² · debug ON</div>
+          <button class="btn primary">Confirmar y seguir →</button>
+        </div>
+      </div>
+
+      <div class="col">
+        <aside class="chat fit">
+          <div class="head">
+            <div class="vbubble"></div>
+            <div>
+              <div class="title">Ayuda con Despiece</div>
+              <div class="sub">Scoped · cerrado</div>
+            </div>
+            <span class="x">→</span>
+          </div>
+          <div class="audit-note">
+            Audit ON: cada turno se loguea con trace_id.
+          </div>
+        </aside>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="chrome.js"></script>
+</body>
+</html>

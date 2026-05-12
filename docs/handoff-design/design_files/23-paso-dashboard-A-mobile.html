@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>23 · Dashboard · Mobile · Lista de quotes</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400;1,9..144,500&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="operator-shared.css">
+<style>
+  body { min-width: 0; }
+  .page-mob { background: var(--bg); padding: 24px 0 0; min-height: 100vh; }
+  .frame-label { padding: 0 24px 16px; }
+  .mob {
+    width: 375px; margin: 0 auto;
+    background: var(--surface);
+    min-height: 100vh;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  .mob > .scroll-region {
+    flex: 1;
+    overflow-y: auto;
+  }
+</style>
+<template id="__bundler_thumbnail" data-bg-color="#0f1318">
+<svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="800" fill="#0f1318"/>
+  <rect x="450" y="180" width="300" height="440" rx="36" fill="#1a1f26" stroke="#3a4248" stroke-width="2"/>
+  <rect x="475" y="240" width="250" height="40" rx="6" fill="#262d36"/>
+  <rect x="475" y="300" width="250" height="40" rx="6" fill="#262d36"/>
+  <rect x="475" y="360" width="250" height="40" rx="6" fill="#262d36"/>
+  <text x="600" y="700" font-family="Georgia,serif" font-style="italic" font-size="32" fill="#e8ede5" text-anchor="middle">Dashboard mobile</text>
+</svg>
+</template>
+</head>
+<body data-step="dashboard" data-state="A" data-chrome="off">
+<div class="frame-label">
+  <span class="num">23</span> Dashboard · Mobile 375 ·
+  <span class="state">Lista de quotes (read-only)</span>
+</div>
+
+<div class="page-mob">
+  <div class="mob dashboard">
+
+    <!-- ─── HEADER ─────────────────────────────────────── -->
+    <div class="mhead">
+      <div class="mhead-brand">
+        <span class="dot"></span>D'Angelo
+        <span class="mhead-greet">· Hola Marina</span>
+      </div>
+      <span class="conn-status online">
+        <span class="dot"></span>online
+      </span>
+    </div>
+
+    <!-- ─── FILTRO CHIPS ──────────────────────────────── -->
+    <div class="mfilter-chips" id="filter-chips">
+      <!-- render JS -->
+    </div>
+
+    <!-- ─── BUSCADOR ──────────────────────────────────── -->
+    <div class="msearch">
+      <div class="msearch-input">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="m21 21-4.3-4.3"/>
+        </svg>
+        <input id="search-input" type="text" placeholder="Buscar por cliente…">
+      </div>
+    </div>
+
+    <!-- ─── LISTA ─────────────────────────────────────── -->
+    <div class="scroll-region">
+      <ul class="mquote-list" id="quote-list">
+        <!-- render JS -->
+      </ul>
+    </div>
+
+    <!-- ─── BANNER STICKY BOTTOM ───────────────────────── -->
+    <div class="mob-bottom-info">
+      Crear presupuesto disponible solo desde escritorio<span class="arrow">→</span>
+    </div>
+
+  </div>
+</div>
+
+<script src="dashboard-dataset.js"></script>
+<script>
+(function () {
+  const QUOTES = window.DASHBOARD_QUOTES;
+  const COUNTS = window.DASHBOARD_COUNTS;
+
+  // Estado UI
+  let activeFilter = 'all';
+  let searchQuery = '';
+
+  // ─── Render filter chips ───
+  const filterChipsEl = document.getElementById('filter-chips');
+  const filters = [
+    { id: 'all',             label: 'Todos',             count: COUNTS.all },
+    { id: 'draft',           label: 'Draft',             count: COUNTS.draft },
+    { id: 'sent',            label: 'Enviado',           count: COUNTS.sent },
+    { id: 'expired',         label: 'Vencido',           count: COUNTS.expired },
+    { id: 'lost',            label: 'Perdido',           count: COUNTS.lost },
+  ];
+
+  function renderChips () {
+    filterChipsEl.innerHTML = filters.map(f => `
+      <button class="mfilter-chip ${f.id === activeFilter ? 'active' : ''}" data-filter="${f.id}">
+        ${f.label} <span class="count">(${f.count})</span>
+      </button>
+    `).join('');
+    filterChipsEl.querySelectorAll('.mfilter-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeFilter = btn.dataset.filter;
+        renderChips();
+        renderList();
+      });
+    });
+  }
+
+  // ─── Render quote list ───
+  const listEl = document.getElementById('quote-list');
+
+  function statusLabel (s) {
+    return ({
+      draft: 'draft',
+      sent: 'enviado',
+      expired: 'vencido',
+      lost: 'perdido'
+    })[s];
+  }
+
+  function activityLine (q) {
+    switch (q.status) {
+      case 'draft':
+        return q.lastActivityDays === 0
+          ? 'Actualizado hoy'
+          : `Actualizado hace ${q.lastActivityDays}d`;
+      case 'sent':
+        return q.daysToExpire <= 0
+          ? `Vence hoy`
+          : (q.daysToExpire === 1 ? 'Vence mañana' : `Vence en ${q.daysToExpire}d`);
+      case 'expired':
+        return `Vencido hace ${Math.abs(q.daysToExpire)}d`;
+      case 'lost':
+        return `Marcado perdido el ${q.lostDate}`;
+    }
+  }
+
+  function isUrgent (q) {
+    return (q.status === 'sent' && q.daysToExpire <= 2) || q.status === 'expired';
+  }
+
+  function fmtAmount (q) {
+    if (q.currency === 'USD') {
+      return `USD ${q.amount.toLocaleString('en-US')}`;
+    }
+    return `ARS ${q.amount.toLocaleString('es-AR')}`;
+  }
+
+  function renderList () {
+    let filtered = QUOTES;
+    if (activeFilter !== 'all') {
+      filtered = filtered.filter(q => q.status === activeFilter);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      filtered = filtered.filter(x => x.client.toLowerCase().includes(q));
+    }
+
+    if (filtered.length === 0) {
+      listEl.innerHTML = `
+        <li class="mempty">
+          ${searchQuery ? 'Sin resultados para esa búsqueda' : 'Sin presupuestos en este estado'}
+          <button class="btn ghost sm" id="clear-filter">Limpiar filtro</button>
+        </li>
+      `;
+      const clearBtn = document.getElementById('clear-filter');
+      if (clearBtn) clearBtn.addEventListener('click', () => {
+        activeFilter = 'all';
+        searchQuery = '';
+        document.getElementById('search-input').value = '';
+        renderChips();
+        renderList();
+      });
+      return;
+    }
+
+    listEl.innerHTML = filtered.map(q => `
+      <li class="mquote-card" data-id="${q.id}" tabindex="0">
+        <div class="row1">
+          <span class="client">${q.client}</span>
+          <span class="status-chip ${q.status}">
+            <span class="dot"></span>${statusLabel(q.status)}
+          </span>
+        </div>
+        <div class="row2">
+          ${q.material} · ${q.m2.toLocaleString('es-AR', {minimumFractionDigits: 2})} m² · <strong>${fmtAmount(q)}</strong>
+        </div>
+        <div class="row3 ${isUrgent(q) ? 'urgent' : ''}">
+          ${activityLine(q)}
+        </div>
+      </li>
+    `).join('');
+
+    // Tap → detalle (mock: link a 24)
+    listEl.querySelectorAll('.mquote-card').forEach(card => {
+      card.addEventListener('click', () => {
+        // En dev, link al detalle (case Pereyra) si es ese; sino aviso
+        if (card.dataset.id === 'PRES-2026-017') {
+          window.location.href = '24-paso-dashboard-B-mobile-detalle.html';
+        } else {
+          // Solo el caso Pereyra tiene detalle implementado
+          card.classList.add('flash');
+          setTimeout(() => card.classList.remove('flash'), 200);
+        }
+      });
+    });
+  }
+
+  // ─── Search input ───
+  document.getElementById('search-input').addEventListener('input', (e) => {
+    searchQuery = e.target.value;
+    renderList();
+  });
+
+  // ─── Init ───
+  renderChips();
+  renderList();
+})();
+</script>
+</body>
+</html>

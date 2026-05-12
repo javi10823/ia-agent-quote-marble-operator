@@ -1,0 +1,72 @@
+[
+  {
+    "sku": "NEOCEMENT",
+    "name": "NEOLIT CEMENT",
+    "material_type": "neolith",
+    "category": "piedra_sinterizada",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 335.0,
+    "currency": "USD",
+    "plate_size": "especial",
+    "plate_m2": 5.12
+  },
+  {
+    "sku": "ABUDAK",
+    "name": "NEOLITH ABU DHABI - 12MM - MATE",
+    "material_type": "neolith",
+    "category": "piedra_sinterizada",
+    "thickness_mm": 12,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 336.0,
+    "currency": "USD",
+    "plate_size": "especial",
+    "plate_m2": 5.12
+  },
+  {
+    "sku": "NEOABU",
+    "name": "NEOLITH ABU DHABI - 12MM - PULIDO",
+    "material_type": "neolith",
+    "category": "piedra_sinterizada",
+    "thickness_mm": 12,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 160.0,
+    "currency": "USD",
+    "plate_size": "especial",
+    "plate_m2": 5.12
+  },
+  {
+    "sku": "NEOARTICSILK",
+    "name": "NEOLITH ARTIC SILK- SATIN",
+    "material_type": "neolith",
+    "category": "piedra_sinterizada",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 216.0,
+    "currency": "USD",
+    "plate_size": "especial",
+    "plate_m2": 5.12
+  },
+  {
+    "sku": "NEOARTIC",
+    "name": "NEOLITH ARTIC WHITE PULIDO",
+    "material_type": "neolith",
+    "category": "piedra_sinterizada",
+    "thickness_mm": 20,
+    "unit": "m2",
+    "price_includes_vat": false,
+    "last_updated": "01/01/2026",
+    "price_usd": 150.0,
+    "currency": "USD",
+    "plate_size": "especial",
+    "plate_m2": 5.12
+  }
+]
