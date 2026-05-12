@@ -277,3 +277,79 @@ export function streamChat(
     },
   });
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Sprint 2.5 switch-to-main · mock dashboard
+   ════════════════════════════════════════════════════════════════════════
+   Endpoint `GET /api/v1/quotes` para listado del dashboard. Marcado como
+   missing en docs/handoff-context/missing-endpoints.md (P1 listing). El mock
+   sirve `DASHBOARD_QUOTES` con filtros por status + search. */
+
+import type { DashboardQuote, DashboardStatus, DashboardCounts } from "./mocks/dashboardDataset";
+import { DASHBOARD_QUOTES, DASHBOARD_COUNTS } from "./mocks/dashboardDataset";
+
+export interface ListQuotesFilters {
+  /** Si vacío o ausente, devuelve todos. */
+  statuses?: ReadonlyArray<DashboardStatus>;
+  /** Subcadena buscada en `client` (case-insensitive). */
+  search?: string;
+  /** Pre-filter aplicado por KPI cards del desktop. */
+  kpi?: "expire-soon" | "no-response";
+}
+
+function matchesFilters(quote: DashboardQuote, filters?: ListQuotesFilters): boolean {
+  if (!filters) return true;
+  if (filters.statuses && filters.statuses.length > 0) {
+    if (!filters.statuses.includes(quote.status)) return false;
+  }
+  if (filters.search) {
+    const needle = filters.search.toLowerCase();
+    if (!quote.client.toLowerCase().includes(needle)) return false;
+  }
+  if (filters.kpi === "expire-soon") {
+    const expireSoon =
+      (quote.status === "sent" && (quote.daysToExpire ?? 999) <= 7) || quote.status === "expired";
+    if (!expireSoon) return false;
+  }
+  if (filters.kpi === "no-response") {
+    if (quote.status !== "sent" || quote.lastActivityDays <= 5) return false;
+  }
+  return true;
+}
+
+export async function listQuotes(
+  filters?: ListQuotesFilters,
+  options?: { signal?: AbortSignal },
+): Promise<DashboardQuote[]> {
+  await delay(200 + Math.random() * 300, options?.signal);
+  return DASHBOARD_QUOTES.filter((q) => matchesFilters(q, filters));
+}
+
+export interface DashboardKpis {
+  expireSoon: number;
+  noResponse: number;
+  pendingAction: number;
+  counts: DashboardCounts;
+}
+
+export async function getDashboardKpis(options?: { signal?: AbortSignal }): Promise<DashboardKpis> {
+  await delay(100 + Math.random() * 150, options?.signal);
+  const expireSoonQuotes = DASHBOARD_QUOTES.filter(
+    (q) => (q.status === "sent" && (q.daysToExpire ?? 999) <= 7) || q.status === "expired",
+  );
+  const noResponseQuotes = DASHBOARD_QUOTES.filter(
+    (q) => q.status === "sent" && q.lastActivityDays > 5,
+  );
+  const pendingAction = new Set([
+    ...expireSoonQuotes.map((q) => q.id),
+    ...noResponseQuotes.map((q) => q.id),
+  ]).size;
+  return {
+    expireSoon: expireSoonQuotes.length,
+    noResponse: noResponseQuotes.length,
+    pendingAction,
+    counts: DASHBOARD_COUNTS,
+  };
+}
+
+export type { DashboardQuote, DashboardStatus, DashboardCounts };

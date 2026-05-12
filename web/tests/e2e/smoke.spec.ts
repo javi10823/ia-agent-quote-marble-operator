@@ -11,9 +11,10 @@
  */
 import { expect, test } from "@playwright/test";
 
-test("/ home muestra saludo Valentina + CTA Nuevo presupuesto", async ({ page }) => {
+test("/ home muestra dashboard con saludo Marina + CTA Nuevo presupuesto", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator("h1")).toContainText("Hola Marina");
+  await expect(page.locator('[data-testid="dashboard"]')).toBeVisible();
+  await expect(page.locator("h1").first()).toContainText("Hola Marina");
   await expect(page.locator('[data-testid="cta-new-quote"]')).toBeVisible();
 });
 

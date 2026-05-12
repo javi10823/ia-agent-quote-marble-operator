@@ -80,3 +80,16 @@
   --sans: var(--font-sans), -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --mono: var(--font-mono), ui-monospace, monospace;
 }
+
+/* ─────────────────────────────────────────────────────────
+   Sprint 2.5 · Dashboard responsive toggle
+
+   `.dashboard-desktop` se muestra ≥768px, `.dashboard-mobile` <768px.
+   Una sola implementación renderea ambos; CSS decide cuál ver.
+   ───────────────────────────────────────────────────────── */
+.dashboard-desktop { display: block; }
+.dashboard-mobile { display: none; }
+@media (max-width: 767px) {
+  .dashboard-desktop { display: none; }
+  .dashboard-mobile { display: block; }
+}
