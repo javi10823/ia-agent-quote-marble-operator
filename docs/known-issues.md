@@ -44,6 +44,21 @@ Detectado en audit independiente PR #457 NICE-TO-HAVE 5. Inline `style={{...}}` 
 
 **Plan:** durante `sprint-3/api-integration`, extender el switch del `useChatScoped.send()` para los 4 event types adicionales según el shape definido en `docs/handoff-context/sse-spec.md`. Es PR de bajo costo (extender un switch existente).
 
+### sprint-2/paso-2-contexto (PR #458) · MINOR · Campos del contexto PRES-018 con valores divergentes
+
+**Detectado:** Claude for Chrome visual check del PR #460, 12.05.2026.
+
+**Descripción:** Algunos campos del contexto del PR #458 muestran valores en distintos elementos respecto del spec del Master §13:
+
+- Regrueso muestra "frontal · 4 cm" en el campo (spec: "4,98 ml")
+- Superficie 6,50 m² aparece en header/topbar pero NO como campo del formulario
+- Descuento "-5%" aparece en banner Valentina, NO como campo del formulario
+- Tomas: banner menciona "TOMAS automático" pero NO hay campo con valor "2"
+
+**Impacto:** cosmético. Los datos están presentes, distribuidos en elementos visuales distintos. No afecta funcionalidad ni cálculo.
+
+**Plan:** revisar y alinear con spec del Master §13 en `sprint-3/paso-3-despiece` (cuando se toque el contexto reabierto) o en `sprint-5/cleanup-deuda`.
+
 ## Resueltos
 
 _(vacío al inicio)_

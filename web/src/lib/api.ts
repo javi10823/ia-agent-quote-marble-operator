@@ -127,18 +127,21 @@ export interface ContextField<T = string | number | boolean | null> {
   edited?: boolean;
 }
 
-/** Los 11 campos del contexto (Master §6 mockup 01-A). */
+/** Los 11 campos del contexto (Master §6 mockup 01-A).
+ *  Sprint 2.5 fix-up: campos string admiten `null` para representar
+ *  `origin: 'FALTA'` (quotes sin canon definido en CONTEXT_BY_QUOTE_ID).
+ */
 export interface ContextData {
-  cliente: string; // arquitecta / razón social
-  contacto: string; // teléfono / email
-  localidad: string; // obra · ciudad
-  plazo: string; // desde confirmación de medidas
-  tipologia: string; // cocina, baño, mesa
+  cliente: string | null; // arquitecta / razón social
+  contacto: string | null; // teléfono / email
+  localidad: string | null; // obra · ciudad
+  plazo: string | null; // desde confirmación de medidas
+  tipologia: string | null; // cocina, baño, mesa
   tipo_obra: "particular" | "edificio";
-  material: string; // piedra o engineered
-  pileta: string; // tipo + origen
-  zocalo: string; // contra pared · si/no + alto
-  regrueso: string; // borde frontal grueso
+  material: string | null; // piedra o engineered
+  pileta: string | null; // tipo + origen
+  zocalo: string | null; // contra pared · si/no + alto
+  regrueso: string | null; // borde frontal grueso
   anafe: boolean; // define MO ANAFE en paso 3
 }
 
@@ -169,8 +172,12 @@ async function delay(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /**
- * GET context para un quote. Mock retorna CANONICAL_CONTEXT (Master §13)
- * la primera vez, luego cualquier estado guardado en la sesión.
+ * GET context para un quote. Mock indexa por quoteId via CONTEXT_BY_QUOTE_ID
+ * (PRES-2026-018 → Cueto-Heredia, PRES-2026-017 → Pereyra) con fallback
+ * a CANONICAL_CONTEXT_GENERIC para quotes del dataset sin canon definido.
+ *
+ * Fix BLOCKER del Visual Check del PR #460 — antes devolvía siempre
+ * CANONICAL_CONTEXT (Cueto-Heredia) sin importar el quoteId.
  */
 export async function getContextForQuote(
   quoteId: string,
@@ -180,8 +187,9 @@ export async function getContextForQuote(
   const existing = _contextStore.get(quoteId);
   if (existing) return existing;
   // Lazy import para evitar circular en build (canonicalQuote re-importa types).
-  const { CANONICAL_CONTEXT } = await import("./mocks/canonicalQuote");
-  const seeded = JSON.parse(JSON.stringify(CANONICAL_CONTEXT)) as ContextResponse;
+  const { CONTEXT_BY_QUOTE_ID, CANONICAL_CONTEXT_GENERIC } = await import("./mocks/canonicalQuote");
+  const base = CONTEXT_BY_QUOTE_ID[quoteId] ?? CANONICAL_CONTEXT_GENERIC;
+  const seeded = JSON.parse(JSON.stringify(base)) as ContextResponse;
   _contextStore.set(quoteId, seeded);
   return seeded;
 }

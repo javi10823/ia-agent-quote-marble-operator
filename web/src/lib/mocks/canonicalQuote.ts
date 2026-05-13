@@ -89,3 +89,50 @@ export const CANONICAL_CONTEXT: ContextResponse = {
   regrueso: { value: "frontal · 4 cm", origin: "INFERIDO" },
   anafe: { value: true, origin: "INFERIDO" },
 };
+
+/* ════════════════════════════════════════════════════════════════════════
+   Sprint 2.5 fix-up · contextos canon adicionales por quoteId
+   ════════════════════════════════════════════════════════════════════════
+   Fix BLOCKER detectado en Visual Check del PR #460:
+   `/quotes/PRES-2026-017/contexto` cargaba datos de Cueto-Heredia porque
+   `getContextForQuote()` devolvía siempre `CANONICAL_CONTEXT`. Ahora el
+   mock indexa por quoteId via CONTEXT_BY_QUOTE_ID + fallback genérico.
+
+   CANONICAL_CONTEXT (Cueto-Heredia · PRES-2026-018) NO se modifica para
+   preservar regression del paso 2 del Sprint 2. */
+
+/** PRES-2026-017 · Familia Pereyra · Silestone Blanco Norte (Master §13). */
+export const CANONICAL_CONTEXT_PEREYRA: ContextResponse = {
+  cliente: { value: "Familia Pereyra", origin: "BRIEF" },
+  contacto: { value: null, origin: "FALTA" },
+  localidad: { value: "Rosario · zona sur", origin: "BRIEF" },
+  plazo: { value: null, origin: "FALTA" },
+  tipologia: { value: "cocina U + isla", origin: "BRIEF" },
+  tipo_obra: { value: "particular", origin: "INFERIDO" },
+  material: { value: "Silestone Blanco Norte", origin: "BRIEF" },
+  pileta: { value: "empotrada", origin: "INFERIDO" },
+  zocalo: { value: "contra pared · 5 cm", origin: "DEFAULT" },
+  regrueso: { value: "frontal · 4 cm", origin: "INFERIDO" },
+  anafe: { value: false, origin: "INFERIDO" },
+};
+
+/** Fallback para quotes del dataset sin canon definido. */
+export const CANONICAL_CONTEXT_GENERIC: ContextResponse = {
+  cliente: { value: null, origin: "FALTA" },
+  contacto: { value: null, origin: "FALTA" },
+  localidad: { value: null, origin: "FALTA" },
+  plazo: { value: null, origin: "FALTA" },
+  tipologia: { value: null, origin: "FALTA" },
+  tipo_obra: { value: "particular", origin: "DEFAULT" },
+  material: { value: null, origin: "FALTA" },
+  pileta: { value: null, origin: "FALTA" },
+  zocalo: { value: "contra pared · 5 cm", origin: "DEFAULT" },
+  regrueso: { value: null, origin: "FALTA" },
+  anafe: { value: false, origin: "DEFAULT" },
+};
+
+/** Lookup canon por quoteId. Quotes no listadas caen al GENERIC. */
+export const CONTEXT_BY_QUOTE_ID: Record<string, ContextResponse> = {
+  "PRES-2026-018": CANONICAL_CONTEXT, // Cueto-Heredia (mantiene comportamiento previo)
+  "PRES-2026-017": CANONICAL_CONTEXT_PEREYRA, // Pereyra (fix BLOCKER PR #460)
+};
