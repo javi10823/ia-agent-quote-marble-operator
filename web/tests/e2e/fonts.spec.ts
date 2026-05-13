@@ -28,7 +28,7 @@
 import { expect, test } from "@playwright/test";
 
 test("componentes legacy renderean con Fraunces real (no fallback Georgia)", async ({ page }) => {
-  await page.goto("/v2/quotes/PRES-2026-018/contexto");
+  await page.goto("/quotes/PRES-2026-018/contexto");
 
   // `.qhead h1` declara `font-family: var(--serif)` en operator-shared.css
   await expect(page.locator(".qhead h1").first()).toBeVisible();
