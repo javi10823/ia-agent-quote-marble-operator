@@ -136,3 +136,20 @@ export const CONTEXT_BY_QUOTE_ID: Record<string, ContextResponse> = {
   "PRES-2026-018": CANONICAL_CONTEXT, // Cueto-Heredia (mantiene comportamiento previo)
   "PRES-2026-017": CANONICAL_CONTEXT_PEREYRA, // Pereyra (fix BLOCKER PR #460)
 };
+
+/* ════════════════════════════════════════════════════════════════════════
+   Sprint 2.5 fix-up #2 · Banner Valentina del paso 2 por quoteId
+   ════════════════════════════════════════════════════════════════════════
+   El banner pristine "Valentina extrajo del brief: …" estaba hardcodeado
+   a Cueto-Heredia en ContextForm. Lo movemos a un lookup por quoteId.
+   El componente recibe el string ya resuelto via prop. */
+
+export const BRIEF_SUMMARY_BY_QUOTE_ID: Record<string, string> = {
+  "PRES-2026-018":
+    "cliente Cueto-Heredia (match arquitecta · −5%) · cocina con pileta empotrada · zócalo 12cm activa TOMAS automático",
+  "PRES-2026-017":
+    "cliente Familia Pereyra · cocina U + isla en Rosario · Silestone Blanco Norte con pileta empotrada",
+};
+
+export const BRIEF_SUMMARY_GENERIC =
+  "extraje los datos del brief — revisalos y editá lo que haga falta";

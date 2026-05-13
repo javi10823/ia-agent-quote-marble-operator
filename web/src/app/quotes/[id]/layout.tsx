@@ -1,34 +1,28 @@
 /**
- * Layout del quote v2 — chrome shell aplicado.
+ * Layout del quote · chrome shell aplicado.
  *
  * Wraps las 5 rutas de pasos (`/quotes/[id]/{brief,contexto,
  * despiece,calculo,pdf}`) con sidebar + topbar + qhead + stepper.
- * Estructura HTML matchea la que `chrome.js` legacy inyectaba en
- * los mockups: `.page > {.sidebar, .main > .topbar/.qhead/.stepper/.body}`.
  *
- * Viewport-fixed (Master §20.2): el media query de operator-shared.css
- * `@media (min-width: 1024px)` hace que `.page` sea altura fija
- * de viewport y `.body` sea el único elemento scrolleable.
- *
- * Sprint 2: usa CANONICAL_QUOTE hardcodeado (Master §13). El `id`
- * del path NO se resuelve a un fetch real — eso es state management,
- * va en sub-PRs siguientes.
+ * Sprint 2.5 fix-up #2: server component async que resuelve el quote
+ * via `getQuoteMetadata(params.id)` (lookup contra DASHBOARD_QUOTES).
+ * Antes usaba CANONICAL_QUOTE hardcodeado — provocaba que el Qhead
+ * y Topbar siempre mostraran datos de PRES-018 sin importar la URL.
  */
 import { Sidebar } from "@/components/chrome/Sidebar";
 import { Topbar } from "@/components/chrome/Topbar";
 import { Qhead } from "@/components/chrome/Qhead";
 import { Stepper } from "@/components/chrome/Stepper";
-import { CANONICAL_QUOTE } from "@/lib/mocks/canonicalQuote";
+import { getQuoteMetadata } from "@/lib/api";
 
-export default function V2QuoteLayout({
+export default async function QuoteLayout({
   children,
+  params,
 }: {
   children: React.ReactNode;
   params: { id: string };
 }) {
-  // En Sprint 2, ignoramos `params.id` y siempre usamos el quote canon.
-  // El sub-PR de state management resolverá el id contra la API real.
-  const quote = CANONICAL_QUOTE;
+  const quote = await getQuoteMetadata(params.id);
 
   return (
     <div className="page">

@@ -58,6 +58,7 @@ const GROUPS: Group[] = [
 interface Props {
   quoteId: string;
   context: ContextResponse;
+  briefSummary: string | null;
   isDirty: boolean;
   editedCount: number;
   saving: boolean;
@@ -69,6 +70,7 @@ interface Props {
 export function ContextForm({
   quoteId,
   context,
+  briefSummary,
   isDirty,
   editedCount,
   saving,
@@ -113,9 +115,9 @@ export function ContextForm({
             </>
           ) : (
             <>
-              <em>Valentina</em> extrajo del brief: <strong>cliente Cueto-Heredia</strong> (match
-              arquitecta · −5%) · cocina con <strong>pileta empotrada</strong> · zócalo 12cm activa{" "}
-              <strong>TOMAS automático</strong>. Revisalo y editá lo que haga falta.
+              <em>Valentina</em> extrajo del brief:{" "}
+              {briefSummary ?? "extraje los datos del brief — revisalos y editá lo que haga falta"}.
+              Revisalo y editá lo que haga falta.
               <div className="sub">
                 Click en cualquier campo para editar · Tab/Enter confirma · Esc cancela
               </div>

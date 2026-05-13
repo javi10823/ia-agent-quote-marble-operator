@@ -9,8 +9,10 @@
  */
 "use client";
 
+import { useEffect, useState } from "react";
 import { useContextForm } from "@/lib/hooks/useContextForm";
 import { useChatScoped } from "@/lib/hooks/useChatScoped";
+import { getValentinaBriefSummary } from "@/lib/api";
 import { ContextForm } from "./ContextForm";
 import { ChatPanel } from "./ChatPanel";
 
@@ -22,6 +24,25 @@ export function ContextView({ quoteId }: Props) {
   const { context, state, error, updateField, isDirty, editedCount } = useContextForm(quoteId);
   const chat = useChatScoped(quoteId, "contexto");
   const chatOpen = chat.panelState !== "closed";
+
+  // Sprint 2.5 fix-up #2: banner Valentina deriva del lookup por quoteId
+  // en BRIEF_SUMMARY_BY_QUOTE_ID (antes hardcodeado a Cueto-Heredia).
+  const [briefSummary, setBriefSummary] = useState<string | null>(null);
+  useEffect(() => {
+    let aborted = false;
+    const ctrl = new AbortController();
+    getValentinaBriefSummary(quoteId, { signal: ctrl.signal })
+      .then((s) => {
+        if (!aborted) setBriefSummary(s);
+      })
+      .catch(() => {
+        /* silent · summary es opcional */
+      });
+    return () => {
+      aborted = true;
+      ctrl.abort();
+    };
+  }, [quoteId]);
 
   if (state === "loading" && !context) {
     return (
@@ -70,6 +91,7 @@ export function ContextView({ quoteId }: Props) {
       <ContextForm
         quoteId={quoteId}
         context={context}
+        briefSummary={briefSummary}
         isDirty={isDirty}
         editedCount={editedCount}
         saving={state === "saving"}

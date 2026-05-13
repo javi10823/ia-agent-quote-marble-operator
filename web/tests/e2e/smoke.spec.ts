@@ -30,12 +30,12 @@ test("chrome shell renderea en /quotes/[id]/brief", async ({ page }) => {
   await expect(page.locator(".topbar .crumbs .now")).toContainText("PRES-2026-018");
   await expect(page.locator(".topbar .crumbs .now")).toContainText("Cueto-Heredia");
 
-  // Status chip draft
-  await expect(page.locator(".status-chip.draft")).toBeVisible();
+  // Status chip · PRES-018 está en status "sent" en DASHBOARD_QUOTES
+  await expect(page.locator(".status-chip.sent")).toBeVisible();
 
-  // Qhead muestra cliente canon
+  // Qhead muestra cliente canon (DASHBOARD_QUOTES: PRES-018 = Cueto-Heredia · Granito Negro Brasil)
   await expect(page.locator(".qhead h1")).toContainText("Cueto-Heredia");
-  await expect(page.locator(".qhead .sub")).toContainText("Silestone Blanco Norte");
+  await expect(page.locator(".qhead .sub")).toContainText("Negro Brasil");
 
   // Stepper presente con 5 pasos y paso 1 activo
   await expect(page.locator(".stepper")).toHaveAttribute("data-current-step", "brief");

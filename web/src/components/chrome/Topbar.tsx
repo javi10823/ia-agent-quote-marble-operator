@@ -9,10 +9,10 @@
  * `quote.status`. Interactividad real (notificaciones, ajustes,
  * cambio de status) en sub-PRs siguientes.
  */
-import type { CanonicalQuote } from "@/lib/mocks/canonicalQuote";
+import type { QuoteHeader } from "@/lib/api";
 
 interface TopbarProps {
-  quote: CanonicalQuote;
+  quote: QuoteHeader;
 }
 
 export function Topbar({ quote }: TopbarProps) {
@@ -22,7 +22,7 @@ export function Topbar({ quote }: TopbarProps) {
         <span>Presupuestos</span>
         <span className="sep">/</span>
         <span className="now">
-          {quote.id} · {quote.client.name}
+          {quote.id} · {quote.client}
         </span>
       </div>
 

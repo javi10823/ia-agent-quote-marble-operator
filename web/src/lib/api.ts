@@ -361,3 +361,59 @@ export async function getDashboardKpis(options?: { signal?: AbortSignal }): Prom
 }
 
 export type { DashboardQuote, DashboardStatus, DashboardCounts };
+
+/* ════════════════════════════════════════════════════════════════════════
+   Sprint 2.5 fix-up #2 · QuoteHeader metadata por quoteId
+   ════════════════════════════════════════════════════════════════════════
+   El Qhead + Topbar del chrome shell mostraban siempre datos de
+   CANONICAL_QUOTE (PRES-2026-018 · Cueto-Heredia) sin importar el
+   params.id de la URL. Fix arquitectónico: getQuoteMetadata deriva
+   de DASHBOARD_QUOTES (single source of truth del listado) + fallback
+   GENERIC para IDs no presentes en el dataset. */
+
+export interface QuoteHeader {
+  id: string;
+  client: string;
+  clientFull: string;
+  material: string;
+  m2: number;
+  status: "draft" | "sent" | "expired" | "lost";
+}
+
+const GENERIC_QUOTE_HEADER: Omit<QuoteHeader, "id"> = {
+  client: "Cliente sin identificar",
+  clientFull: "PROYECTO SIN ASIGNAR",
+  material: "—",
+  m2: 0,
+  status: "draft",
+};
+
+export async function getQuoteMetadata(
+  quoteId: string,
+  options?: { signal?: AbortSignal },
+): Promise<QuoteHeader> {
+  await delay(80 + Math.random() * 120, options?.signal);
+  const found = DASHBOARD_QUOTES.find((q) => q.id === quoteId);
+  if (found) {
+    return {
+      id: found.id,
+      client: found.client,
+      clientFull: found.clientFull,
+      material: found.material,
+      m2: found.m2,
+      status: found.status,
+    };
+  }
+  return { id: quoteId, ...GENERIC_QUOTE_HEADER };
+}
+
+/** Texto del banner Valentina del paso 2 — por quoteId. */
+export async function getValentinaBriefSummary(
+  quoteId: string,
+  options?: { signal?: AbortSignal },
+): Promise<string> {
+  await delay(60 + Math.random() * 100, options?.signal);
+  const { BRIEF_SUMMARY_BY_QUOTE_ID, BRIEF_SUMMARY_GENERIC } =
+    await import("./mocks/canonicalQuote");
+  return BRIEF_SUMMARY_BY_QUOTE_ID[quoteId] ?? BRIEF_SUMMARY_GENERIC;
+}
