@@ -1,24 +1,25 @@
-/// <reference types="vitest" />
+/**
+ * Vitest config.
+ *
+ * Sprint 2.5 switch-to-main: promovido desde `vitest.config.v2.ts`.
+ * El legacy config fue eliminado. jsdom + include scoped a `tests/unit/**`.
+ *
+ * Uso:
+ *   - Local:  `npm run test:unit`
+ *   - Watch:  `npm run test:unit:watch`
+ *   - CI:     job `unit-tests` del workflow `web-ci.yml`
+ */
 import { defineConfig } from "vitest/config";
 import path from "node:path";
 
-/**
- * PR #357 — Vitest setup mínimo para tests de lógica pura.
- *
- * Scope intencionalmente chico: sin jsdom, sin React Testing Library.
- * Los tests apuntan a helpers puros (ej: `applyCandidate`) que no
- * necesitan DOM. Si en el futuro se quieren tests de componente,
- * agregar `test.environment: "jsdom"` + `@testing-library/react`.
- */
 export default defineConfig({
   test: {
-    // Por default vitest usa `node` environment → sin DOM, más rápido.
-    include: ["src/**/*.test.ts"],
+    include: ["tests/unit/**/*.test.ts", "tests/unit/**/*.test.tsx"],
+    environment: "jsdom",
+    globals: false,
   },
   resolve: {
     alias: {
-      // Mismo alias que tsconfig.json para que `@/lib/...` funcione
-      // dentro de los tests.
       "@": path.resolve(__dirname, "src"),
     },
   },

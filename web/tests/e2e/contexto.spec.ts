@@ -7,7 +7,7 @@
  */
 import { expect, test, type Page } from "@playwright/test";
 
-const QUOTE_URL = "/v2/quotes/PRES-2026-018/contexto";
+const QUOTE_URL = "/quotes/PRES-2026-018/contexto";
 
 async function gotoContexto(page: Page) {
   await page.goto(QUOTE_URL);
@@ -109,7 +109,7 @@ test("chat — sugerencia rápida envía pregunta", async ({ page }) => {
   await expect(page.locator('[data-testid="chat-msg-user"]').first()).toContainText("anafe");
 });
 
-test("confirm — click navega a /v2/quotes/PRES-2026-018/despiece", async ({ page }) => {
+test("confirm — click navega a /quotes/PRES-2026-018/despiece", async ({ page }) => {
   await gotoContexto(page);
   await page.locator('[data-testid="confirm-context"]').click();
   await page.waitForURL("**/quotes/PRES-2026-018/despiece");
