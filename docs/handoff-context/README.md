@@ -24,6 +24,13 @@ handoff-context/
 ├── endpoints-spec.md          ← ~50 endpoints REST agrupados por flow del Master §6
 ├── sse-spec.md                ← protocolo SSE chat Valentina (7 event types)
 ├── missing-endpoints.md       ← endpoints sugeridos por mockups que NO existen hoy
+├── calculator.md              ← [Sprint 3] overview del motor de cálculo
+├── calculator-rules.md        ← [Sprint 3] 12 reglas explícitas del motor + deuda
+├── calculator-examples.md     ← [Sprint 3] ejemplos worked input→output (de tests reales)
+├── tools/
+│   ├── list_pieces.md         ← [Sprint 3] tool spec extracción de piezas (paso 1)
+│   ├── calculate_quote.md     ← [Sprint 3] tool spec cálculo (paso 4)
+│   └── validate_quote.md      ← [Sprint 3] validate_despiece (validación interna)
 ├── schemas/
 │   ├── quote.md               ← modelo Quote completo + QuoteBreakdown JSON
 │   ├── audit_events.md        ← schema audit_events + lista de event_types
@@ -63,6 +70,13 @@ Orden recomendado para alguien que arranca Sprint 2:
 5. **`schemas/audit_events.md`** — relevante para Sprint 3 (`/admin/quotes/{id}/audit` panel).
 6. **`catalog/`** — fixtures sanitizadas para mockear `GET /api/catalog/{name}`.
 7. **`missing-endpoints.md`** — qué falta y cómo workaroundear.
+
+### Para Sprint 3 (paso 3 despiece + paso 4 cálculo)
+
+8. **`calculator.md`** — overview del motor `calculate_quote()`: inputs, outputs, flujo, regla de moneda (USD/ARS nativos sin conversión).
+9. **`calculator-rules.md`** — las 12 reglas explícitas (merma, IVA, descuentos, MO, flete, edificio, redondeo) con line refs.
+10. **`calculator-examples.md`** — ejemplos worked reproducibles (de `api/tests/`) + ⚠️ discrepancia de las cifras canon del Master §13.
+11. **`tools/`** — contratos de los 3 tools: `list_pieces` (paso 1), `calculate_quote` (paso 4), `validate_quote`/`validate_despiece` (validación).
 
 ---
 
