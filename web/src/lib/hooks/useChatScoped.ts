@@ -23,7 +23,13 @@ function makeId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function useChatScoped(quoteId: string, scope: ChatScope) {
+/**
+ * @param targetPieceId  (opcional, scope `despiece`) enfoca el chat en una
+ *   pieza puntual — el mock de Valentina responde sobre esa pieza (mockup 06,
+ *   chat sobre R2 = bacha). Cambiarlo NO borra el historial; eso sólo pasa al
+ *   cerrar (Master §10 #1).
+ */
+export function useChatScoped(quoteId: string, scope: ChatScope, targetPieceId?: string) {
   const [panelState, setPanelState] = useState<ChatPanelState>("closed");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const abortRef = useRef<AbortController | null>(null);
@@ -60,7 +66,10 @@ export function useChatScoped(quoteId: string, scope: ChatScope) {
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       try {
-        const stream = streamChat(quoteId, trimmed, scope, { signal: ctrl.signal });
+        const stream = streamChat(quoteId, trimmed, scope, {
+          signal: ctrl.signal,
+          targetPieceId,
+        });
         const reader = stream.getReader();
         while (true) {
           const { done, value } = await reader.read();
@@ -87,7 +96,7 @@ export function useChatScoped(quoteId: string, scope: ChatScope) {
         setPanelState((curr) => (curr === "streaming" ? "open" : curr));
       }
     },
-    [quoteId, scope],
+    [quoteId, scope, targetPieceId],
   );
 
   return { panelState, messages, open, close, send };
