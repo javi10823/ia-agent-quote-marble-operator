@@ -206,3 +206,56 @@ test("datasources por quoteId — PRES-017 muestra piezas de Pereyra, no de 018"
   await expect(page.locator('[data-testid="piece-largo-R1-value"]')).toHaveText("300");
   await expect(page.locator('[data-testid="piece-largo-R1-value"]')).not.toHaveText("285");
 });
+
+test("regenerate keep-edits — preserva la edición de R1, re-genera el resto (Master §10 #10)", async ({
+  page,
+}) => {
+  await gotoLoaded(page);
+  // Estado inicial: R3 es propuesta IA sin tocar (largo 180, no editada).
+  await expect(page.locator('[data-testid="piece-largo-R3-value"]')).toHaveText("180");
+  await expect(page.locator('[data-testid="piece-row-R3"]')).toHaveAttribute(
+    "data-edited",
+    "false",
+  );
+
+  // Marina edita R1 (285 → 250 cm).
+  await page.locator('[data-testid="piece-largo-R1-value"]').click();
+  await page.locator('[data-testid="piece-largo-R1-input"]').fill("250");
+  await page.keyboard.press("Tab");
+  await expect(page.locator('[data-testid="piece-row-R1"]')).toHaveAttribute(
+    "data-edited",
+    "true",
+    {
+      timeout: 3000,
+    },
+  );
+  // Estado dirty → aparece el split-button "Re-generar no-editadas".
+  const keepBtn = page.locator('[data-testid="despiece-regen-keep"]');
+  await expect(keepBtn).toBeVisible();
+
+  // Re-generar preservando ediciones (mode keep-edits, sin confirmación).
+  await keepBtn.click();
+  await expect(page.locator('[data-testid="despiece-view"]')).toHaveAttribute(
+    "data-state",
+    "regenerating",
+  );
+  await expect(page.locator('[data-testid="despiece-view"]')).toHaveAttribute(
+    "data-state",
+    "idle",
+    {
+      timeout: 6000,
+    },
+  );
+
+  // La edición de R1 SOBREVIVE (Master §10 #10: las ediciones no se pisan).
+  await expect(page.locator('[data-testid="piece-largo-R1-value"]')).toHaveText("250");
+  await expect(page.locator('[data-testid="piece-row-R1"]')).toHaveAttribute("data-edited", "true");
+  // R3 (no editada) se re-generó desde el canon: sigue siendo IA, sin púrpura.
+  await expect(page.locator('[data-testid="piece-row-R3"]')).toHaveAttribute(
+    "data-edited",
+    "false",
+  );
+  await expect(page.locator('[data-testid="piece-largo-R3-value"]')).toHaveText("180");
+  // Sigue habiendo 5 piezas.
+  await expect(page.locator('[data-testid^="piece-row-"]')).toHaveCount(5);
+});
