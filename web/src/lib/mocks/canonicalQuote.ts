@@ -74,7 +74,7 @@ export function getCurrentStep(pathname: string): StepId {
    path de extracción que Valentina usaría: BRIEF (texto/PDF directo) o
    INFERIDO (cruzando catálogos / reglas). */
 
-import type { ContextResponse } from "../api";
+import type { ContextResponse, Piece, TimelineStep } from "../api";
 
 export const CANONICAL_CONTEXT: ContextResponse = {
   cliente: { value: "Cueto-Heredia Arquitectura", origin: "BRIEF" },
@@ -153,3 +153,191 @@ export const BRIEF_SUMMARY_BY_QUOTE_ID: Record<string, string> = {
 
 export const BRIEF_SUMMARY_GENERIC =
   "extraje los datos del brief — revisalos y editá lo que haga falta";
+
+/* ════════════════════════════════════════════════════════════════════════
+   Sprint 3 paso-3-despiece · CANONICAL_PIECES por quoteId
+   ════════════════════════════════════════════════════════════════════════
+   Las 5 piezas que Valentina propone para PRES-2026-018 (mockup
+   04-despiece-A-ia-propuso). Confirm-bar canon: "5 piezas · 6.81 m²".
+   Dimensiones literales del mockup en cm → guardadas en mm (cm × 10).
+
+   m² unitario = width_mm · depth_mm / 1e6:
+     R1 285×62 = 1.77 · R2 240×62 = 1.49 · R3 180×62 = 1.12 ·
+     R4 285×8 = 0.23 · R5 220×100 = 2.20  → total 6.81 m² ✓
+
+   Indexado por quoteId desde el inicio (lección Sprint 2.5 fix-up #2 del
+   PR #460): NUNCA hardcodear PRES-018, todo lookup pasa por quoteId. */
+
+export const CANONICAL_PIECES_018: Piece[] = [
+  {
+    id: "R1",
+    type: "encimera",
+    label: "Mesada perimetral · brazo izq",
+    sublabel: "contra pared norte",
+    width_mm: 2850,
+    depth_mm: 620,
+    quantity: 1,
+    options: { regrueso_mm: 40 },
+    detected_symbols: [{ src: "INGLETE", out: "CORTE45" }],
+    origin: "IA",
+    confidence: 0.92,
+    extracted_from: "plan_p1_z1",
+  },
+  {
+    // R2 = bacha · pieza sobre la que va el chat scoped del mockup 06.
+    id: "R2",
+    type: "encimera",
+    label: "Mesada perimetral · brazo derecho",
+    sublabel: "con bacha empotrada",
+    width_mm: 2400,
+    depth_mm: 620,
+    quantity: 1,
+    options: { pileta: { tipo: "empotrada", sku: "JOHNSON-C37D" }, regrueso_mm: 40 },
+    detected_symbols: [
+      { src: "DESAGUE", out: "AGUJEROAPOYO" },
+      { src: "INGLETE", out: "CORTE45" },
+    ],
+    origin: "IA",
+    confidence: 0.88,
+    extracted_from: "plan_p1_z2",
+  },
+  {
+    id: "R3",
+    type: "encimera",
+    label: "Mesada perimetral · fondo",
+    sublabel: "une R1 y R2",
+    width_mm: 1800,
+    depth_mm: 620,
+    quantity: 1,
+    options: { regrueso_mm: 40 },
+    detected_symbols: [{ src: "INGLETE×2", out: "CORTE45" }],
+    origin: "IA",
+    confidence: 0.9,
+    extracted_from: "plan_p1_z3",
+  },
+  {
+    id: "R4",
+    type: "alzada",
+    label: "Alzada salpicadero",
+    sublabel: "contra pared · h=8cm corre 285cm",
+    width_mm: 2850,
+    depth_mm: 80,
+    quantity: 1,
+    options: { alzada: true, tomas: 2 },
+    detected_symbols: [{ src: "2 TOMAS", out: "TOMAS" }],
+    origin: "IA",
+    confidence: 0.85,
+    extracted_from: "plan_p1_z1",
+  },
+  {
+    id: "R5",
+    type: "isla",
+    label: "Isla central",
+    sublabel: "con voladizo 30cm lado comedor",
+    width_mm: 2200,
+    depth_mm: 1000,
+    quantity: 1,
+    options: {},
+    origin: "IA",
+    confidence: 0.83,
+    extracted_from: "plan_p1_z4",
+  },
+];
+
+/** PRES-2026-017 · Familia Pereyra · dataset reducido y DISTINTO al de 018
+ *  (el mockup desktop no cubre el despiece de Pereyra — Master §6: Pereyra
+ *  sólo aparece en mobile/dashboard). Sirve de regression check de que los
+ *  datasources indexan por quoteId (no contaminan con PRES-018). */
+export const CANONICAL_PIECES_017: Piece[] = [
+  {
+    id: "R1",
+    type: "encimera",
+    label: "Mesada en U · tramo A",
+    sublabel: "contra pared",
+    width_mm: 3000,
+    depth_mm: 600,
+    quantity: 1,
+    options: {},
+    origin: "IA",
+    confidence: 0.86,
+    extracted_from: "plan_p1_z1",
+  },
+  {
+    id: "R2",
+    type: "encimera",
+    label: "Mesada en U · tramo B",
+    sublabel: "con pileta empotrada",
+    width_mm: 1600,
+    depth_mm: 600,
+    quantity: 1,
+    options: { pileta: { tipo: "empotrada" } },
+    detected_symbols: [{ src: "DESAGUE", out: "AGUJEROAPOYO" }],
+    origin: "IA",
+    confidence: 0.84,
+    extracted_from: "plan_p1_z2",
+  },
+  {
+    id: "R3",
+    type: "isla",
+    label: "Isla",
+    sublabel: "libre 4 lados",
+    width_mm: 1800,
+    depth_mm: 900,
+    quantity: 1,
+    options: {},
+    origin: "IA",
+    confidence: 0.8,
+    extracted_from: "plan_p1_z3",
+  },
+];
+
+/** Fallback para los quotes restantes del dataset (sin canon de piezas).
+ *  Vacío a propósito → `listPiecesForQuote` devuelve status:'failed' y la UI
+ *  cae al empty state (mockup 16). */
+export const CANONICAL_PIECES_GENERIC: Piece[] = [];
+
+export const PIECES_BY_QUOTE_ID: Record<string, Piece[]> = {
+  "PRES-2026-018": CANONICAL_PIECES_018, // Cueto-Heredia (case desktop completo)
+  "PRES-2026-017": CANONICAL_PIECES_017, // Pereyra (regression datasources por quoteId)
+};
+
+/** Timeline canon de las 4 pasadas de Valentina sobre PRES-2026-018
+ *  (mockup 04-despiece-A · 4 pasadas + 3 símbolos detectados). */
+export const CANONICAL_TIMELINE_018: TimelineStep[] = [
+  {
+    step: 1,
+    label: "Inventario",
+    state: "done",
+    detail: "cocina U + isla · 1 pileta empotrada · 1 alzada · 1 zócalo",
+  },
+  {
+    step: 2,
+    label: "Paredes y libres",
+    state: "done",
+    detail: "3 brazos perimetrales (R1·R2·R3) · isla libre 4 lados (R5)",
+  },
+  {
+    step: 3,
+    label: "Medidas",
+    state: "done",
+    detail: "cotas en mm convertidas a cm · INGLETE/DESAGUE/TOMAS detectados",
+  },
+  {
+    step: 4,
+    label: "Verificación",
+    state: "done",
+    detail: "5 piezas confirmadas · 6.81 m²",
+  },
+];
+
+export const TIMELINE_BY_QUOTE_ID: Record<string, TimelineStep[]> = {
+  "PRES-2026-018": CANONICAL_TIMELINE_018,
+};
+
+/** Timeline mostrado durante la carga inicial (skeleton) — pasada 4 corriendo. */
+export const DESPIECE_LOADING_TIMELINE: TimelineStep[] = [
+  { step: 1, label: "Inventario", state: "done" },
+  { step: 2, label: "Paredes y libres", state: "done" },
+  { step: 3, label: "Medidas", state: "done" },
+  { step: 4, label: "Verificación", state: "running", detail: "cruzando con catálogo…" },
+];
