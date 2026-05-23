@@ -8,7 +8,7 @@
 
 **NO existe un tool Anthropic llamado `validate_quote`** en la lista de TOOLS del agente (`agent.py:1212-1221`). La validación es un **módulo interno** (`validate_despiece`) que el handler de `calculate_quote` y de `generate_documents` invocan automáticamente — Valentina no lo llama como tool explícito.
 
-> El router HTTP tiene un endpoint `POST /quotes/{id}/validate` (`router.py:803`), pero ese es OTRA cosa: regenera PDF/Excel/Drive desde el breakdown guardado y cambia el status a `validated`. NO corre `validate_despiece`. No confundir.
+> El router HTTP tiene un endpoint `POST /quotes/{id}/validate` (`agent/router.py:803`), pero ese es OTRA cosa: regenera PDF/Excel/Drive desde el breakdown guardado y cambia el status a `validated`. NO corre `validate_despiece`. No confundir.
 
 Este doc documenta `validate_despiece` porque es el contrato que un sub-PR de Sprint 3 necesita para mockear la validación del paso 4.
 
