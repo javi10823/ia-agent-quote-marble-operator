@@ -107,6 +107,79 @@ Detectado en audit independiente PR #457 NICE-TO-HAVE 5. Inline `style={{...}}` 
 
 **Plan:** ninguno — solo registro para futuras estimaciones de scope.
 
+---
+
+## Decisiones de arquitectura
+
+### sprint-3/auth · auth gate via `NEXT_PUBLIC_REQUIRE_AUTH` (no `NEXT_PUBLIC_API_URL`)
+
+**Fecha:** 2026-05-13.
+
+**Contexto:** el `auth_token` del backend es una cookie httpOnly scoped a `railway.app`. El frontend vive en `vercel.app` (cross-origin, PR #322). Ni el JS del cliente ni el middleware edge de Vercel pueden leer esa cookie → un middleware edge que gatee por `auth_token` produce loop infinito (documentado en `web/src/middleware.ts`).
+
+**Decisión route-protection:** client-side gate (`AuthGuard`) — la sesión se trackea en `localStorage`; el enforcement real lo hace el backend con 401. (Recomendado por PR #322.)
+
+**Decisión sobre el flag de activación:** se usa un flag **dedicado** `NEXT_PUBLIC_REQUIRE_AUTH`, NO `NEXT_PUBLIC_API_URL`. Razón: `NEXT_PUBLIC_API_URL` ya estaba seteada a `http://localhost:8000` (dummy) en `playwright.config.ts:42` desde Sprint 2 — reusarla para gatear auth rompía los 48 E2E previos (todos redirigían a `/login`).
+
+Dos flags ortogonales:
+
+| Var | Controla |
+|-----|----------|
+| `NEXT_PUBLIC_API_URL` | mock vs real backend (gestionado por `sprint-3/api-integration`) |
+| `NEXT_PUBLIC_REQUIRE_AUTH` | auth on/off (este PR) |
+
+Para activar auth en prod: setear `NEXT_PUBLIC_REQUIRE_AUTH=true` en las env vars del proyecto Vercel.
+
+### v2 NO compila Tailwind utilities · decisión + deuda
+
+**Detectado:** visual check PR #463, 2026-05-13.
+
+**Estado actual:** el proyecto tiene `web/tailwind.config.ts` pero **NO tiene directivas `@tailwind` en ningún archivo CSS**. Resultado: las utility classes (`flex`, `min-h-screen`, `items-center`, `font-serif`, `italic`, `rounded-md`, `bg-accent`, `text-ink`, `px-3`, etc.) **NO se generan en el CSS bundle — son dead no-ops**.
+
+**Patrón v2 que SÍ funciona** (verificado en `DashboardView`, `ContextView`, `Sidebar`):
+
+1. Clases legacy de `operator-shared.css` (`.btn primary`, `.input`, `.eyebrow`, `.nav-i`, `.kpi-card`, `.etable`, etc.)
+2. Inline `style={{}}` para layout (`display: flex`, `minHeight`, etc.)
+3. CSS vars del design system (`var(--bg)`, `var(--ink)`, `var(--accent)`, `var(--serif)`, `var(--mono)`, `var(--r-md)`, etc.)
+
+**Componentes que YA usan utility classes muertas** (deuda latente — no rompen hoy por respaldo inline o herencia de operator-shared.css):
+
+- `DashboardView` (algunas classes Tailwind ignoradas)
+- Root layout `<body className="bg-bg text-ink">` (no aplica — el bg real lo da operator-shared.css)
+- (otros TBD si se hace pasada de cleanup)
+
+**Opciones para Sprint 5:**
+
+- **A) Pasada de cleanup:** eliminar todas las utility classes muertas del v2, estandarizar inline styles + clases legacy.
+- **B) Agregar directivas `@tailwind` al pipeline:** activaría TODAS las utilities de golpe → requiere QA visual completo (clases hoy no-ops empezarían a aplicar, potencialmente rompiendo el diseño actual).
+- **C) Híbrido:** configurar Tailwind con cherry-pick de utilities específicas vía `corePlugins`.
+
+**Decisión pendiente:** Sprint 5 cleanup, o cuando se haga refactor del design system.
+
+**REGLA OPERATIVA para PRs en curso (Sprint 3+):**
+
+- ❌ NO usar Tailwind utility classes en componentes nuevos del v2.
+- ✅ USAR clases legacy de `operator-shared.css` + inline `style={{}}` con CSS vars.
+- ✅ Visual check vía Claude for Chrome **OBLIGATORIO** para todo PR con UI nueva (el audit de código + tests E2E NO detectan layout roto por utilities muertas).
+
+### sprint-3/auth (PR #463) · MINOR · `body { min-width: 1440px }` global descentra páginas standalone
+
+**Detectado:** screenshot verificado por Claude Code durante el refactor visual del PR #463, 2026-05-13.
+
+**Descripción:** `operator-shared.css` tiene `body { min-width: 1440px }` global. En viewports <1440 cualquier página standalone se renderiza **descentrada** — el body es 1440px wide aunque el viewport sea menor, el contenido se centra dentro del body y aparece off-center respecto al viewport real.
+
+**Impacto:** `/login` standalone lo sufría antes del fix. Otras páginas standalone potencialmente igual. El dashboard y rutas con chrome shell completo no lo notan porque el chrome ≥1440 ya define su layout.
+
+**Fix aplicado en /login (commit 64a8e04):** `.login-root` con `position: fixed; inset: 0` → fija al viewport real, no al body con min-width global. Sin tocar operator-shared.css.
+
+> Nota: este hallazgo **solo lo detecta un visual check / screenshot** — los E2E y el audit de código pasan igual con la card descentrada. Refuerza la regla operativa del ADR de Tailwind (visual check obligatorio para UI nueva).
+
+**Plan Sprint 5:** decidir entre:
+
+1. Eliminar el `min-width` global de operator-shared.css (requiere QA visual del chrome).
+2. Mover el `min-width` a un contenedor específico del chrome shell.
+3. Documentar como "operator es desktop-only intencional, mobile es excepción".
+
 ## Resueltos
 
 _(vacío al inicio)_

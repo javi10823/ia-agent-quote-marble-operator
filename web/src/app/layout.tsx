@@ -22,6 +22,7 @@
  */
 import type { Metadata } from "next";
 import { Fraunces, Inter_Tight, JetBrains_Mono } from "next/font/google";
+import { AuthGuard } from "@/components/auth/AuthGuard";
 import "./operator-shared.css";
 import "./globals.css";
 
@@ -58,7 +59,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="es"
       className={`${fraunces.variable} ${interTight.variable} ${jetbrainsMono.variable}`}
     >
-      <body className="bg-bg text-ink">{children}</body>
+      <body className="bg-bg text-ink">
+        <AuthGuard>{children}</AuthGuard>
+      </body>
     </html>
   );
 }
