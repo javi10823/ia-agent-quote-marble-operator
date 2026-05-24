@@ -30,3 +30,25 @@ export interface ChatMessage {
 }
 
 export type ChatPanelState = "closed" | "open" | "streaming";
+
+/* ─── Sprint 3 paso-3-despiece · state machine + chat scope ─────────── */
+
+/** Estado del container del paso 3 (DespieceView).
+ *  - loading: carga inicial de piezas (skeleton + timeline running)
+ *  - idle: piezas cargadas, sin operación en curso
+ *  - editing: una celda está en edit mode (Tab/Enter/Esc)
+ *  - saving: persistiendo un update/add/delete
+ *  - regenerating: Valentina re-corre la inferencia
+ *  - error: fallo de carga
+ */
+export type DespieceFormState =
+  | "loading"
+  | "idle"
+  | "editing"
+  | "saving"
+  | "regenerating"
+  | "error";
+
+/** Scope del chat del paso 3: sobre el paso completo, o enfocado en 1 pieza
+ *  (mockup 06 · chat sobre R2 = bacha). */
+export type DespieceStreamScope = "despiece" | { scope: "despiece"; target_piece_id: string };
