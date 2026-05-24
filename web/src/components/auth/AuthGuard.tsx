@@ -21,7 +21,13 @@ const PUBLIC_PATHS = ["/login"];
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [checked, setChecked] = useState(false);
+  // Init sincrónico: en modo default (sin NEXT_PUBLIC_REQUIRE_AUTH) arranca
+  // ya en `true` para eliminar el flash "Verificando sesión…" (fix UX del
+  // visual check del PR #463). SSR → false para no asumir estado.
+  const [checked, setChecked] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return process.env.NEXT_PUBLIC_REQUIRE_AUTH !== "true";
+  });
 
   useEffect(() => {
     // Auth off por default. Solo enforcea con NEXT_PUBLIC_REQUIRE_AUTH==='true'.
@@ -47,10 +53,20 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   if (!checked) {
     return (
       <div
-        className="flex min-h-screen items-center justify-center bg-bg"
         data-testid="auth-checking"
+        style={{
+          display: "flex",
+          minHeight: "100vh",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "var(--bg)",
+        }}
       >
-        <div className="font-mono text-sm text-ink-mute">Verificando sesión…</div>
+        <div
+          style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--ink-mute)" }}
+        >
+          Verificando sesión…
+        </div>
       </div>
     );
   }
