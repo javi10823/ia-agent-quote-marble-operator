@@ -107,6 +107,29 @@ Detectado en audit independiente PR #457 NICE-TO-HAVE 5. Inline `style={{...}}` 
 
 **Plan:** ninguno — solo registro para futuras estimaciones de scope.
 
+---
+
+## Decisiones de arquitectura
+
+### sprint-3/auth · auth gate via `NEXT_PUBLIC_REQUIRE_AUTH` (no `NEXT_PUBLIC_API_URL`)
+
+**Fecha:** 2026-05-13.
+
+**Contexto:** el `auth_token` del backend es una cookie httpOnly scoped a `railway.app`. El frontend vive en `vercel.app` (cross-origin, PR #322). Ni el JS del cliente ni el middleware edge de Vercel pueden leer esa cookie → un middleware edge que gatee por `auth_token` produce loop infinito (documentado en `web/src/middleware.ts`).
+
+**Decisión route-protection:** client-side gate (`AuthGuard`) — la sesión se trackea en `localStorage`; el enforcement real lo hace el backend con 401. (Recomendado por PR #322.)
+
+**Decisión sobre el flag de activación:** se usa un flag **dedicado** `NEXT_PUBLIC_REQUIRE_AUTH`, NO `NEXT_PUBLIC_API_URL`. Razón: `NEXT_PUBLIC_API_URL` ya estaba seteada a `http://localhost:8000` (dummy) en `playwright.config.ts:42` desde Sprint 2 — reusarla para gatear auth rompía los 48 E2E previos (todos redirigían a `/login`).
+
+Dos flags ortogonales:
+
+| Var | Controla |
+|-----|----------|
+| `NEXT_PUBLIC_API_URL` | mock vs real backend (gestionado por `sprint-3/api-integration`) |
+| `NEXT_PUBLIC_REQUIRE_AUTH` | auth on/off (este PR) |
+
+Para activar auth en prod: setear `NEXT_PUBLIC_REQUIRE_AUTH=true` en las env vars del proyecto Vercel.
+
 ## Resueltos
 
 _(vacío al inicio)_
