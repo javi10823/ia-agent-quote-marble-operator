@@ -130,6 +130,38 @@ Dos flags ortogonales:
 
 Para activar auth en prod: setear `NEXT_PUBLIC_REQUIRE_AUTH=true` en las env vars del proyecto Vercel.
 
+### v2 NO compila Tailwind utilities · decisión + deuda
+
+**Detectado:** visual check PR #463, 2026-05-13.
+
+**Estado actual:** el proyecto tiene `web/tailwind.config.ts` pero **NO tiene directivas `@tailwind` en ningún archivo CSS**. Resultado: las utility classes (`flex`, `min-h-screen`, `items-center`, `font-serif`, `italic`, `rounded-md`, `bg-accent`, `text-ink`, `px-3`, etc.) **NO se generan en el CSS bundle — son dead no-ops**.
+
+**Patrón v2 que SÍ funciona** (verificado en `DashboardView`, `ContextView`, `Sidebar`):
+
+1. Clases legacy de `operator-shared.css` (`.btn primary`, `.input`, `.eyebrow`, `.nav-i`, `.kpi-card`, `.etable`, etc.)
+2. Inline `style={{}}` para layout (`display: flex`, `minHeight`, etc.)
+3. CSS vars del design system (`var(--bg)`, `var(--ink)`, `var(--accent)`, `var(--serif)`, `var(--mono)`, `var(--r-md)`, etc.)
+
+**Componentes que YA usan utility classes muertas** (deuda latente — no rompen hoy por respaldo inline o herencia de operator-shared.css):
+
+- `DashboardView` (algunas classes Tailwind ignoradas)
+- Root layout `<body className="bg-bg text-ink">` (no aplica — el bg real lo da operator-shared.css)
+- (otros TBD si se hace pasada de cleanup)
+
+**Opciones para Sprint 5:**
+
+- **A) Pasada de cleanup:** eliminar todas las utility classes muertas del v2, estandarizar inline styles + clases legacy.
+- **B) Agregar directivas `@tailwind` al pipeline:** activaría TODAS las utilities de golpe → requiere QA visual completo (clases hoy no-ops empezarían a aplicar, potencialmente rompiendo el diseño actual).
+- **C) Híbrido:** configurar Tailwind con cherry-pick de utilities específicas vía `corePlugins`.
+
+**Decisión pendiente:** Sprint 5 cleanup, o cuando se haga refactor del design system.
+
+**REGLA OPERATIVA para PRs en curso (Sprint 3+):**
+
+- ❌ NO usar Tailwind utility classes en componentes nuevos del v2.
+- ✅ USAR clases legacy de `operator-shared.css` + inline `style={{}}` con CSS vars.
+- ✅ Visual check vía Claude for Chrome **OBLIGATORIO** para todo PR con UI nueva (el audit de código + tests E2E NO detectan layout roto por utilities muertas).
+
 ## Resueltos
 
 _(vacío al inicio)_
