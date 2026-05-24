@@ -387,7 +387,36 @@ Suma de filas c/IVA = $597.971, subtotal claimed = $597.970. Cierre automático 
 
 ---
 
-## 13 · Datos canónicos de referencia
+## 13 · Datos canónicos de referencia · DESIGN REFERENCES vs EJEMPLOS REPRODUCIBLES
+
+> **Nota 2026-05-13 (decisión D post-PR #461):** las cifras de esta sección son **referencias visuales para mockups**, no fixtures reproducibles desde `calculator.py`. Para ejemplos worked reproducibles del motor real, ver `docs/handoff-context/calculator-examples.md`.
+
+### Design references (para mockups visuales)
+
+- **PRES-2026-018** · Cueto-Heredia · Granito Negro Brasil · 8,40 m² · USD 2.184
+- **PRES-2026-017** · Familia Pereyra · Silestone Blanco Norte · 6,50 m² · ARS 660.890 + USD 1.538
+
+Estas cifras son del handoff de diseño original. **No se asumen reproducibles** ejecutando el motor real con el catálogo vigente. El PR #461 (audit independiente de `calculator.py`, 2258 LOC) confirmó:
+
+- USD 2.184 no tiene derivación en código — número suelto en la línea "PRES-2026-018 = …" más abajo en esta misma sección.
+- ARS 660.890 + USD 1.538 solo se reproducen contra el breakdown mock de abajo, que usa Silestone a USD 249/m² (catálogo real USD 429/m² s/IVA → 519 c/IVA — bug P2 documentado en `docs/known-issues.md`).
+- Internamente §13 tenía líneas inconsistentes (Cueto/Negro Brasil vs Cueto/Silestone vs Pereyra/Silestone). Se aclara con esta nota; el breakdown histórico se preserva abajo para trazabilidad.
+
+### Ejemplos reproducibles del motor
+
+Para mocks-first del Sprint 3 (`paso-3-despiece`, `paso-4-calculo`), tests E2E que verifican cálculo, e integraciones reales contra backend → usar `docs/handoff-context/calculator-examples.md` (~16 ejemplos worked derivados de `api/tests/` reales del motor).
+
+### Decisión sobre el precio Silestone (bug P2)
+
+Diferido a Sprint 5 (demo Marina). Registrado en `docs/known-issues.md`. Hasta entonces:
+
+- Mockups visuales mantienen USD 249/m² implícito en ARS 660.890.
+- Backend real usa USD 519/m² c/IVA del catálogo.
+- Tests NO asiertan contra ARS 660.890 con catálogo real.
+
+---
+
+### [HISTÓRICO · breakdown del mockup, preservado para trazabilidad]
 
 ### Canon Cueto-Heredia · Silestone Blanco Norte (mockup 07 v4)
 
