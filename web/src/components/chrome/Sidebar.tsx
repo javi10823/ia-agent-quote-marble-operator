@@ -9,8 +9,22 @@
  * (no hay routing real entre secciones todavía). El item actual
  * (Presupuestos) tiene la clase `.on` para el highlight. Click
  * handlers + Link real vienen en sub-PRs siguientes.
+ *
+ * Sprint 3 auth: agregado botón de logout al pie (Opción 1 · client-side).
  */
+"use client";
+
+import { useRouter } from "next/navigation";
+import { logout } from "@/lib/auth";
+
 export function Sidebar() {
+  const router = useRouter();
+
+  async function handleLogout() {
+    await logout();
+    router.replace("/login");
+  }
+
   return (
     <aside className="sidebar">
       {/* Brand · "D'Angelo Operator" en serif itálica */}
@@ -82,6 +96,24 @@ export function Sidebar() {
         </div>
         <div style={{ fontSize: 12, color: "var(--ink-soft)" }}>Marina · operadora</div>
       </div>
+
+      {/* Logout · Sprint 3 auth */}
+      <button
+        type="button"
+        onClick={handleLogout}
+        data-testid="logout-button"
+        className="nav-i"
+        style={{
+          width: "100%",
+          background: "transparent",
+          border: 0,
+          font: "inherit",
+          textAlign: "left",
+          color: "var(--ink-mute)",
+        }}
+      >
+        <span>Cerrar sesión</span>
+      </button>
     </aside>
   );
 }
