@@ -59,6 +59,54 @@ Detectado en audit independiente PR #457 NICE-TO-HAVE 5. Inline `style={{...}}` 
 
 **Plan:** revisar y alinear con spec del Master §13 en `sprint-3/paso-3-despiece` (cuando se toque el contexto reabierto) o en `sprint-5/cleanup-deuda`.
 
+### sprint-3/extract-calc-contracts (PR #461) · MINOR · Cifras canon Master §13 no reproducibles desde calculator.py
+
+**Detectado:** PR #461 audit de calculator.py 2258 LOC, 2026-05-13.
+
+**Descripción:** USD 2.184 (Cueto-Heredia) y ARS 660.890 (Pereyra) del Master §13 son design references, no reproducibles ejecutando `calculator.py` con catálogo vigente. Confirmado por audit independiente.
+
+**Decisión:** decisión D híbrida — mockups visuales mantienen las cifras, mocks-first y tests usan outputs reales del motor (`calculator-examples.md`). Master §13 actualizado para clarificar.
+
+---
+
+### sprint-3/extract-calc-contracts (PR #461) · MINOR · 2 reglas Master §16 no implementadas en calculator.py
+
+**Detectado:** PR #461 audit, 2026-05-13.
+
+**Descripción:** Master §16 declara 7 reglas; calculator.py implementa 12 reglas reales documentadas en `calculator-rules.md`. 2 reglas declaradas en Master NO están implementadas:
+
+1. Redondeo a múltiplos comerciales (ej: Negro Brasil debe ser entero)
+2. Conversión USD↔ARS automática
+
+**Impacto:** ninguno funcional hoy. El motor opera en monedas nativas (USD para material caro como Negro Brasil/Silestone; ARS para servicios locales) sin conversión cruzada.
+
+**Plan:** evaluar si implementar en Sprint 5 o si el approach actual (no conversión) es el correcto. Decidir con Javi al planear demo Marina.
+
+---
+
+### sprint-3/extract-calc-contracts (PR #461) · MINOR · validate_quote no es tool exportado de Valentina
+
+**Detectado:** PR #461 audit, 2026-05-13.
+
+**Descripción:** Master menciona `validate_quote` como tool de Valentina. En realidad:
+
+- Tools exportados de Valentina (`agent.py:1212-1221`): `list_pieces` + `calculate_quote` (entre otros), NO `validate_quote`.
+- `validate_quote` es función interna del módulo `validation_tool.py` (`validate_despiece`), no expuesta como Anthropic tool.
+
+**Impacto:** ninguno hoy. El doc `tools/validate_quote.md` aclara este punto explícitamente.
+
+**Plan:** si en el futuro se quiere exponer validación como tool a Valentina, registrar como feature nueva.
+
+---
+
+### sprint-3/extract-calc-contracts (PR #461) · MINOR · Motor calculator.py es 2258 LOC, no 360
+
+**Detectado:** PR #461 audit, 2026-05-13.
+
+**Descripción:** El spec del task mencionaba "calculator.py ~360 líneas". El motor real es 2258 líneas + spans multiple files del módulo `quote_engine/`. Cosmético, ya documentado en `calculator.md`.
+
+**Plan:** ninguno — solo registro para futuras estimaciones de scope.
+
 ## Resueltos
 
 _(vacío al inicio)_
