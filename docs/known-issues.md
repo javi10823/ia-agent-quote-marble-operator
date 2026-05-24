@@ -162,6 +162,24 @@ Para activar auth en prod: setear `NEXT_PUBLIC_REQUIRE_AUTH=true` en las env var
 - ✅ USAR clases legacy de `operator-shared.css` + inline `style={{}}` con CSS vars.
 - ✅ Visual check vía Claude for Chrome **OBLIGATORIO** para todo PR con UI nueva (el audit de código + tests E2E NO detectan layout roto por utilities muertas).
 
+### sprint-3/auth (PR #463) · MINOR · `body { min-width: 1440px }` global descentra páginas standalone
+
+**Detectado:** screenshot verificado por Claude Code durante el refactor visual del PR #463, 2026-05-13.
+
+**Descripción:** `operator-shared.css` tiene `body { min-width: 1440px }` global. En viewports <1440 cualquier página standalone se renderiza **descentrada** — el body es 1440px wide aunque el viewport sea menor, el contenido se centra dentro del body y aparece off-center respecto al viewport real.
+
+**Impacto:** `/login` standalone lo sufría antes del fix. Otras páginas standalone potencialmente igual. El dashboard y rutas con chrome shell completo no lo notan porque el chrome ≥1440 ya define su layout.
+
+**Fix aplicado en /login (commit 64a8e04):** `.login-root` con `position: fixed; inset: 0` → fija al viewport real, no al body con min-width global. Sin tocar operator-shared.css.
+
+> Nota: este hallazgo **solo lo detecta un visual check / screenshot** — los E2E y el audit de código pasan igual con la card descentrada. Refuerza la regla operativa del ADR de Tailwind (visual check obligatorio para UI nueva).
+
+**Plan Sprint 5:** decidir entre:
+
+1. Eliminar el `min-width` global de operator-shared.css (requiere QA visual del chrome).
+2. Mover el `min-width` a un contenedor específico del chrome shell.
+3. Documentar como "operator es desktop-only intencional, mobile es excepción".
+
 ## Resueltos
 
 _(vacío al inicio)_
