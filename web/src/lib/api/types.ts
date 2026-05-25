@@ -1,0 +1,205 @@
+/**
+ * Tipos compartidos del client v2 · Sprint 3 api-integration.
+ *
+ * Hogar único de los tipos que consumen mocks.ts + real.ts + el resto del
+ * frontend. Si el backend real devuelve un shape distinto, el adapter vive
+ * en real.ts — estos tipos NO cambian (el frontend no se entera del switch).
+ */
+import type { DashboardQuote, DashboardStatus, DashboardCounts } from "../mocks/dashboardDataset";
+
+export type { DashboardQuote, DashboardStatus, DashboardCounts };
+
+export const V2_API_BASE = "/api";
+
+/* ─── Brief / draft (paso 1) ─────────────────────────────────────── */
+
+export interface CreateDraftQuoteInput {
+  planFile: File;
+  photos?: File[];
+  briefText?: string;
+}
+
+export interface CreateDraftQuoteResponse {
+  id: string;
+  status: "draft";
+  createdAt: string;
+}
+
+export class ApiError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+    public status?: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+/** Validaciones declarativas (defensa en profundidad — la UI también valida). */
+export const VALIDATION = {
+  PLAN_MAX_BYTES: 20 * 1024 * 1024, // 20 MB
+  PLAN_MIME: ["application/pdf"] as const,
+  PHOTO_MAX_BYTES: 5 * 1024 * 1024, // 5 MB
+  PHOTO_MIME: ["image/jpeg", "image/png"] as const,
+  PHOTOS_MAX_COUNT: 5,
+  BRIEF_MAX_CHARS: 2000,
+} as const;
+
+/* ─── Contexto (paso 2) ──────────────────────────────────────────── */
+
+export type ContextOrigin = "BRIEF" | "INFERIDO" | "DEFAULT" | "EDITADO" | "FALTA";
+
+export interface ContextField<T = string | number | boolean | null> {
+  value: T;
+  origin: ContextOrigin;
+  edited?: boolean;
+}
+
+export interface ContextData {
+  cliente: string | null;
+  contacto: string | null;
+  localidad: string | null;
+  plazo: string | null;
+  tipologia: string | null;
+  tipo_obra: "particular" | "edificio";
+  material: string | null;
+  pileta: string | null;
+  zocalo: string | null;
+  regrueso: string | null;
+  anafe: boolean;
+}
+
+export type ContextResponse = {
+  [K in keyof ContextData]: ContextField<ContextData[K]>;
+};
+
+/* ─── Chat scoped (SSE) ──────────────────────────────────────────── */
+
+export type ChatScope = "contexto" | "despiece" | "calculo" | "pdf";
+
+/**
+ * Chunk del stream del chat. El backend real (router.py:2355-2380) emite 7
+ * tipos. `text` se concatena; `action` es status transitorio; los 3 tipos de
+ * card (`context_analysis`, `dual_read_result`, `zone_selector`) traen su
+ * payload como **JSON string dentro de `content`** (doble parse → parseSSEContent).
+ * `done` cierra el stream; `error` reporta.
+ */
+export interface ChatStreamChunk {
+  type:
+    | "text"
+    | "action"
+    | "context_analysis"
+    | "dual_read_result"
+    | "zone_selector"
+    | "done"
+    | "error";
+  content?: string;
+  /** sólo en `error` del mock legacy. */
+  message?: string;
+  /** `done` con `error: true` en el error-path del backend. */
+  error?: boolean;
+}
+
+/** Parsea `content` cuando el event type lo trae como JSON string (card events). */
+export function parseSSEContent<T = unknown>(chunk: ChatStreamChunk): T | string {
+  if (!chunk.content) return "";
+  try {
+    return JSON.parse(chunk.content) as T;
+  } catch {
+    return chunk.content;
+  }
+}
+
+/* ─── Dashboard ──────────────────────────────────────────────────── */
+
+export interface ListQuotesFilters {
+  statuses?: ReadonlyArray<DashboardStatus>;
+  search?: string;
+  kpi?: "expire-soon" | "no-response";
+}
+
+export interface DashboardKpis {
+  expireSoon: number;
+  noResponse: number;
+  pendingAction: number;
+  counts: DashboardCounts;
+}
+
+/* ─── Quote header (chrome shell) ────────────────────────────────── */
+
+export interface QuoteHeader {
+  id: string;
+  client: string;
+  clientFull: string;
+  material: string;
+  /** Número (mock) o "—" degradado en modo real (cast en real.ts cuando el
+   *  backend no expone m². El componente lo renderiza vía toLocaleString que
+   *  en un string devuelve el string tal cual → "— m²"). */
+  m2: number;
+  status: "draft" | "sent" | "expired" | "lost";
+}
+
+/* ─── Piezas / despiece (paso 3) ─────────────────────────────────── */
+
+export interface DetectedSymbol {
+  src: string;
+  out: string;
+}
+
+export type PieceType = "encimera" | "frente" | "zocalo" | "alzada" | "isla" | (string & {});
+
+export interface PieceOptions {
+  pileta?: { tipo: "empotrada" | "sobre-mesada" | null; sku?: string };
+  anafe?: boolean;
+  tomas?: number;
+  alzada?: boolean;
+  regrueso_mm?: number;
+}
+
+export interface Piece {
+  id: string;
+  type: PieceType;
+  label: string;
+  sublabel?: string;
+  width_mm: number;
+  depth_mm: number;
+  quantity: number;
+  options: PieceOptions;
+  detected_symbols?: DetectedSymbol[];
+  origin: "IA" | "EDITADO" | "AGREGADO_MANUAL";
+  confidence?: number;
+  extracted_from?: string;
+  edited?: boolean;
+}
+
+export interface TimelineStep {
+  step: 1 | 2 | 3 | 4;
+  label: string;
+  state: "pending" | "running" | "done" | "failed";
+  detail?: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
+export interface PieceList {
+  pieces: Piece[];
+  status: "pending" | "inferring" | "done" | "failed";
+  timeline: TimelineStep[];
+  warnings: string[];
+}
+
+/** m² unitario (half-up a 2 decimales, igual que calculator.py). */
+export function pieceM2Unit(piece: Pick<Piece, "width_mm" | "depth_mm">): number {
+  return Math.round(((piece.width_mm * piece.depth_mm) / 1_000_000) * 100) / 100;
+}
+
+/** m² total = m² unitario × cantidad (half-up a 2 decimales). */
+export function pieceM2Total(piece: Pick<Piece, "width_mm" | "depth_mm" | "quantity">): number {
+  return Math.round(pieceM2Unit(piece) * piece.quantity * 100) / 100;
+}
+
+/** Suma de m² total de un set de piezas. */
+export function piecesTotalM2(pieces: Piece[]): number {
+  return Math.round(pieces.reduce((sum, p) => sum + pieceM2Total(p), 0) * 100) / 100;
+}

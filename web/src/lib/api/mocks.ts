@@ -1,53 +1,34 @@
 /**
- * Mock client v2 — Sprint 2 paso 1 brief upload.
+ * Mock client v2 · Sprint 3 api-integration.
  *
- * Mock-first per Master §21.7 decisión 4 + endpoint dedicado del paso 1
- * marcado como "P2 · NO EXISTE" en docs/handoff-context/missing-endpoints.md
- * (`POST /api/quotes/{id}/brief`). Este client simula el response de
- * creación de draft con latencia 2-5s y soporte de AbortController.
- * Retorna las cifras canon Cueto-Heredia (Master §13).
+ * Movido desde `lib/api.ts` (split en módulos). Comportamiento idéntico —
+ * los 50 E2E corren contra estos mocks por default (sin NEXT_PUBLIC_API_URL).
+ * Tipos compartidos viven en `./types`.
  *
- * TODO sprint-3/api-integration: switch al cliente HTTP real cuando
- * el backend implemente el endpoint dedicado, o cuando se decida
- * pasarlo dentro del primer turno del chat (Opción A en
- * missing-endpoints.md).
+ * streamChat extendido (FASE 3.2): emite los 4 event types nuevos
+ * (action / context_analysis / dual_read_result / zone_selector) ante
+ * keywords de trigger, además del streaming de texto.
  */
-import { CANONICAL_QUOTE } from "./mocks/canonicalQuote";
-
-export const V2_API_BASE = "/api";
-
-export interface CreateDraftQuoteInput {
-  planFile: File;
-  photos?: File[];
-  briefText?: string;
-}
-
-export interface CreateDraftQuoteResponse {
-  id: string;
-  status: "draft";
-  createdAt: string;
-}
-
-export class ApiError extends Error {
-  constructor(
-    public code: string,
-    message: string,
-    public status?: number,
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
-
-/** Validaciones declarativas (defensa en profundidad — la UI también valida). */
-export const VALIDATION = {
-  PLAN_MAX_BYTES: 20 * 1024 * 1024, // 20 MB
-  PLAN_MIME: ["application/pdf"] as const,
-  PHOTO_MAX_BYTES: 5 * 1024 * 1024, // 5 MB
-  PHOTO_MIME: ["image/jpeg", "image/png"] as const,
-  PHOTOS_MAX_COUNT: 5,
-  BRIEF_MAX_CHARS: 2000,
-} as const;
+import { CANONICAL_QUOTE } from "../mocks/canonicalQuote";
+import { DASHBOARD_QUOTES, DASHBOARD_COUNTS, type DashboardQuote } from "../mocks/dashboardDataset";
+import {
+  ApiError,
+  VALIDATION,
+  piecesTotalM2,
+  type ChatScope,
+  type ChatStreamChunk,
+  type ContextData,
+  type ContextField,
+  type ContextResponse,
+  type CreateDraftQuoteInput,
+  type CreateDraftQuoteResponse,
+  type DashboardKpis,
+  type ListQuotesFilters,
+  type Piece,
+  type PieceList,
+  type QuoteHeader,
+  type TimelineStep,
+} from "./types";
 
 function validateInput(input: CreateDraftQuoteInput): void {
   if (!VALIDATION.PLAN_MIME.includes(input.planFile.type as "application/pdf")) {
@@ -74,18 +55,11 @@ function validateInput(input: CreateDraftQuoteInput): void {
   }
 }
 
-/**
- * Crea un draft quote a partir de un PDF + fotos + brief.
- *
- * Mock: simula latencia 2-5s. Si llega `signal.aborted`, rechaza con
- * `AbortError` para que el UI pueda volver al estado B (form cargado).
- */
 export async function createDraftQuote(
   input: CreateDraftQuoteInput,
   options?: { signal?: AbortSignal },
 ): Promise<CreateDraftQuoteResponse> {
   validateInput(input);
-
   const latency = 2000 + Math.random() * 3000;
   await new Promise<void>((resolve, reject) => {
     if (options?.signal?.aborted) {
@@ -98,61 +72,13 @@ export async function createDraftQuote(
       reject(new DOMException("Aborted", "AbortError"));
     });
   });
-
-  return {
-    id: CANONICAL_QUOTE.id,
-    status: "draft",
-    createdAt: new Date().toISOString(),
-  };
+  return { id: CANONICAL_QUOTE.id, status: "draft", createdAt: new Date().toISOString() };
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   Sprint 2 paso-2-contexto · mock client de contexto + chat scoped
-   ════════════════════════════════════════════════════════════════════════
-   Endpoints `PATCH /api/v1/quotes/{id}/context` y `POST /api/v1/quotes/{id}/chat`
-   marcados como missing/parcial en docs/handoff-context/missing-endpoints.md.
-   El mock cubre la brecha temporal hasta sprint-3/api-integration. */
+/* ─── Contexto ───────────────────────────────────────────────────── */
 
-/** Origen del valor de cada campo del contexto (Master §10 data model). */
-export type ContextOrigin =
-  | "BRIEF" // extraído del brief original (PDF + textarea)
-  | "INFERIDO" // inferido por Valentina al cruzar catálogos / regla
-  | "DEFAULT" // valor por defecto (ej. zócalo 5cm)
-  | "EDITADO" // Marina lo tocó manualmente
-  | "FALTA"; // no extraído ni inferido — requiere input humano
-
-export interface ContextField<T = string | number | boolean | null> {
-  value: T;
-  origin: ContextOrigin;
-  edited?: boolean;
-}
-
-/** Los 11 campos del contexto (Master §6 mockup 01-A).
- *  Sprint 2.5 fix-up: campos string admiten `null` para representar
- *  `origin: 'FALTA'` (quotes sin canon definido en CONTEXT_BY_QUOTE_ID).
- */
-export interface ContextData {
-  cliente: string | null; // arquitecta / razón social
-  contacto: string | null; // teléfono / email
-  localidad: string | null; // obra · ciudad
-  plazo: string | null; // desde confirmación de medidas
-  tipologia: string | null; // cocina, baño, mesa
-  tipo_obra: "particular" | "edificio";
-  material: string | null; // piedra o engineered
-  pileta: string | null; // tipo + origen
-  zocalo: string | null; // contra pared · si/no + alto
-  regrueso: string | null; // borde frontal grueso
-  anafe: boolean; // define MO ANAFE en paso 3
-}
-
-export type ContextResponse = {
-  [K in keyof ContextData]: ContextField<ContextData[K]>;
-};
-
-/** In-memory store para que updates persistan dentro de la sesión del browser. */
 const _contextStore = new Map<string, ContextResponse>();
 
-/** Reset helper (útil para tests / reset entre quotes en dev). */
 export function _resetContextStore() {
   _contextStore.clear();
 }
@@ -171,14 +97,6 @@ async function delay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/**
- * GET context para un quote. Mock indexa por quoteId via CONTEXT_BY_QUOTE_ID
- * (PRES-2026-018 → Cueto-Heredia, PRES-2026-017 → Pereyra) con fallback
- * a CANONICAL_CONTEXT_GENERIC para quotes del dataset sin canon definido.
- *
- * Fix BLOCKER del Visual Check del PR #460 — antes devolvía siempre
- * CANONICAL_CONTEXT (Cueto-Heredia) sin importar el quoteId.
- */
 export async function getContextForQuote(
   quoteId: string,
   options?: { signal?: AbortSignal },
@@ -186,18 +104,14 @@ export async function getContextForQuote(
   await delay(150 + Math.random() * 200, options?.signal);
   const existing = _contextStore.get(quoteId);
   if (existing) return existing;
-  // Lazy import para evitar circular en build (canonicalQuote re-importa types).
-  const { CONTEXT_BY_QUOTE_ID, CANONICAL_CONTEXT_GENERIC } = await import("./mocks/canonicalQuote");
+  const { CONTEXT_BY_QUOTE_ID, CANONICAL_CONTEXT_GENERIC } =
+    await import("../mocks/canonicalQuote");
   const base = CONTEXT_BY_QUOTE_ID[quoteId] ?? CANONICAL_CONTEXT_GENERIC;
   const seeded = JSON.parse(JSON.stringify(base)) as ContextResponse;
   _contextStore.set(quoteId, seeded);
   return seeded;
 }
 
-/**
- * PATCH parcial del contexto. Marca cada campo recibido como
- * `origin: 'EDITADO'` + `edited: true` (regla Master §4 #3).
- */
 export async function updateContextForQuote(
   quoteId: string,
   partial: Partial<ContextData>,
@@ -205,36 +119,19 @@ export async function updateContextForQuote(
 ): Promise<ContextResponse> {
   await delay(120 + Math.random() * 180, options?.signal);
   const current = await getContextForQuote(quoteId);
-  // Cast a Record para permitir asignación dinámica por key — la mapped
-  // type ContextResponse rechaza writes heterogéneos sin narrowing.
   const next = { ...current } as Record<keyof ContextData, ContextField>;
   for (const k of Object.keys(partial) as (keyof ContextData)[]) {
     const value = partial[k];
     if (value === undefined) continue;
-    next[k] = {
-      value: value as string | number | boolean | null,
-      origin: "EDITADO",
-      edited: true,
-    };
+    next[k] = { value: value as string | number | boolean | null, origin: "EDITADO", edited: true };
   }
   const result = next as ContextResponse;
   _contextStore.set(quoteId, result);
   return result;
 }
 
-/* ─── Chat scoped streaming (mock SSE via ReadableStream) ─────────── */
+/* ─── Chat scoped (mock SSE via ReadableStream) ──────────────────── */
 
-export type ChatScope = "contexto" | "despiece" | "calculo" | "pdf";
-
-export interface ChatStreamChunk {
-  type: "text" | "done" | "error";
-  content?: string;
-  message?: string;
-}
-
-/** Frases canónicas rioplatenses para mock — varían según scope.
- *  `targetPieceId` (opcional) enfoca la respuesta del scope `despiece`
- *  en una pieza puntual (mockup 06 · chat sobre R2 = bacha). */
 function pickResponse(scope: ChatScope, message: string, targetPieceId?: string): string {
   const lower = message.toLowerCase();
   if (scope === "despiece") {
@@ -269,10 +166,49 @@ function pickResponse(scope: ChatScope, message: string, targetPieceId?: string)
   return "Te puedo ayudar con eso. Decime qué campo querés revisar y te explico de dónde lo saqué.";
 }
 
-/**
- * Mock SSE del chat scoped — emite chunks de texto cada 50-100ms para
- * simular streaming token-por-token. Soporta abort via signal.
- */
+/** Card events plausibles según keywords del mensaje (matchean shapes reales). */
+function mockCardEvents(scope: ChatScope, message: string): ChatStreamChunk[] {
+  const lower = message.toLowerCase();
+  const events: ChatStreamChunk[] = [];
+  if (lower.includes("plano") || lower.includes("leé") || lower.includes("medidas")) {
+    events.push({ type: "action", content: "📐 Leyendo medidas del plano…" });
+    events.push({
+      type: "dual_read_result",
+      content: JSON.stringify({
+        sectores: [
+          { id: "S1", tipo: "cocina", tramos: [], m2_total: { valor: 6.5, status: "ok" } },
+        ],
+        requires_human_review: false,
+        source: "DUAL",
+        view_type: "planta",
+      }),
+    });
+  }
+  if (scope === "contexto" && (lower.includes("contexto") || lower.includes("analiz"))) {
+    events.push({
+      type: "context_analysis",
+      content: JSON.stringify({
+        data_known: ["cliente", "material"],
+        assumptions: ["pileta empotrada"],
+        tech_detections: [{ field: "anafe" }],
+        pending_questions: [],
+        sector_summary: "cocina U + isla",
+      }),
+    });
+  }
+  if (lower.includes("zona") || lower.includes("dónde") || lower.includes("donde")) {
+    events.push({
+      type: "zone_selector",
+      content: JSON.stringify({
+        image_url: "/files/mock/page_1.jpg",
+        page_num: 1,
+        instruction: "Dibujá un rectángulo sobre la zona a revisar.",
+      }),
+    });
+  }
+  return events;
+}
+
 export function streamChat(
   _quoteId: string,
   message: string,
@@ -280,11 +216,17 @@ export function streamChat(
   options?: { signal?: AbortSignal; targetPieceId?: string },
 ): ReadableStream<ChatStreamChunk> {
   const text = pickResponse(scope, message, options?.targetPieceId);
-  const tokens = text.split(/(\s+)/); // split conservando whitespace
+  const tokens = text.split(/(\s+)/);
+  const cards = mockCardEvents(scope, message);
 
   return new ReadableStream<ChatStreamChunk>({
     async start(controller) {
       try {
+        // Card events de tool-use ANTES del texto (igual que el backend real).
+        for (const card of cards) {
+          await delay(60 + Math.random() * 60, options?.signal);
+          controller.enqueue(card);
+        }
         for (const token of tokens) {
           await delay(50 + Math.random() * 50, options?.signal);
           controller.enqueue({ type: "text", content: token });
@@ -303,24 +245,7 @@ export function streamChat(
   });
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   Sprint 2.5 switch-to-main · mock dashboard
-   ════════════════════════════════════════════════════════════════════════
-   Endpoint `GET /api/v1/quotes` para listado del dashboard. Marcado como
-   missing en docs/handoff-context/missing-endpoints.md (P1 listing). El mock
-   sirve `DASHBOARD_QUOTES` con filtros por status + search. */
-
-import type { DashboardQuote, DashboardStatus, DashboardCounts } from "./mocks/dashboardDataset";
-import { DASHBOARD_QUOTES, DASHBOARD_COUNTS } from "./mocks/dashboardDataset";
-
-export interface ListQuotesFilters {
-  /** Si vacío o ausente, devuelve todos. */
-  statuses?: ReadonlyArray<DashboardStatus>;
-  /** Subcadena buscada en `client` (case-insensitive). */
-  search?: string;
-  /** Pre-filter aplicado por KPI cards del desktop. */
-  kpi?: "expire-soon" | "no-response";
-}
+/* ─── Dashboard ──────────────────────────────────────────────────── */
 
 function matchesFilters(quote: DashboardQuote, filters?: ListQuotesFilters): boolean {
   if (!filters) return true;
@@ -350,13 +275,6 @@ export async function listQuotes(
   return DASHBOARD_QUOTES.filter((q) => matchesFilters(q, filters));
 }
 
-export interface DashboardKpis {
-  expireSoon: number;
-  noResponse: number;
-  pendingAction: number;
-  counts: DashboardCounts;
-}
-
 export async function getDashboardKpis(options?: { signal?: AbortSignal }): Promise<DashboardKpis> {
   await delay(100 + Math.random() * 150, options?.signal);
   const expireSoonQuotes = DASHBOARD_QUOTES.filter(
@@ -377,25 +295,7 @@ export async function getDashboardKpis(options?: { signal?: AbortSignal }): Prom
   };
 }
 
-export type { DashboardQuote, DashboardStatus, DashboardCounts };
-
-/* ════════════════════════════════════════════════════════════════════════
-   Sprint 2.5 fix-up #2 · QuoteHeader metadata por quoteId
-   ════════════════════════════════════════════════════════════════════════
-   El Qhead + Topbar del chrome shell mostraban siempre datos de
-   CANONICAL_QUOTE (PRES-2026-018 · Cueto-Heredia) sin importar el
-   params.id de la URL. Fix arquitectónico: getQuoteMetadata deriva
-   de DASHBOARD_QUOTES (single source of truth del listado) + fallback
-   GENERIC para IDs no presentes en el dataset. */
-
-export interface QuoteHeader {
-  id: string;
-  client: string;
-  clientFull: string;
-  material: string;
-  m2: number;
-  status: "draft" | "sent" | "expired" | "lost";
-}
+/* ─── Quote header ───────────────────────────────────────────────── */
 
 const GENERIC_QUOTE_HEADER: Omit<QuoteHeader, "id"> = {
   client: "Cliente sin identificar",
@@ -424,108 +324,20 @@ export async function getQuoteMetadata(
   return { id: quoteId, ...GENERIC_QUOTE_HEADER };
 }
 
-/** Texto del banner Valentina del paso 2 — por quoteId. */
 export async function getValentinaBriefSummary(
   quoteId: string,
-  options?: { signal?: AbortSignal },
+  _options?: { signal?: AbortSignal },
 ): Promise<string> {
-  await delay(60 + Math.random() * 100, options?.signal);
+  await delay(60 + Math.random() * 100, _options?.signal);
   const { BRIEF_SUMMARY_BY_QUOTE_ID, BRIEF_SUMMARY_GENERIC } =
-    await import("./mocks/canonicalQuote");
+    await import("../mocks/canonicalQuote");
   return BRIEF_SUMMARY_BY_QUOTE_ID[quoteId] ?? BRIEF_SUMMARY_GENERIC;
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   Sprint 3 paso-3-despiece · mock client de piezas (despiece)
-   ════════════════════════════════════════════════════════════════════════
-   Espeja el tool backend `list_pieces` (api/.../quote_engine/calculator.py),
-   que recibe piezas con `largo`/`prof|alto` en METROS + `quantity` y devuelve
-   labels + m² determinísticos. Como el endpoint dedicado del paso 3 todavía
-   no existe (sprint-3/api-integration hace el switch a HTTP real), este mock
-   cubre la brecha sirviendo las cifras canon del despiece Cueto-Heredia
-   (mockup 04-despiece-A · Master §13).
+/* ─── Piezas / despiece ──────────────────────────────────────────── */
 
-   Discrepancias mockup ↔ contract documentadas (gana el mockup · Master §14):
-   - El mockup muestra cm ("Largo (cm)" 285); el contract usa metros (largo
-     2.85). El tipo `Piece` usa `width_mm`/`depth_mm` (mm) como unidad canónica
-     interna → la UI divide /10 para mostrar cm. m² = width_mm·depth_mm / 1e6.
-   - El mockup tiene columna `Cant.` y labels descriptivos + símbolos del plano
-     (.det-sym) que NO están en el interface base del prompt. Se extienden
-     `Piece` con `quantity`, `label`, `sublabel`, `detected_symbols` (el backend
-     ya maneja `quantity` y `description`). */
-
-/** Símbolo detectado en el plano y su traducción a SKU/operación.
- *  Mockup 04-despiece: INGLETE→CORTE45, DESAGUE→AGUJEROAPOYO, 2 TOMAS→TOMAS. */
-export interface DetectedSymbol {
-  src: string;
-  out: string;
-}
-
-export type PieceType = "encimera" | "frente" | "zocalo" | "alzada" | "isla" | (string & {});
-
-export interface PieceOptions {
-  pileta?: { tipo: "empotrada" | "sobre-mesada" | null; sku?: string };
-  anafe?: boolean;
-  tomas?: number;
-  alzada?: boolean;
-  regrueso_mm?: number;
-}
-
-export interface Piece {
-  id: string; // "R1", "R2", ...
-  type: PieceType;
-  /** Label descriptivo del mockup (ej. "Mesada perimetral · brazo izq"). */
-  label: string;
-  /** Sub-texto bajo el label (ej. "contra pared norte"). */
-  sublabel?: string;
-  width_mm: number; // columna "Largo" del mockup (cm × 10)
-  depth_mm: number; // columna "Ancho" del mockup (cm × 10)
-  quantity: number; // columna "Cant." del mockup
-  options: PieceOptions;
-  /** Símbolos del plano (.det-sym) — sólo presentes en piezas origin=IA. */
-  detected_symbols?: DetectedSymbol[];
-  origin: "IA" | "EDITADO" | "AGREGADO_MANUAL";
-  confidence?: number; // 0..1, sólo si origin=IA
-  extracted_from?: string; // referencia al plano (ej. "plan_p1_z2")
-  edited?: boolean; // true si Marina lo tocó
-}
-
-export interface TimelineStep {
-  step: 1 | 2 | 3 | 4;
-  label: string;
-  state: "pending" | "running" | "done" | "failed";
-  /** Texto de salida de la pasada (.out del mockup). */
-  detail?: string;
-  started_at?: string;
-  completed_at?: string;
-}
-
-export interface PieceList {
-  pieces: Piece[];
-  status: "pending" | "inferring" | "done" | "failed";
-  timeline: TimelineStep[];
-  warnings: string[];
-}
-
-/** m² unitario (half-up a 2 decimales, igual que calculator.py). */
-export function pieceM2Unit(piece: Pick<Piece, "width_mm" | "depth_mm">): number {
-  return Math.round(((piece.width_mm * piece.depth_mm) / 1_000_000) * 100) / 100;
-}
-
-/** m² total = m² unitario × cantidad (half-up a 2 decimales). */
-export function pieceM2Total(piece: Pick<Piece, "width_mm" | "depth_mm" | "quantity">): number {
-  return Math.round(pieceM2Unit(piece) * piece.quantity * 100) / 100;
-}
-
-/** Suma de m² total de un set de piezas. */
-export function piecesTotalM2(pieces: Piece[]): number {
-  return Math.round(pieces.reduce((sum, p) => sum + pieceM2Total(p), 0) * 100) / 100;
-}
-
-/** In-memory store para que edits/add/delete persistan en la sesión del browser. */
 const _piecesStore = new Map<string, PieceList>();
 
-/** Reset helper (tests / reset entre quotes en dev). */
 export function _resetPiecesStore() {
   _piecesStore.clear();
 }
@@ -534,9 +346,6 @@ function deepClonePieces(pieces: Piece[]): Piece[] {
   return JSON.parse(JSON.stringify(pieces)) as Piece[];
 }
 
-/** Clona la lista devuelta para que el caller (hook) NUNCA comparta refs con
- *  `_piecesStore` — si las compartiera, una mutación del store (push/replace)
- *  se duplicaría con el append optimista del hook. */
 function clonePieceList(list: PieceList): PieceList {
   return JSON.parse(JSON.stringify(list)) as PieceList;
 }
@@ -565,7 +374,7 @@ function buildFailedTimeline(): TimelineStep[] {
 }
 
 async function seedPieceList(quoteId: string): Promise<PieceList> {
-  const { PIECES_BY_QUOTE_ID, TIMELINE_BY_QUOTE_ID } = await import("./mocks/canonicalQuote");
+  const { PIECES_BY_QUOTE_ID, TIMELINE_BY_QUOTE_ID } = await import("../mocks/canonicalQuote");
   const canon = PIECES_BY_QUOTE_ID[quoteId];
   if (canon && canon.length > 0) {
     const pieces = deepClonePieces(canon);
@@ -577,7 +386,6 @@ async function seedPieceList(quoteId: string): Promise<PieceList> {
       warnings: [],
     };
   }
-  // Sin canon definido → Valentina no pudo inferir (empty state · mockup 16).
   return {
     pieces: [],
     status: "failed",
@@ -586,14 +394,6 @@ async function seedPieceList(quoteId: string): Promise<PieceList> {
   };
 }
 
-/**
- * GET piezas del despiece para un quote. Indexa por quoteId via
- * PIECES_BY_QUOTE_ID (PRES-2026-018 → Cueto-Heredia 5 piezas, PRES-2026-017 →
- * Pereyra) con fallback a empty (`status: 'failed'`) para quotes sin canon.
- *
- * Lección Sprint 2.5 (fix-up #2 del PR #460): TODO lookup indexa por quoteId.
- * NUNCA devolver siempre las piezas de PRES-018.
- */
 export async function listPiecesForQuote(
   quoteId: string,
   options?: { signal?: AbortSignal },
@@ -614,10 +414,6 @@ async function ensureList(quoteId: string): Promise<PieceList> {
   return seeded;
 }
 
-/**
- * PATCH parcial de una pieza. Marca `edited: true` y, si era propuesta de la
- * IA, `origin: 'EDITADO'` (regla Master §4 #1 — la edición humana no se pisa).
- */
 export async function updatePieceForQuote(
   quoteId: string,
   pieceId: string,
@@ -644,7 +440,6 @@ export async function updatePieceForQuote(
   return { ...updated };
 }
 
-/** Próximo id "R{n}" libre dentro del set. */
 function nextPieceId(pieces: Piece[]): string {
   let max = 0;
   for (const p of pieces) {
@@ -654,7 +449,6 @@ function nextPieceId(pieces: Piece[]): string {
   return `R${max + 1}`;
 }
 
-/** Agrega una pieza manual (origin=AGREGADO_MANUAL, sin confidence/IA). */
 export async function addPieceForQuote(
   quoteId: string,
   piece: Omit<Piece, "id" | "origin" | "confidence" | "extracted_from">,
@@ -673,7 +467,6 @@ export async function addPieceForQuote(
   return { ...created };
 }
 
-/** Elimina una pieza del set. */
 export async function deletePieceForQuote(
   quoteId: string,
   pieceId: string,
@@ -685,12 +478,6 @@ export async function deletePieceForQuote(
   _piecesStore.set(quoteId, list);
 }
 
-/**
- * Re-corre la inferencia de Valentina.
- * - `mode: 'all'` (default) → descarta TODO y re-siembra desde el canon.
- * - `mode: 'keep-edits'` → re-siembra IA pero preserva las piezas editadas /
- *   manuales por id (Master §10 #10 — las ediciones no se pisan al re-generar).
- */
 export async function regenerateDespiece(
   quoteId: string,
   options?: { signal?: AbortSignal; mode?: "all" | "keep-edits" },
