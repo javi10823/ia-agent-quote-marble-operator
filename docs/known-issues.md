@@ -109,6 +109,42 @@ Detectado en audit independiente PR #457 NICE-TO-HAVE 5. Inline `style={{...}}` 
 
 ---
 
+### sprint-3/api-integration (PR #464) · ARCHITECTURE · 6+1 funciones siguen en mock (B3 incremental)
+
+**Detectado:** FASE 1 PR #463 + confirmado en FASE 1 PR #464, 2026-05-14.
+
+**Descripción:** el backend es agent/chat-centric, no REST-CRUD. Solo 3 funciones mapean limpio a endpoints REST y se wirearon contra real: `streamChat` (`POST /api/quotes/{id}/chat`), `listQuotes` (`GET /api/quotes`), `getQuoteMetadata` (`GET /api/quotes/{id}`). Las siguientes **NO tienen endpoint REST equivalente** y quedan en mock con el feature flag activo:
+
+- `getContextForQuote` / `updateContextForQuote` — el contexto vive en `quote_breakdown` + el SSE `context_analysis`, no hay GET/PATCH dedicado.
+- `listPiecesForQuote` / `updatePieceForQuote` / `addPieceForQuote` / `deletePieceForQuote` — piezas embebidas en `quote_breakdown.dual_read_result`, side-effect del agent. (Editables vía `PATCH /api/quotes/{id}` con `pieces[]`, pero sin GET/POST/DELETE dedicados.)
+- `regenerateDespiece` — `POST /api/quotes/{id}/regenerate` existe pero regenera **PDF/Excel**, no piezas.
+- `getDashboardKpis` — no existe (los KPIs dependen de m²/actividad que el listado real no expone).
+- `getValentinaBriefSummary` — no existe.
+
+**Plan Sprint 4/5:** A) refactor frontend a chat-centric (derivar context+pieces del SSE + `quote_breakdown`); B) backend agrega endpoints REST (viola "no tocar backend"); C) híbrido.
+
+---
+
+### sprint-3/api-integration (PR #464) · MAJOR · createDraftQuote queda en mock SIN hide — paso-1 rompe en modo real
+
+**Detectado:** FASE 1 PR #464, 2026-05-14.
+
+**Descripción:** el real `POST /api/quotes` crea un **draft vacío** (`{id}` only, sin brief/archivos) — el procesamiento del brief ES el chat stream (multipart), no la creación. El mock `createDraftQuote({planFile, photos, briefText})` no mapea. Queda en mock. **Consecuencia con flag real activo:** el paso-1 (`/quotes/new` → BriefView) crea quotes mock cuyo `id` (PRES-2026-018) NO existe en el `listQuotes` real → navegar a `/quotes/PRES-2026-018/contexto` mostrará un 404 o quote distinto. Javi aceptó romper parcial (sistema no se usa todavía).
+
+**Plan Sprint 4:** `sprint-4/paso-1-real` — rebuild BriefView para el flow real 2-fases (`POST /quotes` shell + `POST /chat` multipart con `dual_read_result`).
+
+---
+
+### sprint-3/api-integration (PR #464) · MINOR · Schema gaps degradados con em dash
+
+**Detectado:** FASE 1 PR #464, 2026-05-14.
+
+**Descripción:** el listado/detalle real no expone `m2`, `lastActivityDays`, `daysToExpire`. El adapter en `real.ts` los degrada a `"—"` (em dash, no 0) — `toLocaleString` sobre un string devuelve el string, así que la tabla muestra "— m²" sin romper. `clientFull`←`client_name`, `currency/amount`← `total_usd>0 ? USD : ARS`. `getQuoteMetadata` intenta derivar `m2` de `quote_breakdown.dual_read_result.sectores[].m2_total`, fallback "—".
+
+**Plan Sprint 4:** `sprint-4/derive-fields` (mejorar adapters) + `sprint-4/dashboard-kpis` (calcular KPIs client-side derivando del listado real).
+
+---
+
 ## Decisiones de arquitectura
 
 ### sprint-3/auth · auth gate via `NEXT_PUBLIC_REQUIRE_AUTH` (no `NEXT_PUBLIC_API_URL`)
