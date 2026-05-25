@@ -31,15 +31,14 @@ export default defineConfig({
     },
   ],
   webServer: {
-    // Reutiliza el dev server del legacy (mismo Next.js — el routing v2
-    // convive). En CI no hay backend real, NEXT_PUBLIC_API_URL apunta
-    // a placeholder para que `next.config.mjs` no rompa.
+    // Sprint 3 api-integration: NO seteamos NEXT_PUBLIC_API_URL → modo MOCK
+    // por default. Antes apuntaba a localhost:8000 (dummy del Sprint 2); con
+    // el feature flag de `lib/api/index.ts` eso activaría el client real y
+    // los 50 E2E (determinísticos contra mocks) romperían. Para correr E2E
+    // contra el backend real: exportar NEXT_PUBLIC_API_URL manualmente.
     command: "npm run dev",
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
-    env: {
-      NEXT_PUBLIC_API_URL: "http://localhost:8000",
-    },
   },
 });
