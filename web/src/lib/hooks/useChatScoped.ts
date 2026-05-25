@@ -13,8 +13,16 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { streamChat, type ChatScope } from "../api";
+import { streamChat, parseSSEContent, type ChatScope } from "../api";
 import type { ChatMessage, ChatPanelState } from "../types";
+
+/** Card events del backend real (context_analysis / dual_read_result / zone_selector),
+ *  con el `content` ya parseado de su JSON string. Estado preparado para que el
+ *  paso 2/3 lo consuma; la UI de cada card llega en sub-PRs siguientes. */
+export interface ChatCardEvent {
+  type: "context_analysis" | "dual_read_result" | "zone_selector";
+  payload: unknown;
+}
 
 function makeId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -32,6 +40,9 @@ function makeId(): string {
 export function useChatScoped(quoteId: string, scope: ChatScope, targetPieceId?: string) {
   const [panelState, setPanelState] = useState<ChatPanelState>("closed");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // FASE 3.4: status transitorio (`action`) + último card event parseado.
+  const [lastAction, setLastAction] = useState<string | null>(null);
+  const [lastCard, setLastCard] = useState<ChatCardEvent | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const open = useCallback(() => setPanelState("open"), []);
@@ -40,6 +51,8 @@ export function useChatScoped(quoteId: string, scope: ChatScope, targetPieceId?:
     abortRef.current?.abort();
     setPanelState("closed");
     setMessages([]); // borra al cerrar (Master §10 #1)
+    setLastAction(null);
+    setLastCard(null);
   }, []);
 
   const send = useCallback(
@@ -62,6 +75,7 @@ export function useChatScoped(quoteId: string, scope: ChatScope, targetPieceId?:
       };
       setMessages((prev) => [...prev, userMsg, valentinaMsg]);
       setPanelState("streaming");
+      setLastAction(null);
       abortRef.current?.abort();
       const ctrl = new AbortController();
       abortRef.current = ctrl;
@@ -79,6 +93,21 @@ export function useChatScoped(quoteId: string, scope: ChatScope, targetPieceId?:
             setMessages((prev) =>
               prev.map((m) => (m.id === valentinaId ? { ...m, content: m.content + chunk } : m)),
             );
+          } else if (value.type === "action") {
+            // Status transitorio del tool-use ("📐 Leyendo medidas…").
+            setLastAction(value.content ?? null);
+          } else if (
+            value.type === "context_analysis" ||
+            value.type === "dual_read_result" ||
+            value.type === "zone_selector"
+          ) {
+            // Card event: payload viene como JSON string en content → parse.
+            // El state queda listo; el refetch de contexto/piezas y la UI de
+            // zone_selector llegan en sub-PRs (Sprint 4). Por ahora se expone.
+            setLastCard({ type: value.type, payload: parseSSEContent(value) });
+            if (value.type === "zone_selector") {
+              console.warn("[useChatScoped] zone_selector recibido — UI pendiente (Sprint 4)");
+            }
           } else if (value.type === "done") {
             setMessages((prev) =>
               prev.map((m) => (m.id === valentinaId ? { ...m, partial: false } : m)),
@@ -99,5 +128,5 @@ export function useChatScoped(quoteId: string, scope: ChatScope, targetPieceId?:
     [quoteId, scope, targetPieceId],
   );
 
-  return { panelState, messages, open, close, send };
+  return { panelState, messages, lastAction, lastCard, open, close, send };
 }
