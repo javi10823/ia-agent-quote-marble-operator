@@ -146,32 +146,69 @@ function deriveM2(detail: RealQuoteDetail): number {
   return "—" as unknown as number;
 }
 
+/** Placeholder con em dash para SSR sin cookie (ver bloque de doc arriba). */
+function ssrFallbackHeader(quoteId: string): QuoteHeader {
+  return {
+    id: quoteId,
+    client: "—",
+    clientFull: "—",
+    material: "—",
+    m2: "—" as unknown as number,
+    status: "draft",
+  };
+}
+
+/**
+ * GET /api/quotes/{id} · resiliente para SSR.
+ *
+ * `/quotes/[id]/layout.tsx` es un async Server Component que hace
+ * `await getQuoteMetadata`. En SSR (Node) el fetch NO lleva la cookie
+ * httpOnly del browser (auth client-held · PR #463 Opción 1) → 401. Si
+ * tiráramos, el Server Component crashea con "Application error" en el
+ * 100% de las quotes reales (bug detectado por smoke CFC).
+ *
+ * Fix: en SSR (`typeof window === "undefined"`) devolvemos un header
+ * placeholder ("—") en vez de throw — el chrome shell rendea, la
+ * navegación funciona, y el contenido client-side (contexto/despiece)
+ * trae sus datos. Client-side los errores SÍ se propagan (el chrome ya
+ * está montado y el browser tiene cookie). Sprint 4 (sprint-4/ssr-auth)
+ * trae la metadata real en SSR. Ver docs/known-issues.md.
+ */
 export async function getQuoteMetadata(
   quoteId: string,
   options?: { signal?: AbortSignal },
 ): Promise<QuoteHeader> {
-  const response = await apiFetch(`/api/quotes/${encodeURIComponent(quoteId)}`, {
-    signal: options?.signal,
-  });
-  if (response.status === 404) {
-    throw new ApiError("QUOTE_NOT_FOUND", `Quote ${quoteId} no encontrado`, 404);
+  try {
+    const response = await apiFetch(`/api/quotes/${encodeURIComponent(quoteId)}`, {
+      signal: options?.signal,
+    });
+    if (response.status === 404) {
+      throw new ApiError("QUOTE_NOT_FOUND", `Quote ${quoteId} no encontrado`, 404);
+    }
+    if (!response.ok) {
+      throw new ApiError(
+        "GET_QUOTE_FAILED",
+        `GET /api/quotes/${quoteId} ${response.status}`,
+        response.status,
+      );
+    }
+    const detail = (await response.json()) as RealQuoteDetail;
+    return {
+      id: detail.id,
+      client: detail.client_name || "Cliente sin identificar",
+      clientFull: detail.client_name || detail.project || "—",
+      material: detail.material || "—",
+      m2: deriveM2(detail),
+      status: adaptStatus(detail.status) as QuoteHeader["status"],
+    };
+  } catch (error) {
+    // SSR sin cookie → degradación graceful (no crashea el Server Component).
+    if (typeof window === "undefined") {
+      return ssrFallbackHeader(quoteId);
+    }
+    // Client-side: error real, propagar (el chrome ya montado lo maneja).
+    throw error;
   }
-  if (!response.ok) {
-    throw new ApiError(
-      "GET_QUOTE_FAILED",
-      `GET /api/quotes/${quoteId} ${response.status}`,
-      response.status,
-    );
-  }
-  const detail = (await response.json()) as RealQuoteDetail;
-  return {
-    id: detail.id,
-    client: detail.client_name || "Cliente sin identificar",
-    clientFull: detail.client_name || detail.project || "—",
-    material: detail.material || "—",
-    m2: deriveM2(detail),
-    status: adaptStatus(detail.status) as QuoteHeader["status"],
-  };
 }
 
 /* ─── streamChat ─────────────────────────────────────────────────────

@@ -147,6 +147,20 @@ Detectado en audit independiente PR #457 NICE-TO-HAVE 5. Inline `style={{...}}` 
 
 ## Decisiones de arquitectura
 
+### sprint-3/api-integration · Auth client-held vs SSR fetch en Server Components
+
+**Detectado:** smoke real CFC 2026-05-14 — `/quotes/{id}/contexto` crasheaba en el 100% de las quotes reales.
+
+**Causa raíz:** tensión entre la auth del PR #463 (Opción 1 · client-side gate: localStorage + cookie httpOnly del browser) y los **async Server Components** que fetchean recursos protegidos (`/quotes/[id]/layout.tsx` hace `await getQuoteMetadata()`). La cookie httpOnly solo existe en el browser; el Server Component corre en Node SSR **sin** cookie jar → el fetch real devuelve 401 → `throw` → "Application error" con digest por-request. (El dashboard `/` NO crasheaba porque `DashboardView` es client component → su fetch corre en el browser con la cookie.)
+
+**Fix aplicado (PR #464 fix-up #1):** `getQuoteMetadata` real con try/catch. En SSR (`typeof window === "undefined"`) devuelve un header placeholder ("—") en vez de throw → el chrome rendea, la navegación funciona, el contenido client-side trae datos reales. Client-side los errores se propagan normalmente.
+
+**Plan Sprint 4 (`sprint-4/ssr-auth`):** traer la metadata real en SSR. Dos opciones:
+- A) Client-ify `/quotes/[id]/layout.tsx` (useEffect → browser tiene cookie). Simple, requiere loading skeleton.
+- B) Route handler proxy server-side que use `next/headers cookies()` para forwardear la cookie a Railway. Preserva SSR, pero acopla la capa real a API server-only.
+
+**Regla operativa (Sprint 3+):** cualquier función de `real.ts` que pueda llamarse desde un Server Component debe tener **fallback gracioso para SSR** (return placeholder, no throw). Verificar en code review. El audit de código y los E2E (mock) NO atrapan esto — solo el smoke real.
+
 ### sprint-3/auth · auth gate via `NEXT_PUBLIC_REQUIRE_AUTH` (no `NEXT_PUBLIC_API_URL`)
 
 **Fecha:** 2026-05-13.
