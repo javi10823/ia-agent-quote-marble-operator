@@ -62,9 +62,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
           background: "var(--bg)",
         }}
       >
-        <div
-          style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--ink-mute)" }}
-        >
+        <div style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--ink-mute)" }}>
           Verificando sesión…
         </div>
       </div>

@@ -84,13 +84,20 @@ function LoginForm() {
         </header>
 
         {reason === "expired" && (
-          <div className="login-reveal login-d1 login-banner" role="status" data-testid="login-expired">
+          <div
+            className="login-reveal login-d1 login-banner"
+            role="status"
+            data-testid="login-expired"
+          >
             Tu sesión expiró. Iniciá sesión de nuevo.
           </div>
         )}
 
         <form onSubmit={handleSubmit} style={{ marginTop: 32 }}>
-          <div className="login-reveal login-d1" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div
+            className="login-reveal login-d1"
+            style={{ display: "flex", flexDirection: "column", gap: 14 }}
+          >
             <label className="login-field">
               <span className="login-label">Usuario</span>
               <input
