@@ -33,9 +33,15 @@ export const addPieceForQuote = mocks.addPieceForQuote;
 export const deletePieceForQuote = mocks.deletePieceForQuote;
 export const regenerateDespiece = mocks.regenerateDespiece;
 
+/* ─── Cálculo (paso 4 · siempre mock · Sprint 4 wire chat-driven) ── */
+export const getCalculationForQuote = mocks.getCalculationForQuote;
+export const triggerCalculation = mocks.triggerCalculation;
+export const applyAutoFix = mocks.applyAutoFix;
+
 /* ─── Helpers de test (reset de stores in-memory del mock) ───────── */
 export const _resetContextStore = mocks._resetContextStore;
 export const _resetPiecesStore = mocks._resetPiecesStore;
+export const _resetCalcStore = mocks._resetCalcStore;
 
 /* ─── Tipos + helpers puros + constantes ─────────────────────────── */
 export * from "./types";
