@@ -341,3 +341,260 @@ export const DESPIECE_LOADING_TIMELINE: TimelineStep[] = [
   { step: 3, label: "Medidas", state: "done" },
   { step: 4, label: "Verificación", state: "running", detail: "cruzando con catálogo…" },
 ];
+
+/* ════════════════════════════════════════════════════════════════════════
+   Sprint 3 paso-4-calculo · CANONICAL_CALCULATION_*
+   ════════════════════════════════════════════════════════════════════════
+   Cifras LITERALES del mockup 07-paso4-A-v4.html (Master §13 + decisión D
+   PR #461: las cifras canon son design references; mocks usan estos
+   valores fijos del mockup, NO los del motor real). */
+
+import type { CalculationResult, MaterialRow, LaborRowData } from "../api/types";
+
+/** PRES-2026-018 · Cueto-Heredia · Silestone Blanco Norte (mockup 07-paso4-A-v4). */
+const MATERIAL_018: MaterialRow[] = [
+  {
+    label: "Silestone Blanco Norte 20mm",
+    sub: "6,50 m² reales del trabajo · USD 249 c/IVA · piezas en paso 3",
+    qty: "6,50 m²",
+    unit: "USD 249",
+    total: "USD 1.619",
+    variant: "default",
+    audit: [
+      { kind: "SOURCE", text: "Brief (texto) + catalog/silestone.json sku SILESTONENORTE" },
+      { kind: "REGLA", text: "Material importado en USD; IVA ya incluido en lista" },
+      { kind: "CALC", text: "6,50 m² × USD 249 = USD 1.619" },
+    ],
+  },
+  {
+    label: "Descuento arquitecta",
+    sub: "Cueto-Heredia · architects.json · 5% sobre material importado",
+    qty: "−5%",
+    unit: "—",
+    total: "−USD 81",
+    variant: "discount",
+    audit: [
+      {
+        kind: "SOURCE",
+        text: "catalog/architects.json · firm Cueto-Heredia · discount imported 5%",
+      },
+      { kind: "REGLA", text: "Sólo aplica sobre material importado, nunca sobre MO ni flete" },
+      { kind: "CALC", text: "USD 1.619 × −5% = −USD 81" },
+    ],
+  },
+];
+
+const LABOR_018: LaborRowData[] = [
+  {
+    sku: "COLOCACION",
+    label: "Colocación",
+    sub: "6,50 m² · cuarzo 20mm usa SKU estándar (no DEKTON)",
+    qty: "6,50",
+    basePrice: "$49.698",
+    iva: "×1,21",
+    total: "$390.875",
+    audit: [
+      { kind: "SOURCE", text: "labor.json sku COLOCACION · $49.698 s/IVA / m²" },
+      { kind: "CALC", text: "6,50 m² × $49.698 × 1,21 = $390.875" },
+    ],
+  },
+  {
+    sku: "PEGADOPILETA",
+    label: "Pegado pileta empotrada",
+    sub: "1 unid · cliente trae la pileta",
+    qty: "1",
+    basePrice: "$53.840",
+    iva: "×1,21",
+    total: "$65.146",
+    audit: [
+      { kind: "SOURCE", text: "labor.json sku PEGADOPILETA" },
+      { kind: "CALC", text: "$53.840 × 1,21 = $65.146" },
+    ],
+  },
+  {
+    sku: "ANAFE",
+    label: "Anafe (corte y cargas)",
+    sub: "1 unid · detectado en plano (símbolo)",
+    qty: "1",
+    basePrice: "$35.617",
+    iva: "×1,21",
+    total: "$43.097",
+    audit: [
+      { kind: "SOURCE", text: "labor.json sku ANAFE" },
+      { kind: "CALC", text: "$35.617 × 1,21 = $43.097" },
+    ],
+  },
+  {
+    sku: "REGRUESO",
+    label: "Regrueso frontal",
+    sub: "4,98 ml · cuarzo 20mm usa REGRUESO (no FALDON+CORTE45)",
+    qty: "4,98 ml",
+    basePrice: "$13.810",
+    iva: "×1,21",
+    total: "$83.216",
+    audit: [
+      { kind: "SOURCE", text: "labor.json sku REGRUESO" },
+      {
+        kind: "REGLA",
+        text: "Para cuarzo 20mm cuenta REGRUESO; FALDON+CORTE45 sólo en otros espesores",
+      },
+      { kind: "CALC", text: "4,98 ml × $13.810 × 1,21 = $83.216" },
+    ],
+  },
+  {
+    sku: "TOMAS",
+    label: "Tomas (perforación)",
+    sub: "2 unid · auto: alzada + zócalo >10cm",
+    qty: "2",
+    basePrice: "$6.461",
+    iva: "×1,21",
+    total: "$15.636",
+    audit: [
+      { kind: "SOURCE", text: "labor.json sku TOMAS" },
+      {
+        kind: "REGLA",
+        text: "+1 por alzada (auto) · +1 por zócalo >10cm (auto, regla altura) = 2 unid",
+      },
+      { kind: "CALC", text: "$6.461 × 2 × 1,21 = $15.636" },
+    ],
+  },
+];
+
+export const CANONICAL_CALCULATION_018: CalculationResult = {
+  quoteId: "PRES-2026-018",
+  status: "ok",
+  bannerSummary:
+    "✓ Calculado · Silestone Blanco Norte 20mm · 6,50 m² · Total $660.890 ARS + USD 1.538",
+  bannerAdjustments: [
+    { text: "−5% descuento arquitecta Cueto-Heredia sobre material importado" },
+    { text: "+TOMAS automático: 1 por alzada + 1 por zócalo >10cm" },
+    { text: "REGRUESO en lugar de FALDON+CORTE45 (cuarzo 20mm)" },
+  ],
+  material: { rows: MATERIAL_018, subtotal: "USD 1.538" },
+  merma: {
+    status: "aplica",
+    chipLabel: "APLICA",
+    sub: "ceil(6,50 / 2,10) = 4 medias placas → 8,40 m² · desperdicio 1,90 m² ≥ 1 m² → aplica sobrante",
+    rows: [
+      {
+        label: "Sobrante facturado",
+        sub: "0,95 m² (mitad del desperdicio) · valor proporcional al m²",
+        qty: "0,95 m²",
+        unit: "USD 249",
+        total: "USD 237",
+        audit: [
+          {
+            kind: "REGLA",
+            text: "Sobrante = desperdicio/2 cuando desperdicio ≥ 1 m² (sintéticos)",
+          },
+          { kind: "CALC", text: "(8,40 − 6,50)/2 × USD 249 = USD 237" },
+        ],
+      },
+    ],
+    sobranteToggle: {
+      label: "Ofrecer sobrante al cliente como pieza adicional",
+      defaultChecked: false,
+    },
+    stockToggle: {
+      label: "Stock confirmado en taller (descuenta de stock.json)",
+      defaultChecked: true,
+    },
+  },
+  labor: { rows: LABOR_018, subtotal: "$597.970" },
+  piletas: {
+    chipLabel: "N/A — pileta empotrada (la trae el cliente)",
+    variant: "na",
+    sub: "MO de pegado ya contabilizada en sección 03 (PEGADOPILETA)",
+  },
+  flete: {
+    zona: "Rosario",
+    qty: "1 viaje",
+    basePrice: "$ 52.000",
+    total: "$ 62.920",
+    audit: [
+      { kind: "SOURCE", text: "delivery-zones.json zona Rosario · ENVIOROS $52.000 s/IVA" },
+      { kind: "REGLA", text: "Particular · 1 viaje (no edificio)" },
+      { kind: "CALC", text: "$52.000 × 1,21 = $62.920" },
+    ],
+  },
+  totals: {
+    ars: { value: "$660.890", meta: "MO + flete · IVA 21% incluido" },
+    usd: { value: "USD 1.538", meta: "6,50 m² × USD 249 − 5% arq." },
+  },
+  datosPdf: {
+    plazo: "3 semanas desde confirmación de medidas",
+    anticipoPct: "50",
+    saldo: "contra entrega · transferencia / efectivo",
+    envio: "Belgrano · CABA · coordinar día con Marina",
+    notas: "Cueto-Heredia · arquitecta · 5% importado aplicado",
+    vigenciaDias: "15",
+  },
+};
+
+/** PRES-2026-017 · Pereyra (mismo shape, datos distintos para verificar params.id). */
+export const CANONICAL_CALCULATION_017: CalculationResult = {
+  ...CANONICAL_CALCULATION_018,
+  quoteId: "PRES-2026-017",
+  bannerSummary:
+    "✓ Calculado · Silestone Blanco Norte 20mm · 6,50 m² · Total $660.890 ARS + USD 1.538",
+  bannerAdjustments: [
+    { text: "Sin descuento arquitecta (Pereyra es particular)" },
+    { text: "+TOMAS automático: 1 por alzada" },
+  ],
+  datosPdf: {
+    plazo: "4 semanas",
+    anticipoPct: "40",
+    saldo: "contra entrega",
+    envio: "Rosario · zona sur",
+    notas: "Familia Pereyra · particular",
+    vigenciaDias: "15",
+  },
+};
+
+/** Fallback gracioso para IDs desconocidos (lección Sprint 3 día 3: SIN crash). */
+export const CANONICAL_CALCULATION_GENERIC: CalculationResult = {
+  quoteId: "—",
+  status: "pending",
+  bannerSummary: "Cálculo pendiente · vení desde el paso 3 para generar el desglose",
+  bannerAdjustments: [],
+  material: { rows: [], subtotal: "—" },
+  merma: { status: "na", chipLabel: "—", sub: "sin datos" },
+  labor: { rows: [], subtotal: "—" },
+  piletas: { chipLabel: "—", variant: "na" },
+  flete: { zona: "—", qty: "—", basePrice: "—", total: "—" },
+  totals: {
+    ars: { value: "—", meta: "sin datos" },
+    usd: { value: "—", meta: "sin datos" },
+  },
+  datosPdf: { plazo: "—", anticipoPct: "—", saldo: "—", envio: "—", notas: "—", vigenciaDias: "—" },
+};
+
+/** Variante estado B · post-PATCH (cambio de material upstream → merma fantasma). */
+export const CANONICAL_CALCULATION_018_PATCH_ERROR: CalculationResult = {
+  ...CANONICAL_CALCULATION_018,
+  status: "error",
+  merma: {
+    status: "error",
+    chipLabel: "ERROR",
+    sub: "merma del cálculo anterior quedó huérfana tras cambio de material",
+    errorRow: {
+      label: "Merma Silestone (huérfana)",
+      detail: "0,95 m² × USD 249 = USD 237 · proviene del cálculo previo, no debería estar acá",
+      fixLabel: "✕ Eliminar merma",
+    },
+  },
+  totals: {
+    ars: { value: "$660.890", meta: "MO + flete" },
+    usd: { value: "USD 1.538", meta: "material importado" },
+    warnDetail: "+ merma fantasma USD 237 (eliminar antes de confirmar)",
+  },
+  patchError: {
+    traceId: "q-2026-0287",
+    msg: "Detecté una merma fantasma del cálculo anterior. Cambiaste el material y la línea de sobrante quedó huérfana. Puedo eliminarla con un click, o querés ver el diff con la versión 1 primero.",
+  },
+};
+
+export const CALCULATIONS_BY_QUOTE_ID: Record<string, CalculationResult> = {
+  "PRES-2026-018": CANONICAL_CALCULATION_018,
+  "PRES-2026-017": CANONICAL_CALCULATION_017,
+};
