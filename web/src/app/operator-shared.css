@@ -71,11 +71,18 @@ a { color: inherit; text-decoration: none; }
   display: grid;
   grid-template-columns: 240px 1fr;
   min-height: 100vh;
-  min-width: 1440px;
-  width: 1440px;
+  /* Sprint 3 paso-4 fix-up #2 · target real refinado: solo desktop hasta 14".
+     Antes: min-width 1440 + width 1440 (rompía notebooks 14" con overflow horizontal).
+     Ahora: min 1200 · max 1440 · width 100% para fluir entre ambos.
+     - ≥1440: cap a 1440 centrada (preserva audit CFC 1920px con margin c/lado).
+     - 1366 y 1200: fluye sin overflow.
+     - <1200: overflow horizontal esperado (target OUT de scope). */
+  min-width: 1200px;
+  max-width: 1440px;
+  width: 100%;
   margin: 0 auto;
 }
-body { min-width: 1440px; }
+body { min-width: 1200px; }
 
 /* ─── Sprint 1.5 · Layout fijo a viewport ───
    El .page se fija a la altura de viewport y NO scrollea como página entera.
@@ -340,7 +347,12 @@ body { min-width: 1440px; }
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
   background: var(--surface);
-  overflow: hidden;
+  /* Sprint 3 paso-4 fix-up #2 · scroll horizontal interno cuando el grid
+     de columnas excede el viewport (notebooks 14"). Antes: overflow:hidden
+     (contenido se cortaba). Ahora: overflow-x:auto, overflow-y:hidden
+     (scroll horizontal interno · página entera nunca scrollea horizontal). */
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 .etable .colh {
   display: grid;
@@ -582,16 +594,22 @@ body { min-width: 1440px; }
 
 /* ─── Mini chat panel (right side, 480px) ─── */
 .chat {
+  /* Sprint 3 paso-4 fix-up #2 · drawer overlay (no comprime main content).
+     Antes: sticky dentro de grid `1fr 480px` → estrangulaba el main 1200→720.
+     Ahora: fixed overlay sobre el contenido. Grid del container vuelve a `1fr`
+     siempre. Aplica a calculo Y despiece (ambos comparten esta clase). */
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
   display: flex; flex-direction: column;
   overflow: hidden;
-  align-self: stretch;
-  height: fit-content;
-  position: sticky;
+  position: fixed;
+  right: 24px;
   top: 24px;
-  max-height: calc(100vh - 100px);
+  bottom: 24px;
+  width: 480px;
+  z-index: 100;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
 }
 .chat .head {
   padding: 14px 16px;

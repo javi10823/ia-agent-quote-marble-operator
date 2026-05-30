@@ -79,7 +79,6 @@ export function CalculoView({ quoteId }: Props) {
   }
 
   const isPatchError = state === "error" && !!data.patchError;
-  const hasChat = chatOpen;
 
   return (
     <div
@@ -87,8 +86,10 @@ export function CalculoView({ quoteId }: Props) {
       data-state={isPatchError ? "B" : chatOpen ? "C" : "A"}
       data-chat-open={chatOpen}
       style={{
+        // Sprint 3 paso-4 fix-up #2 · grid SIEMPRE 1fr. El chat es overlay
+        // fixed (ver operator-shared.css §.chat) y NO ocupa columna en el grid.
         display: "grid",
-        gridTemplateColumns: hasChat ? "1fr 480px" : "1fr",
+        gridTemplateColumns: "1fr",
         gap: 24,
         minHeight: 0,
       }}
