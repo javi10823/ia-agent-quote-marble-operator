@@ -281,7 +281,12 @@ body { min-width: 1200px; }
 
 /* Section body layout */
 .body {
-  padding: 28px 24px 80px;
+  /* Sprint 3 paso-4 fix-up #3 · padding-bottom 80→120 (múltiplo de 8).
+     Antes: 80px daba sensación de ConfirmBar pegada al borde inferior
+     (último child sin elemento visible debajo). Aplica a paso-2/3/4 (todos
+     usan ConfirmBar en el mismo patrón). Sticky bar evaluada como decisión
+     arquitectónica futura (Sprint 4 si Marina lo pide en uso real). */
+  padding: 28px 24px 120px;
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 480px;
@@ -719,9 +724,19 @@ body { min-width: 1200px; }
 .chat .composer input::placeholder,
 .chat .composer textarea::placeholder { color: var(--ink-mute); }
 .chat .composer .send {
-  width: 28px; height: 28px; border-radius: 7px;
+  /* Sprint 3 paso-4 fix-up #3 · pill rectangular con padding lateral.
+     Antes: width 28px (icon button) · pero JSX renderea texto "Enviar" → corte.
+     Bug heredado desde Sprint 2, nunca detectado por audits funcionales.
+     Mantiene accent color y border-radius. */
+  min-width: 28px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 7px;
   background: var(--accent); color: #0f1318; border: none;
   display: grid; place-items: center; cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
 }
 .chat .composer .hint {
   font-family: var(--mono); font-size: 10.5px; color: var(--ink-mute);
