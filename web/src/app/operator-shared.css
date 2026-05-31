@@ -66,6 +66,14 @@ html, body {
 
 a { color: inherit; text-decoration: none; }
 
+/* ─── Sprint 3 paso-4 fix-up #5b · scrollbar invisible global ─────────────
+   Universal scope · scroll por wheel/keyboard/trackpad preservado.
+   Cubre html, body, .body chrome y cualquier container con overflow interno.
+   Iteración #5 (solo .body) fue insuficiente: scrollbars seguían apareciendo
+   en otros containers (probablemente html/body raíz o cards internos).  */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
 /* ─── Page chrome (sidebar + header reusados, NO redesign) ─── */
 .page {
   display: grid;
@@ -291,13 +299,7 @@ body { min-width: 1200px; }
   grid-template-columns: 1fr 480px;
   gap: 24px;
   min-height: 0;
-  /* Sprint 3 paso-4 fix-up #5 · scrollbar oculta cross-browser ·
-     scroll por wheel/keyboard/trackpad preservado. Aplica solo al
-     .body (único container scrolleable del chrome · Sprint 1.5). */
-  scrollbar-width: none;        /* Firefox */
-  -ms-overflow-style: none;     /* IE/Edge legacy */
 }
-.body::-webkit-scrollbar { display: none; }  /* Chrome/Safari/Edge */
 .body.no-chat { grid-template-columns: 1fr; }
 .body .col { min-width: 0; }
 
