@@ -495,3 +495,74 @@ export async function regenerateDespiece(
   _piecesStore.set(quoteId, fresh);
   return clonePieceList(fresh);
 }
+
+/* ─── Cálculo (paso 4) ───────────────────────────────────────────── */
+
+const _calcStore = new Map<string, import("./types").CalculationResult>();
+
+export function _resetCalcStore() {
+  _calcStore.clear();
+}
+
+/**
+ * GET calculation para un quote. Fallback gracioso desde el inicio
+ * (lección Sprint 3 día 3): IDs desconocidos (UUIDs del backend real,
+ * web-XXX, etc.) → `CANONICAL_CALCULATION_GENERIC` en lugar de undefined.
+ *
+ * Sprint 4 wire chat-driven: el backend produce `dual_read_result` +
+ * `context_analysis` durante el chat; el cálculo se deriva. Por ahora
+ * mock con cifras del mockup 07-paso4-A-v4.
+ */
+export async function getCalculationForQuote(
+  quoteId: string,
+  options?: { signal?: AbortSignal },
+): Promise<import("./types").CalculationResult> {
+  await delay(180 + Math.random() * 220, options?.signal);
+  const cached = _calcStore.get(quoteId);
+  if (cached) return cached;
+  const {
+    CALCULATIONS_BY_QUOTE_ID,
+    CANONICAL_CALCULATION_GENERIC,
+    CANONICAL_CALCULATION_018_PATCH_ERROR,
+  } = await import("../mocks/canonicalQuote");
+  // Trigger E2E del estado B (mockup 08 · validation error post-PATCH).
+  // En backend real lo dispara el server con un patch inconsistente; acá
+  // un sufijo `-ERROR` en el quoteId lo alcanza desde tests.
+  if (quoteId.endsWith("-ERROR")) {
+    const seeded = JSON.parse(
+      JSON.stringify(CANONICAL_CALCULATION_018_PATCH_ERROR),
+    ) as import("./types").CalculationResult;
+    seeded.quoteId = quoteId;
+    _calcStore.set(quoteId, seeded);
+    return seeded;
+  }
+  const base = CALCULATIONS_BY_QUOTE_ID[quoteId] ?? CANONICAL_CALCULATION_GENERIC;
+  const seeded = JSON.parse(JSON.stringify(base)) as import("./types").CalculationResult;
+  _calcStore.set(quoteId, seeded);
+  return seeded;
+}
+
+/** Simula re-cálculo (toolbar "↻ Re-calcular"). */
+export async function triggerCalculation(
+  quoteId: string,
+  options?: { signal?: AbortSignal },
+): Promise<import("./types").CalculationResult> {
+  await delay(800 + Math.random() * 400, options?.signal);
+  _calcStore.delete(quoteId);
+  return getCalculationForQuote(quoteId, options);
+}
+
+/** Auto-fix del estado B (botón "✕ Eliminar merma"). */
+export async function applyAutoFix(
+  quoteId: string,
+  options?: { signal?: AbortSignal },
+): Promise<import("./types").CalculationResult> {
+  await delay(300 + Math.random() * 200, options?.signal);
+  const { CANONICAL_CALCULATION_018 } = await import("../mocks/canonicalQuote");
+  const fresh = JSON.parse(
+    JSON.stringify(CANONICAL_CALCULATION_018),
+  ) as import("./types").CalculationResult;
+  fresh.quoteId = quoteId;
+  _calcStore.set(quoteId, fresh);
+  return fresh;
+}

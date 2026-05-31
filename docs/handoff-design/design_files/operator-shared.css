@@ -66,16 +66,29 @@ html, body {
 
 a { color: inherit; text-decoration: none; }
 
+/* ─── Sprint 3 paso-4 fix-up #5b · scrollbar invisible global ─────────────
+   Universal scope · scroll por wheel/keyboard/trackpad preservado.
+   Cubre html, body, .body chrome y cualquier container con overflow interno.
+   Iteración #5 (solo .body) fue insuficiente: scrollbars seguían apareciendo
+   en otros containers (probablemente html/body raíz o cards internos).  */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
 /* ─── Page chrome (sidebar + header reusados, NO redesign) ─── */
 .page {
   display: grid;
   grid-template-columns: 240px 1fr;
   min-height: 100vh;
-  min-width: 1440px;
-  width: 1440px;
+  /* Sprint 3 paso-4 fix-up #2/#5 · target desktop hasta 14" sin cap superior.
+     Iteración #2 puso max-width 1440 (preservaba audit CFC 1920 con margen),
+     pero Javi en uso real pidió full width. Iteración #5: quitamos el cap,
+     la app fluye a 100% del viewport en cualquier ≥1200. Trade-off conocido:
+     en ultra-wide (>1920) la grid se estira más, pero es lo que Javi quiere. */
+  min-width: 1200px;
+  width: 100%;
   margin: 0 auto;
 }
-body { min-width: 1440px; }
+body { min-width: 1200px; }
 
 /* ─── Sprint 1.5 · Layout fijo a viewport ───
    El .page se fija a la altura de viewport y NO scrollea como página entera.
@@ -274,7 +287,13 @@ body { min-width: 1440px; }
 
 /* Section body layout */
 .body {
-  padding: 28px 24px 80px;
+  /* Sprint 3 paso-4 fix-up #3/#4 · padding-bottom 80→160 (múltiplo de 8 · 8×20).
+     Iteración #3 a 120 fue insuficiente (Javi confirmó ConfirmBar todavía
+     pegada). Más margin-bottom propio del .confirm-bar (24px) abajo. Combo
+     total: bar tiene 24px propios + body tiene 160px → respiro generoso al
+     fondo de paso-2/3/4 cuando el scroll llega al end. Sticky bar evaluada
+     como decisión arquitectónica futura (Sprint 4 si Marina lo pide). */
+  padding: 28px 24px 160px;
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 480px;
@@ -340,7 +359,12 @@ body { min-width: 1440px; }
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
   background: var(--surface);
-  overflow: hidden;
+  /* Sprint 3 paso-4 fix-up #2 · scroll horizontal interno cuando el grid
+     de columnas excede el viewport (notebooks 14"). Antes: overflow:hidden
+     (contenido se cortaba). Ahora: overflow-x:auto, overflow-y:hidden
+     (scroll horizontal interno · página entera nunca scrollea horizontal). */
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 .etable .colh {
   display: grid;
@@ -493,8 +517,12 @@ body { min-width: 1440px; }
 
 /* Confirm bar */
 .confirm-bar {
+  /* Sprint 3 paso-4 fix-up #4 · margin-bottom propio (24px) además del
+     padding-bottom del .body. Garantiza respiro propio del bar al fondo
+     del scroll, independiente del .body padding. */
   display: flex; align-items: center; gap: 14px;
   margin-top: 18px;
+  margin-bottom: 24px;
   padding: 16px 18px;
   background: var(--surface);
   border: 1px solid var(--line-strong);
@@ -582,16 +610,22 @@ body { min-width: 1440px; }
 
 /* ─── Mini chat panel (right side, 480px) ─── */
 .chat {
+  /* Sprint 3 paso-4 fix-up #2 · drawer overlay (no comprime main content).
+     Antes: sticky dentro de grid `1fr 480px` → estrangulaba el main 1200→720.
+     Ahora: fixed overlay sobre el contenido. Grid del container vuelve a `1fr`
+     siempre. Aplica a calculo Y despiece (ambos comparten esta clase). */
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
   display: flex; flex-direction: column;
   overflow: hidden;
-  align-self: stretch;
-  height: fit-content;
-  position: sticky;
+  position: fixed;
+  right: 24px;
   top: 24px;
-  max-height: calc(100vh - 100px);
+  bottom: 24px;
+  width: 480px;
+  z-index: 100;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
 }
 .chat .head {
   padding: 14px 16px;
@@ -701,9 +735,19 @@ body { min-width: 1440px; }
 .chat .composer input::placeholder,
 .chat .composer textarea::placeholder { color: var(--ink-mute); }
 .chat .composer .send {
-  width: 28px; height: 28px; border-radius: 7px;
+  /* Sprint 3 paso-4 fix-up #3 · pill rectangular con padding lateral.
+     Antes: width 28px (icon button) · pero JSX renderea texto "Enviar" → corte.
+     Bug heredado desde Sprint 2, nunca detectado por audits funcionales.
+     Mantiene accent color y border-radius. */
+  min-width: 28px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 7px;
   background: var(--accent); color: #0f1318; border: none;
   display: grid; place-items: center; cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
 }
 .chat .composer .hint {
   font-family: var(--mono); font-size: 10.5px; color: var(--ink-mute);

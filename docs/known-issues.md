@@ -230,6 +230,47 @@ Para activar auth en prod: setear `NEXT_PUBLIC_REQUIRE_AUTH=true` en las env var
 2. Mover el `min-width` a un contenedor específico del chrome shell.
 3. Documentar como "operator es desktop-only intencional, mobile es excepción".
 
+---
+
+## sprint-3/paso-4-calculo (PR #465 fix-up #2) · ARCHITECTURE · Target del producto refinado · 14" notebooks
+
+**Detectado:** Audit visual de designer CFC sobre paso-4 + aclaración Javi 11.05.2026.
+
+**Decisión arquitectónica:**
+
+- Target real del producto: solo desktop, hasta pantallas 14" (MacBook Pro 14" y notebooks Windows 14").
+- Mobile (375-768): OUT del scope.
+- Tablet/iPad: OUT del scope.
+- Viewport mínimo soportado: 1200px.
+- Notebooks 14" Windows con viewport ~1366: tabla puede tener scroll horizontal **interno**, pero la página entera no.
+- Monitores ≥1440: cap a 1440 centrada (preserva comportamiento auditado en 1920 con margen lateral).
+
+**Cambios técnicos (commit fix-up #2):**
+
+- `operator-shared.css §.page`: `min-width: 1200px; max-width: 1440px; width: 100%` (antes: `min-width: 1440; width: 1440`).
+- `operator-shared.css §body`: `min-width: 1200px` (antes 1440).
+- `operator-shared.css §.chat`: `position: fixed; right: 24px; top: 24px; bottom: 24px; width: 480px; z-index: 100` (antes: `position: sticky` dentro de grid 2-columnas). Drawer ahora es overlay puro, NO comprime el main content. Aplica a calculo Y despiece (CSS compartido).
+- `operator-shared.css §.etable`: `overflow-x: auto; overflow-y: hidden` (antes: `overflow: hidden`). Scroll horizontal interno cuando el grid de columnas excede viewport, sin scrollear la página entera.
+- `CalculoView.tsx` y `DespieceView.tsx`: `gridTemplateColumns: "1fr"` siempre (antes: `chatOpen ? "1fr 480px" : "1fr"`). El chat ya no ocupa columna en el grid.
+- `docs/handoff-design/design_files/operator-shared.css`: sync byte-identical con frontend.
+
+**Evolución de regla operativa:**
+
+- **ANTES:** `operator-shared.css` byte-identical vs handoff = regla absoluta inmutable.
+- **AHORA:** `operator-shared.css` se modifica con decisión arquitectónica documentada (handoff queda como referencia histórica del Sprint 1; ambos se mantienen byte-identical entre sí, pero pueden evolucionar juntos).
+
+**Lección operativa nueva — bugs de CSS compartido:**
+
+El bug del chat drawer existía en paso-3-despiece desde el Sprint 3 día anterior pero nadie lo había detectado (audit CFC focalizó solo paso-4). Lección: bugs de CSS compartido se atrapan en CSS compartido, no en wrappers por componente. Fix correlativo (1 cambio en CSS + N containers) es más limpio que N fixes scoped por componente. Este es el 11° hallazgo del Sprint 3 atrapado por gates específicos — patrón FASE 1 antes de implementar paga dividendos incluso en fix-ups de fix-ups.
+
+**Razón:**
+
+El handoff fue diseñado asumiendo desktop ≥1440. El target real (operador usando MacBook 14") cambia ese supuesto. Las reglas se revisan cuando los supuestos subyacentes cambian.
+
+---
+
 ## Resueltos
 
-_(vacío al inicio)_
+- **(parcial)** El issue Sprint 2 "operator-shared.css con min-width: 1440px global rompe layouts <1440" queda **mitigado** por el fix-up #2 del PR #465 (min global ahora 1200, no 1440). El plan Sprint 5 (eliminar `min-width` global) sigue pendiente como mejora futura si target se expande a tablet/mobile.
+
+

@@ -186,8 +186,10 @@ export function DespieceView({ quoteId }: Props) {
       data-dirty={isDirty ? "true" : "false"}
       data-chat-open={chatOpen ? "true" : "false"}
       style={{
+        // Sprint 3 paso-4 fix-up #2 · grid SIEMPRE 1fr. Chat es overlay fixed
+        // (ver operator-shared.css §.chat). Aplica fix correlativo a despiece.
         display: "grid",
-        gridTemplateColumns: chatOpen ? "1fr 480px" : "1fr",
+        gridTemplateColumns: "1fr",
         gap: 24,
         minHeight: 0,
       }}

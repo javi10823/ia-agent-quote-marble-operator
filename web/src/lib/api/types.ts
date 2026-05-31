@@ -203,3 +203,130 @@ export function pieceM2Total(piece: Pick<Piece, "width_mm" | "depth_mm" | "quant
 export function piecesTotalM2(pieces: Piece[]): number {
   return Math.round(pieces.reduce((sum, p) => sum + pieceM2Total(p), 0) * 100) / 100;
 }
+
+/* ─── Paso 4 · Cálculo ──────────────────────────────────────────── */
+
+export type CalcStatus = "pending" | "ok" | "error";
+
+export type CalcCurrency = "ARS" | "USD";
+
+export type AuditKind = "SOURCE" | "REGLA" | "CALC" | "IVA" | "SUMA";
+
+/** Una entrada del bloque `.aud-trail` per-row (SOURCE/REGLA/CALC). */
+export interface AuditEntry {
+  kind: AuditKind;
+  text: string;
+}
+
+/** Fila genérica de tabla MO (cols: SKU / desc / cant / base / iva / total). */
+export interface LaborRowData {
+  sku: string;
+  label: string;
+  sub?: string;
+  qty: string; // ej "6,50 m²" o "1" o "4,98 ml"
+  basePrice: string; // ej "$49.698"
+  iva: string; // ej "×1,21"
+  total: string; // ej "$390.875"
+  audit?: AuditEntry[];
+}
+
+/** Una fila de la sección "material" (sin tabla MO, formato `.row-line`). */
+export interface MaterialRow {
+  label: string;
+  sub?: string;
+  qty: string; // ej "6,50 m²"
+  unit: string; // ej "USD 249"
+  total: string; // ej "USD 1.619" o "−USD 81"
+  variant?: "default" | "discount" | "subtotal";
+  audit?: AuditEntry[];
+}
+
+/** Estado de la sección merma. */
+export type MermaStatus = "na" | "aplica" | "error";
+
+export interface MermaSection {
+  status: MermaStatus;
+  chipLabel: string; // ej "APLICA" / "N/A — Negro Brasil nunca mermea"
+  sub?: string;
+  /** Cuando aplica: filas de cálculo (placas + sobrante). */
+  rows?: MaterialRow[];
+  /** Cuando hay sobrante opcional al cliente. */
+  sobranteToggle?: { label: string; defaultChecked: boolean };
+  /** Cuando hay stock confirmado en taller. */
+  stockToggle?: { label: string; defaultChecked: boolean };
+  /** Cuando error (estado B): nombre de la fila huérfana + auto-fix CTA. */
+  errorRow?: { label: string; detail: string; fixLabel: string };
+}
+
+export interface PiletaSection {
+  /** Chip de estado: "N/A — pileta empotrada (la trae el cliente)" o "APLICA". */
+  chipLabel: string;
+  variant: "na" | "info";
+  sub?: string;
+}
+
+export interface FleteRow {
+  zona: string; // ej "Rosario"
+  qty: string; // ej "1 viaje"
+  basePrice: string;
+  total: string;
+  audit?: AuditEntry[];
+}
+
+/** Totales bi-currency (ARS = MO + flete; USD = material importado). */
+export interface GrandTotals {
+  ars: { value: string; meta: string };
+  usd: { value: string; meta: string };
+  /** En estado B (`has-warn`): ARS muestra error-tone con detalle de la merma fantasma. */
+  warnDetail?: string;
+}
+
+/** Inputs del operador que se persisten al confirmar (mocks-first → sin persist). */
+export interface DatosPdfDefaults {
+  plazo: string;
+  anticipoPct: string;
+  saldo: string;
+  envio: string;
+  notas: string;
+  vigenciaDias: string;
+}
+
+/** Ajustes de Valentina mostrados en `.calc-banner > .l2 > .adj-list`. */
+export interface ValentinaAdjustment {
+  text: string;
+}
+
+export interface CalculationResult {
+  quoteId: string;
+  status: CalcStatus;
+  /** Resumen línea 1 del calc-banner: "✓ Calculado · {material} · {m²} · Total ARS $… + USD …". */
+  bannerSummary: string;
+  /** Ajustes que aplicó Valentina (.adj-list). */
+  bannerAdjustments: ValentinaAdjustment[];
+  /** Sección 01 · Material — filas (incluye descuento arquitecta) + subtotal. */
+  material: { rows: MaterialRow[]; subtotal: string };
+  /** Sección 02 · Merma / Sobrante. */
+  merma: MermaSection;
+  /** Sección 03 · Mano de obra (tabla `.etable.cols-mo`). */
+  labor: { rows: LaborRowData[]; subtotal: string };
+  /** Sección 04 · Piletas (formato compacto). */
+  piletas: PiletaSection;
+  /** Sección 05 · Flete. */
+  flete: FleteRow;
+  /** Totales bi-currency. */
+  totals: GrandTotals;
+  /** Si estado B: detalle del patch-banner (trace + mensaje de Valentina). */
+  patchError?: {
+    traceId: string;
+    msg: string;
+  };
+  /** Defaults del form datos-pdf. */
+  datosPdf: DatosPdfDefaults;
+}
+
+/** Toggles UI controlados por CalcToolbar (no afectan el cálculo en este PR). */
+export interface CalcToggles {
+  auditOn: boolean;
+  ivaVisible: boolean;
+  tipoCliente: "particular" | "edificio";
+}
