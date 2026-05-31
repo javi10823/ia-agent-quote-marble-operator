@@ -281,12 +281,13 @@ body { min-width: 1200px; }
 
 /* Section body layout */
 .body {
-  /* Sprint 3 paso-4 fix-up #3 · padding-bottom 80→120 (múltiplo de 8).
-     Antes: 80px daba sensación de ConfirmBar pegada al borde inferior
-     (último child sin elemento visible debajo). Aplica a paso-2/3/4 (todos
-     usan ConfirmBar en el mismo patrón). Sticky bar evaluada como decisión
-     arquitectónica futura (Sprint 4 si Marina lo pide en uso real). */
-  padding: 28px 24px 120px;
+  /* Sprint 3 paso-4 fix-up #3/#4 · padding-bottom 80→160 (múltiplo de 8 · 8×20).
+     Iteración #3 a 120 fue insuficiente (Javi confirmó ConfirmBar todavía
+     pegada). Más margin-bottom propio del .confirm-bar (24px) abajo. Combo
+     total: bar tiene 24px propios + body tiene 160px → respiro generoso al
+     fondo de paso-2/3/4 cuando el scroll llega al end. Sticky bar evaluada
+     como decisión arquitectónica futura (Sprint 4 si Marina lo pide). */
+  padding: 28px 24px 160px;
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 480px;
@@ -510,8 +511,12 @@ body { min-width: 1200px; }
 
 /* Confirm bar */
 .confirm-bar {
+  /* Sprint 3 paso-4 fix-up #4 · margin-bottom propio (24px) además del
+     padding-bottom del .body. Garantiza respiro propio del bar al fondo
+     del scroll, independiente del .body padding. */
   display: flex; align-items: center; gap: 14px;
   margin-top: 18px;
+  margin-bottom: 24px;
   padding: 16px 18px;
   background: var(--surface);
   border: 1px solid var(--line-strong);
