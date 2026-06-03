@@ -326,7 +326,48 @@ export interface CalculationResult {
 
 /** Toggles UI controlados por CalcToolbar (no afectan el cálculo en este PR). */
 export interface CalcToggles {
+  /** @deprecated Sprint 3 observability-per-row · audit ahora es global via
+   * `useAuditMode` (TopBar). Se mantiene en la interfaz solo por compatibilidad
+   * de tests · no se renderiza desde CalcToolbar. */
   auditOn: boolean;
   ivaVisible: boolean;
   tipoCliente: "particular" | "edificio";
+}
+
+// ─── Sprint 3 observability-per-row · mockup 13 ───
+// Banner top global de auditoría · visible cuando body[data-audit="on"].
+// Mock-only · backend no expone esta metadata (decisión Javi D).
+
+/** Última llamada al modelo IA — primera columna del audit-tray. */
+export interface AuditLastCall {
+  model: string;
+  scope: string;
+  tokensIn: number;
+  tokensOut: number;
+  latencyMs: number;
+}
+
+/** Trazabilidad de la corrida — segunda columna del audit-tray. */
+export interface AuditTrace {
+  traceId: string;
+  promptVersion: string;
+  temperature: string;
+  cacheHitPct: number;
+}
+
+/** Evento en sesión — tercera columna del audit-tray. */
+export interface AuditEvent {
+  /** Formato HH:MM:SS. */
+  timestamp: string;
+  /** Dot-notation del evento (ej. "despiece.draft.partial"). */
+  name: string;
+  /** Detalle opcional. */
+  detail?: string;
+}
+
+/** Snapshot completo del audit-tray. */
+export interface AuditSnapshot {
+  lastCall: AuditLastCall;
+  trace: AuditTrace;
+  events: AuditEvent[];
 }

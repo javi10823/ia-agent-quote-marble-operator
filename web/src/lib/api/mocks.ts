@@ -566,3 +566,84 @@ export async function applyAutoFix(
   _calcStore.set(quoteId, fresh);
   return fresh;
 }
+
+// ─── Sprint 3 observability-per-row · mockup 13 ───
+// Audit snapshot mock con fallback gracioso desde el inicio.
+// Datos LITERALES del mockup 13-audit-banner-on.html (model claude-sonnet-4,
+// tokens 1842/612, latency 4.2s, trace q_8f2a, prompt despiece.v3.2,
+// temp 0.2 seed fixed, cache 84%, 4 eventos del despiece flow).
+
+const _auditByQuote: Record<string, import("./types").AuditSnapshot> = {
+  "PRES-2026-018": {
+    lastCall: {
+      model: "claude-sonnet-4",
+      scope: "despiece · 5 piezas + contexto confirmado",
+      tokensIn: 1842,
+      tokensOut: 612,
+      latencyMs: 4200,
+    },
+    trace: {
+      traceId: "q_8f2a",
+      promptVersion: "despiece.v3.2",
+      temperature: "0.2 · seed fixed",
+      cacheHitPct: 84,
+    },
+    events: [
+      { timestamp: "10:04:12", name: "contexto.confirm" },
+      { timestamp: "10:04:14", name: "despiece.draft.start" },
+      { timestamp: "10:04:18", name: "despiece.draft.partial", detail: "5/7" },
+      { timestamp: "10:04:22", name: "despiece.draft.calc", detail: "R6, R7" },
+    ],
+  },
+  "PRES-2026-017": {
+    lastCall: {
+      model: "claude-sonnet-4",
+      scope: "calculo · particular · IVA on",
+      tokensIn: 1124,
+      tokensOut: 389,
+      latencyMs: 2800,
+    },
+    trace: {
+      traceId: "q_4c1e",
+      promptVersion: "calculo.v2.4",
+      temperature: "0.2 · seed fixed",
+      cacheHitPct: 72,
+    },
+    events: [
+      { timestamp: "09:51:08", name: "contexto.confirm" },
+      { timestamp: "09:51:09", name: "despiece.confirm" },
+      { timestamp: "09:51:11", name: "calculo.draft.start" },
+      { timestamp: "09:51:13", name: "calculo.draft.done", detail: "OK" },
+    ],
+  },
+};
+
+const _auditGeneric: import("./types").AuditSnapshot = {
+  lastCall: {
+    model: "—",
+    scope: "—",
+    tokensIn: 0,
+    tokensOut: 0,
+    latencyMs: 0,
+  },
+  trace: {
+    traceId: "—",
+    promptVersion: "—",
+    temperature: "—",
+    cacheHitPct: 0,
+  },
+  events: [],
+};
+
+/**
+ * Snapshot del audit-tray para un quote. Mock-only · fallback gracioso para
+ * IDs desconocidos (UUID/web-XXX) que devuelve el snapshot generic en em-dash.
+ * Sprint 4: wire al backend cuando exponga la metadata real.
+ */
+export async function getAuditSnapshot(
+  quoteId: string,
+  options?: { signal?: AbortSignal },
+): Promise<import("./types").AuditSnapshot> {
+  await delay(120 + Math.random() * 120, options?.signal);
+  return _auditByQuote[quoteId] ?? _auditGeneric;
+}

@@ -38,6 +38,9 @@ export const getCalculationForQuote = mocks.getCalculationForQuote;
 export const triggerCalculation = mocks.triggerCalculation;
 export const applyAutoFix = mocks.applyAutoFix;
 
+/* ─── Observability · Sprint 3 observability-per-row · mockup 13 ── */
+export const getAuditSnapshot = mocks.getAuditSnapshot;
+
 /* ─── Helpers de test (reset de stores in-memory del mock) ───────── */
 export const _resetContextStore = mocks._resetContextStore;
 export const _resetPiecesStore = mocks._resetPiecesStore;
