@@ -1,9 +1,13 @@
 /**
- * Toolbar del header · AUDIT toggle · Tipo cliente · IVA toggle · ↻ Re-calcular.
+ * Toolbar del header · Tipo cliente · IVA toggle · ↻ Re-calcular.
  *
- * - AUDIT toggle controla `.aud-trail` per-row + chips `.aud-i` (decisión #1)
- * - Tipo cliente Particular/Edificio es VISUAL-only (decisión #2)
- * - IVA toggle muestra/oculta cols (decisión #3)
+ * Sprint 3 observability-per-row · refactor decisión Javi C:
+ * el AUDIT toggle se removió de acá · ahora es global desde TopBar
+ * (AuditToggle component + useAuditMode hook). Eso evita 2 controles
+ * que hacen lo mismo en distintos lugares.
+ *
+ * - Tipo cliente Particular/Edificio es VISUAL-only (decisión #2 paso-4)
+ * - IVA toggle muestra/oculta cols (decisión #3 paso-4)
  * - ↻ Re-calcular dispara `triggerCalculation` mock
  */
 "use client";
@@ -20,28 +24,6 @@ interface Props {
 export function CalcToolbar({ toggles, onChange, onRecalculate, busy }: Props) {
   return (
     <div className="right" style={{ display: "flex", gap: 12, alignItems: "center" }}>
-      <button
-        type="button"
-        className={`audit-toggle${toggles.auditOn ? " on" : ""}`}
-        onClick={() => onChange("auditOn", !toggles.auditOn)}
-        data-testid="audit-toggle"
-        data-on={toggles.auditOn}
-        style={{
-          padding: "6px 10px",
-          border: "1px solid var(--line-strong)",
-          borderRadius: "var(--r-sm)",
-          background: toggles.auditOn ? "var(--surface-2)" : "transparent",
-          color: toggles.auditOn ? "var(--ink)" : "var(--ink-mute)",
-          fontFamily: "var(--mono)",
-          fontSize: 10.5,
-          textTransform: "uppercase",
-          letterSpacing: "0.5px",
-          cursor: "pointer",
-        }}
-      >
-        AUDIT {toggles.auditOn ? "ON" : "OFF"}
-      </button>
-
       <div
         className="tipo-toggle"
         data-testid="tipo-toggle"
