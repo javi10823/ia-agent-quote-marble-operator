@@ -18,6 +18,7 @@ import type { Piece } from "@/lib/api";
 import type { ChatMessage, ChatPanelState } from "@/lib/types";
 import { UserMessage } from "@/components/contexto/UserMessage";
 import { ValentinaMessage } from "@/components/contexto/ValentinaMessage";
+import { ChatAuditNote } from "@/components/observability/ChatAuditNote";
 
 interface Props {
   messages: ChatMessage[];
@@ -106,6 +107,7 @@ export function DespieceChatPanel({
         {editedCount > 0 && <span className="pill scope-pill-human">{editedCount} editadas</span>}
         <span className="pill">Contexto confirmado</span>
       </div>
+      <ChatAuditNote />
 
       <div className="stream" ref={streamRef} data-testid="chat-stream">
         {messages.length === 0 && (
