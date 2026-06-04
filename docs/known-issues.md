@@ -269,6 +269,28 @@ El handoff fue diseñado asumiendo desktop ≥1440. El target real (operador usa
 
 ---
 
+## sprint-3/observability-per-row (PR #466 fix-up #1) · DEUDA · AuditTray responsive <1440px
+
+**Detectado:** Visual check CFC post fix-up #1.
+
+**Situación:**
+
+- AuditTray funciona perfecto en target del producto (MacBook 14" para arriba · 1440+).
+- A 1366×768 (notebooks Windows 14"): Col 3 (EVENTOS EN SESIÓN) muy truncada incluso con ellipsis + tooltip aplicado en el fix-up.
+- A 1200×800: overflow horizontal del documento (las 3 columnas `1fr 1fr 1fr` no entran).
+
+**Decisión:** OUT del scope Sprint 3. Target del producto es MacBook 14" para arriba; viewports <1440 están fuera del target oficial.
+
+**Si en uso real se amplía target a Windows 14"/1366:**
+
+- Opción A: breakpoint @ ≤1440px que colapse Col 3 en accordion ("ver eventos →").
+- Opción B: stack vertical en viewports <1440 (1 columna apilada).
+- Opción C: ellipsis + tooltip más agresivo en todas las columnas.
+
+**Estimación si se aborda:** 3-5h Claude Code (sub-PR Sprint 4 `sprint-4/audit-tray-responsive`).
+
+---
+
 ## Resueltos
 
 - **(parcial)** El issue Sprint 2 "operator-shared.css con min-width: 1440px global rompe layouts <1440" queda **mitigado** por el fix-up #2 del PR #465 (min global ahora 1200, no 1440). El plan Sprint 5 (eliminar `min-width` global) sigue pendiente como mejora futura si target se expande a tablet/mobile.

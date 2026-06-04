@@ -13,6 +13,7 @@ import { Sidebar } from "@/components/chrome/Sidebar";
 import { Topbar } from "@/components/chrome/Topbar";
 import { Qhead } from "@/components/chrome/Qhead";
 import { Stepper } from "@/components/chrome/Stepper";
+import { AuditTray } from "@/components/observability/AuditTray";
 import { getQuoteMetadata } from "@/lib/api";
 
 export default async function QuoteLayout({
@@ -29,6 +30,9 @@ export default async function QuoteLayout({
       <Sidebar />
       <main className="main">
         <Topbar quote={quote} />
+        {/* Sprint 3 observability · banner top global gateado por
+            body[data-audit="on"] (CSS · useAuditMode). */}
+        <AuditTray quoteId={params.id} />
         <Qhead quote={quote} />
         <Stepper />
         <div className="body no-chat">{children}</div>

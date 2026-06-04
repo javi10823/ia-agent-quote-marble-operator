@@ -11,9 +11,11 @@
  */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCalculo } from "@/lib/hooks/useCalculo";
+import { useAuditMode } from "@/lib/hooks/useAuditMode";
+import { IaAuditBanner } from "@/components/observability/IaAuditBanner";
 import { CalcBanner } from "./CalcBanner";
 import { CalcChatPanel } from "./CalcChatPanel";
 import { CalcConfirmBar } from "./CalcConfirmBar";
@@ -36,16 +38,11 @@ export function CalculoView({ quoteId }: Props) {
   const [chatOpen, setChatOpen] = useState(false);
   const router = useRouter();
 
-  // operator-shared.css §E3 gatea `.aud-trail` por `body[data-audit="on"]`
-  // (no por una clase del componente). Sincronizamos al toggle del toolbar
-  // y limpiamos al desmontar para que otras rutas no hereden el estado.
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    document.body.dataset.audit = toggles.auditOn ? "on" : "off";
-    return () => {
-      delete document.body.dataset.audit;
-    };
-  }, [toggles.auditOn]);
+  // Sprint 3 observability-per-row · audit ahora es global (TopBar).
+  // Antes (PR #465 paso-4): useEffect local + toggle en CalcToolbar.
+  // Ahora: useAuditMode encapsula el body[data-audit] sync + persistencia.
+  // `auditOn` se usa para gatear AuditChip + AuditTrail per-row.
+  const { auditOn } = useAuditMode();
 
   if (state === "loading" && !data) {
     return (
@@ -115,6 +112,8 @@ export function CalculoView({ quoteId }: Props) {
           />
         </div>
 
+        <IaAuditBanner quoteId={quoteId} />
+
         {isPatchError && data.patchError ? (
           <PatchErrorBanner
             traceId={data.patchError.traceId}
@@ -129,17 +128,17 @@ export function CalculoView({ quoteId }: Props) {
         <CalcSectionMaterial
           rows={data.material.rows}
           subtotal={data.material.subtotal}
-          auditOn={toggles.auditOn}
+          auditOn={auditOn}
         />
-        <CalcSectionMerma merma={data.merma} auditOn={toggles.auditOn} onFix={applyFix} />
+        <CalcSectionMerma merma={data.merma} auditOn={auditOn} onFix={applyFix} />
         <CalcSectionLabor
           rows={data.labor.rows}
           subtotal={data.labor.subtotal}
-          auditOn={toggles.auditOn}
+          auditOn={auditOn}
           ivaVisible={toggles.ivaVisible}
         />
         <CalcSectionPiletas piletas={data.piletas} />
-        <CalcSectionFlete flete={data.flete} auditOn={toggles.auditOn} />
+        <CalcSectionFlete flete={data.flete} auditOn={auditOn} />
 
         <GrandTotal totals={data.totals} />
 

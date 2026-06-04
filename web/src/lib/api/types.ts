@@ -324,9 +324,57 @@ export interface CalculationResult {
   datosPdf: DatosPdfDefaults;
 }
 
-/** Toggles UI controlados por CalcToolbar (no afectan el cálculo en este PR). */
+/** Toggles UI controlados por CalcToolbar (no afectan el cálculo en este PR).
+ * Sprint 3 obs-per-row fix-up #1: `auditOn` removido del state local de useCalculo
+ * — ahora vive en `useAuditMode` (TopBar global). El field también se eliminó
+ * de esta interfaz porque CalcSection (Material/Merma/Labor/Flete) y LaborRow
+ * reciben `auditOn` directo del hook global en CalculoView, no del state de
+ * toggles. */
 export interface CalcToggles {
-  auditOn: boolean;
   ivaVisible: boolean;
   tipoCliente: "particular" | "edificio";
+}
+
+// ─── Sprint 3 observability-per-row · mockup 13 ───
+// Banner top global de auditoría · visible cuando body[data-audit="on"].
+// Mock-only · backend no expone esta metadata (decisión Javi D).
+
+/** Última llamada al modelo IA — primera columna del audit-tray. */
+export interface AuditLastCall {
+  model: string;
+  scope: string;
+  tokensIn: number;
+  tokensOut: number;
+  latencyMs: number;
+}
+
+/** Trazabilidad de la corrida — segunda columna del audit-tray. */
+export interface AuditTrace {
+  traceId: string;
+  promptVersion: string;
+  temperature: string;
+  cacheHitPct: number;
+}
+
+/** Evento en sesión — tercera columna del audit-tray. */
+export interface AuditEvent {
+  /** Formato HH:MM:SS. */
+  timestamp: string;
+  /** Dot-notation del evento (ej. "despiece.draft.partial"). */
+  name: string;
+  /** Detalle opcional. */
+  detail?: string;
+}
+
+/** Snapshot completo del audit-tray. */
+export interface AuditSnapshot {
+  lastCall: AuditLastCall;
+  trace: AuditTrace;
+  events: AuditEvent[];
+  /** Fix-up #2: marca el snapshot como sin datos reales (fallback genérico).
+   * Cuando es true, AuditTray + IaAuditBanner + ChatAuditNote se ocultan
+   * (tray gigante con em-dashes = UX rota). El AUDIT toggle en TopBar y el
+   * aud-trail per-row del paso-4 siguen visibles porque tienen datos propios
+   * independientes del snapshot. */
+  isEmpty?: boolean;
 }

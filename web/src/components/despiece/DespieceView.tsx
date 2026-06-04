@@ -26,6 +26,7 @@ import { DespieceTable } from "./DespieceTable";
 import { DespieceTimeline } from "./DespieceTimeline";
 import { DespieceEmptyState } from "./DespieceEmptyState";
 import { DespieceChatPanel } from "./DespieceChatPanel";
+import { IaAuditBanner } from "@/components/observability/IaAuditBanner";
 
 interface Props {
   quoteId: string;
@@ -287,6 +288,9 @@ export function DespieceView({ quoteId }: Props) {
           </div>
         </div>
 
+        {/* Sprint 3 observability · banner explicativo cuando audit on. */}
+        <IaAuditBanner quoteId={quoteId} />
+
         {/* Banner Valentina · pristine / dirty / focused */}
         <div
           className={`ia-banner${manualMode && pieces.length === 0 ? " muted" : ""}`}
@@ -405,6 +409,7 @@ export function DespieceView({ quoteId }: Props) {
 
       {chatOpen && (
         <DespieceChatPanel
+          quoteId={quoteId}
           messages={chat.messages}
           panelState={chat.panelState}
           pieceCount={pieces.length}

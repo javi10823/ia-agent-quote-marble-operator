@@ -18,8 +18,12 @@ import type { Piece } from "@/lib/api";
 import type { ChatMessage, ChatPanelState } from "@/lib/types";
 import { UserMessage } from "@/components/contexto/UserMessage";
 import { ValentinaMessage } from "@/components/contexto/ValentinaMessage";
+import { ChatAuditNote } from "@/components/observability/ChatAuditNote";
 
 interface Props {
+  /** Sprint 3 obs-per-row fix-up #2 · necesario para `useAuditEmpty` del
+   * `ChatAuditNote` (esconde cuando snapshot vacío para quotes desconocidos). */
+  quoteId: string;
   messages: ChatMessage[];
   panelState: ChatPanelState;
   pieceCount: number;
@@ -38,6 +42,7 @@ const STEP_SUGGESTIONS = [
 const PIECE_SUGGESTIONS = ["¿La bacha entra en este ancho?", "¿Qué bacha asumiste?", "Ver corte"];
 
 export function DespieceChatPanel({
+  quoteId,
   messages,
   panelState,
   pieceCount,
@@ -106,6 +111,7 @@ export function DespieceChatPanel({
         {editedCount > 0 && <span className="pill scope-pill-human">{editedCount} editadas</span>}
         <span className="pill">Contexto confirmado</span>
       </div>
+      <ChatAuditNote quoteId={quoteId} />
 
       <div className="stream" ref={streamRef} data-testid="chat-stream">
         {messages.length === 0 && (

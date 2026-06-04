@@ -10,6 +10,7 @@
  * cambio de status) en sub-PRs siguientes.
  */
 import type { QuoteHeader } from "@/lib/api";
+import { AuditToggle } from "@/components/observability/AuditToggle";
 
 interface TopbarProps {
   quote: QuoteHeader;
@@ -27,6 +28,9 @@ export function Topbar({ quote }: TopbarProps) {
       </div>
 
       <div className="right">
+        {/* Sprint 3 observability · audit toggle global (refactor decisión Javi C). */}
+        <AuditToggle />
+
         {/* Status chip — `.status-chip.draft` (color amarillento muted) */}
         <span className={`status-chip ${quote.status}`}>
           <span className="dot" />

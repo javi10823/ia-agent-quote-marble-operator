@@ -4752,3 +4752,67 @@ body[data-audit="on"] .audit-toggle {
   font-size: 10px;
   padding: 5px 8px;
 }
+
+/* ─── Sprint 3 observability-per-row · mockup 13 ─────────────────────────
+   Audit tray global · 3 columnas mono-font con metadata IA + trazabilidad
+   + eventos. Visible solo cuando body[data-audit="on"] (gateado via
+   useAuditMode global). Mockup 13-audit-banner-on.html LITERAL.
+   `.ia-banner` y `.audit-note` ya existen del Sprint 1 — solo agregamos
+   `.audit-tray` aquí. */
+.audit-tray {
+  display: none;
+  background: oklch(0.30 0.10 25 / 0.55);
+  border-bottom: 1px solid oklch(0.55 0.18 25 / 0.40);
+  padding: 16px 24px;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 24px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: oklch(0.92 0.06 25);
+}
+body[data-audit="on"] .audit-tray { display: grid; }
+.audit-tray .col {
+  min-width: 0;
+}
+.audit-tray .col h4 {
+  margin: 0 0 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: oklch(0.78 0.10 25);
+  font-weight: 600;
+}
+.audit-tray .kv {
+  display: flex;
+  gap: 8px;
+  padding: 3px 0;
+}
+.audit-tray .kv .k {
+  color: oklch(0.78 0.10 25);
+  width: 80px;
+  flex-shrink: 0;
+}
+.audit-tray .kv .v {
+  color: var(--ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.audit-tray a {
+  text-decoration: underline;
+  color: oklch(0.92 0.06 25);
+}
+/* Fix-up #1 H2 · Col 3 (EVENTOS EN SESIÓN) truncada sin ellipsis a 1440.
+   `.v` ya tiene overflow:hidden + text-overflow:ellipsis pero faltaba
+   white-space:nowrap (sin él el text wraps en vez de truncarse). Aplica
+   SOLO a Col 3 para preservar Col 1 + Col 2 que estaban OK. */
+.audit-tray .col:nth-child(3) .kv .v {
+  white-space: nowrap;
+}
+/* Fix-up #1 H4 · link "ver tree" disabled debe verse muted (era azul
+   indistinguible de un link activo). Spec: aria-disabled="true" → no link UX. */
+.audit-tray a[aria-disabled="true"] {
+  color: var(--ink-mute);
+  cursor: not-allowed;
+  text-decoration: none;
+}
