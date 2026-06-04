@@ -3,14 +3,22 @@
  * `body[data-audit="on"]`. Copy LITERAL del mockup 13.
  *
  * Decisión Javi F: IN (cost bajo, valor alto · parte del mockup literal).
+ * Fix-up #2: oculto cuando snapshot del quote es vacío (fallback genérico).
  */
 "use client";
 
 import { useAuditMode } from "@/lib/hooks/useAuditMode";
+import { useAuditEmpty } from "@/lib/hooks/useAuditEmpty";
 
-export function IaAuditBanner() {
+interface Props {
+  quoteId: string;
+}
+
+export function IaAuditBanner({ quoteId }: Props) {
   const { auditOn } = useAuditMode();
-  if (!auditOn) return null;
+  const isEmpty = useAuditEmpty(quoteId);
+  // Esconder en loading (null) y cuando isEmpty=true (sin datos reales).
+  if (!auditOn || isEmpty !== false) return null;
   return (
     <div className="ia-banner" data-testid="ia-audit-banner">
       <div className="vbubble" aria-hidden="true" />

@@ -633,12 +633,16 @@ const _auditGeneric: import("./types").AuditSnapshot = {
     cacheHitPct: 0,
   },
   events: [],
+  // Fix-up #2 · marca snapshot como vacío · esconde tray/banner/note (UX
+  // rota mostrar 3 cols de em-dash + 0 tokens + 0 eventos). El AUDIT toggle
+  // y el aud-trail per-row del paso-4 NO dependen de este flag.
+  isEmpty: true,
 };
 
 /**
  * Snapshot del audit-tray para un quote. Mock-only · fallback gracioso para
- * IDs desconocidos (UUID/web-XXX) que devuelve el snapshot generic en em-dash.
- * Sprint 4: wire al backend cuando exponga la metadata real.
+ * IDs desconocidos (UUID/web-XXX) que devuelve el snapshot generic en em-dash
+ * con `isEmpty: true`. Sprint 4: wire al backend cuando exponga la metadata.
  */
 export async function getAuditSnapshot(
   quoteId: string,

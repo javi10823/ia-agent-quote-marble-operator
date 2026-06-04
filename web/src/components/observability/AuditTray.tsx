@@ -41,7 +41,9 @@ export function AuditTray({ quoteId }: Props) {
     };
   }, [auditOn, quoteId]);
 
-  if (!auditOn || !snapshot) return null;
+  // Fix-up #2 · esconder cuando snapshot vacío (fallback genérico para
+  // quotes desconocidos · UX rota mostrar tray gigante con em-dashes).
+  if (!auditOn || !snapshot || snapshot.isEmpty) return null;
 
   return (
     <div className="audit-tray" data-testid="audit-tray">

@@ -63,7 +63,7 @@ export function CalcChatPanel({ quoteId, onClose }: Props) {
         <span className="pill">5 secciones del cálculo</span>
         <span className="pill">Totales ARS + USD</span>
       </div>
-      <ChatAuditNote />
+      <ChatAuditNote quoteId={quoteId} />
       {lastAction && (
         <div
           data-testid="chat-action"

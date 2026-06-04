@@ -112,7 +112,7 @@ export function CalculoView({ quoteId }: Props) {
           />
         </div>
 
-        <IaAuditBanner />
+        <IaAuditBanner quoteId={quoteId} />
 
         {isPatchError && data.patchError ? (
           <PatchErrorBanner

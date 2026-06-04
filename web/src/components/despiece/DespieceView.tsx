@@ -289,7 +289,7 @@ export function DespieceView({ quoteId }: Props) {
         </div>
 
         {/* Sprint 3 observability · banner explicativo cuando audit on. */}
-        <IaAuditBanner />
+        <IaAuditBanner quoteId={quoteId} />
 
         {/* Banner Valentina · pristine / dirty / focused */}
         <div
@@ -409,6 +409,7 @@ export function DespieceView({ quoteId }: Props) {
 
       {chatOpen && (
         <DespieceChatPanel
+          quoteId={quoteId}
           messages={chat.messages}
           panelState={chat.panelState}
           pieceCount={pieces.length}

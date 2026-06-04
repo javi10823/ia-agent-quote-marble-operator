@@ -371,4 +371,10 @@ export interface AuditSnapshot {
   lastCall: AuditLastCall;
   trace: AuditTrace;
   events: AuditEvent[];
+  /** Fix-up #2: marca el snapshot como sin datos reales (fallback genérico).
+   * Cuando es true, AuditTray + IaAuditBanner + ChatAuditNote se ocultan
+   * (tray gigante con em-dashes = UX rota). El AUDIT toggle en TopBar y el
+   * aud-trail per-row del paso-4 siguen visibles porque tienen datos propios
+   * independientes del snapshot. */
+  isEmpty?: boolean;
 }

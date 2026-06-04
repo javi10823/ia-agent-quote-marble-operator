@@ -63,13 +63,27 @@ test("AuditTray datasource correcto PRES-017 vs PRES-018", async ({ page }) => {
   await expect(tray).not.toContainText("q_8f2a");
 });
 
-test("AuditTray ID desconocido renderea fallback em-dash sin crash", async ({ page }) => {
+test("AuditTray + banner + note SE OCULTAN cuando snapshot es empty (quote desconocida)", async ({
+  page,
+}) => {
+  // Fix-up #2: para quotes con fallback genérico (isEmpty=true), tray/banner/note
+  // NO deben renderearse · solo el chip TopBar queda visible (UX limpia).
   await go(page, "/quotes/web-deadbeef-cafe/contexto");
   await page.locator('[data-testid="audit-toggle"]').click();
-  const tray = page.locator('[data-testid="audit-tray"]');
-  await expect(tray).toBeVisible();
-  await expect(tray.locator(".col").first()).toContainText("—");
-  await expect(tray).toContainText("sin eventos");
+  // El chip del TopBar SÍ sigue visible y ON.
+  await expect(page.locator("body")).toHaveAttribute("data-audit", "on");
+  await expect(page.locator('[data-testid="audit-toggle"]')).toHaveAttribute("data-on", "true");
+  // Pero tray + banner explicativo NO renderean.
+  await expect(page.locator('[data-testid="audit-tray"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="ia-audit-banner"]')).toHaveCount(0);
+});
+
+test("AuditTray SÍ renderea cuando snapshot tiene datos canon (no empty)", async ({ page }) => {
+  await go(page, "/quotes/PRES-2026-018/calculo");
+  await page.locator('[data-testid="audit-toggle"]').click();
+  // Esperar a que el snapshot canónico cargue antes de asertar.
+  await expect(page.locator('[data-testid="audit-tray"]')).toBeVisible();
+  await expect(page.locator('[data-testid="ia-audit-banner"]')).toBeVisible();
 });
 
 test("tree view del trace_id está disabled con TODO Sprint 4", async ({ page }) => {
