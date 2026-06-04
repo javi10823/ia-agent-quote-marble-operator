@@ -13,12 +13,14 @@
  */
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { Piece } from "@/lib/api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ChatFlaggedPreset, Piece } from "@/lib/api";
 import type { ChatMessage, ChatPanelState } from "@/lib/types";
 import { UserMessage } from "@/components/contexto/UserMessage";
 import { ValentinaMessage } from "@/components/contexto/ValentinaMessage";
 import { ChatAuditNote } from "@/components/observability/ChatAuditNote";
+import { FlaggedMessage } from "./FlaggedMessage";
+import { FeedbackBanner } from "./FeedbackBanner";
 
 interface Props {
   /** Sprint 3 obs-per-row fix-up #2 · necesario para `useAuditEmpty` del
@@ -31,6 +33,11 @@ interface Props {
   focusedPiece: Piece | null;
   onSend: (text: string) => void;
   onClose: () => void;
+  /** Sprint 3 error-states (mockup 17) · preset del chat flagged ·
+   * cuando presente, el chat carga el stream con 4 mensajes mock + último
+   * de Valentina flagged. Click en btn-feedback → FeedbackBanner +
+   * composer prefill. */
+  flaggedPreset?: ChatFlaggedPreset | null;
 }
 
 const STEP_SUGGESTIONS = [
@@ -50,11 +57,29 @@ export function DespieceChatPanel({
   focusedPiece,
   onSend,
   onClose,
+  flaggedPreset = null,
 }: Props) {
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(() => flaggedPreset?.composerPrefill ?? "");
   const streamRef = useRef<HTMLDivElement>(null);
   const isStreaming = panelState === "streaming";
   const focused = focusedPiece !== null;
+
+  // Sprint 3 error-states (mockup 17) · flag → feedback flow.
+  // alreadyFlagged: el btn-feedback ya fue clickeado → mostrar FeedbackBanner.
+  // El mockup arranca con btn DISABLED (post-click); replicamos arrancando
+  // en true cuando hay preset (Marina ya clickeó hace 30s en el mockup).
+  const [alreadyFlagged, setAlreadyFlagged] = useState(flaggedPreset !== null);
+  const handleFlag = () => setAlreadyFlagged(true);
+  const handleReformulate = () => {
+    setAlreadyFlagged(false);
+    setDraft(flaggedPreset?.composerPrefill ?? "");
+  };
+
+  // Stream a mostrar: preset (4 mock) o messages reales del useChatScoped.
+  const streamMessages = useMemo(
+    () => (flaggedPreset ? flaggedPreset.messages : messages),
+    [flaggedPreset, messages],
+  );
 
   useEffect(() => {
     if (streamRef.current) {
@@ -85,7 +110,18 @@ export function DespieceChatPanel({
             {focused ? `${focusedPiece.id} · ${focusedPiece.label}` : "Ayuda con Despiece"}
           </div>
           <div className="sub">
-            {focused ? "Scoped · enfocado en 1 pieza" : `Scoped · viendo ${pieceCount} piezas`}
+            {flaggedPreset ? (
+              <>
+                Scoped ·{" "}
+                <span className="session-info" data-testid="chat-session-info">
+                  {flaggedPreset.sessionInfo}
+                </span>
+              </>
+            ) : focused ? (
+              "Scoped · enfocado en 1 pieza"
+            ) : (
+              `Scoped · viendo ${pieceCount} piezas`
+            )}
           </div>
         </div>
         <button
@@ -114,7 +150,7 @@ export function DespieceChatPanel({
       <ChatAuditNote quoteId={quoteId} />
 
       <div className="stream" ref={streamRef} data-testid="chat-stream">
-        {messages.length === 0 && (
+        {streamMessages.length === 0 && (
           <div
             className="font-mono"
             style={{ color: "var(--ink-mute)", fontSize: 12, textAlign: "center" }}
@@ -125,12 +161,32 @@ export function DespieceChatPanel({
               : "Hacé una pregunta o usá una sugerencia."}
           </div>
         )}
-        {messages.map((msg) =>
-          msg.role === "user" ? (
-            <UserMessage key={msg.id} message={msg} />
+        {streamMessages.map((msg, i) => {
+          // Sprint 3 error-states (mockup 17) · si el preset marca el msg
+          // como flagged, lo renderea con FlaggedMessage + btn-feedback.
+          const isFlaggedMsg = flaggedPreset && "flagged" in msg && msg.flagged === true;
+          const isLast = i === streamMessages.length - 1;
+          if (isFlaggedMsg) {
+            const relTs = ("relativeTs" in msg && msg.relativeTs) || msg.timestamp;
+            return (
+              <FlaggedMessage
+                key={msg.id}
+                name="Valentina · IA"
+                relativeTs={relTs}
+                body={msg.content}
+                alreadyFlagged={alreadyFlagged}
+                onFlag={handleFlag}
+              />
+            );
+          }
+          return msg.role === "user" ? (
+            <UserMessage key={msg.id} message={msg as ChatMessage} />
           ) : (
-            <ValentinaMessage key={msg.id} message={msg} />
-          ),
+            <ValentinaMessage key={msg.id} message={msg as ChatMessage} />
+          );
+        })}
+        {flaggedPreset && alreadyFlagged && (
+          <FeedbackBanner onReformulate={handleReformulate} onClose={onClose} />
         )}
       </div>
 
@@ -156,9 +212,10 @@ export function DespieceChatPanel({
       </div>
 
       <div className="composer">
-        <div className="field">
+        <div className={`field${flaggedPreset && draft ? "" : ""}`}>
           <input
             type="text"
+            className={flaggedPreset && draft ? "prefill" : undefined}
             placeholder={
               focused ? `Preguntá sobre ${focusedPiece.id}…` : "Preguntá sobre el despiece…"
             }
@@ -169,6 +226,7 @@ export function DespieceChatPanel({
             }}
             disabled={isStreaming}
             data-testid="chat-input"
+            autoFocus={flaggedPreset !== null}
           />
           <button
             type="button"
@@ -180,8 +238,10 @@ export function DespieceChatPanel({
             Enviar
           </button>
         </div>
-        <div className="hint">
-          Borra al cerrar · {focused ? "ve sólo esta pieza" : "ve las piezas del despiece"}
+        <div className={`hint${flaggedPreset && draft ? " warn" : ""}`} data-testid="chat-hint">
+          {flaggedPreset && draft
+            ? "➜ Última pregunta tuya pre-cargada · editá lo que quieras y ⏎ para reenviar"
+            : `Borra al cerrar · ${focused ? "ve sólo esta pieza" : "ve las piezas del despiece"}`}
         </div>
       </div>
     </aside>

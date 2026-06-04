@@ -16,7 +16,7 @@
  */
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { piecesTotalM2, type Piece } from "@/lib/api";
 import { useDespiece } from "@/lib/hooks/useDespiece";
@@ -26,6 +26,9 @@ import { DespieceTable } from "./DespieceTable";
 import { DespieceTimeline } from "./DespieceTimeline";
 import { DespieceEmptyState } from "./DespieceEmptyState";
 import { DespieceChatPanel } from "./DespieceChatPanel";
+import { DespieceEmptyChat } from "./DespieceEmptyChat";
+import { RecoveryBlock } from "./RecoveryBlock";
+import { SessionInfoBanner } from "./SessionInfoBanner";
 import { IaAuditBanner } from "@/components/observability/IaAuditBanner";
 
 interface Props {
@@ -60,6 +63,8 @@ export function DespieceView({ quoteId }: Props) {
     regenerate,
     isDirty,
     editedCount,
+    rejected,
+    chatFlagged,
   } = useDespiece(quoteId);
 
   const [focusedPieceId, setFocusedPieceId] = useState<string | null>(null);
@@ -88,6 +93,18 @@ export function DespieceView({ quoteId }: Props) {
     chat.close();
     setFocusedPieceId(null);
   }
+
+  // Sprint 3 error-states (mockup 17) · cuando hay un preset flagged en la
+  // quote, abrimos el chat scoped automáticamente al mount con el preset
+  // (sesión persistente intra-quote · decisión Javi E solo copy del banner).
+  const flaggedAutoOpened = chatFlagged != null;
+  useEffect(() => {
+    if (flaggedAutoOpened && chat.panelState === "closed") {
+      chat.open();
+    }
+    // chat es estable entre renders · solo dependemos del flag.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flaggedAutoOpened]);
 
   /* ── Loading ─────────────────────────────────────────────────────── */
   if (state === "loading") {
@@ -170,6 +187,82 @@ export function DespieceView({ quoteId }: Props) {
           onProcessWithAI={() => router.push(`/quotes/${quoteId}/brief`)}
           onCompleteManual={() => setManualMode(true)}
         />
+      </div>
+    );
+  }
+
+  /* ── Rejected · mockup 15 ──────────────────────────────────────────── */
+  if (rejected) {
+    return (
+      <div
+        data-testid="despiece-view"
+        data-state="rejected"
+        style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 24, minHeight: 0 }}
+      >
+        <div className="col">
+          <div className="section-head">
+            <div>
+              <div className="meta">Paso 3 de 5 · Despiece</div>
+              <h2>Despiece de piezas</h2>
+            </div>
+          </div>
+
+          <IaAuditBanner quoteId={quoteId} />
+
+          <div className="ia-banner error" data-testid="rejected-banner">
+            <div className="vbubble" />
+            <div className="text">
+              Marina marcó este despiece como{" "}
+              <strong>&ldquo;esto no me sirve&rdquo;</strong>.
+              <div className="sub">Valentina toma nota y te ofrece tres caminos abajo</div>
+            </div>
+            <div className="actions">
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={() => router.push(`/quotes/${quoteId}/calculo`)}
+                data-testid="rejected-close"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+
+          <DespieceTable
+            pieces={pieces}
+            focusedPieceId={null}
+            discarded
+            onUpdatePiece={() => {}}
+            onDeletePiece={() => {}}
+            onOpenPieceChat={() => {}}
+            onAddPiece={() => {}}
+          />
+
+          <RecoveryBlock
+            traceId="q_8f2a"
+            onPath={() => {
+              /* Sprint 4 wire recovery */
+            }}
+            onFeedback={() => {
+              /* Sprint 4 wire trace */
+            }}
+          />
+        </div>
+
+        <DespieceEmptyChat onOpenChat={openStepChat} />
+
+        {chatOpen && (
+          <DespieceChatPanel
+            quoteId={quoteId}
+            messages={chat.messages}
+            panelState={chat.panelState}
+            pieceCount={pieces.length}
+            editedCount={editedCount}
+            focusedPiece={focusedPiece}
+            onSend={chat.send}
+            onClose={closeChat}
+          />
+        )}
       </div>
     );
   }
@@ -291,6 +384,9 @@ export function DespieceView({ quoteId }: Props) {
         {/* Sprint 3 observability · banner explicativo cuando audit on. */}
         <IaAuditBanner quoteId={quoteId} />
 
+        {/* Sprint 3 error-states (mockup 17) · banner contexto sesión chat. */}
+        {chatFlagged && <SessionInfoBanner context={chatFlagged.sessionContext} />}
+
         {/* Banner Valentina · pristine / dirty / focused */}
         <div
           className={`ia-banner${manualMode && pieces.length === 0 ? " muted" : ""}`}
@@ -357,6 +453,7 @@ export function DespieceView({ quoteId }: Props) {
         <DespieceTable
           pieces={pieces}
           focusedPieceId={focusedPieceId}
+          chatRefPieceId={chatFlagged?.pieceRefId}
           onUpdatePiece={updatePiece}
           onDeletePiece={deletePiece}
           onOpenPieceChat={openPieceChat}
@@ -417,6 +514,7 @@ export function DespieceView({ quoteId }: Props) {
           focusedPiece={focusedPiece}
           onSend={chat.send}
           onClose={closeChat}
+          flaggedPreset={chatFlagged}
         />
       )}
     </div>

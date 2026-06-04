@@ -20,6 +20,11 @@ import { PieceChatButton } from "./PieceChatButton";
 interface Props {
   piece: Piece;
   focused: boolean;
+  /** Sprint 3 error-states (mockup 17) · cuando true, fila marca
+   * `.row-chat-ref` + label "↳ chat referido a esta pieza". Distinto de
+   * `focused` (que es el chat focused mode) · esta es ref desde chat scoped
+   * del paso completo a una pieza específica del preset flagged. */
+  chatRef?: boolean;
   onUpdate: (pieceId: string, partial: Partial<Piece>) => void;
   onDelete: (pieceId: string) => void;
   onOpenChat: (pieceId: string) => void;
@@ -35,7 +40,14 @@ const RESET_BTN: React.CSSProperties = {
   lineHeight: 1,
 };
 
-export function PieceRow({ piece, focused, onUpdate, onDelete, onOpenChat }: Props) {
+export function PieceRow({
+  piece,
+  focused,
+  chatRef = false,
+  onUpdate,
+  onDelete,
+  onOpenChat,
+}: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -56,7 +68,7 @@ export function PieceRow({ piece, focused, onUpdate, onDelete, onOpenChat }: Pro
     "row",
     isEdited ? "row-edited" : "",
     isManual ? "row-manual" : "",
-    focused ? "row-chat-ref" : "",
+    focused || chatRef ? "row-chat-ref" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -95,6 +107,11 @@ export function PieceRow({ piece, focused, onUpdate, onDelete, onOpenChat }: Pro
           </span>
         )}
         {focused && <span className="sub sub-chat-ref">↳ chat enfocado aquí</span>}
+        {!focused && chatRef && (
+          <span className="sub sub-chat-ref" data-testid={`row-chat-ref-${piece.id}`}>
+            ↳ chat referido a esta pieza
+          </span>
+        )}
       </div>
 
       <PieceCell
