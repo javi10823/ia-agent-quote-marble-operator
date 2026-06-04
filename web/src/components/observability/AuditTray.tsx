@@ -106,15 +106,19 @@ export function AuditTray({ quoteId }: Props) {
             <span className="v">sin eventos</span>
           </div>
         ) : (
-          snapshot.events.map((ev, i) => (
-            <div className="kv" key={`${ev.timestamp}-${i}`}>
-              <span className="k">{ev.timestamp}</span>
-              <span className="v">
-                {ev.name}
-                {ev.detail ? ` (${ev.detail})` : ""}
-              </span>
-            </div>
-          ))
+          snapshot.events.map((ev, i) => {
+            // Fix-up #1 H2: full text como title para tooltip nativo en hover
+            // cuando la celda se trunca con ellipsis (a 1440 los detalles largos).
+            const full = `${ev.name}${ev.detail ? ` (${ev.detail})` : ""}`;
+            return (
+              <div className="kv" key={`${ev.timestamp}-${i}`}>
+                <span className="k">{ev.timestamp}</span>
+                <span className="v" title={full}>
+                  {full}
+                </span>
+              </div>
+            );
+          })
         )}
       </div>
     </div>

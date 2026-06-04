@@ -26,7 +26,8 @@ export function useCalculo(quoteId: string) {
   const [state, setState] = useState<State>("loading");
   const [error, setError] = useState<string | null>(null);
   const [toggles, setToggles] = useState<CalcToggles>({
-    auditOn: false,
+    // Sprint 3 obs-per-row fix-up #1: `auditOn` removido del state local
+    // (ahora vive en useAuditMode global · TopBar).
     ivaVisible: true,
     tipoCliente: "particular",
   });

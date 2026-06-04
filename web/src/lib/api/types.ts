@@ -324,12 +324,13 @@ export interface CalculationResult {
   datosPdf: DatosPdfDefaults;
 }
 
-/** Toggles UI controlados por CalcToolbar (no afectan el cálculo en este PR). */
+/** Toggles UI controlados por CalcToolbar (no afectan el cálculo en este PR).
+ * Sprint 3 obs-per-row fix-up #1: `auditOn` removido del state local de useCalculo
+ * — ahora vive en `useAuditMode` (TopBar global). El field también se eliminó
+ * de esta interfaz porque CalcSection (Material/Merma/Labor/Flete) y LaborRow
+ * reciben `auditOn` directo del hook global en CalculoView, no del state de
+ * toggles. */
 export interface CalcToggles {
-  /** @deprecated Sprint 3 observability-per-row · audit ahora es global via
-   * `useAuditMode` (TopBar). Se mantiene en la interfaz solo por compatibilidad
-   * de tests · no se renderiza desde CalcToolbar. */
-  auditOn: boolean;
   ivaVisible: boolean;
   tipoCliente: "particular" | "edificio";
 }

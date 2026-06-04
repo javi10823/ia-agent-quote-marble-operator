@@ -34,10 +34,22 @@ function getServerSnapshot(): AuditMode {
   return "off";
 }
 
+function applyBody(value: AuditMode) {
+  if (typeof document === "undefined") return;
+  // Fix-up #1 H3: spec original dice attribute AUSENTE en OFF.
+  // Functionally equivalente para `body[data-audit="on"]` CSS selectors,
+  // pero coherente con la expectativa (DevTools muestra atributo solo cuando on).
+  if (value === "on") {
+    document.body.dataset.audit = "on";
+  } else {
+    delete document.body.dataset.audit;
+  }
+}
+
 function setMode(value: AuditMode) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, value);
-  document.body.dataset.audit = value;
+  applyBody(value);
   listeners.forEach((cb) => cb());
 }
 
@@ -47,11 +59,8 @@ export function useAuditMode() {
 
   // Sync body[data-audit] al mount + cada vez que cambia.
   useEffect(() => {
-    if (typeof document === "undefined") return;
-    document.body.dataset.audit = mode;
-    return () => {
-      // No limpiamos al desmontar · el flag es global por sesión.
-    };
+    applyBody(mode);
+    // No limpiamos al desmontar · el flag es global por sesión.
   }, [mode]);
 
   const toggle = useCallback(() => {

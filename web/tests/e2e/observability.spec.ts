@@ -25,11 +25,14 @@ test("toggle AUDIT global en TopBar sincroniza body[data-audit]", async ({ page 
   await go(page, "/quotes/PRES-2026-018/calculo");
   await expect(page.locator('[data-testid="audit-toggle"]')).toBeVisible();
   await expect(page.locator('[data-testid="audit-toggle"]')).toHaveAttribute("data-on", "false");
+  // Fix-up #1 H3: en OFF el atributo data-audit NO existe (delete en useAuditMode).
+  // Functionally equivalente para CSS [data-audit="on"] pero coherente con spec.
+  await expect(page.locator("body")).not.toHaveAttribute("data-audit", /.+/);
   await page.locator('[data-testid="audit-toggle"]').click();
   await expect(page.locator('[data-testid="audit-toggle"]')).toHaveAttribute("data-on", "true");
   await expect(page.locator("body")).toHaveAttribute("data-audit", "on");
   await page.locator('[data-testid="audit-toggle"]').click();
-  await expect(page.locator("body")).toHaveAttribute("data-audit", "off");
+  await expect(page.locator("body")).not.toHaveAttribute("data-audit", /.+/);
 });
 
 test("AuditTray banner muestra 3 columnas con datos canon PRES-018", async ({ page }) => {
@@ -94,7 +97,9 @@ test("IaAuditBanner visible en paso-4 calculo cuando audit on", async ({ page })
   await expect(page.locator('[data-testid="ia-audit-banner"]')).toBeVisible();
 });
 
-test("ChatAuditNote visible dentro del chat scoped del paso-4 cuando audit on", async ({ page }) => {
+test("ChatAuditNote visible dentro del chat scoped del paso-4 cuando audit on", async ({
+  page,
+}) => {
   await go(page, "/quotes/PRES-2026-018/calculo");
   await page.locator('[data-testid="audit-toggle"]').click();
   await page.locator('[data-testid="open-chat"]').click();
@@ -125,10 +130,7 @@ test("CalcToolbar ya no tiene AUDIT toggle local (solo Tipo + IVA + Recalcular)"
   page,
 }) => {
   await go(page, "/quotes/PRES-2026-018/calculo");
-  const toolbar = page.locator('[data-testid="tipo-toggle"]').locator("..");
-  // El AUDIT toggle ahora está en TopBar (1 sola instancia)
+  // El AUDIT toggle ahora está en TopBar (1 sola instancia · refactor decisión Javi C).
   await expect(page.locator('[data-testid="audit-toggle"]')).toHaveCount(1);
-  // El que queda está dentro de la TopBar, no del section-head del CalcToolbar
-  const inTopbar = page.locator('.topbar [data-testid="audit-toggle"]');
-  await expect(inTopbar).toBeVisible();
+  await expect(page.locator('.topbar [data-testid="audit-toggle"]')).toBeVisible();
 });

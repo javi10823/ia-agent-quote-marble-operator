@@ -4802,3 +4802,17 @@ body[data-audit="on"] .audit-tray { display: grid; }
   text-decoration: underline;
   color: oklch(0.92 0.06 25);
 }
+/* Fix-up #1 H2 · Col 3 (EVENTOS EN SESIÓN) truncada sin ellipsis a 1440.
+   `.v` ya tiene overflow:hidden + text-overflow:ellipsis pero faltaba
+   white-space:nowrap (sin él el text wraps en vez de truncarse). Aplica
+   SOLO a Col 3 para preservar Col 1 + Col 2 que estaban OK. */
+.audit-tray .col:nth-child(3) .kv .v {
+  white-space: nowrap;
+}
+/* Fix-up #1 H4 · link "ver tree" disabled debe verse muted (era azul
+   indistinguible de un link activo). Spec: aria-disabled="true" → no link UX. */
+.audit-tray a[aria-disabled="true"] {
+  color: var(--ink-mute);
+  cursor: not-allowed;
+  text-decoration: none;
+}
