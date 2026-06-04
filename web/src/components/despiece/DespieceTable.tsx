@@ -14,6 +14,14 @@ interface Props {
   onDeletePiece: (pieceId: string) => void;
   onOpenPieceChat: (pieceId: string) => void;
   onAddPiece: () => void;
+  /** Sprint 3 error-states (mockup 15) · cuando true, tabla se renderea
+   * `.discarded` con tag "descartado" en el header de Pieza · interacciones
+   * deshabilitadas (sin add-row, sin onUpdate, sin onDelete). */
+  discarded?: boolean;
+  /** Sprint 3 error-states (mockup 17) · ID de la pieza referida por el
+   * chat scoped abierto · se marca con `.row-chat-ref` + label "↳ chat
+   * referido a esta pieza". */
+  chatRefPieceId?: string;
 }
 
 export function DespieceTable({
@@ -23,12 +31,28 @@ export function DespieceTable({
   onDeletePiece,
   onOpenPieceChat,
   onAddPiece,
+  discarded = false,
+  chatRefPieceId,
 }: Props) {
   return (
-    <div className="etable cols-despiece mb-16" data-testid="despiece-table">
+    <div
+      className={`etable cols-despiece mb-16${discarded ? " discarded" : ""}`}
+      data-testid="despiece-table"
+      data-discarded={discarded ? "true" : "false"}
+    >
       <div className="colh">
         <div>#</div>
-        <div>Pieza</div>
+        <div>
+          Pieza
+          {discarded && (
+            <>
+              {" · "}
+              <span className="discarded-tag" data-testid="discarded-tag">
+                descartado
+              </span>
+            </>
+          )}
+        </div>
         <div>Largo (cm)</div>
         <div>Ancho (cm)</div>
         <div>Cant.</div>
@@ -42,27 +66,30 @@ export function DespieceTable({
           key={piece.id}
           piece={piece}
           focused={focusedPieceId === piece.id}
+          chatRef={chatRefPieceId === piece.id}
           onUpdate={onUpdatePiece}
           onDelete={onDeletePiece}
           onOpenChat={onOpenPieceChat}
         />
       ))}
 
-      <div
-        className="add-row"
-        role="button"
-        tabIndex={0}
-        data-testid="despiece-add-row"
-        onClick={onAddPiece}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onAddPiece();
-          }
-        }}
-      >
-        + agregar pieza manualmente
-      </div>
+      {!discarded && (
+        <div
+          className="add-row"
+          role="button"
+          tabIndex={0}
+          data-testid="despiece-add-row"
+          onClick={onAddPiece}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onAddPiece();
+            }
+          }}
+        >
+          + agregar pieza manualmente
+        </div>
+      )}
     </div>
   );
 }

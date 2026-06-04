@@ -142,6 +142,10 @@ export function useDespiece(quoteId: string) {
     (p) => p.edited === true || p.origin === "AGREGADO_MANUAL",
   ).length;
 
+  // Sprint 3 error-states · flags del PieceList propagados al UI.
+  const rejected = data?.rejected === true;
+  const chatFlagged = data?.chatFlagged ?? null;
+
   return {
     pieces,
     timeline,
@@ -155,5 +159,7 @@ export function useDespiece(quoteId: string) {
     regenerate,
     isDirty,
     editedCount,
+    rejected,
+    chatFlagged,
   };
 }

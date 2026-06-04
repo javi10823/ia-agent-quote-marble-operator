@@ -598,3 +598,49 @@ export const CALCULATIONS_BY_QUOTE_ID: Record<string, CalculationResult> = {
   "PRES-2026-018": CANONICAL_CALCULATION_018,
   "PRES-2026-017": CANONICAL_CALCULATION_017,
 };
+
+// ─── Sprint 3 error-states · mockup 17 (chat scoped flagged) ─────────
+// Preset literal del mockup 17-chat-error-ia.html (4 mensajes sobre R5
+// zócalo perimetral · el último de Valentina es flagged como inútil).
+export const CHAT_FLAGGED_PRESET_018: import("../api/types").ChatFlaggedPreset = {
+  sessionInfo: "4 mensajes · primer turno hace 8 min",
+  sessionContext: "CHAT ABIERTO SOBRE R5 · ZÓCALO PERIMETRAL · HACE 8 MIN",
+  pieceRefId: "R5",
+  composerPrefill:
+    "¿Y el regrueso del zócalo? Necesito saber si va con regrueso 4cm o 2cm para presupuestar bien.",
+  messages: [
+    {
+      id: "flag-m1",
+      role: "user",
+      content:
+        "R5 lo dejé en 12cm porque el cliente quiere zócalo alto. Eso me suma TOMAS según vos, ¿qué pasa si lo bajo a 8cm?",
+      timestamp: "14:15",
+      relativeTs: "14:15 · hace 8 min",
+    },
+    {
+      id: "flag-m2",
+      role: "valentina",
+      content:
+        'Si bajás R5 a 8cm ya no aplica la regla ">10cm = 1 TOMAS automático". Te queda solo la TOMAS de la alzada (R3). El cálculo del paso 4 baja en $7.818 (1 TOMAS menos). Ojo: zócalos <10cm pueden quedar visualmente cortos contra muebles altos. Decisión del cliente.',
+      timestamp: "14:16",
+      relativeTs: "14:16 · hace 7 min",
+    },
+    {
+      id: "flag-m3",
+      role: "user",
+      content:
+        "¿Y el regrueso del zócalo? Necesito saber si va con regrueso 4cm o 2cm para presupuestar bien.",
+      timestamp: "14:22",
+      relativeTs: "14:22 · hace 1 min",
+    },
+    {
+      id: "flag-m4",
+      role: "valentina",
+      content:
+        "El regrueso es una técnica de marmolería que consiste en pegar dos piezas para dar mayor espesor visual al canto. En general se usa en mesadas para dar más presencia al frente. Hay distintos espesores disponibles según el material.",
+      timestamp: "14:23",
+      relativeTs: "14:23 · hace 30s",
+      flagged: true,
+    },
+  ],
+};
