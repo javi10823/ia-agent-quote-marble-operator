@@ -375,16 +375,34 @@ function buildFailedTimeline(): TimelineStep[] {
 
 async function seedPieceList(quoteId: string): Promise<PieceList> {
   const { PIECES_BY_QUOTE_ID, TIMELINE_BY_QUOTE_ID } = await import("../mocks/canonicalQuote");
-  const canon = PIECES_BY_QUOTE_ID[quoteId];
+
+  // Sprint 3 error-states · sufijos de trigger E2E (mismo patrón que -ERROR
+  // del paso-4 PR #465). El canónico (PRES-2026-018) provee los datos base.
+  const isRejected = quoteId.endsWith("-REJECTED");
+  const isFlagged = quoteId.endsWith("-FLAGGED");
+  const baseId = isRejected
+    ? quoteId.slice(0, -"-REJECTED".length)
+    : isFlagged
+      ? quoteId.slice(0, -"-FLAGGED".length)
+      : quoteId;
+
+  const canon = PIECES_BY_QUOTE_ID[baseId] ?? PIECES_BY_QUOTE_ID[quoteId];
   if (canon && canon.length > 0) {
     const pieces = deepClonePieces(canon);
     const total = piecesTotalM2(pieces);
-    return {
+    const base: PieceList = {
       pieces,
       status: "done",
-      timeline: TIMELINE_BY_QUOTE_ID[quoteId] ?? buildDoneTimeline(pieces.length, total),
+      timeline: TIMELINE_BY_QUOTE_ID[baseId] ?? buildDoneTimeline(pieces.length, total),
       warnings: [],
     };
+    if (isRejected) base.rejected = true;
+    if (isFlagged) {
+      // Preset del chat flagged · mockup 17 literal (4 mensajes sobre R5).
+      const { CHAT_FLAGGED_PRESET_018 } = await import("../mocks/canonicalQuote");
+      base.chatFlagged = CHAT_FLAGGED_PRESET_018;
+    }
+    return base;
   }
   return {
     pieces: [],
@@ -649,5 +667,21 @@ export async function getAuditSnapshot(
   options?: { signal?: AbortSignal },
 ): Promise<import("./types").AuditSnapshot> {
   await delay(120 + Math.random() * 120, options?.signal);
+
+  // Sprint 3 error-states · sufijos heredan el snapshot del baseId con
+  // marcador adicional `· rejected` en el trace (decisión Javi G del mockup
+  // 15: "Tu feedback se guarda como trace q_8f2a · rejected").
+  const isRejected = quoteId.endsWith("-REJECTED");
+  const isFlagged = quoteId.endsWith("-FLAGGED");
+  if (isRejected || isFlagged) {
+    const baseId = quoteId.slice(0, -(isRejected ? "-REJECTED" : "-FLAGGED").length);
+    const base = _auditByQuote[baseId];
+    if (base) {
+      const clone: import("./types").AuditSnapshot = JSON.parse(JSON.stringify(base));
+      if (isRejected) clone.trace.traceId = `${clone.trace.traceId} · rejected`;
+      if (isFlagged) clone.trace.traceId = `${clone.trace.traceId} · flagged`;
+      return clone;
+    }
+  }
   return _auditByQuote[quoteId] ?? _auditGeneric;
 }

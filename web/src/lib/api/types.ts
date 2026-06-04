@@ -187,6 +187,39 @@ export interface PieceList {
   status: "pending" | "inferring" | "done" | "failed";
   timeline: TimelineStep[];
   warnings: string[];
+  /** Sprint 3 error-states (mockup 15) · Marina marcó este despiece como
+   * "esto no me sirve". Cuando true, DespieceView renderea banner error +
+   * tabla `.discarded` + RecoveryBlock con 3 caminos. Mock-only · disparado
+   * por sufijo `-REJECTED` en el quoteId. Sprint 4 wirea recovery paths. */
+  rejected?: boolean;
+  /** Sprint 3 error-states (mockup 17) · chat tiene un mensaje flagged.
+   * Mock-only · disparado por sufijo `-FLAGGED`. Cuando presente, el
+   * DespieceChatPanel carga el preset (4 mensajes con el último flagged
+   * + sessionInfo + composerPrefill). */
+  chatFlagged?: ChatFlaggedPreset;
+}
+
+/** Sprint 3 error-states (mockup 17) · preset del chat flagged. */
+export interface ChatFlaggedPreset {
+  /** Mensajes del stream pre-existente (4 mock). El último es flagged. */
+  messages: Array<{
+    id: string;
+    role: "user" | "valentina";
+    content: string;
+    timestamp: string;
+    /** Solo para el último mensaje de Valentina · marca flagged en el UI. */
+    flagged?: boolean;
+    /** Etiqueta de timestamp relativo del mockup ("14:23 · hace 30s"). */
+    relativeTs?: string;
+  }>;
+  /** Sesión info del header del chat ("4 mensajes · primer turno hace 8 min"). */
+  sessionInfo: string;
+  /** Sesión info del banner sobre la tabla ("CHAT ABIERTO SOBRE R5 · HACE 8 MIN"). */
+  sessionContext: string;
+  /** ID de la pieza referida por el chat (para el .row-chat-ref de la tabla). */
+  pieceRefId: string;
+  /** Texto pre-cargado del composer (último mensaje user). */
+  composerPrefill: string;
 }
 
 /** m² unitario (half-up a 2 decimales, igual que calculator.py). */
