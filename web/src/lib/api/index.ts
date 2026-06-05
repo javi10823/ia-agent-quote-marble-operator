@@ -41,6 +41,9 @@ export const applyAutoFix = mocks.applyAutoFix;
 /* ─── Observability · Sprint 3 observability-per-row · mockup 13 ── */
 export const getAuditSnapshot = mocks.getAuditSnapshot;
 
+/* ─── Paso 5 PDF · Sprint 4 paso-5-pdf-preview · mockup 18 ── */
+export const getPdfTrace = mocks.getPdfTrace;
+
 /* ─── Helpers de test (reset de stores in-memory del mock) ───────── */
 export const _resetContextStore = mocks._resetContextStore;
 export const _resetPiecesStore = mocks._resetPiecesStore;
