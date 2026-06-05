@@ -29,10 +29,17 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-/** fetch con credentials:include + timeout + 401 handling + merge de signal externo. */
+/** fetch con credentials:include + timeout + 401 handling + merge de signal externo.
+ *
+ * Sprint 4 ssr-auth (Opción D): `bearerToken` opcional inyecta
+ * `Authorization: Bearer <token>` cuando se pasa. SSR (`typeof window ===
+ * "undefined"`) lo usa para autenticar con el JWT leído de la cookie
+ * httpOnly vercel · client-side sigue dependiendo de la cookie cross-origin
+ * de Railway via `credentials: "include"` (no necesita el header).
+ */
 async function apiFetch(
   path: string,
-  init: RequestInit & { signal?: AbortSignal } = {},
+  init: RequestInit & { signal?: AbortSignal; bearerToken?: string | null } = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<Response> {
   const ctrl = new AbortController();
@@ -41,9 +48,13 @@ async function apiFetch(
     if (init.signal.aborted) ctrl.abort();
     else init.signal.addEventListener("abort", () => ctrl.abort(), { once: true });
   }
+  const { bearerToken, ...rest } = init;
+  const headers = new Headers(rest.headers);
+  if (bearerToken) headers.set("Authorization", `Bearer ${bearerToken}`);
   try {
     const response = await fetch(`${API_URL}${path}`, {
-      ...init,
+      ...rest,
+      headers,
       credentials: "include",
       signal: ctrl.signal,
     });
@@ -176,11 +187,22 @@ function ssrFallbackHeader(quoteId: string): QuoteHeader {
  */
 export async function getQuoteMetadata(
   quoteId: string,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; bearerToken?: string | null },
 ): Promise<QuoteHeader> {
+  // Sprint 4 ssr-auth (Opción D): en SSR el browser no nos manda la cookie
+  // httpOnly cross-origin de Railway. El Server Component caller (layout)
+  // lee el JWT con `getServerToken()` de `@/lib/auth-server` y lo pasa por
+  // `options.bearerToken`. NO importamos `auth-server` desde acá porque
+  // este módulo se incluye en el bundle client y `next/headers` solo
+  // existe en server (Next 14 build error).
+  //
+  // Si no hay token (pre-login / cookie expirada), bearerToken queda null
+  // → request sale sin auth → backend 401 → catch degrada graceful con
+  // `ssrFallbackHeader` (mismo comportamiento previo a este PR).
   try {
     const response = await apiFetch(`/api/quotes/${encodeURIComponent(quoteId)}`, {
       signal: options?.signal,
+      bearerToken: options?.bearerToken ?? null,
     });
     if (response.status === 404) {
       throw new ApiError("QUOTE_NOT_FOUND", `Quote ${quoteId} no encontrado`, 404);

@@ -307,7 +307,9 @@ const GENERIC_QUOTE_HEADER: Omit<QuoteHeader, "id"> = {
 
 export async function getQuoteMetadata(
   quoteId: string,
-  options?: { signal?: AbortSignal },
+  // Sprint 4 ssr-auth: `bearerToken` se acepta en la signature compartida
+  // con real.ts pero el mock lo ignora (no hace fetch al backend).
+  options?: { signal?: AbortSignal; bearerToken?: string | null },
 ): Promise<QuoteHeader> {
   await delay(80 + Math.random() * 120, options?.signal);
   const found = DASHBOARD_QUOTES.find((q) => q.id === quoteId);
