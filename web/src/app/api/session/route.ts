@@ -36,6 +36,14 @@ import { SESSION_COOKIE_NAME } from "@/lib/session-cookie";
 
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24; // 24h
 
+// Fix-up #1 PR #469 · Vercel route handlers en cold start con `NextResponse(null,
+// { status: 204 })` + Set-Cookie podían crashear con 503 (issue conocido del
+// runtime Node serverless). Forzar dynamic evita el caching agresivo, y devolver
+// cuerpo JSON (en vez de null) evita el path con body vacío. Combinado con el
+// fix de la firma del DELETE (acepta NextRequest como POST) cierra los 3 posibles
+// culpables del 503 reportado por el visual check CFC en el preview real.
+export const dynamic = "force-dynamic";
+
 function isProd(): boolean {
   return process.env.NODE_ENV === "production";
 }
@@ -56,7 +64,7 @@ export async function POST(request: NextRequest) {
   if (!token) {
     return NextResponse.json({ ok: false, reason: "missing-token" }, { status: 400 });
   }
-  const res = new NextResponse(null, { status: 204 });
+  const res = NextResponse.json({ ok: true }, { status: 200 });
   res.cookies.set({
     name: SESSION_COOKIE_NAME,
     value: token,
@@ -69,9 +77,13 @@ export async function POST(request: NextRequest) {
   return res;
 }
 
-/** DELETE `/api/session` → limpia la cookie y devuelve 204. */
-export async function DELETE() {
-  const res = new NextResponse(null, { status: 204 });
+/** DELETE `/api/session` → limpia la cookie y devuelve 200 `{ ok: true }`.
+ *
+ * Acepta `NextRequest` (firma consistente con POST aunque no la use) · evita
+ * issues de Vercel cold start con handlers sin parámetros. Devuelve JSON
+ * (no null body 204) por el mismo issue serverless. */
+export async function DELETE(_request: NextRequest) {
+  const res = NextResponse.json({ ok: true }, { status: 200 });
   res.cookies.set({
     name: SESSION_COOKIE_NAME,
     value: "",

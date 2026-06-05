@@ -61,8 +61,12 @@ export async function login(credentials: LoginCredentials): Promise<Session> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: body.token }),
     });
-  } catch {
-    // No bloqueamos el login si la sync falla.
+  } catch (err) {
+    // Fix-up #1 PR #469 · NICE-TO-HAVE audit · loguear best-effort fails.
+    // No bloqueamos el login si la sync falla (sigue funcionando · solo SSR
+    // queda degradado al fallback), pero dejamos rastro diagnosticable en
+    // producción para que un futuro 503 / network blip se note rápido.
+    console.warn("[auth] Sync con /api/session falló (login)", err);
   }
 
   const session: Session = {
@@ -90,8 +94,9 @@ export async function logout(): Promise<void> {
   // backend la rechazará y `handleApiError` reanudará el redirect a /login.
   try {
     await fetch("/api/session", { method: "DELETE" });
-  } catch {
-    // Best-effort.
+  } catch (err) {
+    // Fix-up #1 PR #469 · NICE-TO-HAVE audit · loguear best-effort fails.
+    console.warn("[auth] Sync con /api/session falló (logout)", err);
   }
   clearSession();
 }
