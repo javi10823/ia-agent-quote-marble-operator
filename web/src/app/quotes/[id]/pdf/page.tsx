@@ -14,6 +14,7 @@ import {
   getContextForQuote,
   getPdfTrace,
   getQuoteMetadata,
+  listPiecesForQuote,
 } from "@/lib/api";
 import { getServerToken } from "@/lib/auth-server";
 import { getEnvioSeed } from "@/lib/pdfFormat";
@@ -23,11 +24,14 @@ export default async function PdfPage({ params }: { params: { id: string } }) {
   const bearerToken = getServerToken();
   // Cargas en paralelo. `Promise.allSettled` evita que un fallo individual
   // rompa toda la página · degradamos campos faltantes.
-  const [metaR, calcR, ctxR, traceR] = await Promise.allSettled([
+  // Fix-up #1: agregamos `listPiecesForQuote` para las sub-filas `row-piece`
+  // del PDF (template HTML del backend las renderea con cada pieza del despiece).
+  const [metaR, calcR, ctxR, traceR, piecesR] = await Promise.allSettled([
     getQuoteMetadata(params.id, { bearerToken }),
     getCalculationForQuote(params.id),
     getContextForQuote(params.id),
     getPdfTrace(params.id),
+    listPiecesForQuote(params.id),
   ]);
 
   if (metaR.status === "rejected" || calcR.status === "rejected" || traceR.status === "rejected") {
@@ -51,6 +55,11 @@ export default async function PdfPage({ params }: { params: { id: string } }) {
   const envioSeed = ctx
     ? getEnvioSeed({ cliente: ctx.cliente?.value ?? null, localidad: ctx.localidad?.value ?? null })
     : "";
+  // Fix-up #1: piezas para sub-filas row-piece + tipologia para campo
+  // "Proyecto" del grid cliente (template HTML del backend).
+  const pieces = piecesR.status === "fulfilled" ? piecesR.value.pieces : [];
+  const proyecto =
+    (ctx?.tipologia?.value && String(ctx.tipologia.value)) || quote.client || "";
 
   // Sprint 4 paso-5 · `pdfDateIso` calculado server-side y pasado como
   // string al client → evita hydration mismatch por `new Date()` corriendo
@@ -68,6 +77,8 @@ export default async function PdfPage({ params }: { params: { id: string } }) {
       trace={trace}
       envioSeed={envioSeed}
       pdfDateIso={pdfDateIso}
+      pieces={pieces}
+      proyecto={proyecto}
     />
   );
 }

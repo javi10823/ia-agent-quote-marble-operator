@@ -14,7 +14,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { CalculationResult, PdfTrace, QuoteHeader } from "@/lib/api";
+import type { CalculationResult, PdfTrace, Piece, QuoteHeader } from "@/lib/api";
 import { usePdfForm } from "@/lib/hooks/usePdfForm";
 import { formatPdfDate, getPdfFilename } from "@/lib/pdfFormat";
 import { PdfPreviewDoc } from "./PdfPreviewDoc";
@@ -35,9 +35,25 @@ interface Props {
    * podría caer en distintos segundos/días → format dd.mm.yyyy distinto).
    * Tests determinísticos pueden pasar override. */
   pdfDateIso: string;
+  /** Piezas del paso-3 para renderizar las sub-filas `row-piece` debajo del
+   * row-material en el PDF. Carga server-side via `listPiecesForQuote`. */
+  pieces: Piece[];
+  /** Texto del campo "Proyecto" del grid cliente del PDF · proviene de la
+   * tipología del paso-2 (`ContextResponse.tipologia`). Fallback al `client`
+   * del QuoteHeader cuando el contexto no expone tipología. */
+  proyecto: string;
 }
 
-export function PdfView({ quoteId, quote, calculation, trace, envioSeed, pdfDateIso }: Props) {
+export function PdfView({
+  quoteId,
+  quote,
+  calculation,
+  trace,
+  envioSeed,
+  pdfDateIso,
+  pieces,
+  proyecto,
+}: Props) {
   const { state, update } = usePdfForm({
     vigenciaDias: calculation.datosPdf.vigenciaDias,
     anticipoPct: calculation.datosPdf.anticipoPct,
@@ -109,6 +125,8 @@ export function PdfView({ quoteId, quote, calculation, trace, envioSeed, pdfDate
               trace={trace}
               state={state}
               fechaFmt={fechaFmt}
+              pieces={pieces}
+              proyecto={proyecto}
             />
           </div>
         </div>

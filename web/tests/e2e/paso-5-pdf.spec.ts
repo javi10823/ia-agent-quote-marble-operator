@@ -31,25 +31,89 @@ test("filename auto-generado formato canónico mockup 18 (PDF + Excel)", async (
   await expect(xlsxName).toContainText(".xlsx");
 });
 
-test("sidebar Vigencia live-edit refleja en el PDF inline", async ({ page }) => {
+test("sidebar Vigencia es info interna · NO aparece en el PDF (template real)", async ({
+  page,
+}) => {
+  // Fix-up #1 · el template HTML del backend NO tiene placeholder para
+  // vigencia (es info interna del workflow · queda en el state hasta que
+  // el quote pasa a estado "expired" en mockup 22). El sidebar igual
+  // controla el campo pero no se renderea en el documento.
   await goPdf(page);
-  const input = page.locator('[data-testid="ps-input-vigencia"]');
-  await input.fill("21");
-  await expect(page.locator('[data-testid="pdf-vigencia"]')).toContainText("21 días");
+  await page.locator('[data-testid="ps-input-vigencia"]').fill("21");
+  const doc = page.locator('[data-testid="pdf-doc-inline"]');
+  await expect(doc).not.toContainText("21 días desde hoy");
 });
 
-test("sidebar Anticipo live-edit refleja en el footer del PDF", async ({ page }) => {
+test("sidebar Anticipo live-edit refleja en grid cliente (Forma de pago)", async ({ page }) => {
+  // Fix-up #1 · template real tiene el anticipo en grid "Forma de pago"
+  // (no en el footer · ese fue invento mío).
   await goPdf(page);
   await page.locator('[data-testid="ps-input-anticipo"]').fill("70");
-  await expect(page.locator('[data-testid="pdf-anticipo-cond"]')).toContainText("70%");
+  await expect(page.locator('[data-testid="pdf-forma-pago"]')).toContainText("70%");
 });
 
-test("sidebar Plazo live-edit refleja en el footer del PDF", async ({ page }) => {
+test("sidebar Plazo live-edit refleja en grid cliente (Fecha de entrega)", async ({ page }) => {
+  // Fix-up #1 · template real tiene el plazo en grid "Fecha de entrega"
+  // (no en el footer · ese fue invento mío).
   await goPdf(page);
   await page.locator('[data-testid="ps-input-plazo"]').fill("60 días desde toma de medidas");
-  await expect(page.locator('[data-testid="pdf-plazo-cond"]')).toContainText(
+  await expect(page.locator('[data-testid="pdf-fecha-entrega"]')).toContainText(
     "60 días desde toma de medidas",
   );
+});
+
+test("PDF contiene contact info LITERAL del template (Rosario · D'Angelo)", async ({ page }) => {
+  await goPdf(page);
+  const doc = page.locator('[data-testid="pdf-doc-inline"]');
+  await expect(doc).toContainText("SAN NICOLAS 1160");
+  await expect(doc).toContainText("341-3082996");
+  await expect(doc).toContainText("marmoleriadangelo@gmail.com");
+});
+
+test("PDF renderea sub-filas row-piece con las piezas del paso-3", async ({ page }) => {
+  // Canon PRES-2026-018: 5 piezas (R1-R5) del despiece.
+  await goPdf(page);
+  const pieces = page.locator('[data-testid="pdf-row-piece"]');
+  await expect(pieces).toHaveCount(5);
+});
+
+test("PDF grid cliente · orden Cliente / Forma de pago / Proyecto / Fecha entrega", async ({
+  page,
+}) => {
+  await goPdf(page);
+  // Las 4 celdas en el orden literal del template.
+  await expect(page.locator('[data-testid="pdf-cliente"]')).toBeVisible();
+  await expect(page.locator('[data-testid="pdf-forma-pago"]')).toBeVisible();
+  await expect(page.locator('[data-testid="pdf-proyecto"]')).toBeVisible();
+  await expect(page.locator('[data-testid="pdf-fecha-entrega"]')).toBeVisible();
+});
+
+test("PDF tabla headers LITERAL del template", async ({ page }) => {
+  await goPdf(page);
+  const doc = page.locator('[data-testid="pdf-doc-inline"]');
+  await expect(doc).toContainText("Descripción");
+  await expect(doc).toContainText("Cantidad");
+  await expect(doc).toContainText("Precio unitario");
+  await expect(doc).toContainText("Precio total");
+});
+
+test("PDF row-sobrante visible cuando merma.status='aplica' (canon 018)", async ({ page }) => {
+  await goPdf(page);
+  await expect(page.locator('[data-testid="pdf-row-sobrante"]')).toBeVisible();
+  await expect(page.locator('[data-testid="pdf-row-sobrante"]')).toContainText("SOBRANTE");
+});
+
+test("PDF footer contiene copy LITERAL del template (CONDICIONES + FORMAS DE PAGO)", async ({
+  page,
+}) => {
+  await goPdf(page);
+  const doc = page.locator('[data-testid="pdf-doc-inline"]');
+  await expect(doc).toContainText("*COTIZACION OFICIAL:");
+  await expect(doc).toContainText("CONDICIONES");
+  await expect(doc).toContainText("*LOS PRECIOS INCLUYEN IVA");
+  await expect(doc).toContainText("FORMAS DE PAGO");
+  await expect(doc).toContainText("80% seña , 20% restante contra entrega");
+  await expect(doc).toContainText("TARJETAS DE CREDITO CONSULTAR PLANES");
 });
 
 test("sidebar Datos de envío seedeado desde paso-2 (cliente + localidad)", async ({ page }) => {
@@ -59,12 +123,16 @@ test("sidebar Datos de envío seedeado desde paso-2 (cliente + localidad)", asyn
   await expect(envio).not.toHaveValue("");
 });
 
-test("sidebar Datos de envío editable · refleja en el PDF inline", async ({ page }) => {
+test("sidebar Datos de envío es info interna · NO aparece en el PDF (template real)", async ({
+  page,
+}) => {
+  // Fix-up #1 · idem vigencia · el template HTML NO tiene placeholder para
+  // dirección de envío. Es info interna para preparar la entrega.
   await goPdf(page);
-  await page.locator('[data-testid="ps-input-envio"]').fill("Belgrano · 4° piso (con ascensor)");
-  await expect(page.locator('[data-testid="pdf-envio"]')).toContainText(
-    "Belgrano · 4° piso (con ascensor)",
-  );
+  const sentinel = "Belgrano · 4° piso (con ascensor)";
+  await page.locator('[data-testid="ps-input-envio"]').fill(sentinel);
+  const doc = page.locator('[data-testid="pdf-doc-inline"]');
+  await expect(doc).not.toContainText(sentinel);
 });
 
 test("Notas internas NO aparecen en el PDF inline", async ({ page }) => {
