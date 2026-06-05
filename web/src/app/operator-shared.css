@@ -1,3 +1,8 @@
+/* Sprint 4 paso-5 fix-up #2 · @import Barlow para el PDF preview inline.
+   Debe ir al TOPE (CSS spec: @import antes de cualquier ruleset). La font
+   se usa SOLO dentro de `.pdf-doc-inline` (ver bloque al final del archivo). */
+@import url('https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+
 /* ─────────────────────────────────────────────────────────
    Operator · AI Scoped — design tokens + reusable styles
    Toma el sistema existente (Marmoleria Operator IA):
@@ -4815,4 +4820,278 @@ body[data-audit="on"] .audit-tray { display: grid; }
   color: var(--ink-mute);
   cursor: not-allowed;
   text-decoration: none;
+}
+
+/* ─── Sprint 4 paso-5 fix-up #2 · PDF preview 1:1 con template backend ─────────
+   Replica el <style> de api/templates/quote-template.html, scopeado bajo
+   `.pdf-doc-inline ...` para aislar del resto del CSS (cero regresión Sprint 3:
+   `.grand-total` del paso-4 calc tiene reglas oscuras propias que coexisten
+   sin conflicto).
+
+   Source-of-truth visual: api/templates/quote-template.html líneas 8-269.
+   Si el template cambia, este bloque se debe re-sincronizar. */
+
+.pdf-doc-inline {
+  font-family: 'Barlow', sans-serif;
+  font-size: 9pt;
+  color: #1a1a1a;
+  background: #ffffff;
+  padding: 0;
+  max-width: 210mm;
+  margin: 0 auto;
+}
+.pdf-doc-inline * {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* ── BARRA SUPERIOR AZUL ── */
+.pdf-doc-inline .top-bar {
+  background-color: #1a2f5e;
+  height: 8px;
+  width: 100%;
+}
+
+/* ── CONTENIDO ── */
+.pdf-doc-inline .content {
+  padding: 12mm 18mm 15mm 18mm;
+}
+
+/* ── HEADER: LOGO + CONTACTO ── */
+.pdf-doc-inline .header {
+  margin-bottom: 8mm;
+}
+.pdf-doc-inline .logo-img {
+  height: 28px;
+  display: block;
+  margin-bottom: 3mm;
+}
+.pdf-doc-inline .logo-text {
+  font-size: 22pt;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #1a1a1a;
+  line-height: 1;
+}
+.pdf-doc-inline .logo-text .sub {
+  font-size: 7pt;
+  font-weight: 500;
+  letter-spacing: 0.3em;
+  color: #555;
+  display: block;
+  margin-top: 1px;
+}
+.pdf-doc-inline .contact {
+  margin-top: 3mm;
+  font-size: 8pt;
+  color: #1a1a1a;
+  line-height: 1.7;
+}
+
+/* ── TÍTULO PRESUPUESTO ── */
+.pdf-doc-inline .title-section {
+  margin-bottom: 3mm;
+}
+.pdf-doc-inline .title-section h1 {
+  font-size: 18pt;
+  font-weight: 700;
+  color: #1a1a1a;
+  line-height: 1;
+  margin-bottom: 1mm;
+}
+.pdf-doc-inline .title-section .fecha {
+  font-size: 8.5pt;
+  color: #1a1a1a;
+}
+
+/* ── INFO CLIENTE — grid 2 columnas ── */
+.pdf-doc-inline .client-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  margin: 4mm 0 4mm 0;
+}
+.pdf-doc-inline .client-cell {
+  padding: 1mm 0;
+}
+.pdf-doc-inline .client-label {
+  font-size: 8.5pt;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+.pdf-doc-inline .client-value {
+  font-size: 8.5pt;
+  font-weight: 400;
+  color: #1a1a1a;
+}
+
+/* ── LÍNEA DIVISORIA ── */
+.pdf-doc-inline hr {
+  border: none;
+  border-top: 1px solid #1a1a1a;
+  margin: 3mm 0;
+}
+
+/* ── TABLA DE ÍTEMS ── */
+.pdf-doc-inline .items-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1mm;
+}
+.pdf-doc-inline .items-table thead tr th {
+  font-size: 8.5pt;
+  font-weight: 700;
+  color: #1a1a1a;
+  text-align: left;
+  padding: 2mm 0 2mm 0;
+  border-bottom: 1px solid #1a1a1a;
+}
+.pdf-doc-inline .items-table thead tr th.right { text-align: right; }
+
+/* Anchos de columna */
+.pdf-doc-inline .col-desc   { width: 54%; }
+.pdf-doc-inline .col-cant   { width: 12%; }
+.pdf-doc-inline .col-precio { width: 20%; }
+.pdf-doc-inline .col-total  { width: 14%; }
+
+/* Franjas alternadas */
+.pdf-doc-inline .items-table tbody tr:nth-child(odd) td {
+  background-color: #f2f2f2;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.pdf-doc-inline .items-table tbody tr:nth-child(even) td {
+  background-color: #ffffff;
+}
+.pdf-doc-inline .items-table td {
+  padding-left: 0;
+  padding-right: 2mm;
+}
+.pdf-doc-inline .right { text-align: right; }
+
+/* ── FILA MATERIAL PRINCIPAL ── */
+.pdf-doc-inline .row-material td {
+  padding-top: 1.5mm;
+  padding-bottom: 0.5mm;
+  font-size: 8.5pt;
+  font-weight: 400;
+  color: #1a1a1a;
+  vertical-align: top;
+}
+.pdf-doc-inline .row-material td:first-child { font-weight: 700; }
+
+/* ── SUB-FILAS DE PIEZAS ── */
+.pdf-doc-inline .row-piece td {
+  padding-top: 0.2mm;
+  padding-bottom: 0.2mm;
+  font-size: 8pt;
+  color: #1a1a1a;
+  font-weight: 400;
+}
+.pdf-doc-inline .row-piece:last-of-type td { padding-bottom: 1.5mm; }
+
+/* ── FILA DESC ── */
+.pdf-doc-inline .row-desc td {
+  padding-top: 0.3mm;
+  padding-bottom: 0.3mm;
+  font-size: 8pt;
+  color: #1a1a1a;
+}
+.pdf-doc-inline .row-desc em { font-style: italic; }
+
+/* ── SUBTOTAL ── */
+.pdf-doc-inline .row-subtotal td {
+  padding-top: 1.5mm;
+  padding-bottom: 1.5mm;
+  font-size: 8.5pt;
+  font-weight: 400;
+  color: #1a1a1a;
+  text-align: right;
+}
+.pdf-doc-inline .row-subtotal td:last-child { font-weight: 700; }
+
+/* ── SPACER ── */
+.pdf-doc-inline .row-spacer td {
+  padding-top: 1.5mm;
+  padding-bottom: 1.5mm;
+}
+
+/* ── FILA PILETA ── */
+.pdf-doc-inline .row-pileta td {
+  padding-top: 1.5mm;
+  padding-bottom: 1.5mm;
+  font-size: 8.5pt;
+  font-weight: 400;
+  color: #1a1a1a;
+  vertical-align: top;
+}
+.pdf-doc-inline .row-pileta td:first-child { font-weight: 700; }
+
+/* ── SECCIÓN MANO DE OBRA ── */
+.pdf-doc-inline .row-mo-header td {
+  padding-top: 1.5mm;
+  padding-bottom: 0.5mm;
+  font-size: 8.5pt;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+/* ── FILA MO ── */
+.pdf-doc-inline .row-labor td {
+  padding-top: 1mm;
+  padding-bottom: 1mm;
+  font-size: 8.5pt;
+  font-weight: 400;
+  color: #1a1a1a;
+  vertical-align: top;
+}
+
+/* ── TOTAL PESOS ── */
+.pdf-doc-inline .row-total-pesos td {
+  padding-top: 1.5mm;
+  padding-bottom: 1.5mm;
+  font-size: 8.5pt;
+  font-weight: 400;
+  color: #1a1a1a;
+  text-align: right;
+}
+.pdf-doc-inline .row-total-pesos td:last-child { font-weight: 700; }
+
+/* ── CAJA GRAND TOTAL (override total de las reglas globales `.grand-total`
+   del Sprint 3 paso-4: la especificidad `.pdf-doc-inline .grand-total` gana). */
+.pdf-doc-inline .grand-total {
+  border: 1.5px solid #1a1a1a;
+  background: #ffffff;
+  text-align: center;
+  padding: 3.5mm 4mm;
+  font-size: 9pt;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin: 4mm 0 5mm 0;
+  /* Reset de reglas del paso-4 que no aplican acá. */
+  display: block;
+  grid-template-columns: none;
+  border-color: #1a1a1a;
+}
+
+/* ── FOOTER ── */
+.pdf-doc-inline .footer {
+  font-size: 7.5pt;
+  color: #1a1a1a;
+  line-height: 1.6;
+}
+.pdf-doc-inline .footer p { margin-bottom: 0.5mm; }
+.pdf-doc-inline .footer .bold { font-weight: 700; }
+.pdf-doc-inline .footer .section { margin-top: 2.5mm; }
+
+/* ── PRINT (scopeado al PDF inline para no afectar reglas print previas) ── */
+@media print {
+  .pdf-doc-inline .top-bar {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .pdf-doc-inline .content {
+    padding: 10mm 15mm 12mm 15mm;
+  }
 }
