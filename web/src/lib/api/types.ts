@@ -411,3 +411,16 @@ export interface AuditSnapshot {
    * independientes del snapshot. */
   isEmpty?: boolean;
 }
+
+// ─── Sprint 4 paso-5-pdf-preview · mockup 18 ─────────────────────────────
+// Datos del bloque Trazabilidad plegable del sidebar. Mock-only · Sprint 5
+// wirea al backend cuando exponga trace_id + inputs_hash de la corrida real.
+
+/** Trazabilidad del PDF v1 · mostrada en `<details class="trace-block">`. */
+export interface PdfTrace {
+  traceId: string;
+  promptVersion: string;
+  inputsHash: string;
+  /** Snapshot de los JSON consumidos para el cálculo (ej. "materials.json @ 03.05 · architects.json @ 02.05"). */
+  snapshot: string;
+}

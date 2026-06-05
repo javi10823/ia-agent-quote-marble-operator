@@ -23,11 +23,18 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   // Init sincrónico: en modo default (sin NEXT_PUBLIC_REQUIRE_AUTH) arranca
   // ya en `true` para eliminar el flash "Verificando sesión…" (fix UX del
-  // visual check del PR #463). SSR → false para no asumir estado.
-  const [checked, setChecked] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return process.env.NEXT_PUBLIC_REQUIRE_AUTH !== "true";
-  });
+  // visual check del PR #463).
+  //
+  // Sprint 4 paso-5-pdf-preview fix-up: removida la guard `typeof window`
+  // del initial state. La guard antes devolvía `false` en SSR para "no
+  // asumir estado", pero esto causaba hydration mismatch en rutas donde
+  // el children incluye elementos semánticos `<aside>` o `<main>`: SSR
+  // renderea `auth-checking` div, client hidrata mostrando children → React
+  // descarta el SSR tree (`Unknown root exit status`) en lugar de hidratar
+  // limpio. Ahora SSR y client devuelven el mismo valor cuando REQUIRE_AUTH
+  // no está activado → hidratación coincide. En modo AUTH (REQUIRE_AUTH=true)
+  // ambos devuelven false y el useEffect chequea la sesión client-side.
+  const [checked, setChecked] = useState(() => process.env.NEXT_PUBLIC_REQUIRE_AUTH !== "true");
 
   useEffect(() => {
     // Auth off por default. Solo enforcea con NEXT_PUBLIC_REQUIRE_AUTH==='true'.

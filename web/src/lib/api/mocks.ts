@@ -687,3 +687,15 @@ export async function getAuditSnapshot(
   }
   return _auditByQuote[quoteId] ?? _auditGeneric;
 }
+
+// ─── Sprint 4 paso-5-pdf-preview · mockup 18 ─────────────────────────────
+// Trace del PDF v1 con fallback gracioso para IDs desconocidos (UUID/web-XXX).
+export async function getPdfTrace(
+  quoteId: string,
+  options?: { signal?: AbortSignal },
+): Promise<import("./types").PdfTrace> {
+  await delay(100 + Math.random() * 120, options?.signal);
+  const { PDF_TRACE_BY_QUOTE_ID, CANONICAL_PDF_TRACE_GENERIC } =
+    await import("../mocks/canonicalQuote");
+  return PDF_TRACE_BY_QUOTE_ID[quoteId] ?? CANONICAL_PDF_TRACE_GENERIC;
+}

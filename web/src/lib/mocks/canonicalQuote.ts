@@ -644,3 +644,28 @@ export const CHAT_FLAGGED_PRESET_018: import("../api/types").ChatFlaggedPreset =
     },
   ],
 };
+
+// ─── Sprint 4 paso-5-pdf-preview · mockup 18 ─────────────────────────────
+// Traces canónicos del bloque Trazabilidad. Literales del mockup 18.
+export const CANONICAL_PDF_TRACE_018: import("../api/types").PdfTrace = {
+  traceId: "op-2026-0847-a3f9c1",
+  promptVersion: "v0.4.2 · contexto+despiece+pricing",
+  inputsHash: "sha256:8b4a…d72e",
+  snapshot: "materials.json @ 03.05 · architects.json @ 02.05",
+};
+export const CANONICAL_PDF_TRACE_017: import("../api/types").PdfTrace = {
+  traceId: "op-2026-0792-c4e2b8",
+  promptVersion: "v0.4.2 · contexto+despiece+pricing",
+  inputsHash: "sha256:7c1f…9a82",
+  snapshot: "materials.json @ 02.04 · architects.json @ 02.04",
+};
+export const CANONICAL_PDF_TRACE_GENERIC: import("../api/types").PdfTrace = {
+  traceId: "—",
+  promptVersion: "—",
+  inputsHash: "—",
+  snapshot: "—",
+};
+export const PDF_TRACE_BY_QUOTE_ID: Record<string, import("../api/types").PdfTrace> = {
+  "PRES-2026-018": CANONICAL_PDF_TRACE_018,
+  "PRES-2026-017": CANONICAL_PDF_TRACE_017,
+};
