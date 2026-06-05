@@ -48,3 +48,6 @@ pytest==8.3.0
 pytest-asyncio==0.24.0
 pytest-cov==6.0.0
 aiosqlite==0.20.0
+
+# Sprint 4 pdf-snapshot-tests · golden file snapshots para _generate_pdf
+syrupy==4.7.2
