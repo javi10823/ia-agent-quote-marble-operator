@@ -1,0 +1,82 @@
+# serializer version: 1
+# name: TestPdfSnapshotsPres017.test_pdf_text_snapshot
+  '''
+  SAN NICOLAS 1160
+  341-3082996
+  marmoleriadangelo@gmail.com
+  Presupuesto
+  Fecha: DATE
+  Cliente: Forma de pago
+  Familia Pereyra Contado
+  Proyecto Fecha de entrega
+  cocina Rosario 4 semanas desde confirmación de medidas
+  Descripcion Cantidad Precio unitario Precio total
+  SILESTONE BLANCO NORTE 20mm 5,20 USD 249 USD 1.295
+  Cocina Rosario
+  2.40 X 0.62 Mesada principal TOTAL USD USD 1.295
+  1.40 X 0.62 Mesada lateral
+  5.20 X 0.05 Zocalo
+  MANO DE OBRA
+  Colocacion 5,20 $49.698,00 $258.430,00
+  Pegado pileta empotrada 1 $53.840,00 $53.840,00
+  Flete + toma medidas Rosario 1 $18.000,00 $18.000,00
+  Total PESOS $330.029,00
+  PRESUPUESTO TOTAL: $330.029,00 mano de obra + USD 1.295 material
+  No se suben mesadas que no entren en ascensor
+  CONDICIONES
+  *PRESUPUESTO SUJETO A VARIACION DE PRECIO
+  *MATERIALES IMPORTADOS SEGUN COTIZACION DOLAR VENTA BANCO NACION AL MOMENTO DE LA CONFIRMACION
+  *LA TOMA DE MEDIDAS NO PODRA SUPERAR LOS 30 DIAS DESDE LA CONFIRMACION, CASO CONTRARIO EL 20% RESTANTE SE ACTUALIZARA SEGUN
+  INDICE LA CONSTRUCCION
+  *PRESUPUESTO DEFINITIVO SEGUN MEDIDAS TOMADAS EN OBRA
+  *LOS PRECIOS INCLUYEN IVA
+  FORMAS DE PAGO
+  *Materiales Importados: 80% seña, 20% restante contra entrega (cotizacion dolar venta BCO NACION).
+  *Materiales Nacionales: 80% seña, 20% restante contra entrega.
+  Pago contado / transferencia / debito / credito / cheques 15 dias para importados y 30 dias para nacionales
+  TARJETAS DE CREDITO CONSULTAR PLANES
+  '''
+# ---
+# name: TestPdfSnapshotsPres018.test_pdf_text_snapshot
+  '''
+  SAN NICOLAS 1160
+  341-3082996
+  marmoleriadangelo@gmail.com
+  Presupuesto
+  Fecha: DATE
+  Cliente: Forma de pago
+  Estudio Cueto-Heredia Contado
+  Proyecto Fecha de entrega
+  cocina Belgrano 3 semanas desde confirmación de medidas
+  Descripcion Cantidad Precio unitario Precio total
+  SILESTONE BLANCO NORTE 20mm 6,50 USD 249 USD 1.618
+  Cocina Belgrano
+  1.80 X 0.62 Mesada perimetral - brazo izq Descuento 5% - USD 81
+  1.50 X 0.62 Mesada perimetral - brazo derecho TOTAL USD USD 1.537
+  1.10 X 0.62 Mesada perimetral - fondo
+  2.20 X 1.00 Isla central
+  7.05 X 0.05 Zocalo
+  MANO DE OBRA
+  Colocacion 6,50 $49.698,00 $323.037,00
+  Pegado pileta empotrada 1 $53.840,00 $53.840,00
+  Anafe (corte y cargas) 1 $35.617,00 $35.617,00
+  Regrueso frontal 4,98 $13.810,00 $68.774,00
+  Tomas (perforacion) 2 $6.461,00 $12.922,00
+  Flete + toma medidas Belgrano CABA 1 $62.920,00 $62.920,00
+  Total PESOS $660.890,00
+  PRESUPUESTO TOTAL: $660.890,00 mano de obra + USD 1.538 material
+  No se suben mesadas que no entren en ascensor
+  CONDICIONES
+  *PRESUPUESTO SUJETO A VARIACION DE PRECIO
+  *MATERIALES IMPORTADOS SEGUN COTIZACION DOLAR VENTA BANCO NACION AL MOMENTO DE LA CONFIRMACION
+  *LA TOMA DE MEDIDAS NO PODRA SUPERAR LOS 30 DIAS DESDE LA CONFIRMACION, CASO CONTRARIO EL 20% RESTANTE SE ACTUALIZARA SEGUN
+  INDICE LA CONSTRUCCION
+  *PRESUPUESTO DEFINITIVO SEGUN MEDIDAS TOMADAS EN OBRA
+  *LOS PRECIOS INCLUYEN IVA
+  FORMAS DE PAGO
+  *Materiales Importados: 80% seña, 20% restante contra entrega (cotizacion dolar venta BCO NACION).
+  *Materiales Nacionales: 80% seña, 20% restante contra entrega.
+  Pago contado / transferencia / debito / credito / cheques 15 dias para importados y 30 dias para nacionales
+  TARJETAS DE CREDITO CONSULTAR PLANES
+  '''
+# ---
