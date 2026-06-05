@@ -47,6 +47,24 @@ export async function login(credentials: LoginCredentials): Promise<Session> {
 
   const body = (await response.json()) as { ok: boolean; username: string; token: string };
 
+  // Sprint 4 ssr-auth (Opción D): sincronizar el JWT a una cookie httpOnly
+  // de vercel.app via `/api/session` para que `[id]/layout.tsx` (Server
+  // Component) la lea en SSR e inyecte como Bearer header al backend
+  // Railway. Esperamos esta sync ANTES de retornar — sin esto, un navigate
+  // inmediato post-login todavía vería el SSR fallback (em-dashes).
+  // Best-effort: si la sync falla (network blip), seguimos · client-side
+  // sigue funcionando con la cookie cross-origin de Railway, solo el SSR
+  // queda degradado al fallback (mismo comportamiento previo a este PR).
+  try {
+    await fetch("/api/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: body.token }),
+    });
+  } catch {
+    // No bloqueamos el login si la sync falla.
+  }
+
   const session: Session = {
     username: body.username,
     token: body.token,
@@ -66,6 +84,14 @@ export async function logout(): Promise<void> {
     } catch {
       // Best-effort — el logout client-side no depende del backend.
     }
+  }
+  // Sprint 4 ssr-auth (Opción D): limpiar cookie httpOnly vercel session.
+  // Best-effort · si falla, el SSR queda con token stale hasta 24h pero el
+  // backend la rechazará y `handleApiError` reanudará el redirect a /login.
+  try {
+    await fetch("/api/session", { method: "DELETE" });
+  } catch {
+    // Best-effort.
   }
   clearSession();
 }

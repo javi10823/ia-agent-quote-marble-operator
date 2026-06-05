@@ -15,6 +15,7 @@ import { Qhead } from "@/components/chrome/Qhead";
 import { Stepper } from "@/components/chrome/Stepper";
 import { AuditTray } from "@/components/observability/AuditTray";
 import { getQuoteMetadata } from "@/lib/api";
+import { getServerToken } from "@/lib/auth-server";
 
 export default async function QuoteLayout({
   children,
@@ -23,7 +24,12 @@ export default async function QuoteLayout({
   children: React.ReactNode;
   params: { id: string };
 }) {
-  const quote = await getQuoteMetadata(params.id);
+  // Sprint 4 ssr-auth (Opción D): JWT desde cookie httpOnly de vercel.app
+  // (sincronizada en login via `/api/session`). Si no hay (pre-login /
+  // cookie expirada / borrada), `bearerToken: null` → real.ts degrada
+  // graceful al `ssrFallbackHeader` (mismo comportamiento previo).
+  const bearerToken = getServerToken();
+  const quote = await getQuoteMetadata(params.id, { bearerToken });
 
   return (
     <div className="page">
