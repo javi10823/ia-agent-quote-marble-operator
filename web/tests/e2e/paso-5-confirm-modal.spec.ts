@@ -7,6 +7,12 @@
  */
 import { expect, test, type Page } from "@playwright/test";
 
+// Sprint 4 paso-5-c-generado · mockup 20 introdujo el `_generatedStore` mock
+// que persiste in-memory en el dev server entre requests. Forzamos serial
+// mode en este spec para evitar cross-talk con `paso-5-c-generado.spec.ts`
+// que toca los mismos quoteIds canon en workers paralelos.
+test.describe.configure({ mode: "serial" });
+
 async function goPdf(page: Page, id = "PRES-2026-018") {
   await page.goto(`/quotes/${id}/pdf`);
   await expect(page.locator('[data-testid="pdf-view"]')).toBeVisible();
@@ -73,16 +79,23 @@ test('botón "Cancelar" cierra el modal', async ({ page }) => {
   await expect(page.locator('[data-testid="pdf-confirm-modal"]')).toHaveCount(0);
 });
 
-test('botón "Generar v1 →" cierra el modal (visual-only · sin transición en este PR)', async ({
+test('botón "Generar v1 →" dispara la generación (modal cierra · estado transiciona a C)', async ({
   page,
+  request,
 }) => {
-  await goPdf(page);
+  // Sprint 4 paso-5-c-generado · este test se actualizó: ya no es visual-only.
+  // El click dispara `triggerPdfGeneration` (mock) y transiciona a estado C.
+  // ID dedicado para no contaminar el mock store con `PRES-2026-018` que otros
+  // specs paralelos cargan esperando estado A.
+  await goPdf(page, "PRES-2026-018-CONFIRM-OK");
   await openModal(page);
   await page.locator('[data-testid="modal-confirm"]').click();
   await expect(page.locator('[data-testid="pdf-confirm-modal"]')).toHaveCount(0);
-  // El estado A sigue intacto (no hay transición a estado generado · es mockup 20).
   await expect(page.locator('[data-testid="pdf-view"]')).toBeVisible();
-  await expect(page.locator('[data-testid="version-chip"]')).toContainText("v1 · borrador");
+  await expect(page.locator('[data-testid="pdf-view"]')).toHaveAttribute("data-state", "C");
+  await expect(page.locator('[data-testid="version-chip"]')).toContainText("v1 · enviado");
+  // Cleanup del mock store para no contaminar tests siguientes.
+  await request.post("/api/_test/reset-pdf-store");
 });
 
 test("modal coexiste con AUDIT ON sin romper observability (regresión PR #466)", async ({

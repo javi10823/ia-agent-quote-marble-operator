@@ -12,6 +12,7 @@
 import {
   getCalculationForQuote,
   getContextForQuote,
+  getPdfGeneratedInfo,
   getPdfTrace,
   getQuoteMetadata,
   listPiecesForQuote,
@@ -26,12 +27,18 @@ export default async function PdfPage({ params }: { params: { id: string } }) {
   // rompa toda la página · degradamos campos faltantes.
   // Fix-up #1: agregamos `listPiecesForQuote` para las sub-filas `row-piece`
   // del PDF (template HTML del backend las renderea con cada pieza del despiece).
-  const [metaR, calcR, ctxR, traceR, piecesR] = await Promise.allSettled([
+  // Sprint 4 paso-5-c-generado · agregamos `getPdfGeneratedInfo` que resuelve
+  // canon cuando el quoteId termina en `-GENERATED` (trigger E2E) o cuando
+  // el quote ya pasó por `triggerPdfGeneration` en esta sesión mock.
+  // SSR-seedea el estado C para que el primer paint ya muestre el sidebar
+  // generated en lugar del editable.
+  const [metaR, calcR, ctxR, traceR, piecesR, genR] = await Promise.allSettled([
     getQuoteMetadata(params.id, { bearerToken }),
     getCalculationForQuote(params.id),
     getContextForQuote(params.id),
     getPdfTrace(params.id),
     listPiecesForQuote(params.id),
+    getPdfGeneratedInfo(params.id),
   ]);
 
   if (metaR.status === "rejected" || calcR.status === "rejected" || traceR.status === "rejected") {
@@ -69,6 +76,9 @@ export default async function PdfPage({ params }: { params: { id: string } }) {
   // que es determinístico.
   const pdfDateIso = new Date().toISOString();
 
+  const initialGenerated =
+    genR.status === "fulfilled" && genR.value !== null ? genR.value : null;
+
   return (
     <PdfView
       quoteId={params.id}
@@ -79,6 +89,7 @@ export default async function PdfPage({ params }: { params: { id: string } }) {
       pdfDateIso={pdfDateIso}
       pieces={pieces}
       proyecto={proyecto}
+      initialGenerated={initialGenerated}
     />
   );
 }

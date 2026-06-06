@@ -312,6 +312,30 @@ export async function getQuoteMetadata(
   options?: { signal?: AbortSignal; bearerToken?: string | null },
 ): Promise<QuoteHeader> {
   await delay(80 + Math.random() * 120, options?.signal);
+
+  // Sprint 4 paso-5-c-generado · sufijo `-GENERATED` en el quoteId hereda
+  // los datos del baseId pero retorna `status: "sent"` para que el SSR del
+  // paso-5 renderee el estado C en lugar del A. Mock-only trigger E2E
+  // (mismo patrón que `-ERROR` del paso-4 PR #465 y `-REJECTED`/`-FLAGGED`
+  // del despiece PR #468).
+  const generatedSuffix = "-GENERATED";
+  const baseIdForGenerated = quoteId.endsWith(generatedSuffix)
+    ? quoteId.slice(0, -generatedSuffix.length)
+    : null;
+  if (baseIdForGenerated) {
+    const base = DASHBOARD_QUOTES.find((q) => q.id === baseIdForGenerated);
+    if (base) {
+      return {
+        id: quoteId,
+        client: base.client,
+        clientFull: base.clientFull,
+        material: base.material,
+        m2: base.m2,
+        status: "sent",
+      };
+    }
+  }
+
   const found = DASHBOARD_QUOTES.find((q) => q.id === quoteId);
   if (found) {
     return {
@@ -685,6 +709,18 @@ export async function getAuditSnapshot(
       return clone;
     }
   }
+
+  // Sprint 4 paso-5-c-generado · sufijo `-GENERATED` hereda el snapshot del
+  // baseId · sin marcador adicional. Permite que el AuditTray siga visible
+  // en estado C cuando el usuario activa AUDIT ON.
+  if (quoteId.endsWith("-GENERATED")) {
+    const baseId = quoteId.slice(0, -"-GENERATED".length);
+    const base = _auditByQuote[baseId];
+    if (base) {
+      return JSON.parse(JSON.stringify(base)) as import("./types").AuditSnapshot;
+    }
+  }
+
   return _auditByQuote[quoteId] ?? _auditGeneric;
 }
 
@@ -698,4 +734,105 @@ export async function getPdfTrace(
   const { PDF_TRACE_BY_QUOTE_ID, CANONICAL_PDF_TRACE_GENERIC } =
     await import("../mocks/canonicalQuote");
   return PDF_TRACE_BY_QUOTE_ID[quoteId] ?? CANONICAL_PDF_TRACE_GENERIC;
+}
+
+// ─── Sprint 4 paso-5-c-generado · mockup 20 ────────────────────────────────
+// Mock del POST /api/quotes/{id}/generate. Mock-only · wire real al endpoint
+// del backend en sprint-4/paso-5-pdf-real-wire posterior (requiere
+// quote.quote_breakdown persistido en DB · paso-1-real).
+
+const _generatedStore = new Map<string, import("./types").PdfGeneratedInfo>();
+
+export function _resetGeneratedStore() {
+  _generatedStore.clear();
+}
+
+const _generatedByQuote: Record<string, import("./types").PdfGeneratedInfo> = {
+  "PRES-2026-018": {
+    pdfUrl: "/quotes/2026/PRES-2026-018/Cueto-Heredia Arquitectura - Silestone Blanco Norte - 03.05.2026.pdf",
+    excelUrl: "/quotes/2026/PRES-2026-018/Cueto-Heredia Arquitectura - Silestone Blanco Norte - 03.05.2026.xlsx",
+    driveUrl: "https://drive.google.com/drive/folders/PRES-2026-018-mock",
+    driveFolderPath: "/Presupuestos/2026/05-mayo/",
+    pdfSizeKb: 926,
+    excelSizeKb: 142,
+    generatedAtIso: "2026-05-03T18:42:00-03:00",
+    generatedAtDisplay: "03.05.2026 18:42",
+    generatedBy: "Marina",
+    traceId: "op-2026-0847-a3f9c1",
+    driveId: "1aB2cD…xZ9",
+  },
+  "PRES-2026-017": {
+    pdfUrl: "/quotes/2026/PRES-2026-017/Familia Pereyra - Silestone Blanco Norte - 03.05.2026.pdf",
+    excelUrl: "/quotes/2026/PRES-2026-017/Familia Pereyra - Silestone Blanco Norte - 03.05.2026.xlsx",
+    driveUrl: "https://drive.google.com/drive/folders/PRES-2026-017-mock",
+    driveFolderPath: "/Presupuestos/2026/05-mayo/",
+    pdfSizeKb: 718,
+    excelSizeKb: 124,
+    generatedAtIso: "2026-04-22T11:08:00-03:00",
+    generatedAtDisplay: "22.04.2026 11:08",
+    generatedBy: "Marina",
+    traceId: "op-2026-0792-c4e2b8",
+    driveId: "1xY9zT…aQ4",
+  },
+};
+
+const _generatedGeneric: import("./types").PdfGeneratedInfo = {
+  pdfUrl: "/quotes/2026/generated/quote.pdf",
+  excelUrl: "/quotes/2026/generated/quote.xlsx",
+  driveUrl: "https://drive.google.com/drive/folders/quote-mock",
+  driveFolderPath: "/Presupuestos/2026/05-mayo/",
+  pdfSizeKb: 800,
+  excelSizeKb: 130,
+  generatedAtIso: new Date(2026, 4, 3, 12, 0, 0).toISOString(),
+  generatedAtDisplay: "03.05.2026 12:00",
+  generatedBy: "—",
+  traceId: "—",
+  driveId: "—",
+};
+
+/**
+ * Dispara la generación del PDF/Excel + upload a Drive. Mock-only.
+ *
+ * - `-ERROR` suffix en quoteId → throw (E2E del error path del modal).
+ * - cualquier otro id → 800-1500ms delay + retorna info canónica o genérica
+ *   (fallback gracioso para IDs desconocidos).
+ *
+ * Side effect: guarda en `_generatedStore` para que `getPdfGeneratedInfo`
+ * la sirva en SSR del estado C.
+ */
+export async function triggerPdfGeneration(
+  quoteId: string,
+  options?: { signal?: AbortSignal },
+): Promise<import("./types").PdfGeneratedInfo> {
+  await delay(800 + Math.random() * 700, options?.signal);
+  if (quoteId.endsWith("-ERROR")) {
+    throw new Error(
+      "No se pudo generar el presupuesto · servicio Drive caído (mock-only).",
+    );
+  }
+  const baseId = quoteId.endsWith("-GENERATED") ? quoteId.slice(0, -"-GENERATED".length) : quoteId;
+  const info = _generatedByQuote[baseId] ?? _generatedGeneric;
+  _generatedStore.set(quoteId, info);
+  return info;
+}
+
+/**
+ * Lookup del estado generado · sin delay porque corre en SSR junto con
+ * `getQuoteMetadata`. Devuelve null cuando el quote nunca disparó generate
+ * en esta sesión · el estado C SSR se sirve del canon por baseId cuando el
+ * suffix `-GENERATED` está presente (mock determinístico).
+ */
+export async function getPdfGeneratedInfo(
+  quoteId: string,
+  _options?: { signal?: AbortSignal },
+): Promise<import("./types").PdfGeneratedInfo | null> {
+  // 1) State persistido en sesión (post-triggerPdfGeneration).
+  const stored = _generatedStore.get(quoteId);
+  if (stored) return stored;
+  // 2) Trigger E2E SSR · `-GENERATED` suffix resuelve canon directamente.
+  if (quoteId.endsWith("-GENERATED")) {
+    const baseId = quoteId.slice(0, -"-GENERATED".length);
+    return _generatedByQuote[baseId] ?? _generatedGeneric;
+  }
+  return null;
 }

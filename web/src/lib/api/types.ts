@@ -424,3 +424,30 @@ export interface PdfTrace {
   /** Snapshot de los JSON consumidos para el cálculo (ej. "materials.json @ 03.05 · architects.json @ 02.05"). */
   snapshot: string;
 }
+
+// ─── Sprint 4 paso-5-c-generado · mockup 20 ────────────────────────────────
+// Estado C · "v1 generado y enviado". Mock-only en este sub-PR · wire real al
+// endpoint POST /api/quotes/{id}/generate del backend en sprint-4/paso-5-pdf-
+// real-wire posterior (requiere paso-1-real para que el quote tenga
+// quote_breakdown persistido en DB).
+
+/** Info devuelta por `triggerPdfGeneration` y mostrada en el estado C. */
+export interface PdfGeneratedInfo {
+  pdfUrl: string;
+  excelUrl: string;
+  driveUrl: string;
+  /** Ruta de carpeta de Drive · ej "/Presupuestos/2026/05-mayo/". */
+  driveFolderPath: string;
+  pdfSizeKb: number;
+  excelSizeKb: number;
+  /** ISO timestamp del momento de generación. */
+  generatedAtIso: string;
+  /** Texto display para el banner: "03.05.2026 18:42". */
+  generatedAtDisplay: string;
+  /** Usuario que generó (ej "Marina"). */
+  generatedBy: string;
+  /** Trace_id del audit log · matchea el de getAuditSnapshot cuando aplica. */
+  traceId: string;
+  /** Drive file id mostrado en el trace-block plegable. */
+  driveId: string;
+}
