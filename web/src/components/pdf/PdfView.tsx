@@ -20,6 +20,7 @@ import { formatPdfDate, getPdfFilename } from "@/lib/pdfFormat";
 import { PdfPreviewDoc } from "./PdfPreviewDoc";
 import { PdfSidebar } from "./PdfSidebar";
 import { PdfChatPanel } from "./PdfChatPanel";
+import { PdfConfirmModal } from "./PdfConfirmModal";
 import { IaAuditBanner } from "@/components/observability/IaAuditBanner";
 
 interface Props {
@@ -62,6 +63,12 @@ export function PdfView({
     notas: "",
   });
   const [chatOpen, setChatOpen] = useState(false);
+  // Sprint 4 paso-5-confirmar-modal · mockup 19. Marina abre el modal con el
+  // botón "Generar PDF v1 →" del sidebar · ESC o "Cancelar" lo cierran.
+  // "Generar v1 →" del modal también cierra acá (visual-only) · el flujo de
+  // generación real + transición a estado generado viene en el sub-PR
+  // siguiente del mockup 20 (paso-5-c-generado).
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   // `pdfDateIso` viene determinístico desde el server (ver pdf/page.tsx).
   // Parse a Date para los helpers · referencia estable mientras la prop no cambie.
@@ -140,14 +147,24 @@ export function PdfView({
         state={state}
         onChange={update}
         trace={trace}
-        onGenerate={() => {
-          // Decisión Javi B: visual-only en este PR. Transición a estado B
-          // (mockup 19 · confirmar y generar) viene en sub-PR siguiente.
-          // Acá solo registramos el intent sin persistir.
-        }}
+        onGenerate={() => setConfirmOpen(true)}
       />
 
       {chatOpen && <PdfChatPanel quoteId={quoteId} onClose={() => setChatOpen(false)} />}
+
+      {confirmOpen && (
+        <PdfConfirmModal
+          pdfFilename={pdfFilename}
+          xlsxFilename={xlsxFilename}
+          onCancel={() => setConfirmOpen(false)}
+          onConfirm={() => {
+            // Visual-only en este sub-PR · cerrar modal sin transición.
+            // Mockup 20 (paso-5-c-generado) dispara aquí el flujo real:
+            // trigger backend → loading state → PDF inmutable + links Drive.
+            setConfirmOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }
