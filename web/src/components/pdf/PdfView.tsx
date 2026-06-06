@@ -14,13 +14,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { CalculationResult, PdfTrace, Piece, QuoteHeader } from "@/lib/api";
+import type {
+  CalculationResult,
+  PdfGeneratedInfo,
+  PdfTrace,
+  Piece,
+  QuoteHeader,
+} from "@/lib/api";
+import { triggerPdfGeneration } from "@/lib/api";
 import { usePdfForm } from "@/lib/hooks/usePdfForm";
 import { formatPdfDate, getPdfFilename } from "@/lib/pdfFormat";
 import { PdfPreviewDoc } from "./PdfPreviewDoc";
 import { PdfSidebar } from "./PdfSidebar";
 import { PdfChatPanel } from "./PdfChatPanel";
 import { PdfConfirmModal } from "./PdfConfirmModal";
+import { PdfGenBanner } from "./PdfGenBanner";
+import { PdfSidebarGenerated } from "./PdfSidebarGenerated";
 import { IaAuditBanner } from "@/components/observability/IaAuditBanner";
 
 interface Props {
@@ -43,6 +52,12 @@ interface Props {
    * tipología del paso-2 (`ContextResponse.tipologia`). Fallback al `client`
    * del QuoteHeader cuando el contexto no expone tipología. */
   proyecto: string;
+  /** Sprint 4 paso-5-c-generado · null → estado A (preview · sidebar editable
+   * + modal). Cuando viene poblado: estado C (gen-banner + sidebar generated
+   * + chip final). Server carga via `getPdfGeneratedInfo(quoteId)` que
+   * resuelve canon cuando el quoteId termina en `-GENERATED` o cuando el
+   * store de sesión tiene info post-triggerPdfGeneration. */
+  initialGenerated?: PdfGeneratedInfo | null;
 }
 
 export function PdfView({
@@ -54,6 +69,7 @@ export function PdfView({
   pdfDateIso,
   pieces,
   proyecto,
+  initialGenerated = null,
 }: Props) {
   const { state, update } = usePdfForm({
     vigenciaDias: calculation.datosPdf.vigenciaDias,
@@ -69,6 +85,12 @@ export function PdfView({
   // generación real + transición a estado generado viene en el sub-PR
   // siguiente del mockup 20 (paso-5-c-generado).
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Sprint 4 paso-5-c-generado · estado del PDF generado. SSR-seedeado cuando
+  // el quoteId resuelve a status="sent" (mock: suffix `-GENERATED`). El click
+  // "Generar v1 →" del modal puebla esto post-success y dispara la transición
+  // visual A → C sin reload de página.
+  const [generated, setGenerated] = useState<PdfGeneratedInfo | null>(initialGenerated);
+  const isGenerated = generated !== null;
 
   // `pdfDateIso` viene determinístico desde el server (ver pdf/page.tsx).
   // Parse a Date para los helpers · referencia estable mientras la prop no cambie.
@@ -87,6 +109,7 @@ export function PdfView({
     <div
       data-testid="pdf-view"
       data-chat-open={chatOpen}
+      data-state={isGenerated ? "C" : "A"}
       // Grid 2-col interno (mismo patrón que `.body.pdf-layout` del mockup
       // 18). Aplicado inline para no modificar el `.body.no-chat` del
       // layout chrome shell del Sprint 3 (regla NO tocar [id]/layout).
@@ -102,13 +125,20 @@ export function PdfView({
         <div className="section-head">
           <div>
             <div className="meta">Paso 5 de 5 · Presupuesto PDF</div>
-            <h2>Preview del presupuesto</h2>
+            <h2>{isGenerated ? "Presupuesto generado" : "Preview del presupuesto"}</h2>
             <div className="vc-wrap">
-              <span className="version-chip draft" data-testid="version-chip">
+              <span
+                className={`version-chip ${isGenerated ? "final" : "draft"}`}
+                data-testid="version-chip"
+              >
                 <span className="dot" />
-                v1 · borrador
+                {isGenerated ? "v1 · enviado" : "v1 · borrador"}
               </span>
-              <span className="status-mini">aún no enviado</span>
+              <span className="status-mini">
+                {isGenerated
+                  ? `guardado en /quotes/2026/ · hace 2 min`
+                  : "aún no enviado"}
+              </span>
             </div>
           </div>
           <button
@@ -121,6 +151,14 @@ export function PdfView({
             💬 Ayuda con esta sección
           </button>
         </div>
+
+        {isGenerated && generated && (
+          <PdfGenBanner
+            generatedAtDisplay={generated.generatedAtDisplay}
+            generatedBy={generated.generatedBy}
+            traceId={generated.traceId}
+          />
+        )}
 
         <IaAuditBanner quoteId={quoteId} />
 
@@ -141,14 +179,24 @@ export function PdfView({
         <div className="pdf-stage-helper">Vista previa a tamaño real · A4 · página 1 de 1</div>
       </div>
 
-      <PdfSidebar
-        pdfFilename={pdfFilename}
-        xlsxFilename={xlsxFilename}
-        state={state}
-        onChange={update}
-        trace={trace}
-        onGenerate={() => setConfirmOpen(true)}
-      />
+      {isGenerated && generated ? (
+        <PdfSidebarGenerated
+          baseFilename={pdfFilename.replace(/\.pdf$/i, "")}
+          info={generated}
+          trace={trace}
+          // Sprint 4 paso-5-d-revision-v2 (mockup 21) wirea esto · acá visual-only.
+          onCreateV2={() => {}}
+        />
+      ) : (
+        <PdfSidebar
+          pdfFilename={pdfFilename}
+          xlsxFilename={xlsxFilename}
+          state={state}
+          onChange={update}
+          trace={trace}
+          onGenerate={() => setConfirmOpen(true)}
+        />
+      )}
 
       {chatOpen && <PdfChatPanel quoteId={quoteId} onClose={() => setChatOpen(false)} />}
 
@@ -157,10 +205,12 @@ export function PdfView({
           pdfFilename={pdfFilename}
           xlsxFilename={xlsxFilename}
           onCancel={() => setConfirmOpen(false)}
-          onConfirm={() => {
-            // Visual-only en este sub-PR · cerrar modal sin transición.
-            // Mockup 20 (paso-5-c-generado) dispara aquí el flujo real:
-            // trigger backend → loading state → PDF inmutable + links Drive.
+          onConfirm={async () => {
+            // Sprint 4 paso-5-c-generado · dispara la generación real (mock)
+            // y transiciona a estado C en success. Si throw → el modal renderea
+            // banner error + Reintentar.
+            const info = await triggerPdfGeneration(quoteId);
+            setGenerated(info);
             setConfirmOpen(false);
           }}
         />

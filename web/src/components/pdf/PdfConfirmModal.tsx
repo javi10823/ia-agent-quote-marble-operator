@@ -22,26 +22,43 @@
  */
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 interface Props {
   pdfFilename: string;
   xlsxFilename: string;
   onCancel: () => void;
-  /** Disparado en click "Generar v1 →". Visual-only en este PR · el caller
-   * sólo cierra el modal. El flow de generación real es mockup 20. */
-  onConfirm: () => void;
+  /** Sprint 4 paso-5-c-generado · async handler que dispara la generación
+   * real (mock o backend). Si throw → renderea banner error + Reintentar. */
+  onConfirm: () => Promise<void>;
 }
 
 export function PdfConfirmModal({ pdfFilename, xlsxFilename, onCancel, onConfirm }: Props) {
-  // ESC cierra · click-outside NO (per mockup literal: "paso destructivo").
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // ESC cierra cuando NO está loading (no romper request en vuelo) · click-outside
+  // sigue sin cerrar nunca per mockup literal (paso destructivo).
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape" && !loading) onCancel();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onCancel]);
+  }, [onCancel, loading]);
+
+  const handleGenerate = async () => {
+    if (loading) return;
+    setErrorMsg(null);
+    setLoading(true);
+    try {
+      await onConfirm();
+      // Caller cierra el modal en success (transición a estado C).
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "No se pudo generar el presupuesto.");
+      setLoading(false);
+    }
+  };
 
   return (
     <div
@@ -97,19 +114,55 @@ export function PdfConfirmModal({ pdfFilename, xlsxFilename, onCancel, onConfirm
             </span>{" "}
             Acción irreversible · para corregir errores después, generás una v2
           </div>
+
+          {/* Sprint 4 paso-5-c-generado · banner error post-throw. NO está en
+              el mockup 19 literal · pero es UX mínima necesaria cuando se
+              wirea el flujo real (mockup 20). */}
+          {errorMsg && (
+            <div
+              role="alert"
+              data-testid="modal-error-banner"
+              style={{
+                marginTop: 14,
+                padding: "10px 14px",
+                borderRadius: 6,
+                border: "1px solid var(--error)",
+                background: "color-mix(in oklch, var(--error) 12%, transparent)",
+                color: "var(--error)",
+                fontSize: 13,
+                lineHeight: 1.4,
+              }}
+            >
+              {errorMsg}
+            </div>
+          )}
         </div>
 
         <div className="m-foot">
-          <button type="button" className="btn ghost" onClick={onCancel} data-testid="modal-cancel">
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={onCancel}
+            disabled={loading}
+            data-testid="modal-cancel"
+          >
             Cancelar
           </button>
           <button
             type="button"
             className="btn primary"
-            onClick={onConfirm}
+            onClick={handleGenerate}
+            disabled={loading}
             data-testid="modal-confirm"
+            data-loading={loading ? "true" : "false"}
           >
-            Generar v1 →
+            {loading ? (
+              <span data-testid="modal-spinner">Generando…</span>
+            ) : errorMsg ? (
+              "Reintentar"
+            ) : (
+              "Generar v1 →"
+            )}
           </button>
         </div>
       </div>

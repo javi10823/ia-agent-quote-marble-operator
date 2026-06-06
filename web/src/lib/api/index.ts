@@ -44,10 +44,15 @@ export const getAuditSnapshot = mocks.getAuditSnapshot;
 /* ─── Paso 5 PDF · Sprint 4 paso-5-pdf-preview · mockup 18 ── */
 export const getPdfTrace = mocks.getPdfTrace;
 
+/* ─── Paso 5 estado C · Sprint 4 paso-5-c-generado · mockup 20 ── */
+export const triggerPdfGeneration = mocks.triggerPdfGeneration;
+export const getPdfGeneratedInfo = mocks.getPdfGeneratedInfo;
+
 /* ─── Helpers de test (reset de stores in-memory del mock) ───────── */
 export const _resetContextStore = mocks._resetContextStore;
 export const _resetPiecesStore = mocks._resetPiecesStore;
 export const _resetCalcStore = mocks._resetCalcStore;
+export const _resetGeneratedStore = mocks._resetGeneratedStore;
 
 /* ─── Tipos + helpers puros + constantes ─────────────────────────── */
 export * from "./types";
