@@ -18,16 +18,23 @@ import type {
   CalculationResult,
   PdfGeneratedInfo,
   PdfTrace,
+  PdfV2RevisionData,
   Piece,
   QuoteHeader,
 } from "@/lib/api";
-import { triggerPdfGeneration } from "@/lib/api";
+import {
+  getPdfV2DiffData,
+  triggerPdfGeneration,
+  triggerPdfV2Generation,
+} from "@/lib/api";
 import { usePdfForm } from "@/lib/hooks/usePdfForm";
 import { formatPdfDate, getPdfFilename } from "@/lib/pdfFormat";
 import { PdfPreviewDoc } from "./PdfPreviewDoc";
 import { PdfSidebar } from "./PdfSidebar";
 import { PdfChatPanel } from "./PdfChatPanel";
 import { PdfConfirmModal } from "./PdfConfirmModal";
+import { PdfConfirmV2Modal } from "./PdfConfirmV2Modal";
+import { PdfDiffDrawer } from "./PdfDiffDrawer";
 import { PdfGenBanner } from "./PdfGenBanner";
 import { PdfSidebarGenerated } from "./PdfSidebarGenerated";
 import { IaAuditBanner } from "@/components/observability/IaAuditBanner";
@@ -58,6 +65,14 @@ interface Props {
    * resuelve canon cuando el quoteId termina en `-GENERATED` o cuando el
    * store de sesión tiene info post-triggerPdfGeneration. */
   initialGenerated?: PdfGeneratedInfo | null;
+  /** Sprint 4 paso-5-d-revision-v2 · true cuando el quoteId termina en
+   * `-REVISING` · arranca con drawer abierto + 3-col layout · v1 oficial
+   * permanece intacta hasta confirmar v2. */
+  initialRevising?: boolean;
+  /** Diff data v1↔v2 cargada SSR cuando initialRevising · null → fetch on demand
+   * cuando el usuario abre el drawer click "Crear revisión v2 →" del sidebar
+   * generated. */
+  initialDiffData?: PdfV2RevisionData | null;
 }
 
 export function PdfView({
@@ -70,6 +85,8 @@ export function PdfView({
   pieces,
   proyecto,
   initialGenerated = null,
+  initialRevising = false,
+  initialDiffData = null,
 }: Props) {
   const { state, update } = usePdfForm({
     vigenciaDias: calculation.datosPdf.vigenciaDias,
@@ -92,6 +109,30 @@ export function PdfView({
   const [generated, setGenerated] = useState<PdfGeneratedInfo | null>(initialGenerated);
   const isGenerated = generated !== null;
 
+  // Sprint 4 paso-5-d-revision-v2 (mockup 21) · estado D = revisión v2 en curso.
+  // SSR-seedeado cuando quoteId termina en `-REVISING`. Click "Crear revisión v2 →"
+  // del sidebar generated también lo activa (fetch on demand del diff).
+  const [revising, setRevising] = useState<boolean>(initialRevising);
+  const [diffData, setDiffData] = useState<PdfV2RevisionData | null>(initialDiffData);
+  const [confirmV2Open, setConfirmV2Open] = useState(false);
+  // Carga lazy del diff cuando el usuario abre el drawer sin SSR-seed.
+  const handleCreateV2 = async () => {
+    if (!diffData) {
+      try {
+        const data = await getPdfV2DiffData(quoteId);
+        setDiffData(data);
+      } catch {
+        // fallback gracioso: igual abrimos el drawer con diff vacío
+        setDiffData({ rows: [], summary: [], diffCount: 0, unchangedCount: 0 });
+      }
+    }
+    setRevising(true);
+  };
+  const handleCancelRevising = () => {
+    setRevising(false);
+    setConfirmV2Open(false);
+  };
+
   // `pdfDateIso` viene determinístico desde el server (ver pdf/page.tsx).
   // Parse a Date para los helpers · referencia estable mientras la prop no cambie.
   const date = useMemo(() => new Date(pdfDateIso), [pdfDateIso]);
@@ -104,19 +145,27 @@ export function PdfView({
     () => getPdfFilename({ client: quote.clientFull, material: quote.material, date, ext: "xlsx" }),
     [quote.clientFull, quote.material, date],
   );
+  // Filenames con suffix " v2" para el modal de confirmación v2 (mockup 21).
+  const pdfFilenameV2 = useMemo(
+    () => pdfFilename.replace(/\.pdf$/i, " v2.pdf"),
+    [pdfFilename],
+  );
+  const xlsxFilenameV2 = useMemo(
+    () => xlsxFilename.replace(/\.xlsx$/i, " v2.xlsx"),
+    [xlsxFilename],
+  );
 
   return (
     <div
       data-testid="pdf-view"
       data-chat-open={chatOpen}
-      data-state={isGenerated ? "C" : "A"}
-      // Grid 2-col interno (mismo patrón que `.body.pdf-layout` del mockup
-      // 18). Aplicado inline para no modificar el `.body.no-chat` del
-      // layout chrome shell del Sprint 3 (regla NO tocar [id]/layout).
+      data-state={revising ? "D" : isGenerated ? "C" : "A"}
+      // Grid 2-col (estado A/C) o 3-col (estado D · drawer 400px lateral).
+      // Inline para no modificar el `.body.no-chat` del chrome shell del Sprint 3.
       // El chat es overlay fixed (heredado del PR #465 fix-up #2) · no ocupa columna.
       style={{
         display: "grid",
-        gridTemplateColumns: "1fr 360px",
+        gridTemplateColumns: revising ? "1fr 360px 400px" : "1fr 360px",
         gap: 24,
         minHeight: 0,
       }}
@@ -125,20 +174,36 @@ export function PdfView({
         <div className="section-head">
           <div>
             <div className="meta">Paso 5 de 5 · Presupuesto PDF</div>
-            <h2>{isGenerated ? "Presupuesto generado" : "Preview del presupuesto"}</h2>
+            <h2>{isGenerated || revising ? "Presupuesto generado" : "Preview del presupuesto"}</h2>
             <div className="vc-wrap">
-              <span
-                className={`version-chip ${isGenerated ? "final" : "draft"}`}
-                data-testid="version-chip"
-              >
-                <span className="dot" />
-                {isGenerated ? "v1 · enviado" : "v1 · borrador"}
-              </span>
-              <span className="status-mini">
-                {isGenerated
-                  ? `guardado en /quotes/2026/ · hace 2 min`
-                  : "aún no enviado"}
-              </span>
+              {revising ? (
+                <>
+                  <span className="version-chip final" data-testid="version-chip-v1">
+                    <span className="dot" />v1 · oficial
+                  </span>
+                  <span className="version-chip draft" data-testid="version-chip-v2">
+                    <span className="dot" />v2 · borrador
+                  </span>
+                  <span className="status-mini">
+                    comparando cambios · v1 sigue activa hasta generar v2
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span
+                    className={`version-chip ${isGenerated ? "final" : "draft"}`}
+                    data-testid="version-chip"
+                  >
+                    <span className="dot" />
+                    {isGenerated ? "v1 · enviado" : "v1 · borrador"}
+                  </span>
+                  <span className="status-mini">
+                    {isGenerated
+                      ? `guardado en /quotes/2026/ · hace 2 min`
+                      : "aún no enviado"}
+                  </span>
+                </>
+              )}
             </div>
           </div>
           <button
@@ -152,8 +217,16 @@ export function PdfView({
           </button>
         </div>
 
-        {isGenerated && generated && (
+        {revising && generated && (
           <PdfGenBanner
+            variant="amber-revision"
+            revisionSub="v1 (enviada hace 2 días) sigue siendo la versión oficial. Esto es borrador editable."
+            traceId={generated.traceId}
+          />
+        )}
+        {!revising && isGenerated && generated && (
+          <PdfGenBanner
+            variant="green"
             generatedAtDisplay={generated.generatedAtDisplay}
             generatedBy={generated.generatedBy}
             traceId={generated.traceId}
@@ -184,8 +257,7 @@ export function PdfView({
           baseFilename={pdfFilename.replace(/\.pdf$/i, "")}
           info={generated}
           trace={trace}
-          // Sprint 4 paso-5-d-revision-v2 (mockup 21) wirea esto · acá visual-only.
-          onCreateV2={() => {}}
+          onCreateV2={handleCreateV2}
         />
       ) : (
         <PdfSidebar
@@ -195,6 +267,34 @@ export function PdfView({
           onChange={update}
           trace={trace}
           onGenerate={() => setConfirmOpen(true)}
+        />
+      )}
+
+      {revising && diffData && (
+        <PdfDiffDrawer
+          rows={diffData.rows}
+          summary={diffData.summary}
+          diffCount={diffData.diffCount}
+          unchangedCount={diffData.unchangedCount}
+          onClose={() => setRevising(false)}
+          onCancel={handleCancelRevising}
+          onGenerateV2={() => setConfirmV2Open(true)}
+          generating={confirmV2Open}
+        />
+      )}
+
+      {confirmV2Open && diffData && (
+        <PdfConfirmV2Modal
+          pdfFilename={pdfFilenameV2}
+          xlsxFilename={xlsxFilenameV2}
+          changeSummary={diffData.summary}
+          onCancel={() => setConfirmV2Open(false)}
+          onConfirm={async () => {
+            const info = await triggerPdfV2Generation(quoteId);
+            setGenerated(info);
+            setRevising(false);
+            setConfirmV2Open(false);
+          }}
         />
       )}
 
