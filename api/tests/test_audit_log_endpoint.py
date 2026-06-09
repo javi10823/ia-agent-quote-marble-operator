@@ -257,3 +257,105 @@ class TestAuditLogEndpoint:
         assert data["chat_duration_ms"] is None
         assert data["input_message"] is None
         assert data["plan_files"] == []
+
+    # ── Fix-up sprint-4/audit-log-content-fix · Bug 1 (regresión) ──────────
+    # En prod, `Quote.messages[].content` viene como lista de bloques
+    # multimodales Anthropic, NO como string plano (los fixtures previos
+    # usaban string → no atraparon el bug). Estos tests cubren el shape real.
+
+    @pytest.mark.asyncio
+    async def test_audit_log_with_multimodal_content(self, client, db_session):
+        await _seed_quote_with_audit(
+            db_session,
+            "q-multimodal",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Mesada de 2 x 0,60 en purastone venatino",
+                        }
+                    ],
+                },
+                {"role": "assistant", "content": "Listo."},
+            ],
+        )
+        r = await client.get("/api/quotes/q-multimodal/audit-log")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["input_message"] == "Mesada de 2 x 0,60 en purastone venatino"
+
+    @pytest.mark.asyncio
+    async def test_audit_log_handles_mixed_content_blocks(self, client, db_session):
+        await _seed_quote_with_audit(
+            db_session,
+            "q-mixed-blocks",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Mesada"},
+                        {"type": "image", "source": {"type": "base64", "data": "..."}},
+                        {"type": "text", "text": "de 2x0.60"},
+                    ],
+                }
+            ],
+        )
+        r = await client.get("/api/quotes/q-mixed-blocks/audit-log")
+        assert r.status_code == 200
+        data = r.json()
+        # Solo los bloques `text`, concatenados con espacio · el bloque image se omite.
+        assert data["input_message"] == "Mesada de 2x0.60"
+
+    @pytest.mark.asyncio
+    async def test_audit_log_with_string_content(self, client, db_session):
+        # Compat retroactiva · content como string plano sigue funcionando.
+        await _seed_quote_with_audit(
+            db_session,
+            "q-string-content",
+            messages=[{"role": "user", "content": "brief en string plano"}],
+        )
+        r = await client.get("/api/quotes/q-string-content/audit-log")
+        assert r.status_code == 200
+        assert r.json()["input_message"] == "brief en string plano"
+
+
+# ── Fix-up sprint-4/audit-log-content-fix · Bug 2 (CORS en 5xx) ────────────
+class TestUnhandledExceptionCors:
+    """El handler global de Exception reinyecta headers CORS en los 500 para
+    que el browser lea el status real en vez de un 'CORS error' opaco.
+
+    Se testea el handler directamente (no vía TestClient) porque el
+    ServerErrorMiddleware de Starlette re-raise la excepción tras emitir la
+    respuesta, lo que el cliente de test propagaría — testear la función
+    aísla la lógica de reinyección de CORS sin ese ruido."""
+
+    def _make_request(self, origin: str | None):
+        from starlette.requests import Request
+
+        headers = [(b"origin", origin.encode())] if origin else []
+        return Request({"type": "http", "method": "GET", "path": "/x", "headers": headers})
+
+    @pytest.mark.asyncio
+    async def test_5xx_returns_cors_headers_for_allowed_origin(self):
+        from app.main import unhandled_exception_handler
+        from app.core.config import settings
+
+        allowed = settings.CORS_ORIGINS[0]  # garantizado en la allow-list
+        resp = await unhandled_exception_handler(
+            self._make_request(allowed), RuntimeError("boom")
+        )
+        assert resp.status_code == 500
+        assert resp.headers.get("access-control-allow-origin") == allowed
+        assert resp.headers.get("access-control-allow-credentials") == "true"
+
+    @pytest.mark.asyncio
+    async def test_5xx_no_cors_headers_for_disallowed_origin(self):
+        from app.main import unhandled_exception_handler
+
+        resp = await unhandled_exception_handler(
+            self._make_request("https://no-permitido.example"), RuntimeError("boom")
+        )
+        assert resp.status_code == 500
+        assert resp.headers.get("access-control-allow-origin") is None

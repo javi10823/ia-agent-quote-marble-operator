@@ -2513,7 +2513,20 @@ async def get_quote_audit_log(
                 None,
             )
             if first_user:
-                input_message = (first_user.get("content") or "")[:2000]  # cap defensivo
+                # `content` puede venir como string (turns simples) o como
+                # lista de bloques multimodales Anthropic
+                # `[{"type":"text","text":"..."}, {"type":"image",...}]`.
+                # `(lista)[:2000]` NO rompe — devuelve otra lista — y luego
+                # Pydantic la rechaza (input_message: Optional[str]) → 500.
+                # Coercionamos a string extrayendo solo los bloques `text`.
+                raw = first_user.get("content")
+                if isinstance(raw, list):
+                    raw = " ".join(
+                        b.get("text", "")
+                        for b in raw
+                        if isinstance(b, dict) and b.get("type") == "text"
+                    )
+                input_message = (raw or "")[:2000] if isinstance(raw, str) else None
         except Exception:
             pass
     if quote.source_files and isinstance(quote.source_files, list):
