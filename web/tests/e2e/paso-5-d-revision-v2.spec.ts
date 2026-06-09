@@ -155,6 +155,61 @@ test("PRES-2026-018 sin sufijo NO renderea drawer (regresión estado A)", async 
   await expect(page.locator('[data-testid="pdf-diff-drawer"]')).toHaveCount(0);
 });
 
+test("Fix-up bug 1 · estado D = 2-col · sidebar generated OCULTO mientras drawer abierto", async ({
+  page,
+}) => {
+  await goPdf(page, "PRES-2026-018-REVISING");
+  await expect(page.locator('[data-testid="pdf-diff-drawer"]')).toBeVisible();
+  // El sidebar generated NO debe existir durante el estado D (modo edición v2 aislado).
+  await expect(page.locator('[data-testid="pdf-sidebar-generated"]')).toHaveCount(0);
+  // Cerrar drawer → sidebar generated reaparece (estado C).
+  await page.locator('[data-testid="dd-close"]').click();
+  await expect(page.locator('[data-testid="pdf-sidebar-generated"]')).toBeVisible();
+});
+
+test("Fix-up bug 4 · post-generación v2 → sidebar muestra filename con suffix v2", async ({
+  page,
+}) => {
+  await goPdf(page, "PRES-2026-018-REVISING");
+  await page.locator('[data-testid="dd-generate-v2"]').click();
+  await page.locator('[data-testid="modal-v2-confirm"]').click();
+  // Tras confirmar, el sidebar generated debe mostrar el filename v2.
+  await expect(page.locator('[data-testid="generated-filename"]')).toContainText(" v2", {
+    timeout: 5_000,
+  });
+});
+
+test("Fix-up bug 3 · audit-note purple del modal v2 visible como bloque (no flex-collapsed)", async ({
+  page,
+}) => {
+  await goPdf(page, "PRES-2026-018-REVISING");
+  await page.locator('[data-testid="dd-generate-v2"]').click();
+  const summary = page.locator('[data-testid="modal-v2-summary"]');
+  await expect(summary).toBeVisible();
+  // Verifica que es block (no flex aplanado) · `display` computado.
+  const display = await summary.evaluate((el) => getComputedStyle(el).display);
+  expect(display).toBe("block");
+  // an-lbl visible en su línea propia.
+  await expect(summary.locator(".an-lbl")).toBeVisible();
+  await expect(summary.locator(".an-lbl")).toContainText("cambios resumidos");
+  // Background purple aplicado (no transparente · no gris neutro).
+  const bg = await summary.evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(bg).not.toBe("rgba(0, 0, 0, 0)");
+  expect(bg).not.toBe("transparent");
+});
+
+test("Fix-up bug 2 · forma corta PRES-018-REVISING resuelve canon PRES-2026-018", async ({
+  page,
+}) => {
+  // El endpoint mock tolera la forma corta sin "2026-" → debe devolver los 6 rows
+  // canon del PRES-2026-018, no fallback genérico vacío.
+  await goPdf(page, "PRES-018-REVISING");
+  await expect(page.locator('[data-testid="dd-diff-count"]')).toContainText(
+    "4 con cambio · 2 sin cambio",
+  );
+  await expect(page.locator('[data-testid="dd-row-vigencia"]')).toContainText("15 días");
+});
+
 test("PRES-018-REVISING · banner amber sigue ahí mientras drawer abierto", async ({ page }) => {
   await goPdf(page, "PRES-2026-018-REVISING");
   const banner = page.locator('[data-testid="pdf-gen-banner"][data-variant="amber-revision"]');

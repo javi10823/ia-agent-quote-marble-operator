@@ -116,7 +116,27 @@ export function PdfConfirmV2Modal({
           </ul>
 
           {changeSummary.length > 0 && (
-            <div className="audit-note purple" data-testid="modal-v2-summary">
+            // Fix-up PR #474 bug 3: el selector `.modal .m-body .audit-note`
+            // del CSS shared (línea 1279) fuerza `display: flex; font-family:
+            // mono; color: ink-mute` que aplana el bloque purple a una línea
+            // mono gris. Defeat con inline-styles · cero CSS nuevo. El
+            // background/border de `.audit-note.purple` se respeta porque no
+            // hay conflicto en esas propiedades.
+            <div
+              className="audit-note purple"
+              data-testid="modal-v2-summary"
+              style={{
+                display: "block",
+                fontFamily: "inherit",
+                fontSize: 12.5,
+                color: "var(--ink)",
+                letterSpacing: 0,
+                gap: 0,
+                padding: "12px 14px",
+                borderRadius: 6,
+                marginTop: 14,
+              }}
+            >
               <div className="an-lbl">cambios resumidos</div>
               <ul className="modal-ul tight">
                 {changeSummary.map((c, i) => (

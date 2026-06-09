@@ -145,6 +145,17 @@ export function PdfView({
     () => getPdfFilename({ client: quote.clientFull, material: quote.material, date, ext: "xlsx" }),
     [quote.clientFull, quote.material, date],
   );
+  // Fix-up PR #474 bug 4: `baseFilename` para el sidebar generated debe reflejar
+  // la versión actualmente generada. Conservamos la derivación canon desde
+  // `quote.clientFull` + `quote.material` (regresión de `paso-5-c-generado` que
+  // espera el material del dashboard, no el del pdfUrl mock — pueden diverger).
+  // Cuando `generated.pdfUrl` lleva el suffix ` v2.pdf` (post-triggerPdfV2Generation),
+  // anexamos ` v2` al filename canon así el sidebar muestra `... v2`.
+  const baseFilename = useMemo(() => {
+    const base = pdfFilename.replace(/\.pdf$/i, "");
+    const isV2 = /\sv2\.pdf$/i.test(generated?.pdfUrl ?? "");
+    return isV2 ? `${base} v2` : base;
+  }, [generated, pdfFilename]);
   // Filenames con suffix " v2" para el modal de confirmación v2 (mockup 21).
   const pdfFilenameV2 = useMemo(
     () => pdfFilename.replace(/\.pdf$/i, " v2.pdf"),
@@ -160,12 +171,16 @@ export function PdfView({
       data-testid="pdf-view"
       data-chat-open={chatOpen}
       data-state={revising ? "D" : isGenerated ? "C" : "A"}
-      // Grid 2-col (estado A/C) o 3-col (estado D · drawer 400px lateral).
+      // Grid 2-col en TODOS los estados (A/C/D).
+      // Fix-up PR #474 bug 1: estado D pasa a 2-col (PDF 1fr + drawer 400)
+      // literal al mockup 21 (regla `:has()` del CSS shared oculta el sidebar
+      // generated cuando hay drawer abierto — "modo edición v2 aislado").
+      // Bug previo: 3-col (1fr 360 400) asfixiaba el PDF a ~293px en 1389.
       // Inline para no modificar el `.body.no-chat` del chrome shell del Sprint 3.
       // El chat es overlay fixed (heredado del PR #465 fix-up #2) · no ocupa columna.
       style={{
         display: "grid",
-        gridTemplateColumns: revising ? "1fr 360px 400px" : "1fr 360px",
+        gridTemplateColumns: revising ? "1fr 400px" : "1fr 360px",
         gap: 24,
         minHeight: 0,
       }}
@@ -252,14 +267,17 @@ export function PdfView({
         <div className="pdf-stage-helper">Vista previa a tamaño real · A4 · página 1 de 1</div>
       </div>
 
-      {isGenerated && generated ? (
+      {/* Fix-up bug 1: en estado D (revising) OCULTAR el sidebar generated.
+          Mockup 21 lo hace via `.body.pdf-layout:has(.diff-drawer) > .pdf-sidebar { display: none }`.
+          Acá usamos render condicional porque el grid es inline (no `.body.pdf-layout`). */}
+      {isGenerated && generated && !revising ? (
         <PdfSidebarGenerated
-          baseFilename={pdfFilename.replace(/\.pdf$/i, "")}
+          baseFilename={baseFilename}
           info={generated}
           trace={trace}
           onCreateV2={handleCreateV2}
         />
-      ) : (
+      ) : !isGenerated ? (
         <PdfSidebar
           pdfFilename={pdfFilename}
           xlsxFilename={xlsxFilename}
@@ -268,7 +286,7 @@ export function PdfView({
           trace={trace}
           onGenerate={() => setConfirmOpen(true)}
         />
-      )}
+      ) : null}
 
       {revising && diffData && (
         <PdfDiffDrawer

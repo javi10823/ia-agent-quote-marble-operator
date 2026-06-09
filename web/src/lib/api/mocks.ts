@@ -970,16 +970,28 @@ const _v2DiffGeneric: import("./types").PdfV2RevisionData = {
 };
 
 /** Devuelve el diff side-by-side canon para el estado D · fallback gracioso
- * a generic vacío para IDs desconocidos. Soporta sufijo `-REVISING`. */
+ * a generic vacío para IDs desconocidos. Soporta sufijo `-REVISING`.
+ *
+ * Fix-up PR #474 bug 2: tolerar formas cortas del ID (`PRES-018` →
+ * `PRES-2026-018`). Sin esto, una URL con la forma corta caía al genérico
+ * vacío y la tabla mostraba "0 con cambio · 0 sin cambio". */
 export async function getPdfV2DiffData(
   quoteId: string,
   options?: { signal?: AbortSignal },
 ): Promise<import("./types").PdfV2RevisionData> {
   await delay(80 + Math.random() * 120, options?.signal);
-  const baseId = quoteId.endsWith("-REVISING")
+  const stripped = quoteId.endsWith("-REVISING")
     ? quoteId.slice(0, -"-REVISING".length)
     : quoteId;
-  return _v2DiffByQuote[baseId] ?? _v2DiffGeneric;
+  // Lookup directo · luego intentar normalizar PRES-018 → PRES-2026-018.
+  const direct = _v2DiffByQuote[stripped];
+  if (direct) return direct;
+  const shortMatch = /^PRES-(\d{3})$/.exec(stripped);
+  if (shortMatch) {
+    const candidate = `PRES-2026-${shortMatch[1]}`;
+    if (_v2DiffByQuote[candidate]) return _v2DiffByQuote[candidate];
+  }
+  return _v2DiffGeneric;
 }
 
 /** Mock del flow de generación v2 · misma signature que `triggerPdfGeneration`
