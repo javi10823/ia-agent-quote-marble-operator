@@ -14,9 +14,17 @@ export const V2_API_BASE = "/api";
 /* ─── Brief / draft (paso 1) ─────────────────────────────────────── */
 
 export interface CreateDraftQuoteInput {
-  planFile: File;
+  /** Sprint 4 paso-1-chips-brief-libre: relajado a opcional. Backend
+   * acepta `plan_files=[]` (router.py:2089 default `File([])`). Permite
+   * text-only y la ruta "Cargar a mano →" del mockup B sin planFile. */
+  planFile: File | null;
   photos?: File[];
   briefText?: string;
+  /** Chips opcionales del paso-1-A/B · si vienen poblados, se prependen
+   * al `message` enviado al backend como prefix estructurado. */
+  cliente?: string;
+  ambiente?: string;
+  plazo?: string;
 }
 
 export interface CreateDraftQuoteResponse {
@@ -38,7 +46,11 @@ export class ApiError extends Error {
 
 /** Validaciones declarativas (defensa en profundidad — la UI también valida). */
 export const VALIDATION = {
-  PLAN_MAX_BYTES: 20 * 1024 * 1024, // 20 MB
+  /** Sprint 4 paso-1-chips-brief-libre · 10 MB LITERAL del mockup oficial
+   * (dz-sub "PDF · máx. 10 MB · podés sumar hasta 5 fotos..."). Backend
+   * Railway tiene MAX_FILE_SIZE=10MB (router.py validation loop). Alinear
+   * defensa-en-profundidad. */
+  PLAN_MAX_BYTES: 10 * 1024 * 1024, // 10 MB
   PLAN_MIME: ["application/pdf"] as const,
   PHOTO_MAX_BYTES: 5 * 1024 * 1024, // 5 MB
   PHOTO_MIME: ["image/jpeg", "image/png"] as const,

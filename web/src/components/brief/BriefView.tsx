@@ -16,7 +16,6 @@
 import { useState } from "react";
 import type { BriefFormData } from "@/lib/types";
 import { useBriefUpload } from "@/lib/hooks/useBriefUpload";
-import { BriefDropzone } from "./BriefDropzone";
 import { BriefForm } from "./BriefForm";
 import { BriefProcessing } from "./BriefProcessing";
 
@@ -24,10 +23,13 @@ const EMPTY_FORM: BriefFormData = {
   planFile: null,
   photos: [],
   briefText: "",
+  cliente: "",
+  ambiente: "",
+  plazo: "",
 };
 
 export function BriefView() {
-  const { state, error, submit, cancel } = useBriefUpload();
+  const { state, error, submit, submitManual, cancel } = useBriefUpload();
   const [form, setForm] = useState<BriefFormData>(EMPTY_FORM);
   const [dropzoneError, setDropzoneError] = useState<string | null>(null);
 
@@ -35,41 +37,22 @@ export function BriefView() {
     return <BriefProcessing onCancel={cancel} planName={form.planFile?.name} />;
   }
 
-  if (form.planFile) {
-    return (
-      <BriefForm
-        form={form}
-        onChange={setForm}
-        onSubmit={() => submit(form)}
-        onResetPlan={() => setForm({ ...form, planFile: null })}
-        error={error}
-      />
-    );
-  }
-
+  // Sprint 4 paso-1-chips-brief-libre: el form (chips + brief + plan + fotos)
+  // siempre se renderea en BriefForm. Antes el switch A↔B dependía de
+  // `form.planFile` pero el mockup oficial pide chips + brief libre +
+  // dropzone juntos en ambos estados. Diferencia A vs B = lead + tagline
+  // + dropzone vacío vs `.loaded`. BriefForm cubre ambos sin componente
+  // separado.
   return (
-    <>
-      <BriefDropzone
-        onFile={(file) => {
-          setDropzoneError(null);
-          setForm({ ...form, planFile: file });
-        }}
-        onValidationError={setDropzoneError}
-      />
-      {dropzoneError && (
-        <p
-          data-testid="brief-dropzone-error"
-          className="font-mono"
-          style={{
-            color: "var(--error)",
-            fontSize: 12,
-            marginTop: 12,
-            paddingLeft: 4,
-          }}
-        >
-          {dropzoneError}
-        </p>
-      )}
-    </>
+    <BriefForm
+      form={form}
+      onChange={setForm}
+      onSubmit={() => submit(form)}
+      onSubmitManual={() => submitManual()}
+      onResetPlan={() => setForm({ ...form, planFile: null })}
+      onValidationError={setDropzoneError}
+      submitError={error}
+      dropzoneError={dropzoneError}
+    />
   );
 }

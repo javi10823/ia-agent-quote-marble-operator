@@ -9,11 +9,24 @@
 /** Estado del state machine del paso 1 (mockups 00 A/B/C). */
 export type BriefUploadState = "idle" | "submitting" | "error";
 
-/** Form data del paso 1 antes de submit. */
+/** Form data del paso 1 antes de submit.
+ *
+ * Sprint 4 paso-1-chips-brief-libre: extendido con 3 chips opcionales
+ * (`cliente`/`ambiente`/`plazo`) del mockup oficial 00-paso1-A/B. El operador
+ * los completa libremente · en `BriefForm` se rendererean como `.brief-chip`.
+ * Al submit, los valores se prependen al `message` que va al backend como
+ * prefix estructurado ("Cliente: X · Ambiente: Y · Plazo: Z").
+ *
+ * El badge visual `.from-ia` + `.ia-mark` aparece cuando el chip está
+ * pre-poblado por el agente (sub-PR posterior `paso-1-sse-stream`). En este
+ * sub-PR los valores vienen siempre del operador → sin badge IA todavía. */
 export interface BriefFormData {
   planFile: File | null;
   photos: File[];
   briefText: string;
+  cliente: string;
+  ambiente: string;
+  plazo: string;
 }
 
 /* ─── Sprint 2 paso-2-contexto · chat scoped + context form ─────────── */
