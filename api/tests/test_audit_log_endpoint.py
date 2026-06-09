@@ -511,11 +511,70 @@ class TestAuditLogTextOnlyInstrumentation:
         # Orden ASC por created_at preservado
         assert event_types.index("dual_read.started") < event_types.index("dual_read.completed")
 
-        # chat_duration_ms NO se computa desde dual_read.* (la lógica usa
-        # agent.stream_started → último tool_result/quote.calculated). Sin
-        # esos eventos seed, chat_duration_ms = None. Este test documenta
-        # ese comportamiento esperado · regresión-guard.
+        # Sin agent.stream_started en el seed, chat_duration_ms = None
+        # (no hay punto de inicio para computar delta).
         assert data["chat_duration_ms"] is None
+
+    @pytest.mark.asyncio
+    async def test_chat_duration_derived_from_text_only_terminators(self, client, db_session):
+        """Sprint 4 audit-instrumentation-gap-fix · CALLS section vacía bug.
+        chat_duration_ms ahora cubre los terminators de fast-paths
+        (text_parse.completed, context_analysis.pending, dual_read.completed)
+        además de los del loop agéntico (tool_result, calculated, docs.generated).
+        """
+        base = datetime.now(timezone.utc)
+        await _seed_quote_with_audit(
+            db_session,
+            "q-text-only-duration",
+            events=[
+                {"event_type": "quote.created", "created_at": base},
+                {
+                    "event_type": "agent.stream_started",
+                    "created_at": base + timedelta(milliseconds=200),
+                },
+                {
+                    "event_type": "text_parse.completed",
+                    "created_at": base + timedelta(milliseconds=6100),
+                    "elapsed_ms": 5900,
+                },
+                {
+                    "event_type": "context_analysis.pending",
+                    "created_at": base + timedelta(milliseconds=12500),
+                    "elapsed_ms": 6300,
+                },
+            ],
+        )
+        r = await client.get("/api/quotes/q-text-only-duration/audit-log")
+        data = r.json()
+        # stream_started @ 200ms, last terminator context_analysis.pending @
+        # 12500ms → chat_duration_ms ≈ 12300ms (delta absoluto).
+        assert data["chat_duration_ms"] is not None
+        assert 12000 <= data["chat_duration_ms"] <= 12600
+
+    @pytest.mark.asyncio
+    async def test_chat_duration_derived_from_dual_read_completed(self, client, db_session):
+        """Mismo bug · path dual_read."""
+        base = datetime.now(timezone.utc)
+        await _seed_quote_with_audit(
+            db_session,
+            "q-dual-read-duration",
+            events=[
+                {"event_type": "quote.created", "created_at": base},
+                {
+                    "event_type": "agent.stream_started",
+                    "created_at": base + timedelta(milliseconds=100),
+                },
+                {
+                    "event_type": "dual_read.completed",
+                    "created_at": base + timedelta(seconds=18),
+                    "elapsed_ms": 17800,
+                },
+            ],
+        )
+        r = await client.get("/api/quotes/q-dual-read-duration/audit-log")
+        data = r.json()
+        assert data["chat_duration_ms"] is not None
+        assert 17500 <= data["chat_duration_ms"] <= 18100
 
     @pytest.mark.asyncio
     async def test_new_event_types_not_filtered_by_endpoint(self, client, db_session):
@@ -547,3 +606,40 @@ class TestAuditLogTextOnlyInstrumentation:
         returned_types = {e["event_type"] for e in data["events"]}
         for t in novel_types:
             assert t in returned_types, f"Endpoint filtró out event_type nuevo: {t}"
+
+
+# ── Sprint 4 audit-instrumentation-gap-fix · regresión de commit=True ──
+# Verifica que log_event(commit=True) efectivamente persiste el event
+# aunque el caller no llame a db.commit() después.
+
+class TestLogEventCommitSemantics:
+    @pytest.mark.asyncio
+    async def test_log_event_with_commit_true_persists_immediately(self, client, db_session):
+        """Si el caller emite log_event(commit=True) sin un db.commit posterior,
+        el event DEBE persistir. Reproduce el bug PR #480 donde los 2 events
+        finales del text-only flow se rolleaban al cerrar la session."""
+        from app.modules.observability import log_event
+        from app.models.quote import Quote, QuoteStatus
+
+        # Seed quote sin commit explícito
+        db_session.add(Quote(
+            id="q-commit-true", client_name="Test", project="Test",
+            messages=[], status=QuoteStatus.DRAFT,
+        ))
+        await db_session.commit()
+
+        # Event con commit=True — debe persistir aunque no haya commit posterior
+        await log_event(
+            db_session,
+            event_type="test.with_commit_true",
+            source="test",
+            summary="should persist",
+            quote_id="q-commit-true",
+            commit=True,
+        )
+
+        # Verificar via endpoint
+        r = await client.get("/api/quotes/q-commit-true/audit-log")
+        assert r.status_code == 200
+        types = [e["event_type"] for e in r.json()["events"]]
+        assert "test.with_commit_true" in types

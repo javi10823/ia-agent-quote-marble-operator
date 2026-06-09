@@ -713,6 +713,11 @@ async def _run_dual_read(
                     f"{len(_context.get('assumptions') or [])} assumptions, "
                     f"{len(_context.get('pending_questions') or [])} questions"
                 )
+                # Sprint 4 audit-instrumentation-gap-fix · commit=True CRÍTICO.
+                # Mismo bug que el path text-only: este event se emite después
+                # del último `db.commit()` (línea 707), seguido por `return`
+                # que cierra el generator. Sin commit=True, el event queda en
+                # la transaction abierta y get_db() lo rollea al cerrar.
                 await _audit(
                     db=db,
                     event_type="dual_read.completed",
@@ -721,6 +726,7 @@ async def _run_dual_read(
                     quote_id=quote_id,
                     payload={"path": "dual_read", "exit": "context_emitted"},
                     elapsed_ms=int((_t_audit_dr.monotonic() - _dr_started_at) * 1000),
+                    commit=True,
                 )
                 return (True, chunks)
             except Exception as _e_ctx:
@@ -2873,6 +2879,9 @@ class AgentService:
                     logging.warning(f"[text-parse] parse_brief_to_card failed: {_e_tp}")
                     _text_card = None
                     _text_parse_elapsed_ms = int((_t_audit.monotonic() - _text_parse_start) * 1000)
+                    # commit=True · si parse_brief_to_card falla, _text_card=None
+                    # hace skip del bloque persist (no hay db.commit posterior). Sin
+                    # commit acá, el event de fallo se perdería.
                     await _audit(
                         db=db,
                         event_type="text_parse.completed",
@@ -2881,6 +2890,7 @@ class AgentService:
                         quote_id=quote_id,
                         payload={"ok": False},
                         elapsed_ms=_text_parse_elapsed_ms,
+                        commit=True,
                         success=False,
                         error_message=str(_e_tp)[:500],
                     )
@@ -2946,6 +2956,10 @@ class AgentService:
                                 f"[text-parse] build_context_analysis failed: {_e_ctx_tp}"
                             )
                             _context_tp = None
+                            # commit=True · si build_context_analysis falla, no hay
+                            # db.commit posterior (skip del bloque persist por
+                            # _context_tp=None). Sin commit, este event de fallo se
+                            # perdería.
                             await _audit(
                                 db=db,
                                 event_type="context_analysis.pending",
@@ -2955,6 +2969,7 @@ class AgentService:
                                 payload={"path": "text_only", "ok": False},
                                 success=False,
                                 error_message=str(_e_ctx_tp)[:500],
+                                commit=True,
                             )
 
                         if _context_tp:
@@ -3010,6 +3025,18 @@ class AgentService:
                             logging.info(
                                 f"[text-parse] emitted context_analysis for {quote_id}"
                             )
+                            # Sprint 4 audit-instrumentation-gap-fix · commit=True
+                            # CRÍTICO. `log_event` por default usa commit=False (deja
+                            # el event en la transaction abierta para rollback safety).
+                            # En este path, después del `db.commit()` del Quote update
+                            # (línea 2987), el `quote_breakdown.mutated` (línea ~2988)
+                            # y este `context_analysis.pending` quedan en transaction
+                            # SIN commit. Luego `yield` + `return` (3038-3039) cierra
+                            # el generator y `get_db()` cierra la session sin commit →
+                            # ambos events se rollean. PR #480 los registró pero nunca
+                            # se persistían. `commit=True` acá flushea AMBOS events
+                            # (mutated + pending) porque son la única escritura
+                            # pendiente. Equivalente a `await db.commit()` explícito.
                             await _audit(
                                 db=db,
                                 event_type="context_analysis.pending",
@@ -3030,6 +3057,7 @@ class AgentService:
                                     ),
                                 },
                                 elapsed_ms=_ctx_analysis_elapsed_ms,
+                                commit=True,
                             )
                             yield {
                                 "type": "context_analysis",

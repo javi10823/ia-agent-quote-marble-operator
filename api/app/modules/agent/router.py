@@ -2486,9 +2486,23 @@ async def get_quote_audit_log(
     chat_duration_ms: Optional[int] = None
     stream_start = next((e for e in all_events if e.event_type == "agent.stream_started"), None)
     if stream_start:
+        # Sprint 4 audit-instrumentation-gap-fix: extendido con los terminators
+        # de los fast-paths text-only y dual_read. Antes solo cubría el loop
+        # agéntico (tool_result/calculated/docs.generated) → text-only y
+        # dual_read quedaban con chat_duration_ms=None (CALLS section vacía
+        # en el copy plain text). Ahora text_parse.completed y
+        # context_analysis.pending y dual_read.completed también cuentan
+        # como terminators legítimos de la "call".
         chat_ends = [
             e for e in all_events
-            if e.event_type in {"agent.tool_result", "quote.calculated", "docs.generated"}
+            if e.event_type in {
+                "agent.tool_result",
+                "quote.calculated",
+                "docs.generated",
+                "text_parse.completed",
+                "context_analysis.pending",
+                "dual_read.completed",
+            }
             and e.created_at >= stream_start.created_at
         ]
         if chat_ends:
