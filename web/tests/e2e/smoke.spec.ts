@@ -56,3 +56,17 @@ test("stepper se actualiza al navegar entre rutas", async ({ page }) => {
   await expect(page.locator('.stepper .step[data-step="despiece"]')).toHaveClass(/done/);
   await expect(page.locator('.stepper .step[data-step="pdf"]')).not.toHaveClass(/done|now/);
 });
+
+/* ─── Sprint 4 fix-up sidebar-new-quote-cta ───────────────────────── */
+
+test("Sidebar CTA '+ Nuevo presupuesto' navega a /quotes/new desde dentro de un quote", async ({
+  page,
+}) => {
+  // Bug reportado por Javi via screenshot: dentro de /quotes/{id}/contexto
+  // el CTA del sidebar no andaba (era `<div>` placeholder sin handler).
+  await page.goto("/quotes/PRES-2026-018/contexto");
+  await expect(page.locator('[data-testid="sidebar-new-quote-cta"]')).toBeVisible();
+  await page.locator('[data-testid="sidebar-new-quote-cta"]').click();
+  await page.waitForURL("**/quotes/new", { timeout: 5000 });
+  await expect(page.locator('[data-testid="brief-dropzone"]')).toBeVisible();
+});
