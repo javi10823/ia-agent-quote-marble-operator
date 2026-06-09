@@ -359,3 +359,191 @@ class TestUnhandledExceptionCors:
         )
         assert resp.status_code == 500
         assert resp.headers.get("access-control-allow-origin") is None
+
+
+# ── Sprint 4 audit-text-only-instrumentation · Bug 2 fix ──────────────────
+# Verifica que los nuevos event_types emitidos por agent.py (text-only +
+# dual_read paths) son persistidos correctamente y aparecen en el response
+# del endpoint sin filtros. Tests aislados: NO ejecutan agent.chat()
+# (requiere LLM mocking), seedean directamente con shape canon.
+
+class TestAuditLogTextOnlyInstrumentation:
+    @pytest.mark.asyncio
+    async def test_text_only_flow_events_appear_in_audit_log(self, client, db_session):
+        """Simula los 4 events nuevos del text-only flow + 2 baseline previos."""
+        base = datetime.now(timezone.utc)
+        await _seed_quote_with_audit(
+            db_session,
+            "q-text-only",
+            client_name="Familia Mansilla",
+            material=None,
+            messages=[
+                {"role": "user", "content": "Mesada de 2 x 0,60 en purastone venatino"}
+            ],
+            events=[
+                {"event_type": "quote.created", "created_at": base, "summary": "Quote created"},
+                {
+                    "event_type": "chat.message_sent",
+                    "created_at": base + timedelta(milliseconds=12),
+                    "summary": "Operator sent chat message",
+                },
+                {
+                    "event_type": "text_parse.started",
+                    "created_at": base + timedelta(milliseconds=120),
+                    "summary": "Text-only brief parse started · msg_chars=43",
+                    "payload": {"message_chars": 43},
+                },
+                {
+                    "event_type": "text_parse.completed",
+                    "created_at": base + timedelta(milliseconds=8456),
+                    "summary": "Text-only brief parse completed · tramos=1",
+                    "payload": {"ok": True, "sectores_count": 1},
+                    "elapsed_ms": 8336,
+                },
+                {
+                    "event_type": "context_analysis.started",
+                    "created_at": base + timedelta(milliseconds=8500),
+                    "summary": "Text-only context analysis started",
+                    "payload": {"path": "text_only"},
+                },
+                {
+                    "event_type": "quote_breakdown.mutated",
+                    "created_at": base + timedelta(milliseconds=12100),
+                    "summary": "Breakdown mutated (text-only)",
+                    "payload": {
+                        "path": "text_only",
+                        "mutated_keys": ["dual_read_result", "context_analysis_pending"],
+                    },
+                },
+                {
+                    "event_type": "context_analysis.pending",
+                    "created_at": base + timedelta(milliseconds=12150),
+                    "summary": "Text-only context pending · 3 known · 2 assumptions · 1 questions",
+                    "payload": {
+                        "path": "text_only",
+                        "data_known_count": 3,
+                        "assumptions_count": 2,
+                        "pending_questions_count": 1,
+                    },
+                    "elapsed_ms": 3600,
+                },
+            ],
+        )
+        r = await client.get("/api/quotes/q-text-only/audit-log")
+        assert r.status_code == 200, r.text
+        data = r.json()
+
+        # Total events visible (7 baseline + new instrumentation)
+        assert data["events_total"] == 7
+
+        # Los 5 event_types NUEVOS aparecen sin filtro
+        event_types = {e["event_type"] for e in data["events"]}
+        expected_new = {
+            "text_parse.started",
+            "text_parse.completed",
+            "context_analysis.started",
+            "quote_breakdown.mutated",
+            "context_analysis.pending",
+        }
+        assert expected_new.issubset(event_types), (
+            f"Faltan event_types nuevos: {expected_new - event_types}"
+        )
+
+        # Payload del context_analysis.pending preserva data_known_count
+        ctx = next(e for e in data["events"] if e["event_type"] == "context_analysis.pending")
+        assert ctx["payload"]["data_known_count"] == 3
+        assert ctx["payload"]["path"] == "text_only"
+        assert ctx["elapsed_ms"] == 3600
+
+    @pytest.mark.asyncio
+    async def test_dual_read_flow_events_appear_in_audit_log(self, client, db_session):
+        """Simula los 4 events nuevos del plan flow (_run_dual_read)."""
+        base = datetime.now(timezone.utc)
+        await _seed_quote_with_audit(
+            db_session,
+            "q-dual-read",
+            messages=[{"role": "user", "content": "leé el plano"}],
+            source_files=[{"filename": "plano.pdf"}],
+            events=[
+                {"event_type": "quote.created", "created_at": base},
+                {"event_type": "chat.message_sent", "created_at": base + timedelta(milliseconds=10)},
+                {
+                    "event_type": "dual_read.started",
+                    "created_at": base + timedelta(milliseconds=200),
+                    "summary": "Dual-read started · crop=cocina · planilla_m2=6.5",
+                    "payload": {"crop_label": "cocina", "planilla_m2": 6.5},
+                },
+                {
+                    "event_type": "quote_breakdown.mutated",
+                    "created_at": base + timedelta(seconds=15),
+                    "payload": {
+                        "path": "dual_read",
+                        "mutated_keys": [
+                            "dual_read_result",
+                            "dual_read_plan_hash",
+                            "context_analysis_pending",
+                            "brief_analysis",
+                        ],
+                    },
+                },
+                {
+                    "event_type": "context_analysis.pending",
+                    "created_at": base + timedelta(seconds=15, milliseconds=200),
+                    "summary": "Dual-read context pending",
+                    "payload": {"path": "dual_read"},
+                },
+                {
+                    "event_type": "dual_read.completed",
+                    "created_at": base + timedelta(seconds=18),
+                    "summary": "Dual-read completed",
+                    "payload": {"path": "dual_read", "exit": "context_emitted"},
+                    "elapsed_ms": 17800,
+                },
+            ],
+        )
+        r = await client.get("/api/quotes/q-dual-read/audit-log")
+        assert r.status_code == 200
+        data = r.json()
+
+        event_types = [e["event_type"] for e in data["events"]]
+        assert "dual_read.started" in event_types
+        assert "dual_read.completed" in event_types
+        # Orden ASC por created_at preservado
+        assert event_types.index("dual_read.started") < event_types.index("dual_read.completed")
+
+        # chat_duration_ms NO se computa desde dual_read.* (la lógica usa
+        # agent.stream_started → último tool_result/quote.calculated). Sin
+        # esos eventos seed, chat_duration_ms = None. Este test documenta
+        # ese comportamiento esperado · regresión-guard.
+        assert data["chat_duration_ms"] is None
+
+    @pytest.mark.asyncio
+    async def test_new_event_types_not_filtered_by_endpoint(self, client, db_session):
+        """Verifica que el endpoint NO filtra los nuevos event_types por
+        accidente (ej: una whitelist de event_types conocidos)."""
+        base = datetime.now(timezone.utc)
+        # Mix de eventos pre-existentes + nuevos
+        novel_types = [
+            "text_parse.started",
+            "text_parse.completed",
+            "context_analysis.started",
+            "context_analysis.pending",
+            "quote_breakdown.mutated",
+            "dual_read.started",
+            "dual_read.completed",
+        ]
+        events = [{"event_type": "quote.created", "created_at": base}] + [
+            {
+                "event_type": t,
+                "created_at": base + timedelta(seconds=i + 1),
+                "summary": f"{t} test",
+            }
+            for i, t in enumerate(novel_types)
+        ]
+        await _seed_quote_with_audit(db_session, "q-no-filter", events=events)
+        r = await client.get("/api/quotes/q-no-filter/audit-log")
+        assert r.status_code == 200
+        data = r.json()
+        returned_types = {e["event_type"] for e in data["events"]}
+        for t in novel_types:
+            assert t in returned_types, f"Endpoint filtró out event_type nuevo: {t}"
