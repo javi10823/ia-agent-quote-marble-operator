@@ -56,18 +56,29 @@ export function Sidebar() {
       {/* Spacer empuja el CTA + avatar al fondo */}
       <div style={{ flex: 1 }} />
 
-      {/* CTA "+ Nuevo presupuesto" · placeholder no clickeable */}
-      <div
+      {/* CTA "+ Nuevo presupuesto" · Sprint 4 fix-up · antes era `<div>`
+          placeholder no clickeable (Sprint 2 chrome-refactor). Cuando el
+          operador estaba dentro de un quote y quería arrancar otro, el
+          click no hacía nada · ahora navega a /quotes/new. */}
+      <button
+        type="button"
         className="nav-i"
         style={{
           border: "1px dashed var(--line-strong)",
           justifyContent: "center",
           color: "var(--accent)",
+          background: "transparent",
+          width: "100%",
+          textAlign: "center",
+          cursor: "pointer",
+          font: "inherit",
         }}
         data-v2-nav="new-quote"
+        data-testid="sidebar-new-quote-cta"
+        onClick={() => router.push("/quotes/new")}
       >
         + Nuevo presupuesto
-      </div>
+      </button>
 
       {/* User avatar · "M" de Marina */}
       <div
