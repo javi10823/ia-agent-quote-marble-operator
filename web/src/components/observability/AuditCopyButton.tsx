@@ -70,6 +70,22 @@ export function AuditCopyButton({ quoteId }: Props) {
       ? `Error: ${errorMsg}`
       : "Copiar audit del quote actual al clipboard";
 
+  // Fix-up overflow: `.topbar .ico-btn` del shared CSS hardcodea
+  // `width:32px; height:32px; display:grid; place-items:center`. Cuando
+  // state cambia a "copied"/"error" el label se ensancha ("✓ Copiado")
+  // y desborda el botón, montándose sobre el AuditToggle vecino. Inline
+  // override en state expanded: ancho auto + padding horizontal para que
+  // el botón crezca a contenido. En idle preservamos 32×32 del ico-btn.
+  const isExpanded = state !== "idle";
+  const expandedStyle: React.CSSProperties = isExpanded
+    ? {
+        width: "auto",
+        minWidth: 32,
+        padding: "0 10px",
+        whiteSpace: "nowrap",
+      }
+    : {};
+
   return (
     <button
       type="button"
@@ -79,7 +95,7 @@ export function AuditCopyButton({ quoteId }: Props) {
       data-testid="audit-copy-button"
       data-state={state}
       disabled={state === "loading"}
-      style={{ minWidth: 28 }}
+      style={expandedStyle}
     >
       <span style={{ fontSize: 13, lineHeight: 1, whiteSpace: "nowrap" }}>{label}</span>
     </button>
