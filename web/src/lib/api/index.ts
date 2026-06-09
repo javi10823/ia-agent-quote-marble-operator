@@ -48,6 +48,10 @@ export const getPdfTrace = mocks.getPdfTrace;
 export const triggerPdfGeneration = mocks.triggerPdfGeneration;
 export const getPdfGeneratedInfo = mocks.getPdfGeneratedInfo;
 
+/* ─── Paso 5 estado D · Sprint 4 paso-5-d-revision-v2 · mockup 21 ── */
+export const getPdfV2DiffData = mocks.getPdfV2DiffData;
+export const triggerPdfV2Generation = mocks.triggerPdfV2Generation;
+
 /* ─── Helpers de test (reset de stores in-memory del mock) ───────── */
 export const _resetContextStore = mocks._resetContextStore;
 export const _resetPiecesStore = mocks._resetPiecesStore;

@@ -14,6 +14,7 @@ import {
   getContextForQuote,
   getPdfGeneratedInfo,
   getPdfTrace,
+  getPdfV2DiffData,
   getQuoteMetadata,
   listPiecesForQuote,
 } from "@/lib/api";
@@ -32,13 +33,17 @@ export default async function PdfPage({ params }: { params: { id: string } }) {
   // el quote ya pasó por `triggerPdfGeneration` en esta sesión mock.
   // SSR-seedea el estado C para que el primer paint ya muestre el sidebar
   // generated en lugar del editable.
-  const [metaR, calcR, ctxR, traceR, piecesR, genR] = await Promise.allSettled([
+  // Sprint 4 paso-5-d-revision-v2 (mockup 21) · sufijo `-REVISING` SSR-seedea
+  // el estado D · cargamos el diff data en paralelo cuando matchea.
+  const isRevising = params.id.endsWith("-REVISING");
+  const [metaR, calcR, ctxR, traceR, piecesR, genR, diffR] = await Promise.allSettled([
     getQuoteMetadata(params.id, { bearerToken }),
     getCalculationForQuote(params.id),
     getContextForQuote(params.id),
     getPdfTrace(params.id),
     listPiecesForQuote(params.id),
     getPdfGeneratedInfo(params.id),
+    isRevising ? getPdfV2DiffData(params.id) : Promise.resolve(null),
   ]);
 
   if (metaR.status === "rejected" || calcR.status === "rejected" || traceR.status === "rejected") {
@@ -79,6 +84,11 @@ export default async function PdfPage({ params }: { params: { id: string } }) {
   const initialGenerated =
     genR.status === "fulfilled" && genR.value !== null ? genR.value : null;
 
+  const initialDiffData =
+    isRevising && diffR.status === "fulfilled" && diffR.value !== null
+      ? diffR.value
+      : null;
+
   return (
     <PdfView
       quoteId={params.id}
@@ -90,6 +100,8 @@ export default async function PdfPage({ params }: { params: { id: string } }) {
       pieces={pieces}
       proyecto={proyecto}
       initialGenerated={initialGenerated}
+      initialRevising={isRevising}
+      initialDiffData={initialDiffData}
     />
   );
 }

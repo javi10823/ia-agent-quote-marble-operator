@@ -451,3 +451,49 @@ export interface PdfGeneratedInfo {
   /** Drive file id mostrado en el trace-block plegable. */
   driveId: string;
 }
+
+// ─── Sprint 4 paso-5-d-revision-v2 · mockup 21 ─────────────────────────────
+// Estado D · "Revisión v2 (drawer diff side-by-side)". Mock-only · edición
+// v2 visual-only en este sub-PR. Wire real backend en sub-PR posterior
+// (paso-5-pdf-real-wire) · inputs editables en (paso-5-v2-editable).
+
+/** Fila de la tabla diff side-by-side del drawer. */
+export interface PdfV2DiffRow {
+  /** Label del campo (ej "Vigencia", "Subtotal MO"). */
+  field: string;
+  /** Valor v1 formateado para display. */
+  v1Value: string;
+  /** Valor v2 formateado para display. Si igual a v1 → row sin clase `.diff`. */
+  v2Value: string;
+  /** Cuando difiere · explicación breve "↳ era ..." mostrada bajo el valor v2. */
+  trace?: string;
+  /** Tipo de valor para clases auxiliares (`.dd-val.mono` para números/dates,
+   * default sin mono para textos largos como "Datos de envío"). */
+  display?: "mono" | "text";
+  /** Variante de la row (`.dd-row.money` para subtotales). */
+  variant?: "default" | "money";
+  /** Para casos vacío→texto · marca el lado v1 como `.dd-val.empty`. */
+  v1Empty?: boolean;
+}
+
+/** Lista de cambios resumidos del mockup 21 · sección Resumen del drawer y
+ * del modal confirmar v2 (`.audit-note.purple` con `.modal-ul.tight`). */
+export interface PdfV2ChangeSummary {
+  /** Texto liso del cambio · admite markup ligero via `prev` y `outcome`. */
+  field: string;
+  /** "7 →" (antes) opcional. */
+  prev?: string;
+  /** "15 días" (después) · highlight visual. */
+  outcome: string;
+}
+
+/** Datos canon del estado D para un quoteId. Mock-only. */
+export interface PdfV2RevisionData {
+  /** 6 rows del side-by-side. */
+  rows: PdfV2DiffRow[];
+  /** Resumen para sección "Resumen" y modal v2. */
+  summary: PdfV2ChangeSummary[];
+  /** Count de cambios (4 con cambio · 2 sin cambio en el canon). */
+  diffCount: number;
+  unchangedCount: number;
+}

@@ -336,6 +336,28 @@ export async function getQuoteMetadata(
     }
   }
 
+  // Sprint 4 paso-5-d-revision-v2 · sufijo `-REVISING` hereda del baseId
+  // con status "sent" (v1 sigue oficial). El SSR seedea el estado D directo
+  // via `getPdfGeneratedInfo` (v1 canon presente) + `initialRevising=true`
+  // en `PdfView` que renderea el drawer al primer paint.
+  const revisingSuffix = "-REVISING";
+  const baseIdForRevising = quoteId.endsWith(revisingSuffix)
+    ? quoteId.slice(0, -revisingSuffix.length)
+    : null;
+  if (baseIdForRevising) {
+    const base = DASHBOARD_QUOTES.find((q) => q.id === baseIdForRevising);
+    if (base) {
+      return {
+        id: quoteId,
+        client: base.client,
+        clientFull: base.clientFull,
+        material: base.material,
+        m2: base.m2,
+        status: "sent",
+      };
+    }
+  }
+
   const found = DASHBOARD_QUOTES.find((q) => q.id === quoteId);
   if (found) {
     return {
@@ -721,6 +743,16 @@ export async function getAuditSnapshot(
     }
   }
 
+  // Sprint 4 paso-5-d-revision-v2 · sufijo `-REVISING` también hereda del
+  // baseId (estado D usa el mismo trace_id v1 que el AuditTray exhibe).
+  if (quoteId.endsWith("-REVISING")) {
+    const baseId = quoteId.slice(0, -"-REVISING".length);
+    const base = _auditByQuote[baseId];
+    if (base) {
+      return JSON.parse(JSON.stringify(base)) as import("./types").AuditSnapshot;
+    }
+  }
+
   return _auditByQuote[quoteId] ?? _auditGeneric;
 }
 
@@ -834,5 +866,157 @@ export async function getPdfGeneratedInfo(
     const baseId = quoteId.slice(0, -"-GENERATED".length);
     return _generatedByQuote[baseId] ?? _generatedGeneric;
   }
+  // 3) Sprint 4 paso-5-d-revision-v2 · sufijo `-REVISING` también seedea v1
+  // generado · el estado D muestra v1 oficial intacta + drawer comparando v2.
+  if (quoteId.endsWith("-REVISING")) {
+    const baseId = quoteId.slice(0, -"-REVISING".length);
+    return _generatedByQuote[baseId] ?? _generatedGeneric;
+  }
   return null;
+}
+
+// ─── Sprint 4 paso-5-d-revision-v2 · mockup 21 ─────────────────────────────
+// Datos canon del side-by-side diff del drawer. 6 rows literales del mockup
+// para PRES-2026-018 · 4 con cambio (Vigencia, Datos envío, Notas, Subtotal
+// MO) + 2 sin cambio (Anticipo, Plazo). Mock-only · sub-PR
+// `paso-5-v2-editable` posterior wirea inputs editables al sidebar.
+
+const _v2DiffByQuote: Record<string, import("./types").PdfV2RevisionData> = {
+  "PRES-2026-018": {
+    diffCount: 4,
+    unchangedCount: 2,
+    rows: [
+      {
+        field: "Vigencia",
+        v1Value: "7 días",
+        v2Value: "15 días",
+        trace: "↳ era 7 días",
+        display: "mono",
+      },
+      {
+        field: "Anticipo",
+        v1Value: "50%",
+        v2Value: "50%",
+        display: "mono",
+      },
+      {
+        field: "Plazo entrega",
+        v1Value: "10–12 días hábiles",
+        v2Value: "10–12 días hábiles",
+        display: "mono",
+      },
+      {
+        field: "Datos de envío",
+        v1Value: "Belgrano, CABA · 4° piso (con ascensor)",
+        v2Value:
+          "Belgrano, CABA · 4° piso · ascensor de servicio · contacto en obra: Marcos +54 11 6234-9087",
+        trace: "↳ ampliado: ascensor de servicio + contacto",
+        display: "text",
+      },
+      {
+        field: "Notas internas",
+        v1Value: "— vacío",
+        v2Value: "cliente pidió piso anti-mancha · agregar a producción",
+        trace: "↳ nuevo · antes vacío",
+        display: "text",
+        v1Empty: true,
+      },
+      {
+        field: "Subtotal MO",
+        v1Value: "$494.190",
+        v2Value: "$498.450",
+        trace: "↳ era $494.190 · +$4.260 · corrección manual de colocación",
+        display: "mono",
+        variant: "money",
+      },
+    ],
+    summary: [
+      { field: "Vigencia", prev: "7 →", outcome: "15 días" },
+      {
+        field: "Datos de envío",
+        outcome: "ampliados con ascensor de servicio y contacto en obra",
+      },
+      { field: "Notas internas", outcome: "agregadas (anti-mancha)" },
+      { field: "Subtotal MO", prev: "corrección manual", outcome: "+$4.260" },
+    ],
+  },
+  "PRES-2026-017": {
+    diffCount: 1,
+    unchangedCount: 5,
+    rows: [
+      { field: "Vigencia", v1Value: "10 días", v2Value: "10 días", display: "mono" },
+      { field: "Anticipo", v1Value: "60%", v2Value: "60%", display: "mono" },
+      { field: "Plazo entrega", v1Value: "15 días hábiles", v2Value: "15 días hábiles", display: "mono" },
+      { field: "Datos de envío", v1Value: "Rosario, zona sur", v2Value: "Rosario, zona sur", display: "text" },
+      { field: "Notas internas", v1Value: "— vacío", v2Value: "— vacío", display: "text", v1Empty: true },
+      {
+        field: "Subtotal MO",
+        v1Value: "$258.430",
+        v2Value: "$262.190",
+        trace: "↳ +$3.760 · ajuste de flete",
+        display: "mono",
+        variant: "money",
+      },
+    ],
+    summary: [{ field: "Subtotal MO", prev: "ajuste flete", outcome: "+$3.760" }],
+  },
+};
+
+const _v2DiffGeneric: import("./types").PdfV2RevisionData = {
+  diffCount: 0,
+  unchangedCount: 0,
+  rows: [],
+  summary: [],
+};
+
+/** Devuelve el diff side-by-side canon para el estado D · fallback gracioso
+ * a generic vacío para IDs desconocidos. Soporta sufijo `-REVISING`.
+ *
+ * Fix-up PR #474 bug 2: tolerar formas cortas del ID (`PRES-018` →
+ * `PRES-2026-018`). Sin esto, una URL con la forma corta caía al genérico
+ * vacío y la tabla mostraba "0 con cambio · 0 sin cambio". */
+export async function getPdfV2DiffData(
+  quoteId: string,
+  options?: { signal?: AbortSignal },
+): Promise<import("./types").PdfV2RevisionData> {
+  await delay(80 + Math.random() * 120, options?.signal);
+  const stripped = quoteId.endsWith("-REVISING")
+    ? quoteId.slice(0, -"-REVISING".length)
+    : quoteId;
+  // Lookup directo · luego intentar normalizar PRES-018 → PRES-2026-018.
+  const direct = _v2DiffByQuote[stripped];
+  if (direct) return direct;
+  const shortMatch = /^PRES-(\d{3})$/.exec(stripped);
+  if (shortMatch) {
+    const candidate = `PRES-2026-${shortMatch[1]}`;
+    if (_v2DiffByQuote[candidate]) return _v2DiffByQuote[candidate];
+  }
+  return _v2DiffGeneric;
+}
+
+/** Mock del flow de generación v2 · misma signature que `triggerPdfGeneration`
+ * (PR #473) pero retorna info con filenames suffix `v2.pdf/v2.xlsx`. */
+export async function triggerPdfV2Generation(
+  quoteId: string,
+  options?: { signal?: AbortSignal },
+): Promise<import("./types").PdfGeneratedInfo> {
+  await delay(800 + Math.random() * 700, options?.signal);
+  if (quoteId.endsWith("-ERROR")) {
+    throw new Error("No se pudo generar v2 · servicio Drive caído (mock-only).");
+  }
+  const baseId = quoteId.endsWith("-REVISING")
+    ? quoteId.slice(0, -"-REVISING".length)
+    : quoteId;
+  const v1 = _generatedByQuote[baseId] ?? _generatedGeneric;
+  // Variante v2: filenames con suffix " v2" antes de la extensión + nuevo traceId.
+  const v2: import("./types").PdfGeneratedInfo = {
+    ...v1,
+    pdfUrl: v1.pdfUrl.replace(/\.pdf$/i, " v2.pdf"),
+    excelUrl: v1.excelUrl.replace(/\.xlsx$/i, " v2.xlsx"),
+    generatedAtIso: "2026-05-05T12:18:00-03:00",
+    generatedAtDisplay: "05.05.2026 12:18",
+    traceId: v1.traceId.replace(/-a3f9c1$/, "-b9d2e7"),
+  };
+  _generatedStore.set(quoteId, v2);
+  return v2;
 }
