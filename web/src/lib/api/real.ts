@@ -18,6 +18,8 @@ import {
   ApiError,
   type ChatScope,
   type ChatStreamChunk,
+  type CreateDraftQuoteInput,
+  type CreateDraftQuoteResponse,
   type DashboardQuote,
   type DashboardStatus,
   type ListQuotesFilters,
@@ -309,4 +311,149 @@ export function streamChat(
       }
     },
   });
+}
+
+/* ─── createDraftQuote · Sprint 4 paso-1-real ──────────────────────────
+   Wire real del paso 1 brief upload. Secuencia 2-calls al backend Railway:
+
+     1) POST /api/quotes (JSON)              → crea Quote shell con UUID + status=draft
+     2) POST /api/quotes/{id}/chat (multipart) → multipart con message=briefText +
+        plan_files=[planFile, ...photos]. Backend SSE-streamea progreso del
+        agente. Drainemos el stream completo INTERNAMENTE (no exponemos al
+        frontend en este sub-PR · UX = BriefProcessing skeleton existente · sub-PR
+        siguiente `paso-1-sse-stream` agrega progress real al usuario).
+
+   Mantiene la signature contractual del mock:
+   `createDraftQuote(input, options) → {id, status:"draft", createdAt}`.
+   El hook `useBriefUpload` no necesita cambios. */
+
+interface RealCreateQuoteResponse {
+  id: string;
+}
+
+export async function createDraftQuote(
+  input: CreateDraftQuoteInput,
+  options?: { signal?: AbortSignal; bearerToken?: string | null },
+): Promise<CreateDraftQuoteResponse> {
+  const { signal, bearerToken } = options ?? {};
+
+  // ── Paso 1) POST /api/quotes → quote_id
+  // Body opcional `{status}` se omite · backend default = "draft".
+  // Timeout corto (10s) · el endpoint solo crea un UUID en DB · si esto falla
+  // ya hay un problema serio (DB down, auth invalida, etc.).
+  const createResponse = await apiFetch(
+    "/api/quotes",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+      signal,
+      bearerToken,
+    },
+    10_000,
+  );
+  if (!createResponse.ok) {
+    throw new ApiError(
+      "CREATE_QUOTE_FAILED",
+      `POST /api/quotes falló (${createResponse.status}). Reintentá en unos segundos.`,
+      createResponse.status,
+    );
+  }
+  const { id } = (await createResponse.json()) as RealCreateQuoteResponse;
+  if (!id) {
+    throw new ApiError("CREATE_QUOTE_MALFORMED", "Backend no devolvió quote id.", 502);
+  }
+
+  // ── Paso 2) POST /api/quotes/{id}/chat → SSE drained
+  // Multipart con message=briefText (fallback a un placeholder mínimo si
+  // viene vacío · el backend espera message no-vacío) + plan_files con
+  // planFile primero, luego photos. El nombre del field `plan_files` es
+  // literal del backend (router.py:2089).
+  const form = new FormData();
+  // Backend requiere `message` no-vacío como Form(...). Si el operador NO
+  // tipeó nada, pasamos un texto mínimo descriptivo · el agente igual usa los
+  // archivos para inferir contexto.
+  const message = input.briefText?.trim() || "Procesá este brief y armá presupuesto.";
+  form.append("message", message);
+  form.append("plan_files", input.planFile);
+  for (const photo of input.photos ?? []) {
+    form.append("plan_files", photo);
+  }
+
+  // SSE long-lived · el procesamiento agéntico (Sonnet + tools + posible
+  // dual-read Opus) puede tomar 30-90s. Timeout 180s con headroom.
+  const chatResponse = await apiFetch(
+    `/api/quotes/${encodeURIComponent(id)}/chat`,
+    { method: "POST", body: form, signal, bearerToken },
+    180_000,
+  );
+  if (!chatResponse.ok || !chatResponse.body) {
+    throw new ApiError(
+      "BRIEF_PROCESS_FAILED",
+      `POST /api/quotes/{id}/chat falló (${chatResponse.status}). Reintentá.`,
+      chatResponse.status,
+    );
+  }
+
+  // Drain del stream · cazamos chunks `error` y `done.error=true` para
+  // surface el problema al hook como ApiError. Los demás chunks (text, action,
+  // context_analysis, dual_read_result) se descartan · el contexto poblado lo
+  // lee el page server-side del paso 2 directo del backend.
+  const reader = chatResponse.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let streamError: string | null = null;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() ?? "";
+      for (const block of blocks) {
+        const dataLine = block.split("\n").find((l) => l.startsWith("data: "));
+        if (!dataLine) continue;
+        const json = dataLine.slice(6);
+        try {
+          const chunk = JSON.parse(json) as ChatStreamChunk;
+          if (chunk.type === "error") {
+            streamError = chunk.content ?? chunk.message ?? "El agente reportó un error.";
+          }
+          if (chunk.type === "done") {
+            if (chunk.error) {
+              throw new ApiError(
+                "BRIEF_AGENT_ERROR",
+                streamError ?? "El agente no pudo procesar el brief.",
+                502,
+              );
+            }
+            // Stream cerrado limpio · seguir adelante.
+            return {
+              id,
+              status: "draft",
+              createdAt: new Date().toISOString(),
+            };
+          }
+        } catch (parseErr) {
+          if (parseErr instanceof ApiError) throw parseErr;
+          // Línea SSE malformada · skip en silencio (consistente con streamChat).
+          console.warn("[createDraftQuote] SSE parse failed:", json.slice(0, 120));
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  // Stream terminó sin `done` explícito (corte de conexión) · si hubo error
+  // intermedio lo surface; si no, asumimos done implícito.
+  if (streamError) {
+    throw new ApiError("BRIEF_AGENT_ERROR", streamError, 502);
+  }
+  return {
+    id,
+    status: "draft",
+    createdAt: new Date().toISOString(),
+  };
 }

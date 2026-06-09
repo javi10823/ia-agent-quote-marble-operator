@@ -20,9 +20,11 @@ const USE_REAL_API =
 export const streamChat = USE_REAL_API ? real.streamChat : mocks.streamChat;
 export const listQuotes = USE_REAL_API ? real.listQuotes : mocks.listQuotes;
 export const getQuoteMetadata = USE_REAL_API ? real.getQuoteMetadata : mocks.getQuoteMetadata;
+/* Sprint 4 paso-1-real · wire del brief upload contra el backend Railway
+   (POST /api/quotes → POST /api/quotes/{id}/chat con SSE drained internamente). */
+export const createDraftQuote = USE_REAL_API ? real.createDraftQuote : mocks.createDraftQuote;
 
 /* ─── Siempre en mock (B3 incremental · sin endpoint REST equivalente) ── */
-export const createDraftQuote = mocks.createDraftQuote;
 export const getContextForQuote = mocks.getContextForQuote;
 export const updateContextForQuote = mocks.updateContextForQuote;
 export const getDashboardKpis = mocks.getDashboardKpis;
