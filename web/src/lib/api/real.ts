@@ -468,3 +468,36 @@ export async function createDraftQuote(
     createdAt: new Date().toISOString(),
   };
 }
+
+/* ─── getAuditLog · Sprint 4 audit-trail-copy ─────────────────────────
+   GET /api/quotes/{id}/audit-log → AuditLogResponse.
+
+   Bearer SSR via apiFetch · timeout largo (60s) porque puede agregar
+   miles de eventos. `full=true` quita la truncation (default 200 events).
+*/
+
+import type { AuditLogResponse } from "./types";
+
+export async function getAuditLog(
+  quoteId: string,
+  options?: { signal?: AbortSignal; bearerToken?: string | null; full?: boolean },
+): Promise<AuditLogResponse> {
+  const { signal, bearerToken, full } = options ?? {};
+  const qs = full ? "?full=true" : "";
+  const response = await apiFetch(
+    `/api/quotes/${encodeURIComponent(quoteId)}/audit-log${qs}`,
+    { signal, bearerToken },
+    60_000,
+  );
+  if (response.status === 404) {
+    throw new ApiError("AUDIT_LOG_NOT_FOUND", `Quote ${quoteId} no encontrado`, 404);
+  }
+  if (!response.ok) {
+    throw new ApiError(
+      "AUDIT_LOG_FAILED",
+      `GET /api/quotes/{id}/audit-log falló (${response.status})`,
+      response.status,
+    );
+  }
+  return (await response.json()) as AuditLogResponse;
+}

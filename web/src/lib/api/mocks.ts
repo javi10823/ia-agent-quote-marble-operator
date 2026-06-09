@@ -1024,3 +1024,177 @@ export async function triggerPdfV2Generation(
   _generatedStore.set(quoteId, v2);
   return v2;
 }
+
+/* ─── getAuditLog mock · Sprint 4 audit-trail-copy ─────────────────────
+   Canon mock con datos realistas para PRES-2026-018 + fallback genérico
+   para cualquier otro ID. Patrón id-tolerance (lección #44): forma corta
+   PRES-018 también resuelve. */
+
+import type { AuditLogResponse, AuditLogEventItem } from "./types";
+
+function _mockEvents(baseIso: string): AuditLogEventItem[] {
+  const base = new Date(baseIso).getTime();
+  const at = (deltaMs: number) => new Date(base + deltaMs).toISOString();
+  return [
+    {
+      created_at: at(0),
+      event_type: "quote.created",
+      source: "router",
+      summary: "Quote created (status=draft)",
+      payload: { status: "draft" },
+      success: true,
+    },
+    {
+      created_at: at(12),
+      event_type: "chat.message_sent",
+      source: "router",
+      summary: "Operator sent chat message (423 chars, 1 plan_file)",
+      payload: { message_chars: 423, plan_files_count: 1 },
+      success: true,
+    },
+    {
+      created_at: at(234),
+      event_type: "agent.stream_started",
+      source: "agent",
+      summary: "Stream started · turn=0",
+      payload: {},
+      success: true,
+      turn_index: 0,
+    },
+    {
+      created_at: at(890),
+      event_type: "agent.tool_called",
+      source: "agent",
+      summary: "Tool read_plan called",
+      payload: { tool_name: "read_plan" },
+      success: true,
+    },
+    {
+      created_at: at(12456),
+      event_type: "agent.tool_result",
+      source: "agent",
+      summary: "Tool read_plan returned ok",
+      payload: { tool_name: "read_plan", ok: true },
+      success: true,
+      elapsed_ms: 11566,
+    },
+    {
+      created_at: at(13123),
+      event_type: "agent.tool_result",
+      source: "agent",
+      summary: "Tool catalog_lookup returned ok",
+      payload: { tool_name: "catalog_lookup", ok: true },
+      success: true,
+      elapsed_ms: 233,
+    },
+    {
+      created_at: at(24890),
+      event_type: "quote.calculated",
+      source: "agent",
+      summary: "Breakdown calculated · 5 sectors",
+      payload: { breakdown_keys: ["sectors", "mo_items", "total_ars"] },
+      success: true,
+    },
+    {
+      created_at: at(25012),
+      event_type: "docs.generated",
+      source: "agent",
+      summary: "PDF + Excel generated",
+      payload: { pdf_url: "/files/PRES-2026-018/quote.pdf" },
+      success: true,
+    },
+  ];
+}
+
+const _auditLogByQuote: Record<string, AuditLogResponse> = {};
+
+function _buildAuditMock(quoteId: string): AuditLogResponse {
+  const base = "2026-05-03T18:42:00-03:00";
+  return {
+    meta: {
+      quote_id: quoteId,
+      status: "sent",
+      client_name: "Cueto-Heredia Arquitectura",
+      project: "cocina U + isla · Belgrano",
+      material: "Silestone Blanco Norte",
+      total_ars: 660739,
+      total_usd: 1538,
+      created_at: base,
+      updated_at: "2026-05-03T19:00:00-03:00",
+    },
+    input_message:
+      "Hola Marina, te paso el plano de cocina del depto de Belgrano (familia Cueto). Es Silestone Blanco Norte 20mm como en los otros 3 trabajos del estudio.",
+    plan_files: ["cocina_cueto-heredia_2026-03-25.pdf"],
+    events: _mockEvents(base),
+    events_total: 8,
+    events_truncated: false,
+    chat_duration_ms: 24778,
+    tokens: {
+      input_tokens: 12847,
+      output_tokens: 3421,
+      cache_read_tokens: 8200,
+      cache_write_tokens: 1024,
+      cost_usd: 0.087,
+      iterations: 4,
+      models_used: ["opus", "sonnet"],
+    },
+    tools_used: [
+      { tool_name: "read_plan", count: 1, total_ms: 11566, error_count: 0 },
+      { tool_name: "catalog_lookup", count: 8, total_ms: 1840, error_count: 0 },
+      { tool_name: "generate_documents", count: 1, total_ms: 6333, error_count: 0 },
+    ],
+    quote_breakdown: {
+      sectors: [{ id: "S1", tipo: "cocina" }],
+      mo_items: [{ sku: "COLOCACION", qty: 6.5 }],
+      total_ars: 660739,
+      total_usd: 1538,
+    },
+    errors: [],
+  };
+}
+
+_auditLogByQuote["PRES-2026-018"] = _buildAuditMock("PRES-2026-018");
+_auditLogByQuote["PRES-2026-017"] = _buildAuditMock("PRES-2026-017");
+
+export async function getAuditLog(
+  quoteId: string,
+  options?: { signal?: AbortSignal; full?: boolean },
+): Promise<AuditLogResponse> {
+  await delay(120 + Math.random() * 180, options?.signal);
+  // Soporta sufijos -GENERATED / -REVISING (resuelven al baseId canon).
+  let baseId = quoteId;
+  for (const suffix of ["-GENERATED", "-REVISING", "-EXPIRED"]) {
+    if (baseId.endsWith(suffix)) baseId = baseId.slice(0, -suffix.length);
+  }
+  // Id tolerance: forma corta `PRES-018` → `PRES-2026-018`
+  if (_auditLogByQuote[baseId]) return _auditLogByQuote[baseId];
+  const shortMatch = /^PRES-(\d{3})$/.exec(baseId);
+  if (shortMatch) {
+    const candidate = `PRES-2026-${shortMatch[1]}`;
+    if (_auditLogByQuote[candidate]) return _auditLogByQuote[candidate];
+  }
+  // Fallback gracioso: quote desconocido devuelve mock vacío con quote_id
+  return {
+    meta: {
+      quote_id: quoteId,
+      status: "draft",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    plan_files: [],
+    events: [],
+    events_total: 0,
+    events_truncated: false,
+    tokens: {
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      cost_usd: 0,
+      iterations: 0,
+      models_used: [],
+    },
+    tools_used: [],
+    errors: [],
+  };
+}

@@ -11,6 +11,7 @@
  */
 import type { QuoteHeader } from "@/lib/api";
 import { AuditToggle } from "@/components/observability/AuditToggle";
+import { AuditCopyButton } from "@/components/observability/AuditCopyButton";
 
 interface TopbarProps {
   quote: QuoteHeader;
@@ -28,6 +29,11 @@ export function Topbar({ quote }: TopbarProps) {
       </div>
 
       <div className="right">
+        {/* Sprint 4 audit-trail-copy · CTA Copiar audit del quote actual al
+            clipboard. Persistente en TODOS los pasos del quote ([id]/layout
+            provee `quote: QuoteHeader` con id). */}
+        <AuditCopyButton quoteId={quote.id} />
+
         {/* Sprint 3 observability · audit toggle global (refactor decisión Javi C). */}
         <AuditToggle />
 
