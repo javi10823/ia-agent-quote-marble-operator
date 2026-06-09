@@ -274,7 +274,29 @@ async def _run_dual_read(
     """
     import json as _json
     import hashlib as _hashlib
+    import time as _t_audit_dr
     chunks: list[dict] = []
+
+    # Sprint 4 audit-text-only-instrumentation · Bug 2 fix (path: plan flow).
+    # Antes: `_run_dual_read` corría vision + brief analyzer + context analyzer
+    # + persistencia + return early SIN emitir log_event. Mismo gap que el
+    # text-only flow (líneas 2725-2856) pero esta es la rama con plano.
+    _dr_started_at = _t_audit_dr.monotonic()
+    await _audit(
+        db=db,
+        event_type="dual_read.started",
+        source="agent",
+        summary=(
+            f"Dual-read started · crop={crop_label} · planilla_m2={planilla_m2 or 'unknown'}"
+        ),
+        quote_id=quote_id,
+        payload={
+            "crop_label": crop_label,
+            "planilla_m2": planilla_m2,
+            "plan_filename": plan_filename,
+            "has_cotas_text": bool(cotas_text),
+        },
+    )
 
     # PR #63 + #64 — dedup hash-based. El plan_bytes persiste entre turnos
     # (frontend lo re-envía con cada mensaje mientras la conversación tenga
@@ -611,8 +633,49 @@ async def _run_dual_read(
                             update(Quote).where(Quote.id == quote_id).values(quote_breakdown=_bd2)
                         )
                     await db.commit()
+                    await _audit(
+                        db=db,
+                        event_type="quote_breakdown.mutated",
+                        source="agent",
+                        summary=(
+                            "Breakdown mutated (dual_read) · keys=["
+                            "dual_read_result,dual_read_plan_hash,context_analysis_pending,"
+                            "brief_analysis]"
+                        ),
+                        quote_id=quote_id,
+                        payload={
+                            "path": "dual_read",
+                            "mutated_keys": [
+                                "dual_read_result",
+                                "dual_read_plan_hash",
+                                "dual_read_planilla_m2",
+                                "dual_read_crop_label",
+                                "context_analysis_pending",
+                                *(["brief_analysis"] if _brief_raw else []),
+                            ],
+                            "column_updates": list(_col_updates.keys()) if _col_updates else [],
+                        },
+                    )
                 except Exception as _e_px:
                     logging.warning(f"[context-analysis] persist pending failed: {_e_px}")
+                await _audit(
+                    db=db,
+                    event_type="context_analysis.pending",
+                    source="agent",
+                    summary=(
+                        f"Dual-read context pending · "
+                        f"{len(_context.get('data_known') or [])} known · "
+                        f"{len(_context.get('assumptions') or [])} assumptions · "
+                        f"{len(_context.get('pending_questions') or [])} questions"
+                    ),
+                    quote_id=quote_id,
+                    payload={
+                        "path": "dual_read",
+                        "data_known_count": len(_context.get("data_known") or []),
+                        "assumptions_count": len(_context.get("assumptions") or []),
+                        "pending_questions_count": len(_context.get("pending_questions") or []),
+                    },
+                )
                 chunks.append({
                     "type": "context_analysis",
                     "content": _json.dumps(_context, ensure_ascii=False),
@@ -649,6 +712,15 @@ async def _run_dual_read(
                     f"{len(_context.get('data_known') or [])} known, "
                     f"{len(_context.get('assumptions') or [])} assumptions, "
                     f"{len(_context.get('pending_questions') or [])} questions"
+                )
+                await _audit(
+                    db=db,
+                    event_type="dual_read.completed",
+                    source="agent",
+                    summary="Dual-read completed (context emitted, awaiting operator review)",
+                    quote_id=quote_id,
+                    payload={"path": "dual_read", "exit": "context_emitted"},
+                    elapsed_ms=int((_t_audit_dr.monotonic() - _dr_started_at) * 1000),
                 )
                 return (True, chunks)
             except Exception as _e_ctx:
@@ -2748,18 +2820,70 @@ class AgentService:
                 _tp_confirmed = False
 
             if _tp_quote is not None and not _tp_has_card and not _tp_confirmed:
+                # Sprint 4 audit-text-only-instrumentation · Bug 2 fix.
+                # Antes: text-only flow corría parse_brief_to_card +
+                # build_context_analysis + persistencia + return early SIN
+                # emitir ningún `log_event` → audit log mostraba "2 events,
+                # 0 tool types" engañoso (quote.created + chat.message_sent
+                # solamente). Ahora instrumentamos 4 puntos: started + completed
+                # del text_parse, started + completed del context_analysis,
+                # y quote_breakdown.mutated cuando persistimos.
+                import time as _t_audit
+                _text_parse_start = _t_audit.monotonic()
                 try:
                     from app.modules.quote_engine.text_parser import parse_brief_to_card
                     _info_hint = _extract_quote_info(user_message)
+                    await _audit(
+                        db=db,
+                        event_type="text_parse.started",
+                        source="agent",
+                        summary=f"Text-only brief parse started · msg_chars={len(user_message or '')}",
+                        quote_id=quote_id,
+                        payload={
+                            "message_chars": len(user_message or ""),
+                            "client_hint": _info_hint.get("client_name") or None,
+                            "material_hint": _info_hint.get("material") or None,
+                            "project_hint": _info_hint.get("project") or None,
+                        },
+                    )
                     yield {"type": "action", "content": "📐 Leyendo medidas del texto..."}
                     _text_card = await parse_brief_to_card(
                         user_message,
                         _info_hint.get("material", "") or "",
                         _info_hint.get("project", "") or "",
                     )
+                    _text_parse_elapsed_ms = int((_t_audit.monotonic() - _text_parse_start) * 1000)
+                    await _audit(
+                        db=db,
+                        event_type="text_parse.completed",
+                        source="agent",
+                        summary=(
+                            f"Text-only brief parse completed · "
+                            f"tramos={len((_text_card or {}).get('sectores', [{}])[0].get('tramos', [])) if _text_card else 0}"
+                        ),
+                        quote_id=quote_id,
+                        payload={
+                            "ok": bool(_text_card),
+                            "sectores_count": len((_text_card or {}).get("sectores", [])) if _text_card else 0,
+                        },
+                        elapsed_ms=_text_parse_elapsed_ms,
+                        success=bool(_text_card),
+                    )
                 except Exception as _e_tp:
                     logging.warning(f"[text-parse] parse_brief_to_card failed: {_e_tp}")
                     _text_card = None
+                    _text_parse_elapsed_ms = int((_t_audit.monotonic() - _text_parse_start) * 1000)
+                    await _audit(
+                        db=db,
+                        event_type="text_parse.completed",
+                        source="agent",
+                        summary=f"Text-only brief parse failed: {_e_tp}",
+                        quote_id=quote_id,
+                        payload={"ok": False},
+                        elapsed_ms=_text_parse_elapsed_ms,
+                        success=False,
+                        error_message=str(_e_tp)[:500],
+                    )
 
                 if _text_card:
                     # Apply metadata hints to Quote columns
@@ -2804,14 +2928,34 @@ class AgentService:
                                 "localidad": getattr(_tp_quote, "localidad", None),
                                 "is_building": getattr(_tp_quote, "is_building", False),
                             }
+                            _ctx_analysis_start = _t_audit.monotonic()
+                            await _audit(
+                                db=db,
+                                event_type="context_analysis.started",
+                                source="agent",
+                                summary="Text-only context analysis started",
+                                quote_id=quote_id,
+                                payload={"path": "text_only"},
+                            )
                             _context_tp = await build_context_analysis(
                                 user_message or "", _ctx_quote_tp, _text_card, _cfg_tp
                             )
+                            _ctx_analysis_elapsed_ms = int((_t_audit.monotonic() - _ctx_analysis_start) * 1000)
                         except Exception as _e_ctx_tp:
                             logging.warning(
                                 f"[text-parse] build_context_analysis failed: {_e_ctx_tp}"
                             )
                             _context_tp = None
+                            await _audit(
+                                db=db,
+                                event_type="context_analysis.pending",
+                                source="agent",
+                                summary=f"Text-only context analysis failed: {_e_ctx_tp}",
+                                quote_id=quote_id,
+                                payload={"path": "text_only", "ok": False},
+                                success=False,
+                                error_message=str(_e_ctx_tp)[:500],
+                            )
 
                         if _context_tp:
                             try:
@@ -2841,12 +2985,51 @@ class AgentService:
                                     .values(**_persist_update)
                                 )
                                 await db.commit()
+                                await _audit(
+                                    db=db,
+                                    event_type="quote_breakdown.mutated",
+                                    source="agent",
+                                    summary=(
+                                        f"Breakdown mutated (text-only) · keys=["
+                                        "dual_read_result,context_analysis_pending]"
+                                    ),
+                                    quote_id=quote_id,
+                                    payload={
+                                        "path": "text_only",
+                                        "mutated_keys": [
+                                            "dual_read_result",
+                                            "context_analysis_pending",
+                                        ],
+                                        "column_updates": list(_persist_update.keys()),
+                                    },
+                                )
                             except Exception as _e_pp_ctx:
                                 logging.warning(
                                     f"[text-parse] persist context failed: {_e_pp_ctx}"
                                 )
                             logging.info(
                                 f"[text-parse] emitted context_analysis for {quote_id}"
+                            )
+                            await _audit(
+                                db=db,
+                                event_type="context_analysis.pending",
+                                source="agent",
+                                summary=(
+                                    f"Text-only context pending · "
+                                    f"{len(_context_tp.get('data_known') or [])} known · "
+                                    f"{len(_context_tp.get('assumptions') or [])} assumptions · "
+                                    f"{len(_context_tp.get('pending_questions') or [])} questions"
+                                ),
+                                quote_id=quote_id,
+                                payload={
+                                    "path": "text_only",
+                                    "data_known_count": len(_context_tp.get("data_known") or []),
+                                    "assumptions_count": len(_context_tp.get("assumptions") or []),
+                                    "pending_questions_count": len(
+                                        _context_tp.get("pending_questions") or []
+                                    ),
+                                },
+                                elapsed_ms=_ctx_analysis_elapsed_ms,
                             )
                             yield {
                                 "type": "context_analysis",
