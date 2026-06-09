@@ -54,6 +54,9 @@ export const getPdfGeneratedInfo = mocks.getPdfGeneratedInfo;
 export const getPdfV2DiffData = mocks.getPdfV2DiffData;
 export const triggerPdfV2Generation = mocks.triggerPdfV2Generation;
 
+/* ─── Audit trail copy · Sprint 4 audit-trail-copy ────────────────── */
+export const getAuditLog = USE_REAL_API ? real.getAuditLog : mocks.getAuditLog;
+
 /* ─── Helpers de test (reset de stores in-memory del mock) ───────── */
 export const _resetContextStore = mocks._resetContextStore;
 export const _resetPiecesStore = mocks._resetPiecesStore;

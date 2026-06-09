@@ -509,3 +509,61 @@ export interface PdfV2RevisionData {
   diffCount: number;
   unchangedCount: number;
 }
+
+/* ─── Sprint 4 audit-trail-copy · GET /api/quotes/{id}/audit-log ─────── */
+
+export interface AuditLogEventItem {
+  created_at: string;
+  event_type: string;
+  source: string;
+  summary: string;
+  payload: Record<string, unknown>;
+  success: boolean;
+  error_message?: string | null;
+  elapsed_ms?: number | null;
+  turn_index?: number | null;
+  request_id?: string | null;
+}
+
+export interface AuditLogTokensSummary {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  cost_usd: number;
+  iterations: number;
+  models_used: string[];
+}
+
+export interface AuditLogToolUsage {
+  tool_name: string;
+  count: number;
+  total_ms: number;
+  error_count: number;
+}
+
+export interface AuditLogMeta {
+  quote_id: string;
+  status: string;
+  client_name?: string | null;
+  project?: string | null;
+  material?: string | null;
+  total_ars?: number | null;
+  total_usd?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AuditLogResponse {
+  meta: AuditLogMeta;
+  input_message?: string | null;
+  plan_files: string[];
+  events: AuditLogEventItem[];
+  events_total: number;
+  events_truncated: boolean;
+  chat_duration_ms?: number | null;
+  tokens: AuditLogTokensSummary;
+  tools_used: AuditLogToolUsage[];
+  quote_breakdown?: Record<string, unknown> | null;
+  errors: AuditLogEventItem[];
+}

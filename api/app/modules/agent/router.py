@@ -2387,3 +2387,179 @@ async def chat(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ─── Sprint 4 audit-trail-copy ──────────────────────────────────────────
+# GET /api/quotes/{id}/audit-log
+# Agrega 3 tablas (audit_events + token_usage + Quote.quote_breakdown)
+# en una sola respuesta · destinada al botón "Copiar audit" del topbar +
+# página /quotes/{id}/audit para debug/iteración rápida.
+
+_AUDIT_EVENTS_DEFAULT_LIMIT = 200
+
+@router.get("/quotes/{quote_id}/audit-log")
+async def get_quote_audit_log(
+    quote_id: str,
+    request: Request,
+    full: bool = Query(default=False, description="Si true, devuelve TODOS los eventos sin truncar"),
+    limit: int = Query(default=_AUDIT_EVENTS_DEFAULT_LIMIT, ge=10, le=2000),
+    db: AsyncSession = Depends(get_db),
+):
+    """Endpoint read-only que agrega todo el debugging-relevante de un quote:
+    timeline de audit_events, suma de TokenUsage, tools agregados por nombre,
+    chat duration derivada de timestamps, snapshot de quote_breakdown.
+
+    `full=true` quita la truncation (default events_total > limit → trunca).
+    Errores siempre se devuelven completos en `errors[]` aparte de `events[]`.
+    """
+    from app.modules.observability.models import AuditEvent
+    from app.models.usage import TokenUsage
+    from app.modules.agent.schemas import (
+        AuditLogResponse,
+        AuditLogMeta,
+        AuditLogEventItem,
+        AuditLogTokensSummary,
+        AuditLogToolUsage,
+    )
+    from collections import defaultdict
+
+    # ── Quote 404 check (patrón existente router.py:2146-2148)
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    # ── Eventos: orden ascendente por created_at (timeline natural)
+    events_result = await db.execute(
+        select(AuditEvent)
+        .where(AuditEvent.quote_id == quote_id)
+        .order_by(AuditEvent.created_at.asc())
+    )
+    all_events = list(events_result.scalars().all())
+    events_total = len(all_events)
+    # Truncation defensiva (debug mode puede generar >150 eventos por quote)
+    events_truncated = (not full) and events_total > limit
+    visible_events = all_events if full else all_events[:limit]
+
+    # ── Errors (siempre completos · sin trunc)
+    error_events = [e for e in all_events if not e.success]
+
+    # ── TokenUsage aggregation
+    token_result = await db.execute(
+        select(TokenUsage).where(TokenUsage.quote_id == quote_id)
+    )
+    token_rows = list(token_result.scalars().all())
+    tokens_summary = AuditLogTokensSummary(
+        input_tokens=sum(t.input_tokens for t in token_rows),
+        output_tokens=sum(t.output_tokens for t in token_rows),
+        cache_read_tokens=sum(t.cache_read_tokens for t in token_rows),
+        cache_write_tokens=sum(t.cache_write_tokens for t in token_rows),
+        cost_usd=round(sum(t.cost_usd for t in token_rows), 4),
+        iterations=sum(t.iterations for t in token_rows),
+        models_used=sorted({t.model for t in token_rows if t.model}),
+    )
+
+    # ── Tools used: agregación por tool_name desde eventos agent.tool_result
+    tools_agg: dict[str, dict] = defaultdict(lambda: {"count": 0, "total_ms": 0, "errors": 0})
+    for ev in all_events:
+        if ev.event_type != "agent.tool_result":
+            continue
+        tool_name = (ev.payload or {}).get("tool_name") or "unknown"
+        tools_agg[tool_name]["count"] += 1
+        if ev.elapsed_ms:
+            tools_agg[tool_name]["total_ms"] += ev.elapsed_ms
+        if not ev.success:
+            tools_agg[tool_name]["errors"] += 1
+    tools_used = [
+        AuditLogToolUsage(
+            tool_name=name,
+            count=data["count"],
+            total_ms=data["total_ms"],
+            error_count=data["errors"],
+        )
+        for name, data in sorted(tools_agg.items())
+    ]
+
+    # ── Chat duration derivada de timestamps (lección operativa #1.5
+    # del bundle FASE 1): agent.stream_started → último tool_result
+    # o quote.calculated, lo que ocurra después.
+    chat_duration_ms: Optional[int] = None
+    stream_start = next((e for e in all_events if e.event_type == "agent.stream_started"), None)
+    if stream_start:
+        chat_ends = [
+            e for e in all_events
+            if e.event_type in {"agent.tool_result", "quote.calculated", "docs.generated"}
+            and e.created_at >= stream_start.created_at
+        ]
+        if chat_ends:
+            last_end = max(chat_ends, key=lambda e: e.created_at)
+            delta = last_end.created_at - stream_start.created_at
+            chat_duration_ms = int(delta.total_seconds() * 1000)
+
+    # ── Input message (primer turno del operador) + plan_files derivados
+    # del primer chat.message_sent + Quote.source_files (si existe)
+    input_message: Optional[str] = None
+    plan_files: list[str] = []
+    first_chat = next((e for e in all_events if e.event_type == "chat.message_sent"), None)
+    if first_chat and first_chat.payload:
+        # En debug_only_payload puede venir el message_text; sino solo metadata.
+        # No accedemos a debug_only_payload acá (sanitizer).
+        pass
+    if quote.messages:
+        # Quote.messages es lista de {role, content, ...} · primer user message
+        try:
+            first_user = next(
+                (m for m in quote.messages if isinstance(m, dict) and m.get("role") == "user"),
+                None,
+            )
+            if first_user:
+                input_message = (first_user.get("content") or "")[:2000]  # cap defensivo
+        except Exception:
+            pass
+    if quote.source_files and isinstance(quote.source_files, list):
+        plan_files = [
+            (f.get("filename") or f.get("name") or "?")
+            for f in quote.source_files
+            if isinstance(f, dict)
+        ][:20]
+
+    # ── Build response
+    meta = AuditLogMeta(
+        quote_id=quote.id,
+        status=quote.status.value if quote.status else "unknown",
+        client_name=quote.client_name or None,
+        project=quote.project or None,
+        material=quote.material,
+        total_ars=quote.total_ars,
+        total_usd=quote.total_usd,
+        created_at=quote.created_at,
+        updated_at=quote.updated_at,
+    )
+
+    response = AuditLogResponse(
+        meta=meta,
+        input_message=input_message,
+        plan_files=plan_files,
+        events=[AuditLogEventItem.model_validate(e) for e in visible_events],
+        events_total=events_total,
+        events_truncated=events_truncated,
+        chat_duration_ms=chat_duration_ms,
+        tokens=tokens_summary,
+        tools_used=tools_used,
+        quote_breakdown=quote.quote_breakdown,
+        errors=[AuditLogEventItem.model_validate(e) for e in error_events],
+    )
+
+    # ── Log access (audit del propio audit · ironía controlada)
+    await log_event(
+        db,
+        event_type="audit.log_fetched",
+        source="router",
+        summary=f"Audit log fetched for {quote_id} ({events_total} events, full={full})",
+        request=request,
+        quote_id=quote_id,
+        payload={"events_total": events_total, "full": full, "errors_count": len(error_events)},
+        commit=False,
+    )
+
+    return response

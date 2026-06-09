@@ -139,3 +139,79 @@ class DeriveMaterialRequest(BaseModel):
     Copies client/project/pieces/options, recalculates everything from scratch."""
     material: str = Field(..., min_length=1, max_length=500)
     thickness_mm: Optional[int] = Field(None, ge=1, le=100)
+
+
+# ─── Sprint 4 audit-trail-copy ──────────────────────────────────────────
+# Response del endpoint `GET /api/quotes/{id}/audit-log`. Agrega eventos
+# timeline + token usage + breakdown snapshot · wire-only sin migración.
+
+
+class AuditLogEventItem(BaseModel):
+    """Una fila de la timeline (audit_events row · subset relevante)."""
+    created_at: datetime
+    event_type: str
+    source: str
+    summary: str
+    payload: dict
+    success: bool
+    error_message: Optional[str] = None
+    elapsed_ms: Optional[int] = None
+    turn_index: Optional[int] = None
+    request_id: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AuditLogTokensSummary(BaseModel):
+    """Suma de TokenUsage rows para este quote (todas las turnas)."""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    cost_usd: float = 0.0
+    iterations: int = 0
+    models_used: list[str] = Field(default_factory=list)
+
+
+class AuditLogToolUsage(BaseModel):
+    """Agregación por tool_name (derivada de eventos agent.tool_result)."""
+    tool_name: str
+    count: int
+    total_ms: int
+    error_count: int = 0
+
+
+class AuditLogMeta(BaseModel):
+    """Cabecera con metadatos del quote."""
+    quote_id: str
+    status: str
+    client_name: Optional[str] = None
+    project: Optional[str] = None
+    material: Optional[str] = None
+    total_ars: Optional[float] = None
+    total_usd: Optional[float] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AuditLogResponse(BaseModel):
+    """Response del endpoint `GET /api/quotes/{id}/audit-log`. Agrega 3
+    tablas (audit_events + token_usage + Quote) en payload único para
+    el botón "Copiar audit" del topbar y la página /audit.
+
+    Cuando `full=false` (default), el array `events` se trunca a un
+    máximo razonable (events_limit) y `events_truncated=True` para
+    evitar payloads enormes en quotes con >150 eventos (debug activado).
+    Errors se reportan siempre completos (sin trunc)."""
+    meta: AuditLogMeta
+    input_message: Optional[str] = None
+    plan_files: list[str] = Field(default_factory=list)
+    events: list[AuditLogEventItem]
+    events_total: int
+    events_truncated: bool = False
+    chat_duration_ms: Optional[int] = None
+    tokens: AuditLogTokensSummary
+    tools_used: list[AuditLogToolUsage] = Field(default_factory=list)
+    quote_breakdown: Optional[dict] = None
+    errors: list[AuditLogEventItem] = Field(default_factory=list)
