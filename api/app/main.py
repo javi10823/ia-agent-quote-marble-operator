@@ -1,8 +1,10 @@
 import logging
 import asyncio
 import os
+import re
 import time
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from contextlib import asynccontextmanager
@@ -140,6 +142,52 @@ app.add_middleware(
     # cookies cross-origin) también se actualice y la sesión deslice.
     expose_headers=["X-Refreshed-Token"],
 )
+
+
+# ── CORS en respuestas 5xx (fix-up sprint-4/audit-log-content-fix · Bug 2) ──
+# Las excepciones NO-manejadas las captura el `ServerErrorMiddleware` de
+# Starlette, que está instalado SIEMPRE como el middleware más externo —
+# por fuera del `CORSMiddleware`. Eso es estructural: no se puede arreglar
+# reordenando los `add_middleware` (CORS ya es el último/outermost de los
+# user-middlewares; por eso los 401 de auth SÍ traen CORS). El 500 lo emite
+# `ServerErrorMiddleware` sin pasar por CORS → sale sin `Access-Control-
+# Allow-Origin` → el browser lo bloquea como "CORS error" y oculta el status
+# real (nos costó 3 vueltas diagnosticar el bug del audit-log por esto).
+#
+# Fix: handler global de `Exception` (lo invoca el propio ServerErrorMiddleware)
+# que reinyecta los headers CORS manualmente, replicando el matching de
+# `CORSMiddleware` (allow_origins exacto + allow_origin_regex). Así un 500
+# futuro se lee como 500 legítimo en el frontend en vez de un CORS error opaco.
+_cors_origin_re = (
+    re.compile(settings.CORS_ORIGIN_REGEX) if settings.CORS_ORIGIN_REGEX else None
+)
+
+
+def _cors_origin_allowed(origin: str) -> bool:
+    if not origin:
+        return False
+    if origin in settings.CORS_ORIGINS:
+        return True
+    return bool(_cors_origin_re and _cors_origin_re.fullmatch(origin))
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception(
+        "Unhandled exception on %s %s", request.method, request.url.path
+    )
+    headers: dict[str, str] = {}
+    origin = request.headers.get("origin", "")
+    if _cors_origin_allowed(origin):
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Vary"] = "Origin"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+        headers=headers,
+    )
+
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(usage_router, prefix="/api")
