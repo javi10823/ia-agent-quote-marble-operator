@@ -365,17 +365,28 @@ export async function createDraftQuote(
   }
 
   // ── Paso 2) POST /api/quotes/{id}/chat → SSE drained
-  // Multipart con message=briefText (fallback a un placeholder mínimo si
-  // viene vacío · el backend espera message no-vacío) + plan_files con
-  // planFile primero, luego photos. El nombre del field `plan_files` es
-  // literal del backend (router.py:2089).
+  // Multipart con message=briefText + plan_files. El backend acepta
+  // `plan_files=[]` (router.py:2089 default `File([])`), así que el field
+  // se omite cuando `planFile` viene null (ruta "Cargar a mano →" o
+  // text-only del mockup paso 1).
   const form = new FormData();
+  // Sprint 4 paso-1-chips-brief-libre: prefix LITERAL con chips opcionales
+  // del paso 1 A/B cuando vienen poblados · el agente parsea el message
+  // completo y extrae al contexto del paso 2.
+  const chipParts: string[] = [];
+  if (input.cliente?.trim()) chipParts.push(`Cliente: ${input.cliente.trim()}`);
+  if (input.ambiente?.trim()) chipParts.push(`Ambiente: ${input.ambiente.trim()}`);
+  if (input.plazo?.trim()) chipParts.push(`Plazo: ${input.plazo.trim()}`);
+  const chipsPrefix = chipParts.length ? `${chipParts.join(" · ")}\n\n` : "";
   // Backend requiere `message` no-vacío como Form(...). Si el operador NO
   // tipeó nada, pasamos un texto mínimo descriptivo · el agente igual usa los
-  // archivos para inferir contexto.
-  const message = input.briefText?.trim() || "Procesá este brief y armá presupuesto.";
-  form.append("message", message);
-  form.append("plan_files", input.planFile);
+  // archivos/chips para inferir contexto.
+  const briefBody = input.briefText?.trim() || "Procesá este brief y armá presupuesto.";
+  form.append("message", `${chipsPrefix}${briefBody}`);
+  // planFile opcional · skip si null (ruta carga manual / text-only).
+  if (input.planFile) {
+    form.append("plan_files", input.planFile);
+  }
   for (const photo of input.photos ?? []) {
     form.append("plan_files", photo);
   }

@@ -31,11 +31,15 @@ import {
 } from "./types";
 
 function validateInput(input: CreateDraftQuoteInput): void {
-  if (!VALIDATION.PLAN_MIME.includes(input.planFile.type as "application/pdf")) {
-    throw new ApiError("INVALID_MIME", "El plan debe ser un PDF", 422);
-  }
-  if (input.planFile.size > VALIDATION.PLAN_MAX_BYTES) {
-    throw new ApiError("FILE_TOO_LARGE", "El plan supera 20MB", 413);
+  // Sprint 4 paso-1-chips-brief-libre: planFile opcional (ruta carga manual
+  // y text-only). Si presente, validar MIME + tamaño 10MB.
+  if (input.planFile) {
+    if (!VALIDATION.PLAN_MIME.includes(input.planFile.type as "application/pdf")) {
+      throw new ApiError("INVALID_MIME", "El plan debe ser un PDF", 422);
+    }
+    if (input.planFile.size > VALIDATION.PLAN_MAX_BYTES) {
+      throw new ApiError("FILE_TOO_LARGE", "El plan supera 10MB", 413);
+    }
   }
   if (input.photos) {
     if (input.photos.length > VALIDATION.PHOTOS_MAX_COUNT) {
