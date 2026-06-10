@@ -24,8 +24,13 @@ export const getQuoteMetadata = USE_REAL_API ? real.getQuoteMetadata : mocks.get
    (POST /api/quotes → POST /api/quotes/{id}/chat con SSE drained internamente). */
 export const createDraftQuote = USE_REAL_API ? real.createDraftQuote : mocks.createDraftQuote;
 
+/* Sprint 4 paso-2-context-wire-real · wire del paso 2 contexto contra el
+   backend Railway (GET /api/quotes/{id} + adapter sobre quote_breakdown).
+   Cuando NEXT_PUBLIC_API_URL está definida → real client.getContextForQuote
+   con bearer SSR + adapter `breakdownToContext()`. Sin env var → mock canon. */
+export const getContextForQuote = USE_REAL_API ? real.getContextForQuote : mocks.getContextForQuote;
+
 /* ─── Siempre en mock (B3 incremental · sin endpoint REST equivalente) ── */
-export const getContextForQuote = mocks.getContextForQuote;
 export const updateContextForQuote = mocks.updateContextForQuote;
 export const getDashboardKpis = mocks.getDashboardKpis;
 export const getValentinaBriefSummary = mocks.getValentinaBriefSummary;

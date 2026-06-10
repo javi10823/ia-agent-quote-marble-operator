@@ -501,3 +501,53 @@ export async function getAuditLog(
   }
   return (await response.json()) as AuditLogResponse;
 }
+
+/* ─── getContextForQuote · Sprint 4 paso-2-context-wire-real (Bug 1 fix) ──
+   GET /api/quotes/{id} → QuoteDetailResponse · adapter sobre el breakdown.
+
+   El backend devuelve `quote_breakdown` como JSON-libre dentro del response.
+   El adapter `breakdownToContext()` (pure function) traduce el shape backend
+   (`context_analysis_pending` / `verified_context_analysis` / `_brief_analysis_raw`)
+   al shape `ContextResponse` que el UI del paso 2 ya consume.
+
+   Manejo de errores:
+   - 404 → ApiError CONTEXT_QUOTE_NOT_FOUND
+   - 5xx → ApiError CONTEXT_LOAD_FAILED
+   - response sin breakdown → adapter devuelve fields FALTA (preserva
+     current "—" behavior · no crashea)
+*/
+
+import { breakdownToContext, type QuoteBreakdownLike } from "./adapters/context-from-breakdown";
+import type { ContextResponse } from "./types";
+
+interface RealQuoteDetailResponse {
+  id: string;
+  quote_breakdown?: QuoteBreakdownLike | null;
+  [key: string]: unknown;
+}
+
+export async function getContextForQuote(
+  quoteId: string,
+  options?: { signal?: AbortSignal; bearerToken?: string | null },
+): Promise<ContextResponse> {
+  const { signal, bearerToken } = options ?? {};
+  const response = await apiFetch(
+    `/api/quotes/${encodeURIComponent(quoteId)}`,
+    { signal, bearerToken },
+    30_000,
+  );
+  if (response.status === 404) {
+    throw new ApiError("CONTEXT_QUOTE_NOT_FOUND", `Quote ${quoteId} no encontrado`, 404);
+  }
+  if (!response.ok) {
+    throw new ApiError(
+      "CONTEXT_LOAD_FAILED",
+      `GET /api/quotes/{id} falló (${response.status})`,
+      response.status,
+    );
+  }
+  const detail = (await response.json()) as RealQuoteDetailResponse;
+  // Adapter tolera breakdown null/undefined → devuelve todos los fields
+  // como FALTA (preserva el current "—" behavior del UI).
+  return breakdownToContext(detail.quote_breakdown ?? null);
+}
