@@ -80,10 +80,16 @@ EMPTY_SCHEMA: dict = {
     "descuento_tipo": None,  # "arquitecta" | "cliente" | null
     "descuento_pct": None,
 
-    # Frentin / regrueso / pulido
-    "frentin_mentioned": False,
-    "regrueso_mentioned": False,
-    "pulido_mentioned": False,
+    # Frentin / regrueso / pulido — Bug 5 fix · PR #485.
+    # Migrados de `*_mentioned: bool` a ternary `"yes"|"no"|null` para
+    # distinguir "Brief dice 'Frentín: No' explícito" (= "no") vs "Brief
+    # no menciona frentín en absoluto" (= null). Antes ambos colapsaban
+    # a `False` y el sistema perdía la información del operador. Patrón
+    # replicado de `colocacion`/`zocalos`/`alzada`. Activa el Issue
+    # follow-up del PR #425.
+    "frentin": None,   # "yes" | "no" | null
+    "regrueso": None,  # "yes" | "no" | null
+    "pulido": None,    # "yes" | "no" | null
 
     # Metadata
     "raw_notes": "",
@@ -130,8 +136,13 @@ trabajo, null/false/[] si no están presentes.
     "departamentos", "tipologías", edificio X, etc.
 13. `mentions_johnson` + `johnson_sku`: true/string si menciona Johnson
     (ej "Johnson LUXOR S171" → johnson_sku="LUXOR S171").
-14. `frentin_mentioned`, `regrueso_mentioned`, `pulido_mentioned`:
-    true si el brief menciona estos trabajos extra.
+14. `frentin`, `regrueso`, `pulido`: ternary "yes"|"no"|null.
+    - "yes" si brief dice "con frentín" / "lleva frentín" / "Frentín: Sí".
+    - "no" si brief dice "sin frentín" / "Frentín: No" / "no lleva frentín".
+    - null si NO se menciona en absoluto.
+    Idem para regrueso y pulido. Importante: distinguir "No" explícito
+    del operador de "no mencionado" — son operativamente distintos
+    (el primero es decisión, el segundo es ausencia de información).
 15. `raw_notes`: copia de frases sueltas que no categorizas (ej
     aclaraciones específicas del cliente).
 
@@ -170,9 +181,9 @@ trabajo, null/false/[] si no están presentes.
   "descuento_mentioned": bool,
   "descuento_tipo": "arquitecta"|"cliente"|null,
   "descuento_pct": float|null,
-  "frentin_mentioned": bool,
-  "regrueso_mentioned": bool,
-  "pulido_mentioned": bool,
+  "frentin": "yes"|"no"|null,
+  "regrueso": "yes"|"no"|null,
+  "pulido": "yes"|"no"|null,
   "raw_notes": string
 }
 ```
@@ -222,19 +233,56 @@ _LAVADERO = re.compile(r"\blavadero\b", re.IGNORECASE)
 _EDIFICIO = re.compile(r"\b(edificio|tipolog[ií]a|unidades|departamentos?|dptos?)\b", re.IGNORECASE)
 _DESCUENTO_ARQ = re.compile(r"\barquitect[oa]\b", re.IGNORECASE)
 _DESCUENTO_PCT = re.compile(r"(\d+)\s*%", re.IGNORECASE)
+# Regex de presencia literal — usado por el validator anti-alucinación
+# (PR #425) que chequea que la palabra esté en el brief. NO se usa para
+# decidir yes/no (eso lo hacen _X_YES / _X_NO abajo).
 _FRENTIN = re.compile(r"\bfrent[ií]n\b", re.IGNORECASE)
 _REGRUESO = re.compile(r"\bregrueso\b", re.IGNORECASE)
 _PULIDO = re.compile(r"\bpulido\b", re.IGNORECASE)
 
+# Bug 5 fix · PR #485 — patrones espejo de zócalos para distinguir
+# "Sí" / "No" / null en el regex fallback. Captura todos los formatos
+# de brief estructurado típicos:
+#   - "con frentín" / "lleva frentín" / "Frentín: Sí"
+#   - "sin frentín" / "no lleva frentín" / "Frentín: No"
+# Si el operador escribe formatos atípicos ("frentín? si"), el LLM
+# Haiku ya lo captura con temperature=0. El regex es solo fallback.
+_FRENTIN_YES = re.compile(
+    r"\b(con\s+frent[ií]n|lleva(n)?\s+frent[ií]n|frent[ií]n\s*:?\s*s[ií])",
+    re.IGNORECASE,
+)
+_FRENTIN_NO = re.compile(
+    r"\b(sin\s+frent[ií]n|no\s+(lleva|van)\s+frent[ií]n|frent[ií]n\s*:?\s*no\b)",
+    re.IGNORECASE,
+)
+_REGRUESO_YES = re.compile(
+    r"\b(con\s+regrueso|lleva(n)?\s+regrueso|regrueso\s*:?\s*s[ií])",
+    re.IGNORECASE,
+)
+_REGRUESO_NO = re.compile(
+    r"\b(sin\s+regrueso|no\s+(lleva|van)\s+regrueso|regrueso\s*:?\s*no\b)",
+    re.IGNORECASE,
+)
+_PULIDO_YES = re.compile(
+    r"\b(con\s+pulido|lleva(n)?\s+pulido|pulido\s*:?\s*s[ií])",
+    re.IGNORECASE,
+)
+_PULIDO_NO = re.compile(
+    r"\b(sin\s+pulido|no\s+(lleva|van)\s+pulido|pulido\s*:?\s*no\b)",
+    re.IGNORECASE,
+)
 
-# Map de flags que el LLM puede marcar como `true` y que validamos
-# contra el brief literal con word-boundary. PR #425 — fix
-# alucinación del LLM Haiku que confundía "frente regrueso" con
-# "frentín". Ver `_validate_llm_word_mentions` abajo.
+
+# Map de flags ternary que el LLM puede setear y que validamos contra
+# el brief literal con word-boundary. PR #425 — fix alucinación del LLM
+# Haiku que confundía "frente regrueso" con "frentín". Post-Bug-5 (PR
+# #485) los flags son ternary `"yes"|"no"|null` en vez de bool: si el
+# LLM dijo "yes" o "no" pero la palabra literal NO aparece en el brief,
+# override a `None` (no había nada que decidir).
 _LLM_WORD_VALIDATIONS = (
-    ("frentin_mentioned", _FRENTIN, "frent[ií]n"),
-    ("regrueso_mentioned", _REGRUESO, "regrueso"),
-    ("pulido_mentioned", _PULIDO, "pulido"),
+    ("frentin", _FRENTIN, "frent[ií]n"),
+    ("regrueso", _REGRUESO, "regrueso"),
+    ("pulido", _PULIDO, "pulido"),
 )
 
 
@@ -254,30 +302,32 @@ def _validate_llm_word_mentions(brief: str, result: dict) -> None:
     Endurecer el system prompt es frágil (review feedback: "el
     system prompt es demasiado frágil en conversaciones largas").
     Garantía dura: post-process con los mismos regex word-boundary
-    que ya usa el fallback. Si el LLM dice `true` pero la palabra
-    literal NO está en el brief, override a `False` con log.
+    que ya usa el fallback. Si el LLM setea un valor pero la palabra
+    literal NO está en el brief, override a `None` con log.
 
-    **Edge case conocido**: "sin frentín" → `frentin_mentioned: true`
-    porque la palabra literal aparece. Es técnicamente correcto a
-    nivel del analyzer (la mención está). Sonnet maneja la negación
-    contextualmente. No es responsabilidad de este filtro detectar
-    negación — anotado en Issue follow-up.
+    **Post Bug 5 (PR #485):** los flags son ternary `"yes"|"no"|null`.
+    Si el LLM dijo `"yes"` o `"no"` (cualquier no-null) pero la
+    palabra literal NO aparece en el brief → override a `None`. El
+    caso "sin frentín" → "no" (la palabra SÍ aparece, el regex YES/NO
+    decide la semántica) ya NO es deuda — el analyzer distingue
+    explícitamente Sí/No/sin mencionar.
 
     Muta `result` in-place. NO tira excepciones — la observabilidad
     nunca rompe el flow (warning log + continúa).
     """
     for flag_key, regex, word_label in _LLM_WORD_VALIDATIONS:
-        if not result.get(flag_key):
-            continue
+        if result.get(flag_key) is None:
+            continue  # LLM no decidió nada → no hay nada que validar
         if regex.search(brief):
-            continue  # LLM y regex coinciden — OK
-        # LLM dijo true pero la palabra literal no está → alucinación.
+            continue  # LLM y palabra literal coinciden — OK
+        # LLM decidió yes/no pero la palabra literal no está → alucinación.
         logger.warning(
             f"[brief-analyzer] LLM hallucination override: "
-            f"{flag_key}=true sin literal '{word_label}' en brief. "
-            f"Override → False. Brief snippet: {brief[:150]!r}"
+            f"{flag_key}={result.get(flag_key)!r} sin literal "
+            f"'{word_label}' en brief. Override → None. "
+            f"Brief snippet: {brief[:150]!r}"
         )
-        result[flag_key] = False
+        result[flag_key] = None
 
 
 def _extract_material_regex(brief: str) -> str | None:
@@ -379,12 +429,21 @@ def _analyze_regex_fallback(brief: str) -> dict:
         except ValueError:
             pass
 
-    if _FRENTIN.search(b):
-        result["frentin_mentioned"] = True
-    if _REGRUESO.search(b):
-        result["regrueso_mentioned"] = True
-    if _PULIDO.search(b):
-        result["pulido_mentioned"] = True
+    # Bug 5 fix · PR #485 — ternary "yes"/"no"/null replicando pattern
+    # de zócalos. Prioridad: NO antes que YES (porque "sin frentín" no
+    # debe matchear `_FRENTIN_YES` aunque contenga "frentín").
+    if _FRENTIN_NO.search(b):
+        result["frentin"] = "no"
+    elif _FRENTIN_YES.search(b):
+        result["frentin"] = "yes"
+    if _REGRUESO_NO.search(b):
+        result["regrueso"] = "no"
+    elif _REGRUESO_YES.search(b):
+        result["regrueso"] = "yes"
+    if _PULIDO_NO.search(b):
+        result["pulido"] = "no"
+    elif _PULIDO_YES.search(b):
+        result["pulido"] = "yes"
 
     return result
 
@@ -414,6 +473,12 @@ async def analyze_brief(brief: str) -> dict:
             client.messages.create(
                 model=BRIEF_ANALYZER_MODEL,
                 max_tokens=900,
+                # Bug 5 fix · PR #485 — temperature=0 elimina
+                # variabilidad entre runs idénticos (Run1≠Run2 con
+                # mismo brief). El SDK Anthropic default es 1.0, que
+                # introduce stochasticidad inaceptable para extracción
+                # estructurada user-facing. Ver lección #56.
+                temperature=0,
                 system=_SYSTEM_PROMPT,
                 messages=[{
                     "role": "user",

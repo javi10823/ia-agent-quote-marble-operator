@@ -102,11 +102,65 @@ class TestRegexFallback:
         assert out["descuento_tipo"] == "arquitecta"
         assert out["descuento_pct"] == 5.0
 
-    def test_frentin_regrueso_pulido(self):
-        out = _analyze_regex_fallback("con frentin y regrueso y pulido")
-        assert out["frentin_mentioned"] is True
-        assert out["regrueso_mentioned"] is True
-        assert out["pulido_mentioned"] is True
+    def test_frentin_regrueso_pulido_yes(self):
+        # Bug 5 (PR #485) — schema ternary. Brief estructurado típico
+        # tiene cada trabajo extra en su propia línea con "X: Sí".
+        out = _analyze_regex_fallback(
+            "Frentín: Sí\nRegrueso: Sí\nPulido: Sí"
+        )
+        assert out["frentin"] == "yes"
+        assert out["regrueso"] == "yes"
+        assert out["pulido"] == "yes"
+
+    # ── Bug 5 · PR #485 · frentin/regrueso/pulido ternary ─────────────
+
+    def test_frentin_brief_explicit_no(self):
+        """Brief estructurado típico: 'Frentín: No'. Antes colapsaba a
+        `frentin_mentioned=False` (igual que 'no mencionado') y el
+        sistema perdía la decisión del operador. Ahora es `frentin='no'`
+        explícito."""
+        out = _analyze_regex_fallback("Frentín: No")
+        assert out["frentin"] == "no"
+
+    def test_regrueso_brief_explicit_no(self):
+        out = _analyze_regex_fallback("Regrueso: No")
+        assert out["regrueso"] == "no"
+
+    def test_pulido_brief_explicit_si(self):
+        out = _analyze_regex_fallback("Pulido: Sí")
+        assert out["pulido"] == "yes"
+
+    def test_sin_frentin_is_no(self):
+        # Activación Issue follow-up PR #425. Antes "sin frentín"
+        # daba `frentin_mentioned=True` y se documentaba como deuda.
+        # Hoy ese formato es claramente "no".
+        out = _analyze_regex_fallback("Mesada sin frentín, solo zócalo")
+        assert out["frentin"] == "no"
+
+    def test_frentin_not_mentioned_is_null(self):
+        """Si el brief no menciona frentín en absoluto → null (distinto
+        de 'no' explícito). Importante para el mapping a card: null
+        es silencio, 'no' es decisión."""
+        out = _analyze_regex_fallback("Mesada 2x0.60 en silestone")
+        assert out["frentin"] is None
+        assert out["regrueso"] is None
+        assert out["pulido"] is None
+
+    def test_brief_micaela_e2e_yes_no_extraction(self):
+        """E2E del brief estructurado de Micaela Volattire — debe
+        extraer frentin='no' Y regrueso='no' (ambos explícitos en
+        el brief con 'X: No')."""
+        brief = (
+            "Lead completo. Cliente Micaela. Cocina mesada 1.40 × 0.55. "
+            "Material Granito Gris Perla. Colocación: No. "
+            "Pileta: compra en D'Angelo. "
+            "Zócalo: Sí. Frentín: No. Regrueso: No. Ciudad: Casilda."
+        )
+        out = _analyze_regex_fallback(brief)
+        assert out["frentin"] == "no"
+        assert out["regrueso"] == "no"
+        # Pulido no se menciona → silencio.
+        assert out["pulido"] is None
 
 
 # ── LLM entry point con fallback ────────────────────────────────────────────
@@ -193,3 +247,28 @@ class TestAnalyzeBriefFallback:
         assert out["zocalos"] == "no"
         assert out["anafe_count"] == 2
         assert out["pileta_simple_doble"] == "doble"
+
+    @pytest.mark.asyncio
+    async def test_llm_call_uses_temperature_zero(self):
+        """Bug 5 fix · PR #485 — drift guard. El LLM call DEBE usar
+        temperature=0 para output determinístico. Sin este lock,
+        Run1≠Run2 con mismo brief (causa raíz de variabilidad
+        observada en briefs de Micaela)."""
+        json_payload = '{"client_name": "X"}'
+        mock_response = type("R", (), {
+            "content": [type("B", (), {"text": json_payload})()]
+        })()
+        fake_client = type("F", (), {})()
+        fake_client.messages = type("M", (), {})()
+        fake_client.messages.create = AsyncMock(return_value=mock_response)
+        with patch(
+            "app.modules.quote_engine.brief_analyzer.anthropic.AsyncAnthropic",
+            return_value=fake_client,
+        ):
+            await analyze_brief("any brief")
+        # Asegurar que `temperature=0` se pasó al call.
+        call_kwargs = fake_client.messages.create.call_args.kwargs
+        assert call_kwargs.get("temperature") == 0, (
+            "LLM call DEBE usar temperature=0 para output determinístico. "
+            "Si esto cambia, revisar lección #56 antes de mergear."
+        )
