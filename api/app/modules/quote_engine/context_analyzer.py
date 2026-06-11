@@ -394,13 +394,26 @@ def _build_assumptions(
             "note": "Si el cliente tiene descuento (arquitecta u otro), corregí.",
         })
 
-    # Trabajos extra mencionados (frentin, regrueso, pulido)
-    if analysis.get("frentin_mentioned"):
-        assumptions.append({"field": "Frentín", "value": "Mencionado", "source": "brief"})
-    if analysis.get("regrueso_mentioned"):
-        assumptions.append({"field": "Regrueso", "value": "Mencionado", "source": "brief"})
-    if analysis.get("pulido_mentioned"):
-        assumptions.append({"field": "Pulido especial", "value": "Mencionado", "source": "brief"})
+    # Trabajos extra (frentín, regrueso, pulido) — Bug 5 fix · PR #485.
+    # Migrados de `*_mentioned: bool` (ambiguo: "No" colapsaba a False
+    # igual que "no mencionado") a ternary `"yes"|"no"|null`. Mapeo
+    # 2-branch replicando patrón de `colocacion` (líneas 246-257). El
+    # caso null (no mencionado) es silencio — no agrega assumption.
+    for field_key, label in (
+        ("frentin", "Frentín"),
+        ("regrueso", "Regrueso"),
+        ("pulido", "Pulido especial"),
+    ):
+        v = analysis.get(field_key)
+        if v == "yes":
+            assumptions.append({
+                "field": label, "value": "Sí lleva", "source": "brief",
+            })
+        elif v == "no":
+            assumptions.append({
+                "field": label, "value": "No lleva", "source": "brief",
+            })
+        # v is None → silencio: brief no mencionó este trabajo extra
 
     return assumptions
 
