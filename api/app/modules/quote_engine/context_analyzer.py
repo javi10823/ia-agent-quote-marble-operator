@@ -211,9 +211,14 @@ def _build_assumptions(
     has_banio = any((s.get("tipo") or "").lower() in ("baño", "banio") for s in sectores)
 
     # Regla D'Angelo: en cocina, pileta SIEMPRE empotrada (no apoyo).
-    # Solo agregar la assumption si hay cocina Y pileta mencionada/detectada.
+    # Solo agregar la assumption si hay cocina Y pileta mencionada/detectada,
+    # Y el brief NO declaró explícitamente `pileta_type="apoyo"` (Bug 4
+    # · brief explícito gana a la regla por defecto · #483-followup).
+    # Si brief dice "apoyo", la regla cede y el echo del brief (línea 324)
+    # marca la entrada como excepción a la regla D'Angelo.
     pileta_mentioned = analysis.get("pileta_mentioned") or _card_has_pileta(dual_result)
-    if has_cocina and pileta_mentioned:
+    brief_pileta_type = analysis.get("pileta_type")  # "apoyo" | "empotrada" | "bajomesada" | None
+    if has_cocina and pileta_mentioned and brief_pileta_type != "apoyo":
         assumptions.append({
             "field": "Pileta (tipo de montaje)",
             "value": "Empotrada (PEGADOPILETA)",
@@ -322,10 +327,22 @@ def _build_assumptions(
         })
 
     if analysis.get("pileta_type"):
+        montaje_value = analysis["pileta_type"].capitalize()
+        # Bug 4 follow-up — si brief dice "apoyo" Y hay cocina, marcar
+        # la entrada como excepción explícita a la regla D'Angelo (que
+        # cedió arriba). Sin esta nota, Marina no entiende por qué la
+        # regla "cocina → empotrada" no aparece como assumption.
+        montaje_note: str | None = None
+        if analysis["pileta_type"] == "apoyo" and has_cocina:
+            montaje_note = (
+                "Excepción a la regla D'Angelo (cocina normalmente "
+                "empotrada). Brief explícito pidió apoyo."
+            )
         assumptions.append({
             "field": "Pileta — montaje",
-            "value": analysis["pileta_type"].capitalize(),
+            "value": montaje_value,
             "source": "brief",
+            "note": montaje_note,
         })
     if analysis.get("mentions_johnson"):
         sku = analysis.get("johnson_sku") or "(modelo en brief)"

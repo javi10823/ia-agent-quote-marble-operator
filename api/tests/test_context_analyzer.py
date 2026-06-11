@@ -96,6 +96,76 @@ class TestBuildContextAnalysis:
         out = build_context_analysis("", None, _dual(has_cocina=False))
         assert not any("Pileta" in a["field"] for a in out["assumptions"])
 
+    # ── Bug 4 · brief explícito de apoyo gana a la regla D'Angelo ──────
+    # El brief de Micaela ("AGUJEROAPOYO + cotizar bacha") declara
+    # explícitamente pileta de apoyo. Antes del fix: regla pisaba el
+    # brief → 2 assumptions opuestas en la card. Post-fix: regla cede,
+    # el echo del brief queda con note de excepción.
+
+    def test_brief_apoyo_overrides_rule_in_cocina(self):
+        # Brief explícito "pileta de apoyo" + cocina → regla cede.
+        out = build_context_analysis(
+            "cocina con pileta de apoyo", None, _dual(has_cocina=True),
+        )
+        # La regla cocina→empotrada NO debe disparar.
+        rule_entry = next(
+            (a for a in out["assumptions"]
+             if a["source"] == "rule" and "Pileta" in a["field"]),
+            None,
+        )
+        assert rule_entry is None, (
+            f"Regla pisó el brief explícito: {rule_entry}"
+        )
+        # El echo del brief sí debe estar con value=Apoyo + note de excepción.
+        brief_entry = next(
+            (a for a in out["assumptions"] if a["field"] == "Pileta — montaje"),
+            None,
+        )
+        assert brief_entry is not None
+        assert brief_entry["value"] == "Apoyo"
+        assert brief_entry["source"] == "brief"
+        assert brief_entry["note"] is not None
+        assert "Excepción" in brief_entry["note"]
+
+    def test_brief_empotrada_does_not_conflict_with_rule(self):
+        # Brief dice empotrada + regla dice empotrada. Pueden coexistir
+        # (no se contradicen) y ambas describen el mismo concepto. El
+        # bug 4 era el conflicto opuesto; coincidente no rompe nada.
+        out = build_context_analysis(
+            "cocina con pileta empotrada", None, _dual(has_cocina=True),
+        )
+        pileta_fields = [
+            a for a in out["assumptions"]
+            if "Pileta" in a["field"] and "montaje" in a["field"].lower()
+        ]
+        assert len(pileta_fields) >= 1
+        # Todas las entradas que aparezcan deben describir empotrada
+        # (no debe haber contradicción).
+        for f in pileta_fields:
+            assert "empotrada" in f["value"].lower(), (
+                f"Entrada inconsistente: {f}"
+            )
+
+    def test_brief_no_pileta_type_rule_applies_normally(self):
+        # Brief menciona pileta pero NO el tipo → regla dispara normal,
+        # no hay echo del brief (porque no hay pileta_type que ecotar).
+        # Acá nada que ceder · el comportamiento previo se mantiene.
+        out = build_context_analysis(
+            "cocina con pileta", None, _dual(has_cocina=True),
+        )
+        rule_entry = next(
+            (a for a in out["assumptions"]
+             if a["source"] == "rule" and "Pileta" in a["field"]),
+            None,
+        )
+        assert rule_entry is not None
+        assert "empotrada" in rule_entry["value"].lower()
+        # El echo del brief NO debe aparecer cuando pileta_type es None.
+        brief_montaje = [
+            a for a in out["assumptions"] if a["field"] == "Pileta — montaje"
+        ]
+        assert brief_montaje == []
+
     def test_con_zocalos_triggers_assumption(self):
         out = build_context_analysis("cocina con zocalos en rosario", None, _dual())
         zoc = [a for a in out["assumptions"] if a["field"] == "Zócalos"]
