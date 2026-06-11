@@ -119,6 +119,14 @@ describe("breakdownToContext · data_known precedencia y mapping", () => {
   });
 
   test("assumptions con Zócalos / Pileta → mapeo a INFERIDO con source rule", () => {
+    // Sub-PR Bug 7 · ajuste: el backend NO emite assumption con field
+    // exacto `"Pileta"`. Los nombres reales son `"Pileta — montaje"`,
+    // `"Pileta (tipo de montaje)"`, `"Pileta — bachas"`, `"Pileta —
+    // marca"`. Para la regla cocina→empotrada (source="rule"), el
+    // backend usa `"Pileta (tipo de montaje)"` (líneas 218-223 de
+    // context_analyzer.py). Tests específicos de los 4 nombres reales
+    // viven en el bloque "Bug 7 · pileta · assumption name canónico
+    // backend" abajo. Acá lo dejamos cubierto con el caso regla.
     const ctx = breakdownToContext({
       context_analysis_pending: {
         assumptions: [
@@ -127,13 +135,17 @@ describe("breakdownToContext · data_known precedencia y mapping", () => {
             value: "Trasero por tramo, 7 cm",
             source: "config_default",
           },
-          { field: "Pileta", value: "empotrada", source: "inferred" },
+          {
+            field: "Pileta (tipo de montaje)",
+            value: "Empotrada (PEGADOPILETA)",
+            source: "rule",
+          },
         ],
       },
     });
     expect(ctx.zocalo.value).toBe("Trasero por tramo, 7 cm");
     expect(ctx.zocalo.origin).toBe("DEFAULT");
-    expect(ctx.pileta.value).toBe("empotrada");
+    expect(ctx.pileta.value).toBe("Empotrada (PEGADOPILETA)");
     expect(ctx.pileta.origin).toBe("INFERIDO");
   });
 });
@@ -208,13 +220,10 @@ describe("breakdownToContext · derived fields", () => {
     expect(ctx.tipo_obra.origin).toBe("BRIEF");
   });
 
-  test("regrueso_mentioned=true → 'Sí' BRIEF", () => {
-    const ctx = breakdownToContext({
-      _brief_analysis_raw: { regrueso_mentioned: true },
-    });
-    expect(ctx.regrueso.value).toBe("Sí");
-    expect(ctx.regrueso.origin).toBe("BRIEF");
-  });
+  // Test legacy migrado · sub-PR Bug 7. El schema viejo era
+  // `regrueso_mentioned: bool` (deprecated por PR #485). Hoy el
+  // backend devuelve `regrueso: "yes"|"no"|null` y el adapter combina
+  // con `frentin`. Ver tests ternary abajo.
 
   test("anafe_mentioned=true → boolean true BRIEF", () => {
     const ctx = breakdownToContext({
@@ -301,5 +310,209 @@ describe("breakdownToContext · canon real PRES-2026-018 shape", () => {
     expect(ctx.zocalo.origin).toBe("DEFAULT");
     expect(ctx.tipo_obra.value).toBe("particular");
     expect(ctx.tipo_obra.origin).toBe("BRIEF");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Sub-PR Bug 7 · adapter sync post-PR #485
+//
+// PR #485 migró el schema brief_analyzer de bool a ternary:
+//   frentin_mentioned: bool → frentin: "yes" | "no" | null
+//   regrueso_mentioned: bool → regrueso: "yes" | "no" | null
+//
+// El adapter no se había actualizado · sub-PR Bug 7 cierra esa deuda
+// + agrega lectura de `frentin` (que NUNCA estuvo cubierta en PR #483
+// inicial — el UI siempre mostró "—" para el field combinado).
+// ─────────────────────────────────────────────────────────────────────
+
+describe("Bug 7 · frentin/regrueso ternary · matriz combinación", () => {
+  test("null/null → null + FALTA", () => {
+    const ctx = breakdownToContext({
+      _brief_analysis_raw: { frentin: null, regrueso: null },
+    });
+    expect(ctx.regrueso.value).toBeNull();
+    expect(ctx.regrueso.origin).toBe("FALTA");
+  });
+
+  test("no/no → 'No lleva' + BRIEF", () => {
+    const ctx = breakdownToContext({
+      _brief_analysis_raw: { frentin: "no", regrueso: "no" },
+    });
+    expect(ctx.regrueso.value).toBe("No lleva");
+    expect(ctx.regrueso.origin).toBe("BRIEF");
+  });
+
+  test("yes/yes → 'Frentín + Regrueso' + BRIEF", () => {
+    const ctx = breakdownToContext({
+      _brief_analysis_raw: { frentin: "yes", regrueso: "yes" },
+    });
+    expect(ctx.regrueso.value).toBe("Frentín + Regrueso");
+    expect(ctx.regrueso.origin).toBe("BRIEF");
+  });
+
+  test("yes/no disjoint → 'Frentín: Sí · Regrueso: No' + BRIEF", () => {
+    const ctx = breakdownToContext({
+      _brief_analysis_raw: { frentin: "yes", regrueso: "no" },
+    });
+    expect(ctx.regrueso.value).toBe("Frentín: Sí · Regrueso: No");
+    expect(ctx.regrueso.origin).toBe("BRIEF");
+  });
+
+  test("no/yes disjoint → 'Frentín: No · Regrueso: Sí' + BRIEF", () => {
+    const ctx = breakdownToContext({
+      _brief_analysis_raw: { frentin: "no", regrueso: "yes" },
+    });
+    expect(ctx.regrueso.value).toBe("Frentín: No · Regrueso: Sí");
+    expect(ctx.regrueso.origin).toBe("BRIEF");
+  });
+
+  test("yes/null partial → 'Frentín: Sí · Regrueso: —' + BRIEF", () => {
+    const ctx = breakdownToContext({
+      _brief_analysis_raw: { frentin: "yes", regrueso: null },
+    });
+    expect(ctx.regrueso.value).toBe("Frentín: Sí · Regrueso: —");
+    expect(ctx.regrueso.origin).toBe("BRIEF");
+  });
+
+  test("null/yes partial → 'Frentín: — · Regrueso: Sí' + BRIEF", () => {
+    const ctx = breakdownToContext({
+      _brief_analysis_raw: { frentin: null, regrueso: "yes" },
+    });
+    expect(ctx.regrueso.value).toBe("Frentín: — · Regrueso: Sí");
+    expect(ctx.regrueso.origin).toBe("BRIEF");
+  });
+});
+
+describe("Bug 7 · pileta · assumption name canónico backend", () => {
+  test("'Pileta — montaje' (post bug 4 fix) → mapping correcto", () => {
+    // Caso brief Micaela post-PR #484: backend genera assumption con
+    // este field exacto cuando brief declara pileta_type.
+    const ctx = breakdownToContext({
+      context_analysis_pending: {
+        assumptions: [
+          {
+            field: "Pileta — montaje",
+            value: "Apoyo",
+            source: "brief",
+            note: "Excepción a la regla D'Angelo",
+          },
+        ],
+      },
+    });
+    expect(ctx.pileta.value).toBe("Apoyo");
+    expect(ctx.pileta.origin).toBe("BRIEF");
+  });
+
+  test("'Pileta (tipo de montaje)' (regla cocina→empotrada) → INFERIDO", () => {
+    const ctx = breakdownToContext({
+      context_analysis_pending: {
+        assumptions: [
+          {
+            field: "Pileta (tipo de montaje)",
+            value: "Empotrada (PEGADOPILETA)",
+            source: "rule",
+          },
+        ],
+      },
+    });
+    expect(ctx.pileta.value).toBe("Empotrada (PEGADOPILETA)");
+    expect(ctx.pileta.origin).toBe("INFERIDO");
+  });
+
+  test("'Pileta — montaje' tiene prioridad sobre 'Pileta (tipo de montaje)'", () => {
+    // Si el operador declaró pileta_type explícito (echo del brief), gana
+    // sobre la regla. Replica el mismo patrón brief > rule del backend.
+    const ctx = breakdownToContext({
+      context_analysis_pending: {
+        assumptions: [
+          {
+            field: "Pileta (tipo de montaje)",
+            value: "Empotrada (PEGADOPILETA)",
+            source: "rule",
+          },
+          {
+            field: "Pileta — montaje",
+            value: "Apoyo",
+            source: "brief",
+          },
+        ],
+      },
+    });
+    expect(ctx.pileta.value).toBe("Apoyo");
+    expect(ctx.pileta.origin).toBe("BRIEF");
+  });
+});
+
+describe("Bug 7 · drift guard · adapter no resucita schemas obsoletos", () => {
+  test("regression: el adapter NO lee `regrueso_mentioned` (PR #485 deprecated)", () => {
+    // Si alguien resucita el field viejo en un commit futuro y NO
+    // setea `regrueso` (nuevo), el adapter debe igualmente caer a
+    // FALTA — no debe revivir el comportamiento pre-#485.
+    // Cast a Record para inyectar key legacy sin romper TypeScript
+    // (BriefAnalysisRaw tiene `[key: string]: unknown` que la admite,
+    // pero queremos que el test sea explícito sobre que es legacy).
+    const ctx = breakdownToContext({
+      _brief_analysis_raw: { regrueso_mentioned: true } as Record<string, unknown>,
+    });
+    expect(ctx.regrueso.origin).toBe("FALTA");
+    expect(ctx.regrueso.value).toBeNull();
+  });
+
+  test("regression: el adapter NO lee `frentin_mentioned`", () => {
+    // `frentin_mentioned` NUNCA existió en el adapter — drift guard
+    // contra resurrección futura del schema obsoleto.
+    const ctx = breakdownToContext({
+      _brief_analysis_raw: { frentin_mentioned: true } as Record<string, unknown>,
+    });
+    expect(ctx.regrueso.origin).toBe("FALTA");
+    expect(ctx.regrueso.value).toBeNull();
+  });
+});
+
+describe("Bug 7 · smoke E2E · brief Micaela post-PR #485", () => {
+  test("shape real prod · pileta apoyo + frentin/regrueso ambos no", () => {
+    // Replica el shape que el backend devuelve para el brief Micaela
+    // post-PR #485 + PR #484. Pre-fix: pileta=—, frentin/regrueso=—.
+    // Post-fix: pileta="Apoyo" + regrueso="No lleva".
+    const ctx = breakdownToContext({
+      context_analysis_pending: {
+        data_known: [
+          { field: "Cliente", value: "Micaela Volattire", source: "brief" },
+          { field: "Material", value: "Granito Gris Perla", source: "brief" },
+          { field: "Localidad", value: "Casilda", source: "brief" },
+          { field: "Tipo de trabajo", value: "Cocina", source: "brief" },
+        ],
+        assumptions: [
+          {
+            field: "Pileta — montaje",
+            value: "Apoyo",
+            source: "brief",
+            note: "Excepción a la regla D'Angelo (cocina normalmente empotrada).",
+          },
+          { field: "Zócalos", value: "Trasero por tramo, 5 cm", source: "brief+rule" },
+          { field: "Frentín", value: "No lleva", source: "brief" },
+          { field: "Regrueso", value: "No lleva", source: "brief" },
+        ],
+      },
+      _brief_analysis_raw: {
+        client_name: "Micaela Volattire",
+        material: "Granito Gris Perla",
+        localidad: "Casilda",
+        work_types: ["cocina"],
+        pileta_type: "apoyo",
+        frentin: "no",
+        regrueso: "no",
+        pulido: null,
+        anafe_mentioned: false,
+        es_edificio: false,
+      },
+    });
+    expect(ctx.cliente.value).toBe("Micaela Volattire");
+    expect(ctx.localidad.value).toBe("Casilda");
+    expect(ctx.material.value).toBe("Granito Gris Perla");
+    expect(ctx.pileta.value).toBe("Apoyo");
+    expect(ctx.pileta.origin).toBe("BRIEF");
+    expect(ctx.regrueso.value).toBe("No lleva");
+    expect(ctx.regrueso.origin).toBe("BRIEF");
   });
 });
