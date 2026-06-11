@@ -56,7 +56,13 @@ interface BriefAnalysisRaw {
   pileta_simple_doble?: string | null;
   anafe_mentioned?: boolean | null;
   anafe_count?: number | null;
-  regrueso_mentioned?: boolean | null;
+  // PR #485 (sub-PR Bug 5) · schema ternary post-migración. Antes
+  // estos eran `*_mentioned: bool` y este adapter los leía como tal —
+  // el sub-PR Bug 7 (este) corrige el mismatch. `pulido` no tiene UI
+  // row hoy (ContextData no tiene field separado), se ignora.
+  frentin?: "yes" | "no" | null;
+  regrueso?: "yes" | "no" | null;
+  pulido?: "yes" | "no" | null;
   forma_pago?: string | null;
   demora_dias?: string | number | null;
   es_edificio?: boolean | null;
@@ -113,6 +119,42 @@ function findEntry(
     analysis.assumptions?.find((e) => e.field === fieldName) ??
     null
   );
+}
+
+/** Combina frentin + regrueso ternary en 1 string para el row UI
+ * "Frentín / Regrueso" (mapea al field `regrueso` de ContextData).
+ *
+ * Matriz confirmada con operador · sub-PR Bug 7:
+ *
+ *   frentin | regrueso | output
+ *   ----------------------------------------------------------
+ *   null    | null     | null
+ *   no      | no       | "No lleva"
+ *   yes     | yes      | "Frentín + Regrueso"
+ *   yes     | no       | "Frentín: Sí · Regrueso: No"
+ *   no      | yes      | "Frentín: No · Regrueso: Sí"
+ *   yes     | null     | "Frentín: Sí · Regrueso: —"
+ *   null    | yes      | "Frentín: — · Regrueso: Sí"
+ *   no      | null     | "Frentín: No · Regrueso: —"
+ *   null    | no       | "Frentín: — · Regrueso: No"
+ *
+ * Razón del formato explícito en disjoint: Marina necesita ver AMBOS
+ * valores cuando difieren — el formato compacto ("No lleva") solo es
+ * legible cuando ambos coinciden.
+ */
+export function combineFrentinRegrueso(
+  frentin: "yes" | "no" | null,
+  regrueso: "yes" | "no" | null,
+): string | null {
+  if (frentin === null && regrueso === null) return null;
+  if (frentin === "no" && regrueso === "no") return "No lleva";
+  if (frentin === "yes" && regrueso === "yes") return "Frentín + Regrueso";
+  // Disjoint · formato explícito.
+  const fLabel =
+    frentin === "yes" ? "Sí" : frentin === "no" ? "No" : "—";
+  const rLabel =
+    regrueso === "yes" ? "Sí" : regrueso === "no" ? "No" : "—";
+  return `Frentín: ${fLabel} · Regrueso: ${rLabel}`;
 }
 
 /** Resuelve un string field con precedencia verified > pending > raw fallback. */
@@ -185,8 +227,21 @@ export function breakdownToContext(breakdown: QuoteBreakdownLike | null | undefi
     plazo = field<string | null>(null, "FALTA");
   }
 
-  // ── Pileta · assumptions "Pileta" o derivar de raw.pileta_*
-  const piletaEntry = findEntry(verified, "Pileta") ?? findEntry(pending, "Pileta");
+  // ── Pileta · assumptions con name canónico del backend o derivar de raw
+  // PR #485-followup (Bug 7): el backend NO emite assumption "Pileta"
+  // sin sufijo. Emite 4 fields con nombres específicos. Probamos en
+  // orden de prioridad operativa:
+  //   1. "Pileta — montaje" — echo del brief con pileta_type explícito
+  //      (post bug 4 fix · PR #484). Es la fuente más confiable cuando
+  //      el operador declara apoyo/empotrada.
+  //   2. "Pileta (tipo de montaje)" — regla D'Angelo cocina→empotrada
+  //      (líneas 218-223 de context_analyzer.py).
+  //   3. fallback a raw.pileta_type (el brief crudo).
+  const piletaEntry =
+    findEntry(verified, "Pileta — montaje") ??
+    findEntry(pending, "Pileta — montaje") ??
+    findEntry(verified, "Pileta (tipo de montaje)") ??
+    findEntry(pending, "Pileta (tipo de montaje)");
   let pileta: ContextField<string | null>;
   if (piletaEntry?.value) {
     pileta = field<string | null>(piletaEntry.value, mapBackendSourceToOrigin(piletaEntry.source));
@@ -209,17 +264,37 @@ export function breakdownToContext(breakdown: QuoteBreakdownLike | null | undefi
     zocalo = field<string | null>(null, "FALTA");
   }
 
-  // ── Regrueso · raw.regrueso_mentioned (bool → "Sí"/"No"/FALTA)
-  let regrueso: ContextField<string | null>;
-  if (raw.regrueso_mentioned === true) {
-    regrueso = field<string | null>("Sí", "BRIEF");
-  } else if (raw.regrueso_mentioned === false) {
-    regrueso = field<string | null>("No", "DEFAULT");
-  } else {
-    regrueso = field<string | null>(null, "FALTA");
-  }
+  // ── Frentín / Regrueso · UI combina ambos en 1 row (label "Frentín
+  // / Regrueso" mapeado al field `regrueso` de ContextData).
+  //
+  // Post PR #485 el schema del backend es ternary:
+  //   raw.frentin:  "yes" | "no" | null
+  //   raw.regrueso: "yes" | "no" | null
+  //
+  // Matriz de combinación (confirmada con operador · sub-PR Bug 7):
+  //   null/null  → null + FALTA
+  //   no/no      → "No lleva"
+  //   yes/yes    → "Frentín + Regrueso"
+  //   disjoint   → "Frentín: X · Regrueso: Y" (explícito sin ambigüedad)
+  //
+  // Razón: en casos disjoint el formato explícito previene que Marina
+  // confunda cuál campo dijo qué. Ambos visibles siempre.
+  const regrueso = field<string | null>(
+    combineFrentinRegrueso(raw.frentin ?? null, raw.regrueso ?? null),
+    raw.frentin === undefined && raw.regrueso === undefined ? "FALTA"
+      : raw.frentin === null && raw.regrueso === null ? "FALTA"
+        : "BRIEF",
+  );
 
   // ── Anafe · boolean directo
+  //
+  // ⚠️ Deuda documentada (sub-PR Bug 7): cuando `anafe_mentioned ===
+  // undefined`, devolvemos `value: false, origin: "FALTA"`. La UI
+  // renderea `value=false` como "No" y `origin=FALTA` como chip → el
+  // operador ve "No + FALTA simultáneo" (inconsistente). El type
+  // `boolean` no admite null, por eso no podemos representar "sin
+  // valor". El fix requiere migrar a `boolean | null` + refactor
+  // de la UI row anafe — scope separado coordinado con maqueta.
   let anafe: ContextField<boolean>;
   if (raw.anafe_mentioned === true) {
     anafe = { value: true, origin: "BRIEF" };
