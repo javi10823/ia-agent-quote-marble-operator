@@ -13,8 +13,14 @@ import { useEffect, useState } from "react";
 import { useContextForm } from "@/lib/hooks/useContextForm";
 import { useChatScoped } from "@/lib/hooks/useChatScoped";
 import { getValentinaBriefSummary } from "@/lib/api";
-import { ContextForm } from "./ContextForm";
+import { ContextForm, GROUPS } from "./ContextForm";
+import { formatForDisplay } from "./ContextField";
 import { ChatPanel } from "./ChatPanel";
+import {
+  registerSnapshot,
+  unregisterSnapshot,
+  type AuditUiRenderSection,
+} from "@/lib/audit-snapshot";
 
 interface Props {
   quoteId: string;
@@ -43,6 +49,30 @@ export function ContextView({ quoteId }: Props) {
       ctrl.abort();
     };
   }, [quoteId]);
+
+  // Sprint 4 audit-copy-3-layer-state · registra el snapshot 3-capa del paso 2
+  // (ContextResponse del adapter + UI render) en el registry module-level para
+  // que el 📋 del Topbar lo incluya. Se re-registra cuando `context` cambia
+  // (load inicial + cada edit). El `uiRender` usa los MISMOS `GROUPS` y
+  // `formatForDisplay` que el render real → matchea 1:1 lo que se ve. Cleanup
+  // desregistra por quoteId (anti-stale al cambiar de quote).
+  useEffect(() => {
+    if (!context) return;
+    const uiRender: AuditUiRenderSection[] = GROUPS.map((group) => ({
+      title: group.title,
+      fields: group.fields.map((f) => ({
+        label: f.label,
+        displayValue: formatForDisplay(context[f.name].value),
+        origin: context[f.name].origin,
+      })),
+    }));
+    registerSnapshot(quoteId, {
+      step: "/contexto",
+      contextResponse: context,
+      uiRender,
+    });
+    return () => unregisterSnapshot(quoteId);
+  }, [quoteId, context]);
 
   if (state === "loading" && !context) {
     return (

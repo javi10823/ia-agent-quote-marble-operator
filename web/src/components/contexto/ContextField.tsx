@@ -139,7 +139,10 @@ function formatForInput(value: string | number | boolean | null): string {
   return String(value);
 }
 
-function formatForDisplay(value: string | number | boolean | null): string {
+// Exportado (Sprint 4 audit-copy-3-layer-state): el snapshot de [UI RENDER]
+// reusa este formatter exacto para que el audit copy refleje 1:1 lo que el
+// usuario ve (value ?? "—", bool → "Sí"/"No").
+export function formatForDisplay(value: string | number | boolean | null): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "boolean") return value ? "Sí" : "No";
   return String(value);

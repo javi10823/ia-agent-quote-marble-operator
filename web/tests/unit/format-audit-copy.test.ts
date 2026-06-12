@@ -289,3 +289,80 @@ describe("latencySeverity thresholds", () => {
     expect(latencySeverity(60000)).toBe("alert");
   });
 });
+
+// ── Sprint 4 audit-copy-3-layer-state · secciones ADAPTER + UI RENDER ──────
+import type { AuditSnapshot } from "@/lib/audit-snapshot";
+import type { ContextResponse } from "@/lib/api/types";
+
+function buildSnapshot(overrides: Partial<AuditSnapshot> = {}): AuditSnapshot {
+  const contextResponse = {
+    cliente: { value: "Micaela Volattire", origin: "BRIEF" },
+    contacto: { value: null, origin: "FALTA" },
+    localidad: { value: "Casilda", origin: "BRIEF" },
+    plazo: { value: "30 días", origin: "DEFAULT" },
+    tipologia: { value: "Cocina", origin: "BRIEF" },
+    tipo_obra: { value: "particular", origin: "DEFAULT" },
+    material: { value: "Granito Gris Perla", origin: "BRIEF" },
+    pileta: { value: "Apoyo", origin: "BRIEF" },
+    zocalo: { value: "Trasero por tramo, 5 cm", origin: "BRIEF" },
+    regrueso: { value: null, origin: "FALTA" },
+    anafe: { value: false, origin: "FALTA" },
+  } as unknown as ContextResponse;
+  return {
+    step: "/contexto",
+    contextResponse,
+    uiRender: [
+      {
+        title: "Detalles",
+        fields: [
+          { label: "Pileta", displayValue: "Apoyo", origin: "BRIEF" },
+          { label: "Zócalo", displayValue: "Trasero por tramo, 5 cm", origin: "BRIEF" },
+          { label: "Frentín / Regrueso", displayValue: "—", origin: "FALTA" },
+          { label: "Anafe", displayValue: "No", origin: "FALTA" },
+        ],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+describe("formatAuditCopy · snapshot 3-layer (ADAPTER + UI RENDER)", () => {
+  test("sin snapshot → output IDÉNTICO al actual (backward compat)", () => {
+    const audit = buildAudit();
+    const sinSnapshot = formatAuditCopy(audit);
+    const conNull = formatAuditCopy(audit, { snapshot: null });
+    expect(conNull).toBe(sinSnapshot);
+    expect(sinSnapshot).not.toContain("[ADAPTER OUTPUT");
+    expect(sinSnapshot).not.toContain("[UI RENDER");
+    expect(sinSnapshot).not.toContain("═══");
+  });
+
+  test("con snapshot completo → 2 secciones nuevas correctas", () => {
+    const out = formatAuditCopy(buildAudit(), { snapshot: buildSnapshot() });
+    expect(out).toContain("[ADAPTER OUTPUT · ContextResponse · /contexto]");
+    expect(out).toContain("[UI RENDER · /contexto]");
+    // adapter dump
+    expect(out).toContain('cliente: {value="Micaela Volattire", origin="BRIEF"}');
+    expect(out).toContain('localidad: {value="Casilda", origin="BRIEF"}');
+    // UI render
+    expect(out).toContain("DETALLES (4 campos):");
+    expect(out).toContain('Pileta: "Apoyo" · BRIEF');
+  });
+
+  test("snapshot con contextResponse pero sin uiRender → solo [ADAPTER OUTPUT]", () => {
+    const out = formatAuditCopy(buildAudit(), {
+      snapshot: buildSnapshot({ uiRender: null }),
+    });
+    expect(out).toContain("[ADAPTER OUTPUT");
+    expect(out).not.toContain("[UI RENDER");
+  });
+
+  test("caso Micaela · regrueso=null en adapter + '—'+FALTA en UI (regresión Bug 7)", () => {
+    const out = formatAuditCopy(buildAudit(), { snapshot: buildSnapshot() });
+    // Capa adapter: regrueso null + FALTA
+    expect(out).toContain('regrueso: {value=null, origin="FALTA"}');
+    // Capa UI render: lo que el usuario ve
+    expect(out).toContain('Frentín / Regrueso: "—" · FALTA');
+    // El bug es visible y consistente entre las 2 capas → diagnóstico sin screenshot.
+  });
+});
