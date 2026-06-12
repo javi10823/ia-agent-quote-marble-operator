@@ -39,6 +39,11 @@ interface ContextAnalysis {
   assumptions?: BreakdownEntry[];
   tech_detections?: unknown[];
   pending_questions?: unknown[];
+  // Bug 7 RESIDUAL fix · el backend emite `_brief_analysis_raw` ANIDADO
+  // dentro de `context_analysis_pending` (o `verified_context_analysis`),
+  // NO en top-level del breakdown. Tipado explícito acá para que las
+  // fixtures de tests no requieran castings.
+  _brief_analysis_raw?: BriefAnalysisRaw;
 }
 
 interface BriefAnalysisRaw {
@@ -179,7 +184,28 @@ function resolveString(
 export function breakdownToContext(breakdown: QuoteBreakdownLike | null | undefined): ContextResponse {
   const verified = breakdown?.verified_context_analysis ?? null;
   const pending = breakdown?.context_analysis_pending ?? null;
-  const raw: BriefAnalysisRaw = breakdown?._brief_analysis_raw ?? {};
+  // Bug 7 RESIDUAL fix · pre-existente desde PR #483.
+  //
+  // Antes: `breakdown._brief_analysis_raw` (top-level). El backend NUNCA
+  // emite el raw en top-level · siempre va anidado dentro de
+  // `context_analysis_pending` (estado actual) o `verified_context_analysis`
+  // (post-confirmación humana). Resultado: raw={} en runtime SIEMPRE →
+  // todos los campos que dependen SOLO del raw (frentin/regrueso/anafe)
+  // caían a FALTA · campos con fallback a data_known/assumptions
+  // (Cliente/Material/Pileta/etc.) funcionaban por casualidad.
+  //
+  // Precedencia: verified (humano confirmó) > pending (estado actual del
+  // brief_analyzer) > top-level (fallback legacy por si algún quote viejo
+  // o test legacy lo tiene así).
+  //
+  // Lección operativa #60: fixtures de tests del adapter deben REPLICAR
+  // shape REAL del upstream. PR #486 testeaba contra shape ficticia
+  // top-level que NUNCA emite el backend · tests verde + bug prod.
+  const raw: BriefAnalysisRaw =
+    verified?._brief_analysis_raw
+    ?? pending?._brief_analysis_raw
+    ?? breakdown?._brief_analysis_raw
+    ?? {};
 
   // ── Cliente
   const cliente = resolveString(verified, pending, "Cliente", raw.client_name);
