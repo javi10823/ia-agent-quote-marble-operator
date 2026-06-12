@@ -32,6 +32,74 @@ class TestRegexFallback:
         assert out["client_name"] is not None
         assert "Perez" in out["client_name"]
 
+    # ── Sub-PR sprint-4/contacto-extraction-fix · phone + email ────────
+    # Cierra deuda documentada desde PR #483 (sub-PR 9.3). Backend ahora
+    # extrae phone y email del bloque "Contacto:" del brief o de las
+    # palabras-ancla típicas. Filtra falsos positivos (IDs, DNIs, CUITs).
+
+    def test_phone_with_tel_ancla(self):
+        """'Tel: X' → phone extraído (limpio sin formato)."""
+        out = _analyze_regex_fallback("Tel: 3464696027")
+        assert out["phone"] == "3464696027"
+
+    def test_phone_with_cel_ancla_formatted(self):
+        """'Cel: (0346) 4-696027' → '03464696027' (sin formato)."""
+        out = _analyze_regex_fallback("Cel: (0346) 4-696027")
+        assert out["phone"] == "03464696027"
+
+    def test_phone_ignores_naked_id_without_ancla(self):
+        """ID del brief Micaela 'DA-1781136799652-KVZU' sin palabra-ancla
+        → phone=null. Sin ancla no extraemos."""
+        out = _analyze_regex_fallback("Order ID: DA-1781136799652-KVZU")
+        assert out["phone"] is None
+
+    def test_phone_ignores_naked_dni_without_ancla(self):
+        """'DNI: 12345678' (sin 'Tel:') → phone=null."""
+        out = _analyze_regex_fallback("DNI 12345678 cliente Juan")
+        assert out["phone"] is None
+
+    def test_email_extracted(self):
+        """'Email: x@y.com' → email extraído."""
+        out = _analyze_regex_fallback(
+            "Cliente Marina Email: marina@example.com en Rosario"
+        )
+        assert out["email"] == "marina@example.com"
+
+    def test_email_handles_compound_tld(self):
+        """TLDs largos tipo .com.ar funcionan."""
+        out = _analyze_regex_fallback("contacto@dangelo.com.ar")
+        assert out["email"] == "contacto@dangelo.com.ar"
+
+    def test_no_phone_no_email_both_null(self):
+        """Brief sin Tel ni Email → ambos campos null."""
+        out = _analyze_regex_fallback("Mesada 2x0.60 silestone en rosario")
+        assert out["phone"] is None
+        assert out["email"] is None
+
+    def test_brief_micaela_e2e_phone_and_email(self):
+        """Caso real del brief Micaela: 'Contacto: ... — Tel: ... —
+        Email: ...'. Ambos extraídos."""
+        brief = (
+            "Lead completo\n"
+            "Contacto: Micaela Volattire — Tel: 3464696027 — "
+            "Email: micaelavolattire.1234@gmail.com\n"
+            "Trabajo: Cocina"
+        )
+        out = _analyze_regex_fallback(brief)
+        assert out["phone"] == "3464696027"
+        assert out["email"] == "micaelavolattire.1234@gmail.com"
+
+    def test_micaela_id_not_confused_with_phone(self):
+        """Drift guard del brief Micaela real: el ID interno
+        'DA-1781136799652-KVZU' aparece en el mismo brief que el tel
+        legítimo. No debe confundirse — solo el que tiene 'Tel:' ancla."""
+        brief = (
+            "DA-1781136799652-KVZU\n"
+            "Contacto: Micaela — Tel: 3464696027"
+        )
+        out = _analyze_regex_fallback(brief)
+        assert out["phone"] == "3464696027"
+
     def test_material_clean(self):
         out = _analyze_regex_fallback("material pura prima onix white mate Cliente: Juan")
         assert out["material"] is not None

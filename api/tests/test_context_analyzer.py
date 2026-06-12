@@ -76,6 +76,45 @@ class TestBuildContextAnalysis:
         out = build_context_analysis("cliente en rosario", None, _dual())
         assert any(r["field"] == "Localidad" for r in out["data_known"])
 
+    # ── Sub-PR sprint-4/contacto-extraction-fix ────────────────────────
+    # Caveat 1 resolved: Contacto va en data_known (no assumptions)
+    # porque son datos DECLARADOS por el operador. resolveString del
+    # adapter ya busca en data_known + assumptions vía findEntry.
+
+    def test_contacto_phone_only(self):
+        """phone presente sin email → entry 'Contacto' con 'Tel: X'."""
+        out = build_context_analysis("Cliente Juan Tel: 3464696027", None, _dual())
+        entries = [r for r in out["data_known"] if r["field"] == "Contacto"]
+        assert len(entries) == 1
+        assert entries[0]["value"] == "Tel: 3464696027"
+        assert entries[0]["source"] == "brief"
+
+    def test_contacto_email_only(self):
+        """email presente sin phone → entry 'Contacto' con 'Email: Y'."""
+        out = build_context_analysis(
+            "Cliente Maria Email: maria@example.com", None, _dual(),
+        )
+        entries = [r for r in out["data_known"] if r["field"] == "Contacto"]
+        assert len(entries) == 1
+        assert entries[0]["value"] == "Email: maria@example.com"
+
+    def test_contacto_both_phone_and_email(self):
+        """Ambos presentes → entry 'Contacto' con 'Tel: X · Email: Y'."""
+        out = build_context_analysis(
+            "Tel: 3464696027 Email: micaela@ejemplo.com", None, _dual(),
+        )
+        entries = [r for r in out["data_known"] if r["field"] == "Contacto"]
+        assert len(entries) == 1
+        assert entries[0]["value"] == "Tel: 3464696027 · Email: micaela@ejemplo.com"
+
+    def test_no_contacto_when_both_null(self):
+        """Brief sin phone ni email → NO se agrega entry 'Contacto'."""
+        out = build_context_analysis(
+            "Mesada 2x0.60 silestone en rosario", None, _dual(),
+        )
+        entries = [r for r in out["data_known"] if r["field"] == "Contacto"]
+        assert entries == []
+
     def test_cocina_triggers_pileta_empotrada_rule(self):
         # La regla aplica cuando hay cocina Y pileta mencionada (evita
         # agregar la regla cuando el trabajo no tiene pileta).

@@ -210,9 +210,12 @@ export function breakdownToContext(breakdown: QuoteBreakdownLike | null | undefi
   // ── Cliente
   const cliente = resolveString(verified, pending, "Cliente", raw.client_name);
 
-  // ── Contacto · NO está en backend canon (deuda · backend no extrae
-  // phone/email del brief). Siempre FALTA hasta sub-PR posterior.
-  const contacto = field<string | null>(null, "FALTA");
+  // ── Contacto · sub-PR sprint-4/contacto-extraction-fix (deuda
+  // cerrada desde PR #483 sub-PR 9.3). Backend ahora extrae phone +
+  // email del bloque "Contacto:" del brief y genera data_known entry
+  // "Contacto" con value formateado "Tel: X · Email: Y". `resolveString`
+  // busca en `data_known + assumptions` (findEntry orden).
+  const contacto = resolveString(verified, pending, "Contacto", null);
 
   // ── Localidad
   const localidad = resolveString(verified, pending, "Localidad", raw.localidad);

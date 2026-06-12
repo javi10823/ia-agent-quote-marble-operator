@@ -33,6 +33,15 @@ BRIEF_ANALYZER_TIMEOUT_SECONDS = 20
 EMPTY_SCHEMA: dict = {
     # Globales
     "client_name": None,
+    # Contacto del cliente — sub-PR sprint-4/contacto-extraction-fix
+    # cierra deuda documentada desde PR #483 (sub-PR 9.3). Extrae del
+    # bloque "Contacto:" del brief o de las palabras-ancla típicas
+    # ("Tel:", "Email:", etc.). Persistido en el JSON pero NO mirroreado
+    # a `Quote.client_phone` / `Quote.client_email` (las columnas
+    # existen pero el wire post-confirm es follow-up de otro sub-PR
+    # — toca agent.py).
+    "phone": None,   # string | null  · ej "3464696027"
+    "email": None,   # string | null  · ej "x@y.com"
     "project": None,
     "material": None,
     "localidad": None,
@@ -113,37 +122,45 @@ trabajo, null/false/[] si no están presentes.
 2. `client_name`: SOLO el nombre, sin texto pegado. "Erica Bernardi" ✓;
    "Erica Bernardi SIN zocalos" ✗. Parar en mayúsculas all-caps, puntos,
    palabras funcionales (sin, con, en, de).
-3. `material`: nombre limpio del material. Ej: "Puraprima Onix White
+3. `phone` / `email`: extraé del bloque "Contacto:" del brief o cuando
+   se declaren explícitamente con palabras-ancla: "Tel:", "Cel:",
+   "Teléfono:", "WhatsApp:", "Móvil:" para phone · "Email:", "Mail:"
+   para email. SOLO si están ancladas a esas palabras — NO extraigas
+   IDs (ej "DA-1781136799652-KVZU"), DNI ("12345678"), CUITs
+   ("20-12345678-9") ni números de orden sueltos. Phone: devolvé solo
+   los dígitos sin espacios/guiones (ej "3464696027" no
+   "3464-696027"). Email: formato estándar. null si no se mencionan.
+4. `material`: nombre limpio del material. Ej: "Puraprima Onix White
    Mate", "Silestone Blanco Norte", "Granito Negro Brasil". NO pegues
    "Cliente:" ni texto extra.
-4. `localidad`: ciudad principal capitalizada. "Rosario", "Funes",
+5. `localidad`: ciudad principal capitalizada. "Rosario", "Funes",
    "Puerto San Martín".
-5. `work_types`: lista de sectores mencionados. Valores válidos:
+6. `work_types`: lista de sectores mencionados. Valores válidos:
    "cocina", "baño", "lavadero", "otro". Puede haber múltiples.
-6. `zocalos`: "yes" si brief dice "con zócalos" / "lleva". "no" si
+7. `zocalos`: "yes" si brief dice "con zócalos" / "lleva". "no" si
    "sin zócalos" / "no lleva". null si no menciona. Alto en cm si dice.
-7. `pileta_type` (para baño): "apoyo" si dice "pileta de apoyo";
+8. `pileta_type` (para baño): "apoyo" si dice "pileta de apoyo";
    "empotrada" si "empotrada" / "bajomesada"; null si ambigüo.
-8. `pileta_simple_doble` (para cocina): "doble" si "pileta doble",
+9. `pileta_simple_doble` (para cocina): "doble" si "pileta doble",
    "2 bachas"; "simple" si "1 bacha", "simple"; null si no aclara.
-9. `anafe_count`: número explícito. "2 anafes", "anafe gas + eléctrico"
-   → 2. "1 anafe" → 1. null si no dice. `anafe_gas_y_electrico` si
-   menciona ambos explícitos.
-10. `isla_mentioned`: true si el brief menciona isla explícitamente.
-11. `descuento_tipo`: "arquitecta" si menciona arquitecta, "cliente"
+10. `anafe_count`: número explícito. "2 anafes", "anafe gas + eléctrico"
+    → 2. "1 anafe" → 1. null si no dice. `anafe_gas_y_electrico` si
+    menciona ambos explícitos.
+11. `isla_mentioned`: true si el brief menciona isla explícitamente.
+12. `descuento_tipo`: "arquitecta" si menciona arquitecta, "cliente"
     si descuento al cliente, null si no.
-12. `es_edificio`: true si menciona "edificio", "unidades",
+13. `es_edificio`: true si menciona "edificio", "unidades",
     "departamentos", "tipologías", edificio X, etc.
-13. `mentions_johnson` + `johnson_sku`: true/string si menciona Johnson
+14. `mentions_johnson` + `johnson_sku`: true/string si menciona Johnson
     (ej "Johnson LUXOR S171" → johnson_sku="LUXOR S171").
-14. `frentin`, `regrueso`, `pulido`: ternary "yes"|"no"|null.
+15. `frentin`, `regrueso`, `pulido`: ternary "yes"|"no"|null.
     - "yes" si brief dice "con frentín" / "lleva frentín" / "Frentín: Sí".
     - "no" si brief dice "sin frentín" / "Frentín: No" / "no lleva frentín".
     - null si NO se menciona en absoluto.
     Idem para regrueso y pulido. Importante: distinguir "No" explícito
     del operador de "no mencionado" — son operativamente distintos
     (el primero es decisión, el segundo es ausencia de información).
-15. `raw_notes`: copia de frases sueltas que no categorizas (ej
+16. `raw_notes`: copia de frases sueltas que no categorizas (ej
     aclaraciones específicas del cliente).
 
 **Schema exacto (todas las keys presentes siempre):**
@@ -151,6 +168,8 @@ trabajo, null/false/[] si no están presentes.
 ```json
 {
   "client_name": string | null,
+  "phone": string | null,
+  "email": string | null,
   "project": string | null,
   "material": string | null,
   "localidad": string | null,
@@ -198,6 +217,24 @@ Devolvé SOLO el JSON. Sin markdown, sin comentarios."""
 _CLIENT_RE = re.compile(
     r"cliente\s*[:=]?\s*"
     r"([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){0,3})",
+)
+# Contacto · sub-PR sprint-4/contacto-extraction-fix.
+# Phone requiere palabra-ancla cercana (Tel/Cel/Teléfono/WhatsApp/Móvil)
+# para evitar falsos positivos: DNI (8 dígitos sueltos), CUIT (11 con
+# dashes), IDs internos (ej "DA-1781136799652-KVZU" del brief Micaela),
+# números de orden. Brief AR típico tiene formatos variados que
+# normalizamos a solo dígitos al persistir: "3464696027" / "3464 696027"
+# / "+54 9 3464 696027" / "(0346) 4-696027".
+_PHONE_RE = re.compile(
+    r"\b(?:tel|cel|tel[ée]fono|whats?app|m[oó]vil)\s*[:.\-=]?\s*"
+    r"(\+?[\d(][\d\s\-().]{6,18}\d)",
+    re.IGNORECASE,
+)
+_PHONE_CLEAN = re.compile(r"[\s\-().]")  # elimina espacios/guiones/paréntesis
+# Email · regex estándar simple. No restringe TLD para no fallar con
+# dominios largos (.com.ar, etc.).
+_EMAIL_RE = re.compile(
+    r"\b([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})",
 )
 _MATERIAL_KEYS = ("silestone", "dekton", "neolith", "puraprima", "pura prima",
                   "purastone", "laminatto", "granito", "mármol", "marmol",
@@ -358,6 +395,20 @@ def _analyze_regex_fallback(brief: str) -> dict:
     m = _CLIENT_RE.search(b)
     if m:
         result["client_name"] = m.group(1).strip()
+
+    # Phone con palabra-ancla · sub-PR contacto-extraction. Limpiamos
+    # formato (espacios/guiones/paréntesis) y validamos rango 8-16
+    # dígitos. 8 dígitos legítimos (ej "Tel: 12345678") quedan — la
+    # ancla es el filtro contra DNI/CUIT sueltos.
+    m = _PHONE_RE.search(b)
+    if m:
+        cleaned = _PHONE_CLEAN.sub("", m.group(1))
+        if 8 <= len(cleaned) <= 16:
+            result["phone"] = cleaned
+
+    m = _EMAIL_RE.search(b)
+    if m:
+        result["email"] = m.group(1)
 
     mat = _extract_material_regex(b)
     if mat:
