@@ -250,19 +250,93 @@ describe("breakdownToContext · derived fields", () => {
   });
 });
 
-describe("breakdownToContext · contacto siempre FALTA (deuda documentada)", () => {
-  test("contacto siempre null + FALTA · backend no extrae phone/email", () => {
+// ─────────────────────────────────────────────────────────────────────
+// Sub-PR sprint-4/contacto-extraction-fix · activación deuda PR #483
+//
+// Antes: el adapter hardcodeaba `contacto = null + FALTA` con comentario
+// "deuda · backend no extrae phone/email del brief". Hoy el backend
+// (brief_analyzer + context_analyzer) extrae phone+email y genera
+// data_known entry "Contacto" con value formateado. El adapter ahora
+// usa resolveString igual que Cliente / Localidad / Material.
+//
+// Shape REAL del backend (lección #60): el data_known entry vive
+// anidado dentro de `context_analysis_pending`.
+// ─────────────────────────────────────────────────────────────────────
+
+describe("contacto-extraction-fix · contacto del backend canon", () => {
+  test("data_known 'Contacto' nested → contacto populated + BRIEF", () => {
     const ctx = breakdownToContext({
       context_analysis_pending: {
         data_known: [
-          // Mock backend hipotético: incluso si trajera Contacto, lo
-          // ignoramos en este sub-PR.
-          { field: "Contacto", value: "+54 11 1234-5678", source: "brief" },
+          {
+            field: "Contacto",
+            value: "Tel: 3464696027 · Email: micaela@ejemplo.com",
+            source: "brief",
+          },
+        ],
+      },
+    });
+    expect(ctx.contacto.value).toBe(
+      "Tel: 3464696027 · Email: micaela@ejemplo.com",
+    );
+    expect(ctx.contacto.origin).toBe("BRIEF");
+  });
+
+  test("data_known 'Contacto' phone only → 'Tel: X' + BRIEF", () => {
+    const ctx = breakdownToContext({
+      context_analysis_pending: {
+        data_known: [
+          { field: "Contacto", value: "Tel: 3464696027", source: "brief" },
+        ],
+      },
+    });
+    expect(ctx.contacto.value).toBe("Tel: 3464696027");
+    expect(ctx.contacto.origin).toBe("BRIEF");
+  });
+
+  test("sin data_known 'Contacto' → contacto null + FALTA (current UX preservada)", () => {
+    const ctx = breakdownToContext({
+      context_analysis_pending: {
+        data_known: [
+          { field: "Cliente", value: "Juan", source: "brief" },
         ],
       },
     });
     expect(ctx.contacto.value).toBeNull();
     expect(ctx.contacto.origin).toBe("FALTA");
+  });
+
+  test("regression · audit literal Micaela post-fix · 3 fields contacto-relacionados", () => {
+    // Anclaje al dump literal esperado post-deploy (lección #60).
+    // Si el backend cambia su shape, este test rompe primero.
+    const ctx = breakdownToContext({
+      context_analysis_pending: {
+        data_known: [
+          { field: "Cliente", value: "Micaela Volattire", source: "brief" },
+          {
+            field: "Contacto",
+            value:
+              "Tel: 3464696027 · Email: micaelavolattire.1234@gmail.com",
+            source: "brief",
+          },
+          { field: "Localidad", value: "Casilda", source: "brief" },
+          { field: "Material", value: "Granito Gris Perla", source: "brief" },
+        ],
+        _brief_analysis_raw: {
+          client_name: "Micaela Volattire",
+          phone: "3464696027",
+          email: "micaelavolattire.1234@gmail.com",
+          localidad: "Casilda",
+          material: "Granito Gris Perla",
+        },
+      },
+    });
+    expect(ctx.cliente.value).toBe("Micaela Volattire");
+    expect(ctx.contacto.value).toBe(
+      "Tel: 3464696027 · Email: micaelavolattire.1234@gmail.com",
+    );
+    expect(ctx.contacto.origin).toBe("BRIEF");
+    expect(ctx.localidad.value).toBe("Casilda");
   });
 });
 

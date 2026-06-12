@@ -154,6 +154,26 @@ def _build_data_known(
         source = "quote" if (quote or {}).get("client_name") else "brief"
         known.append({"field": "Cliente", "value": client, "source": source})
 
+    # Contacto · sub-PR sprint-4/contacto-extraction-fix. Cierra deuda
+    # documentada desde PR #483. Si phone o email presentes en el brief,
+    # generamos data_known entry con formato unificado. Va en data_known
+    # (no assumptions) porque son datos DECLARADOS por el operador, no
+    # inferidos ni asumidos. Adapter frontend ya tenía field `contacto`
+    # esperando este wire.
+    phone = analysis.get("phone")
+    email = analysis.get("email")
+    if phone or email:
+        parts = []
+        if phone:
+            parts.append(f"Tel: {phone}")
+        if email:
+            parts.append(f"Email: {email}")
+        known.append({
+            "field": "Contacto",
+            "value": " · ".join(parts),
+            "source": "brief",
+        })
+
     # Proyecto
     project = (quote or {}).get("project") or analysis.get("project")
     if project:
