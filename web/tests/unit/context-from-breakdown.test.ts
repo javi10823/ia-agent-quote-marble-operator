@@ -222,7 +222,7 @@ describe("breakdownToContext · derived fields", () => {
 
   // Test legacy migrado · sub-PR Bug 7. El schema viejo era
   // `regrueso_mentioned: bool` (deprecated por PR #485). Hoy el
-  // backend devuelve `regrueso: "yes"|"no"|null` y el adapter combina
+  // backend devuelve `regrueso: "yes" as const|"no"|null` y el adapter combina
   // con `frentin`. Ver tests ternary abajo.
 
   test("anafe_mentioned=true → boolean true BRIEF", () => {
@@ -317,8 +317,8 @@ describe("breakdownToContext · canon real PRES-2026-018 shape", () => {
 // Sub-PR Bug 7 · adapter sync post-PR #485
 //
 // PR #485 migró el schema brief_analyzer de bool a ternary:
-//   frentin_mentioned: bool → frentin: "yes" | "no" | null
-//   regrueso_mentioned: bool → regrueso: "yes" | "no" | null
+//   frentin_mentioned: bool → frentin: "yes" as const | "no" | null
+//   regrueso_mentioned: bool → regrueso: "yes" as const | "no" | null
 //
 // El adapter no se había actualizado · sub-PR Bug 7 cierra esa deuda
 // + agrega lectura de `frentin` (que NUNCA estuvo cubierta en PR #483
@@ -336,7 +336,7 @@ describe("Bug 7 · frentin/regrueso ternary · matriz combinación", () => {
 
   test("no/no → 'No lleva' + BRIEF", () => {
     const ctx = breakdownToContext({
-      _brief_analysis_raw: { frentin: "no", regrueso: "no" },
+      _brief_analysis_raw: { frentin: "no" as const, regrueso: "no" as const },
     });
     expect(ctx.regrueso.value).toBe("No lleva");
     expect(ctx.regrueso.origin).toBe("BRIEF");
@@ -344,7 +344,7 @@ describe("Bug 7 · frentin/regrueso ternary · matriz combinación", () => {
 
   test("yes/yes → 'Frentín + Regrueso' + BRIEF", () => {
     const ctx = breakdownToContext({
-      _brief_analysis_raw: { frentin: "yes", regrueso: "yes" },
+      _brief_analysis_raw: { frentin: "yes" as const, regrueso: "yes" as const },
     });
     expect(ctx.regrueso.value).toBe("Frentín + Regrueso");
     expect(ctx.regrueso.origin).toBe("BRIEF");
@@ -352,7 +352,7 @@ describe("Bug 7 · frentin/regrueso ternary · matriz combinación", () => {
 
   test("yes/no disjoint → 'Frentín: Sí · Regrueso: No' + BRIEF", () => {
     const ctx = breakdownToContext({
-      _brief_analysis_raw: { frentin: "yes", regrueso: "no" },
+      _brief_analysis_raw: { frentin: "yes" as const, regrueso: "no" as const },
     });
     expect(ctx.regrueso.value).toBe("Frentín: Sí · Regrueso: No");
     expect(ctx.regrueso.origin).toBe("BRIEF");
@@ -360,7 +360,7 @@ describe("Bug 7 · frentin/regrueso ternary · matriz combinación", () => {
 
   test("no/yes disjoint → 'Frentín: No · Regrueso: Sí' + BRIEF", () => {
     const ctx = breakdownToContext({
-      _brief_analysis_raw: { frentin: "no", regrueso: "yes" },
+      _brief_analysis_raw: { frentin: "no" as const, regrueso: "yes" as const },
     });
     expect(ctx.regrueso.value).toBe("Frentín: No · Regrueso: Sí");
     expect(ctx.regrueso.origin).toBe("BRIEF");
@@ -368,7 +368,7 @@ describe("Bug 7 · frentin/regrueso ternary · matriz combinación", () => {
 
   test("yes/null partial → 'Frentín: Sí · Regrueso: —' + BRIEF", () => {
     const ctx = breakdownToContext({
-      _brief_analysis_raw: { frentin: "yes", regrueso: null },
+      _brief_analysis_raw: { frentin: "yes" as const, regrueso: null },
     });
     expect(ctx.regrueso.value).toBe("Frentín: Sí · Regrueso: —");
     expect(ctx.regrueso.origin).toBe("BRIEF");
@@ -376,7 +376,7 @@ describe("Bug 7 · frentin/regrueso ternary · matriz combinación", () => {
 
   test("null/yes partial → 'Frentín: — · Regrueso: Sí' + BRIEF", () => {
     const ctx = breakdownToContext({
-      _brief_analysis_raw: { frentin: null, regrueso: "yes" },
+      _brief_analysis_raw: { frentin: null, regrueso: "yes" as const },
     });
     expect(ctx.regrueso.value).toBe("Frentín: — · Regrueso: Sí");
     expect(ctx.regrueso.origin).toBe("BRIEF");
@@ -500,8 +500,8 @@ describe("Bug 7 · smoke E2E · brief Micaela post-PR #485", () => {
         localidad: "Casilda",
         work_types: ["cocina"],
         pileta_type: "apoyo",
-        frentin: "no",
-        regrueso: "no",
+        frentin: "no" as const,
+        regrueso: "no" as const,
         pulido: null,
         anafe_mentioned: false,
         es_edificio: false,
@@ -514,5 +514,187 @@ describe("Bug 7 · smoke E2E · brief Micaela post-PR #485", () => {
     expect(ctx.pileta.origin).toBe("BRIEF");
     expect(ctx.regrueso.value).toBe("No lleva");
     expect(ctx.regrueso.origin).toBe("BRIEF");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Bug 7 RESIDUAL · adapter leía _brief_analysis_raw desde top-level
+// cuando el backend lo emite SIEMPRE anidado dentro de
+// context_analysis_pending (o verified_context_analysis).
+//
+// Pre-existente desde PR #483 · oculto en prod hasta brief de Micaela
+// porque Cliente/Material/Pileta/etc. tienen fallback a data_known +
+// assumptions. Frentín/Regrueso/Anafe SOLO leen del raw → caían a FALTA.
+//
+// Tests del PR #486 cubrían shape FICTICIA top-level (legacy compat).
+// Los tests abajo replican el SHAPE REAL emitido por el backend:
+//   { context_analysis_pending: { _brief_analysis_raw: {...} } }
+//
+// Lección operativa #60: las fixtures de tests del adapter deben
+// REPLICAR shape REAL del upstream. Si la fixture difiere del shape de
+// prod, el test no certifica nada · drift silencioso.
+// ─────────────────────────────────────────────────────────────────────
+
+describe("Bug 7 RESIDUAL · _brief_analysis_raw anidado (shape REAL del backend)", () => {
+  test("regression · audit literal Micaela · prod 2026-06-12", () => {
+    // Dump literal del audit-log de prod (quote d8e85524) confirmado
+    // por Javi. Si este test rompe, el backend cambió su shape · NO
+    // tocar el adapter sin coordinación.
+    const realBackendShape = {
+      dual_read_result: { sectores: [{ id: "sector_1", tipo: "cocina" }] },
+      context_analysis_pending: {
+        data_known: [
+          { field: "Cliente", value: "Micaela Volattire", source: "brief" },
+          { field: "Material", value: "Granito Gris Perla", source: "quote" },
+          { field: "Localidad", value: "Casilda", source: "brief" },
+          { field: "Tipo de trabajo", value: "Cocina", source: "brief" },
+        ],
+        assumptions: [
+          {
+            field: "Zócalos",
+            value: "Trasero por tramo, 5 cm",
+            source: "brief+rule",
+          },
+          { field: "Colocación", value: "No incluye", source: "brief" },
+          {
+            field: "Pileta — montaje",
+            value: "Apoyo",
+            source: "brief",
+          },
+          { field: "Forma de pago", value: "Contado", source: "config_default" },
+          { field: "Demora", value: "30 días", source: "config_default" },
+          { field: "Tipo", value: "Particular", source: "inferred" },
+          { field: "Descuento", value: "No aplica", source: "config_default" },
+          { field: "Frentín", value: "No lleva", source: "brief" },
+          { field: "Regrueso", value: "No lleva", source: "brief" },
+        ],
+        _brief_analysis_raw: {
+          client_name: "Micaela Volattire",
+          project: null,
+          material: "Granito Gris Perla",
+          localidad: "Casilda",
+          work_types: ["cocina"],
+          zocalos: "yes",
+          zocalos_alto_cm: 5,
+          alzada: "yes",
+          colocacion: "no",
+          pileta_mentioned: true,
+          pileta_type: "apoyo",
+          anafe_mentioned: true,
+          anafe_count: null,
+          frentin: "no" as const,
+          regrueso: "no" as const,
+          pulido: null,
+          es_edificio: false,
+        },
+      },
+    };
+    const ctx = breakdownToContext(realBackendShape);
+
+    // Campos que ya funcionaban (vienen de pending.data_known / assumptions)
+    expect(ctx.cliente.value).toBe("Micaela Volattire");
+    expect(ctx.cliente.origin).toBe("BRIEF");
+    expect(ctx.localidad.value).toBe("Casilda");
+    expect(ctx.localidad.origin).toBe("BRIEF");
+    expect(ctx.material.value).toBe("Granito Gris Perla");
+    expect(ctx.material.origin).toBe("BRIEF"); // source=quote → BRIEF
+    expect(ctx.pileta.value).toBe("Apoyo");
+    expect(ctx.pileta.origin).toBe("BRIEF");
+    expect(ctx.zocalo.value).toBe("Trasero por tramo, 5 cm");
+
+    // Campos rotos por Bug 7 RESIDUAL · ahora deben funcionar
+    expect(ctx.regrueso.value).toBe("No lleva");
+    expect(ctx.regrueso.origin).toBe("BRIEF");
+    expect(ctx.anafe.value).toBe(true);
+    expect(ctx.anafe.origin).toBe("BRIEF");
+
+    // tipo_obra: es_edificio=false → "particular" + BRIEF
+    expect(ctx.tipo_obra.value).toBe("particular");
+    expect(ctx.tipo_obra.origin).toBe("BRIEF");
+  });
+
+  test("frentin/regrueso en pending._brief_analysis_raw nested · no/no → No lleva BRIEF", () => {
+    const ctx = breakdownToContext({
+      context_analysis_pending: {
+        _brief_analysis_raw: { frentin: "no" as const, regrueso: "no" as const },
+      },
+    });
+    expect(ctx.regrueso.value).toBe("No lleva");
+    expect(ctx.regrueso.origin).toBe("BRIEF");
+  });
+
+  test("anafe_mentioned=true nested → true + BRIEF", () => {
+    const ctx = breakdownToContext({
+      context_analysis_pending: {
+        _brief_analysis_raw: { anafe_mentioned: true },
+      },
+    });
+    expect(ctx.anafe.value).toBe(true);
+    expect(ctx.anafe.origin).toBe("BRIEF");
+  });
+
+  test("anafe nested NO impacta tipo_obra (regresión cross-field)", () => {
+    const ctx = breakdownToContext({
+      context_analysis_pending: {
+        _brief_analysis_raw: { anafe_mentioned: true, es_edificio: true },
+      },
+    });
+    expect(ctx.anafe.value).toBe(true);
+    expect(ctx.tipo_obra.value).toBe("edificio");
+    expect(ctx.tipo_obra.origin).toBe("BRIEF");
+  });
+});
+
+describe("Bug 7 RESIDUAL · precedencia verified > pending > top-level (drift guard)", () => {
+  test("verified gana sobre pending para _brief_analysis_raw", () => {
+    const breakdown = {
+      context_analysis_pending: {
+        _brief_analysis_raw: { frentin: "no" as const, regrueso: "no" as const },
+      },
+      verified_context_analysis: {
+        _brief_analysis_raw: { frentin: "yes" as const, regrueso: "yes" as const },
+      },
+    };
+    const ctx = breakdownToContext(breakdown);
+    // verified gana → yes/yes → "Frentín + Regrueso"
+    expect(ctx.regrueso.value).toBe("Frentín + Regrueso");
+    expect(ctx.regrueso.origin).toBe("BRIEF");
+  });
+
+  test("pending gana sobre top-level legacy", () => {
+    const breakdown = {
+      _brief_analysis_raw: { frentin: "yes" as const, regrueso: "yes" as const }, // top-level legacy
+      context_analysis_pending: {
+        _brief_analysis_raw: { frentin: "no" as const, regrueso: "no" as const }, // pending real
+      },
+    };
+    const ctx = breakdownToContext(breakdown);
+    // pending gana → no/no → "No lleva"
+    expect(ctx.regrueso.value).toBe("No lleva");
+  });
+
+  test("backwards compat · top-level _brief_analysis_raw sigue funcionando", () => {
+    // Quotes viejos o tests legacy podrían tener el raw en top-level
+    // del breakdown. El adapter debe seguir aceptándolo como 3er
+    // fallback (NO romper compat retroactiva).
+    const ctx = breakdownToContext({
+      _brief_analysis_raw: {
+        frentin: "no" as const,
+        regrueso: "no" as const,
+        anafe_mentioned: true,
+      },
+    });
+    expect(ctx.regrueso.value).toBe("No lleva");
+    expect(ctx.anafe.value).toBe(true);
+  });
+
+  test("verified vacío + pending con raw → usa pending (no se confunde con verified)", () => {
+    const ctx = breakdownToContext({
+      verified_context_analysis: { data_known: [] }, // sin _brief_analysis_raw
+      context_analysis_pending: {
+        _brief_analysis_raw: { anafe_mentioned: true },
+      },
+    });
+    expect(ctx.anafe.value).toBe(true);
   });
 });
