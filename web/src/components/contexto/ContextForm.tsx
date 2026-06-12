@@ -14,19 +14,22 @@ import { useRouter } from "next/navigation";
 import type { ContextData, ContextResponse } from "@/lib/api";
 import { ContextField } from "./ContextField";
 
-interface FieldDef {
+export interface FieldDef {
   name: keyof ContextData;
   label: string;
   hint: string;
   type?: "text" | "boolean";
 }
 
-interface Group {
+export interface Group {
   title: string;
   fields: FieldDef[];
 }
 
-const GROUPS: Group[] = [
+// Exportado (Sprint 4 audit-copy-3-layer-state): fuente única de la
+// estructura secciones/labels · el snapshot de [UI RENDER] del audit copy
+// la reusa para garantizar que matchee el render real.
+export const GROUPS: Group[] = [
   {
     title: "Cliente",
     fields: [

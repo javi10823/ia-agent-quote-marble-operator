@@ -21,6 +21,7 @@
 import { useState } from "react";
 import { getAuditLog } from "@/lib/api";
 import { formatAuditCopy } from "@/lib/utils/format-audit-copy";
+import { getSnapshot } from "@/lib/audit-snapshot";
 
 interface Props {
   quoteId: string;
@@ -38,7 +39,12 @@ export function AuditCopyButton({ quoteId }: Props) {
     setErrorMsg(null);
     try {
       const audit = await getAuditLog(quoteId);
-      const text = formatAuditCopy(audit);
+      // Sprint 4 audit-copy-3-layer-state · snapshot del paso actual (adapter
+      // output + UI render) si el paso lo registró. getSnapshot valida que
+      // el quoteId matchee (anti-stale) · null → audit copy sin las 2
+      // secciones nuevas (backward compat).
+      const snapshot = getSnapshot(quoteId);
+      const text = formatAuditCopy(audit, { snapshot });
       try {
         if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
           await navigator.clipboard.writeText(text);
