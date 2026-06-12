@@ -14,6 +14,7 @@
  * - JSON breakdown serializado con indent 2 (legible pero copy-pasteable)
  */
 import type { AuditLogResponse } from "@/lib/api/types";
+import type { AuditSnapshot } from "@/lib/audit-snapshot";
 
 /** Helper: epoch (ms) de un ISO string. */
 function epoch(iso: string): number {
@@ -44,13 +45,17 @@ export interface FormatAuditCopyOptions {
   /** Si true incluye solo el header + events timeline (sin tokens/tools/breakdown).
    * Modo "timeline only" del botón "Copiar solo timeline" en la página /audit. */
   timelineOnly?: boolean;
+  /** Sprint 4 audit-copy-3-layer-state · snapshot 3-capa del paso actual
+   * (adapter output + UI render). Si se provee, append de 2 secciones nuevas.
+   * Default null → output IDÉNTICO al actual (backward compat estricta). */
+  snapshot?: AuditSnapshot | null;
 }
 
 export function formatAuditCopy(
   audit: AuditLogResponse,
   options: FormatAuditCopyOptions = {},
 ): string {
-  const { includeBreakdown = true, timelineOnly = false } = options;
+  const { includeBreakdown = true, timelineOnly = false, snapshot = null } = options;
   const lines: string[] = [];
   const createdEpoch = epoch(audit.meta.created_at);
 
@@ -157,6 +162,38 @@ export function formatAuditCopy(
     }
   }
   lines.push("");
+
+  // ─── Capa 2+3 · ADAPTER OUTPUT + UI RENDER (Sprint 4 audit-copy-3-layer) ──
+  // Solo si el paso actual registró un snapshot (ver audit-snapshot.ts).
+  // Sin snapshot → estas secciones se omiten · output idéntico al previo.
+  if (snapshot) {
+    const SEP = "═══════════════════════════════════════════════";
+
+    if (snapshot.contextResponse) {
+      lines.push(SEP);
+      lines.push(`[ADAPTER OUTPUT · ContextResponse · ${snapshot.step}]`);
+      lines.push(SEP);
+      for (const [key, f] of Object.entries(snapshot.contextResponse)) {
+        const val = f?.value;
+        const valStr = val === null || val === undefined ? "null" : JSON.stringify(val);
+        lines.push(`${key}: {value=${valStr}, origin="${f?.origin ?? "?"}"}`);
+      }
+      lines.push("");
+    }
+
+    if (snapshot.uiRender && snapshot.uiRender.length > 0) {
+      lines.push(SEP);
+      lines.push(`[UI RENDER · ${snapshot.step}]`);
+      lines.push(SEP);
+      for (const section of snapshot.uiRender) {
+        lines.push(`${section.title.toUpperCase()} (${section.fields.length} campos):`);
+        for (const fld of section.fields) {
+          lines.push(`  ${fld.label}: "${fld.displayValue}" · ${fld.origin}`);
+        }
+      }
+      lines.push("");
+    }
+  }
 
   // ─── Footer ──────────────────────────────────────────────────────
   const totalDuration =
