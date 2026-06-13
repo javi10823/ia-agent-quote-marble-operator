@@ -1,33 +1,35 @@
 /**
- * Container del dashboard · Sprint 2.5.
+ * Container del dashboard · Sprint 4 dashboard-redesign (sub-PR 22.1.b).
  *
- * Render único que adapta layout via CSS responsive:
- *   - Desktop (≥768px): KPI band + sidebar filtros + tabla
- *   - Mobile  (<768px):  chips filter horizontales + lista vertical + FAB
+ * Rediseño según 5 decisiones Javi:
+ *   1. Filter chips multi-select (multiple chips activos simultáneo)
+ *   2. Buscador responsive (desktop + mobile · antes no había mobile)
+ *   3. Header 2 filas: saludo+search+CTA · meta count debajo
+ *   4. KPIs PERMANENTES fuera (KpiCard eliminado · sub-PR cleanup paralelo)
+ *   5. Columnas tabla mantenidas (sin cambios a QuoteTable)
  *
- * Decisión: una sola implementación con clases legacy responsive
- * (`.mfilter-chips` ya tiene su propio breakpoint en operator-shared.css).
- * Las dos vistas se renderean siempre pero se ocultan via inline media
- * query (más simple que useMediaQuery con SSR hydration). El layout
- * `.dashboard-desktop` se muestra ≥768px, `.dashboard-mobile` muestra
- * <768px.
+ * Cambios estructurales vs Sprint 2.5:
+ *   - Single layout responsive (NO dual render `.dashboard-mobile` + `.dashboard-desktop`)
+ *     · cambio de pixel breakpoint via CSS in globals.css (≤767 mobile)
+ *   - Search en HEADER (antes en aside lateral)
+ *   - Filter chips bajo header (antes checkbox vertical en aside)
+ *   - Tabla full-width (antes grid 220px + 1fr con aside)
+ *   - "Limpiar" condicional (solo cuando hay filtros activos · `hasActiveFilters`)
+ *   - Mobile lista de cards usa el MISMO QuoteListItem que antes
+ *
+ * CSS scope:
+ *   - operator-shared.css: INTACTO estricto (0 cambios)
+ *   - globals.css: +6 LOC media query para responsive del nuevo layout
+ *   - Clases reusadas: `.mfilter-chips`, `.mfilter-chip.active`, `.quote-table`,
+ *     `.btn.primary`, `.btn.ghost.sm`, `.eyebrow`, `.font-serif`, `.font-mono`
  */
 "use client";
 
 import Link from "next/link";
 import { useDashboard } from "@/lib/hooks/useDashboard";
-import type { DashboardStatus } from "@/lib/api";
 import { FilterChips } from "./FilterChips";
-import { KpiCard } from "./KpiCard";
 import { QuoteListItem } from "./QuoteListItem";
 import { QuoteTable } from "./QuoteTable";
-
-const STATUS_FILTERS: { id: DashboardStatus; label: string }[] = [
-  { id: "draft", label: "Borrador" },
-  { id: "sent", label: "Enviado" },
-  { id: "expired", label: "Vencido" },
-  { id: "lost", label: "Perdido" },
-];
 
 export function DashboardView() {
   const {
@@ -35,18 +37,13 @@ export function DashboardView() {
     kpis,
     statuses,
     search,
-    kpiFilter,
     loading,
     error,
+    hasActiveFilters,
     setSearch,
     toggleStatus,
-    setOnlyStatus,
-    toggleKpi,
     clearAll,
   } = useDashboard();
-
-  // Filtro activo para mobile chips (1-status max, o null para "Todos")
-  const mobileActive: DashboardStatus | null = statuses.size === 1 ? Array.from(statuses)[0] : null;
 
   if (error) {
     return (
@@ -56,274 +53,128 @@ export function DashboardView() {
     );
   }
 
+  // Counts seguros para los chips mientras KPIs cargan (evita layout shift)
+  const counts = kpis?.counts ?? { all: 0, draft: 0, sent: 0, expired: 0, lost: 0 };
+
   return (
-    <section data-testid="dashboard">
-      {/* ─────── DESKTOP ─────── */}
-      <section
-        data-testid="dashboard-desktop"
-        style={{ padding: "32px 32px 24px" }}
-        className="dashboard-desktop"
-      >
-        <header
-          className="dashboard-head"
-          style={{
-            display: "flex",
-            alignItems: "flex-end",
-            gap: 24,
-            marginBottom: 24,
-          }}
-        >
-          <div className="dh-meta" style={{ flex: 1 }}>
+    <section data-testid="dashboard" className="dashboard-v2">
+      {/* ─────── HEADER · 2 filas ─────── */}
+      <header className="dashboard-head" data-testid="dashboard-head">
+        {/* Fila 1: saludo · buscador · CTA */}
+        <div className="row-greet-actions">
+          <div className="dh-greet">
             <div className="eyebrow">Presupuestos</div>
             <h1
               className="font-serif"
               style={{
                 fontStyle: "italic",
                 fontSize: 28,
-                margin: "4px 0 6px",
+                margin: "4px 0 0",
                 letterSpacing: "-0.3px",
               }}
             >
               Hola Marina
             </h1>
-            {kpis && (
-              <div style={{ color: "var(--ink-soft)", fontSize: 13 }}>
-                Tenés <strong>{kpis.pendingAction}</strong> presupuesto
-                {kpis.pendingAction === 1 ? "" : "s"} que requier
-                {kpis.pendingAction === 1 ? "e" : "en"} acción
-              </div>
-            )}
           </div>
-          <Link href="/quotes/new" className="btn primary" data-testid="cta-new-quote">
-            + Nuevo presupuesto
-          </Link>
-        </header>
-
+          <div className="dh-actions">
+            <input
+              type="text"
+              placeholder="Buscar cliente…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              data-testid="search-input"
+              className="input"
+              style={{
+                padding: "8px 12px",
+                minWidth: 240,
+              }}
+            />
+            <Link href="/quotes/new" className="btn primary" data-testid="cta-new-quote">
+              + Nuevo presupuesto
+            </Link>
+          </div>
+        </div>
+        {/* Fila 2: meta count */}
         {kpis && (
-          <section
-            className="kpi-band"
+          <div
+            className="dh-meta"
+            data-testid="dashboard-meta"
             style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 16,
-              marginBottom: 24,
+              color: "var(--ink-soft)",
+              fontSize: 13,
+              marginTop: 8,
             }}
           >
-            <KpiCard
-              testId="kpi-expire-soon"
-              label="Vencidos próximos 7 días"
-              value={kpis.expireSoon}
-              sub="Acción: renovar vigencia o reenviar"
-              variant="urgent"
-              active={kpiFilter === "expire-soon"}
-              onClick={() => toggleKpi("expire-soon")}
-            />
-            <KpiCard
-              testId="kpi-no-response"
-              label="Enviados sin respuesta >5 días"
-              value={kpis.noResponse}
-              sub="Acción: follow-up por WhatsApp"
-              variant="warn"
-              active={kpiFilter === "no-response"}
-              onClick={() => toggleKpi("no-response")}
-            />
-          </section>
-        )}
-
-        <section
-          className="dash-body"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "220px 1fr",
-            gap: 24,
-            alignItems: "start",
-          }}
-        >
-          <aside
-            className="dash-filters"
-            style={{ display: "flex", flexDirection: "column", gap: 20 }}
-          >
-            <div className="filter-group">
-              <div
-                className="filter-lbl font-mono"
-                style={{
-                  fontSize: 10,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                  color: "var(--ink-mute)",
-                  marginBottom: 8,
-                }}
-              >
-                Buscador
-              </div>
-              <input
-                type="text"
-                placeholder="Cliente…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                data-testid="search-input"
-                className="input"
-                style={{ width: "100%", padding: "8px 10px" }}
-              />
-            </div>
-            <div className="filter-group">
-              <div
-                className="filter-lbl font-mono"
-                style={{
-                  fontSize: 10,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                  color: "var(--ink-mute)",
-                  marginBottom: 8,
-                }}
-              >
-                Estado
-              </div>
-              {STATUS_FILTERS.map((s) => {
-                const checked = statuses.has(s.id);
-                return (
-                  <label
-                    key={s.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "4px 0",
-                      cursor: "pointer",
-                      color: checked ? "var(--ink)" : "var(--ink-soft)",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      data-testid={`status-filter-${s.id}`}
-                      checked={checked}
-                      onChange={() => toggleStatus(s.id)}
-                    />
-                    <span style={{ fontSize: 13 }}>{s.label}</span>
-                    <span
-                      className="font-mono"
-                      style={{
-                        marginLeft: "auto",
-                        fontSize: 11,
-                        color: "var(--ink-mute)",
-                      }}
-                    >
-                      {kpis?.counts[s.id] ?? 0}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-            <button
-              type="button"
-              className="btn ghost sm"
-              onClick={clearAll}
-              data-testid="clear-filters"
-            >
-              Limpiar filtros
-            </button>
-          </aside>
-
-          <div className="dash-main">
-            <div
-              className="dash-toolbar"
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "baseline",
-                marginBottom: 12,
-                fontSize: 12,
-                color: "var(--ink-mute)",
-              }}
-            >
-              <div data-testid="results-count">
-                <strong>{quotes.length}</strong> resultado
-                {quotes.length === 1 ? "" : "s"}
-              </div>
-              <div className="font-mono">ordenado por última actividad ↓</div>
-            </div>
-            <QuoteTable quotes={quotes} loading={loading} />
+            Tenés <strong>{counts.all}</strong> presupuesto
+            {counts.all === 1 ? "" : "s"} · ordenados por última actividad ↓
           </div>
-        </section>
-      </section>
+        )}
+      </header>
 
-      {/* ─────── MOBILE ─────── */}
-      <section
-        data-testid="dashboard-mobile"
-        className="dashboard-mobile"
-        style={{ padding: "20px 0 80px" }}
+      {/* ─────── FILTRO chips + Limpiar ─────── */}
+      <div className="dashboard-filterbar" data-testid="dashboard-filterbar">
+        <FilterChips counts={counts} active={statuses} onToggle={toggleStatus} />
+        {hasActiveFilters && (
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={clearAll}
+            data-testid="clear-filters"
+            style={{ marginLeft: 8, flexShrink: 0 }}
+          >
+            Limpiar
+          </button>
+        )}
+      </div>
+
+      {/* ─────── Results count ─────── */}
+      <div
+        className="dashboard-results-meta"
+        style={{
+          padding: "12px 24px 8px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          fontSize: 12,
+          color: "var(--ink-mute)",
+        }}
       >
-        <header style={{ padding: "0 16px 12px" }}>
-          <div
+        <div data-testid="results-count">
+          <strong style={{ color: "var(--ink)", fontWeight: 500 }}>{quotes.length}</strong>{" "}
+          resultado{quotes.length === 1 ? "" : "s"}
+        </div>
+      </div>
+
+      {/* ─────── DESKTOP table · MOBILE cards ─────── */}
+      <div className="dashboard-list-desktop" data-testid="dashboard-list-desktop">
+        <QuoteTable quotes={quotes} loading={loading} />
+      </div>
+      <div className="dashboard-list-mobile" data-testid="dashboard-list-mobile">
+        {loading && quotes.length === 0 && (
+          <div style={{ padding: 16 }}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="skel long" style={{ marginBottom: 12 }} />
+            ))}
+          </div>
+        )}
+        {!loading && quotes.length === 0 && (
+          <p
             className="font-mono"
             style={{
-              fontSize: 10,
+              padding: 24,
+              textAlign: "center",
               color: "var(--ink-mute)",
-              letterSpacing: "0.5px",
-              textTransform: "uppercase",
+              fontSize: 12,
             }}
+            data-testid="mobile-empty"
           >
-            Presupuestos
-          </div>
-          <h1
-            className="font-serif"
-            style={{
-              fontStyle: "italic",
-              fontSize: 22,
-              margin: "4px 0",
-              letterSpacing: "-0.3px",
-            }}
-          >
-            Hola Marina
-          </h1>
-        </header>
-
-        {kpis && (
-          <FilterChips counts={kpis.counts} active={mobileActive} onSelect={setOnlyStatus} />
+            No hay presupuestos que cumplan con los filtros.
+          </p>
         )}
-
-        <div data-testid="mobile-list" style={{ marginTop: 8 }}>
-          {loading && quotes.length === 0 && (
-            <div style={{ padding: 16 }}>
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="skel long" style={{ marginBottom: 12 }} />
-              ))}
-            </div>
-          )}
-          {!loading && quotes.length === 0 && (
-            <p
-              className="font-mono"
-              style={{
-                padding: 24,
-                textAlign: "center",
-                color: "var(--ink-mute)",
-                fontSize: 12,
-              }}
-              data-testid="mobile-empty"
-            >
-              No hay presupuestos que cumplan con los filtros.
-            </p>
-          )}
-          {quotes.map((q) => (
-            <QuoteListItem key={q.id} quote={q} />
-          ))}
-        </div>
-
-        <Link
-          href="/quotes/new"
-          data-testid="mobile-fab"
-          className="btn primary"
-          style={{
-            position: "fixed",
-            right: 16,
-            bottom: 24,
-            zIndex: 10,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
-          }}
-        >
-          + Nuevo
-        </Link>
-      </section>
+        {quotes.map((q) => (
+          <QuoteListItem key={q.id} quote={q} />
+        ))}
+      </div>
     </section>
   );
 }

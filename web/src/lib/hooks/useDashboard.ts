@@ -1,11 +1,17 @@
 /**
- * Hook del dashboard · Sprint 2.5.
+ * Hook del dashboard.
  *
  * Coordina:
- *   - load inicial de quotes + KPIs
- *   - filtros (statuses + search + kpi pre-filter)
+ *   - load inicial de quotes + KPIs (KPIs todavía expone counts para los
+ *     chips · NO se rendereaa como KpiCard band)
+ *   - filtros multi-select por status (Set) + search
  *   - re-fetch cuando cambian filtros
  *   - AbortController por fetch en curso
+ *
+ * Sprint 4 dashboard-redesign cleanup (lección #63 atacar deuda en el
+ * mismo sub-PR): removidos `toggleKpi` + `kpiFilter` state · single
+ * consumer era KpiCard que se eliminó. `setOnlyStatus` también removido ·
+ * FilterChips ahora es multi-select directo via `toggleStatus`.
  */
 "use client";
 
@@ -19,19 +25,16 @@ import {
   type ListQuotesFilters,
 } from "../api";
 
-export type KpiFilter = "expire-soon" | "no-response" | null;
-
 export function useDashboard() {
   const [quotes, setQuotes] = useState<DashboardQuote[]>([]);
   const [kpis, setKpis] = useState<DashboardKpis | null>(null);
   const [statuses, setStatuses] = useState<Set<DashboardStatus>>(new Set());
   const [search, setSearch] = useState<string>("");
-  const [kpiFilter, setKpiFilter] = useState<KpiFilter>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const fetchAbortRef = useRef<AbortController | null>(null);
 
-  // KPIs sólo se cargan una vez al mount
+  // KPIs sólo se cargan una vez al mount (counts para los chips · sin KPI band)
   useEffect(() => {
     let aborted = false;
     const ctrl = new AbortController();
@@ -60,7 +63,6 @@ export function useDashboard() {
     const filters: ListQuotesFilters = {
       statuses: statuses.size > 0 ? Array.from(statuses) : undefined,
       search: search || undefined,
-      kpi: kpiFilter ?? undefined,
     };
 
     listQuotes(filters, { signal: ctrl.signal })
@@ -75,10 +77,9 @@ export function useDashboard() {
       });
 
     return () => ctrl.abort();
-  }, [statuses, search, kpiFilter]);
+  }, [statuses, search]);
 
   const toggleStatus = useCallback((status: DashboardStatus) => {
-    setKpiFilter(null); // filtro manual cancela KPI pre-filter
     setStatuses((prev) => {
       const next = new Set(prev);
       if (next.has(status)) next.delete(status);
@@ -87,34 +88,25 @@ export function useDashboard() {
     });
   }, []);
 
-  const setOnlyStatus = useCallback((status: DashboardStatus | null) => {
-    setKpiFilter(null);
-    setStatuses(status ? new Set([status]) : new Set());
-  }, []);
-
-  const toggleKpi = useCallback((kpi: Exclude<KpiFilter, null>) => {
-    setStatuses(new Set()); // KPI pre-filter cancela filtros manuales
-    setKpiFilter((prev) => (prev === kpi ? null : kpi));
-  }, []);
-
   const clearAll = useCallback(() => {
     setStatuses(new Set());
     setSearch("");
-    setKpiFilter(null);
   }, []);
+
+  /** True cuando hay al menos 1 filtro activo (chips o search). Usado para
+   * mostrar/ocultar el botón "Limpiar". */
+  const hasActiveFilters = statuses.size > 0 || search.length > 0;
 
   return {
     quotes,
     kpis,
     statuses,
     search,
-    kpiFilter,
     loading,
     error,
+    hasActiveFilters,
     setSearch,
     toggleStatus,
-    setOnlyStatus,
-    toggleKpi,
     clearAll,
   };
 }
