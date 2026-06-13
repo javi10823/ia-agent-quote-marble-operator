@@ -25,16 +25,20 @@ from app.core.company_config import get as _cfg
 def _parse_system() -> str:
     depth = _cfg("measurements.default_depth", 0.60)
     zocalo = _cfg("measurements.default_zocalo_height", 0.05)
+    # Sub-PR 22.3 · drift cosmético cerrado · ejemplos del prompt interpolan
+    # config en lugar de hardcodear "5cm". Si el operador cambia
+    # default_zocalo_height vía /configuracion el ejemplo se actualiza.
+    zocalo_cm = int(round(zocalo * 100))
     return f"""Sos un parser de medidas para una marmolería.
 Recibís texto libre con medidas de un trabajo y devolvés JSON estructurado.
 
 Reglas de medidas:
-- Todo en METROS (convertir cm a m: 60cm = 0.60m, 5cm = 0.05m)
+- Todo en METROS (convertir cm a m: 60cm = 0.60m, {zocalo_cm}cm = {zocalo}m)
 - Mesada: largo × prof (profundidad default cocina: {depth}m si no dice)
 - Zócalo: largo × alto (alto default: {zocalo}m si no dice)
 - Alza: largo × alto
 - Frentín: largo × alto (generalmente 0.02m o 0.03m)
-- Si dice "zócalo atrás 5cm" en una mesada de 2m → zócalo largo=2.0, alto=0.05
+- Si dice "zócalo atrás {zocalo_cm}cm" en una mesada de 2m → zócalo largo=2.0, alto={zocalo}
 
 Cantidad (`quantity`) — PR #405:
 - Por DEFECTO `quantity=1` (cocinas particulares, una mesada por pieza).
@@ -95,6 +99,9 @@ async def parse_measurements(notes: str, material: str, project: str = "") -> di
             # estaba apretado para edificios. 4000 cubre ~80 piezas
             # típicas de edificio grande con holgura.
             max_tokens=4000,
+            # temperature=0 universal en pipeline determinístico
+            # (lección #57 generalizada · sub-PR 22.3)
+            temperature=0,
             system=PARSE_SYSTEM,
             messages=[{"role": "user", "content": user_msg}],
         )

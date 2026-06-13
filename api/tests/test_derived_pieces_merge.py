@@ -377,16 +377,27 @@ class TestMergeAlzadaTramos:
         assert len(cocina["tramos"]) == 2
         assert not any(t.get("_derived_kind") == "alzada" for t in cocina["tramos"])
 
-    def test_zero_alto_only_cleans(self):
-        """alto_m=0 o None equivale a active=False."""
+    def test_zero_alto_aplica_default_60cm(self):
+        """Sub-PR 22.3 Regla 11: cuando alzada está activa pero alto=0 o
+        None (brief sin valor explícito), el helper materializa alzada
+        con el default 60cm del config. El comportamiento previo
+        "cleanup only" cambió porque el operador ya tiene control vía
+        `/configuracion` y el default deja de ser ambiguo.
+        Marca `_alzada_default_applied=True`."""
         dr = _dr_cocina_L_and_bano()
         result = merge_alzada_tramos_into_dual_read(dr, alto_m=0, active=True)
+        assert result.get("_alzada_default_applied") is True
         cocina = next(s for s in result["sectores"] if s["tipo"] == "cocina")
-        assert len(cocina["tramos"]) == 2
+        alzadas = [t for t in cocina["tramos"] if t.get("_derived_kind") == "alzada"]
+        assert len(alzadas) >= 1
+        assert alzadas[0]["ancho_m"]["valor"] == 0.60
 
         result2 = merge_alzada_tramos_into_dual_read(dr, alto_m=None, active=True)
+        assert result2.get("_alzada_default_applied") is True
         cocina2 = next(s for s in result2["sectores"] if s["tipo"] == "cocina")
-        assert len(cocina2["tramos"]) == 2
+        alzadas2 = [t for t in cocina2["tramos"] if t.get("_derived_kind") == "alzada"]
+        assert len(alzadas2) >= 1
+        assert alzadas2[0]["ancho_m"]["valor"] == 0.60
 
     def test_idempotent_same_alto(self):
         """Llamar 2 veces con el mismo alto no duplica."""
