@@ -567,3 +567,81 @@ export interface AuditLogResponse {
   quote_breakdown?: Record<string, unknown> | null;
   errors: AuditLogEventItem[];
 }
+
+/* ─── CatalogConfig · Sprint 4 sub-PR 22.2.a config-ui-page ──────────
+   Shape del catálogo `config` (api/catalog/config.json). Frontend
+   GET/PUT del blob completo, pero solo edita las 6 keys del scope. */
+
+export interface CatalogConfigMeasurements {
+  default_depth: number;
+  default_zocalo_height: number;
+  default_alzada_height: number;
+  tall_zocalo_threshold?: number;
+  [k: string]: unknown;
+}
+
+export interface CatalogConfigDefaults {
+  colocacion_particulares: boolean;
+  delivery_zone_sku: string;
+  forma_pago: string;
+  [k: string]: unknown;
+}
+
+export interface CatalogConfig {
+  measurements: CatalogConfigMeasurements;
+  defaults: CatalogConfigDefaults;
+  [k: string]: unknown;
+}
+
+/** Los 6 campos editables desde /configuracion (sub-PR 22.2.a). */
+export interface ConfigEditableFields {
+  default_depth: number;
+  default_zocalo_height: number;
+  default_alzada_height: number;
+  colocacion_particulares: boolean;
+  delivery_zone_sku: string;
+  forma_pago: string;
+}
+
+export const CONFIG_EDITABLE_KEYS: ReadonlyArray<keyof ConfigEditableFields> = [
+  "default_depth",
+  "default_zocalo_height",
+  "default_alzada_height",
+  "colocacion_particulares",
+  "delivery_zone_sku",
+  "forma_pago",
+];
+
+export function extractEditableFields(cfg: CatalogConfig): ConfigEditableFields {
+  return {
+    default_depth: cfg.measurements?.default_depth ?? 0.6,
+    default_zocalo_height: cfg.measurements?.default_zocalo_height ?? 0.05,
+    default_alzada_height: cfg.measurements?.default_alzada_height ?? 0.6,
+    colocacion_particulares: cfg.defaults?.colocacion_particulares ?? true,
+    delivery_zone_sku: cfg.defaults?.delivery_zone_sku ?? "ENVIOROS",
+    forma_pago: cfg.defaults?.forma_pago ?? "Contado",
+  };
+}
+
+/** Devuelve un nuevo blob con los 6 fields del UI aplicados sobre el
+ * blob original (preserva todas las keys que NO edita el UI). */
+export function applyEditableFields(
+  base: CatalogConfig,
+  edits: ConfigEditableFields,
+): CatalogConfig {
+  return {
+    ...base,
+    measurements: {
+      ...(base.measurements ?? {}),
+      default_depth: edits.default_depth,
+      default_zocalo_height: edits.default_zocalo_height,
+      default_alzada_height: edits.default_alzada_height,
+    },
+    defaults: {
+      ...(base.defaults ?? {}),
+      colocacion_particulares: edits.colocacion_particulares,
+      delivery_zone_sku: edits.delivery_zone_sku,
+      forma_pago: edits.forma_pago,
+    },
+  };
+}

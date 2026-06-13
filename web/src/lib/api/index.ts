@@ -62,6 +62,13 @@ export const triggerPdfV2Generation = mocks.triggerPdfV2Generation;
 /* ─── Audit trail copy · Sprint 4 audit-trail-copy ────────────────── */
 export const getAuditLog = USE_REAL_API ? real.getAuditLog : mocks.getAuditLog;
 
+/* ─── Catalog config · sub-PR 22.2.a config-ui-page ──────────────── */
+export const getCatalogConfig = USE_REAL_API ? real.getCatalogConfig : mocks.getCatalogConfig;
+export const updateCatalogConfig = USE_REAL_API
+  ? real.updateCatalogConfig
+  : mocks.updateCatalogConfig;
+export const _resetCatalogConfigStore = mocks._resetCatalogConfigStore;
+
 /* ─── Helpers de test (reset de stores in-memory del mock) ───────── */
 export const _resetContextStore = mocks._resetContextStore;
 export const _resetPiecesStore = mocks._resetPiecesStore;
