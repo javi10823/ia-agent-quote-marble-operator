@@ -1,28 +1,90 @@
 /**
- * Sidebar v2 — chrome shell.
+ * Sidebar v2 · chrome shell.
  *
  * Versión React de la sidebar que `chrome.js` (legacy DOM injector)
  * inyectaba en los mockups. Reusa las clases CSS de operator-shared.css
  * (`.sidebar`, `.brand`, `.nav-h`, `.nav-i`) — NO redefinimos estilos.
  *
- * Sprint 2 chrome-refactor: nav items son `<div>` no clickeables
- * (no hay routing real entre secciones todavía). El item actual
- * (Presupuestos) tiene la clase `.on` para el highlight. Click
- * handlers + Link real vienen en sub-PRs siguientes.
+ * Sprint 3 auth: botón de logout al pie (Opción 1 · client-side).
  *
- * Sprint 3 auth: agregado botón de logout al pie (Opción 1 · client-side).
+ * Sprint 4 sidebar-and-navigation-fix:
+ * - Items pasan de `<div>` no-clickeables a `<Link>` de Next.js
+ *   (prefetching + SSR + a11y nativa · NO usar button + router.push)
+ * - `usePathname()` calcula el `.on` dinámico según la ruta activa
+ *   (antes "Presupuestos" siempre hardcoded como activo)
+ * - Cierra deuda Sprint 2 chrome-refactor comentada en este header
+ *   por 5+ sub-PRs sin atacarse hasta ahora (lección operativa #63)
  */
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { logout } from "@/lib/auth";
+
+interface NavItem {
+  href: string;
+  label: string;
+  badge?: string;
+  /** Predicate sobre pathname para activar `.on`. Cuando undefined,
+   * usa equality estricta con `href`. */
+  isActive?: (pathname: string) => boolean;
+}
+
+const NAV_PRINCIPAL: NavItem[] = [
+  {
+    href: "/",
+    label: "Presupuestos",
+    badge: "18",
+    // "/" activa también cuando el operador está dentro de un quote
+    // (/quotes/{id}/*) o creando uno (/quotes/new) · contexto sigue
+    // siendo "Presupuestos".
+    isActive: (p) => p === "/" || p.startsWith("/quotes"),
+  },
+  {
+    href: "/clientes",
+    label: "Clientes",
+    badge: "42",
+    isActive: (p) => p.startsWith("/clientes"),
+  },
+];
+
+const NAV_SISTEMA: NavItem[] = [
+  {
+    href: "/catalogo",
+    label: "Catálogo",
+    isActive: (p) => p.startsWith("/catalogo"),
+  },
+  {
+    href: "/configuracion",
+    label: "Configuración",
+    isActive: (p) => p.startsWith("/configuracion"),
+  },
+];
 
 export function Sidebar() {
   const router = useRouter();
+  const pathname = usePathname() ?? "";
 
   async function handleLogout() {
     await logout();
     router.replace("/login");
+  }
+
+  function renderItem(item: NavItem) {
+    const active = (item.isActive ?? ((p) => p === item.href))(pathname);
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        className={`nav-i${active ? " on" : ""}`}
+        data-v2-nav={item.href}
+        data-testid={`sidebar-nav-${item.href.replace(/\//g, "") || "home"}`}
+        aria-current={active ? "page" : undefined}
+      >
+        <span>{item.label}</span>
+        {item.badge && <span className="badge">{item.badge}</span>}
+      </Link>
+    );
   }
 
   return (
@@ -35,31 +97,18 @@ export function Sidebar() {
 
       {/* Sección principal */}
       <div className="nav-h">Principal</div>
-      <div className="nav-i on" data-v2-nav="quotes">
-        <span>Presupuestos</span>
-        <span className="badge">18</span>
-      </div>
-      <div className="nav-i" data-v2-nav="clients">
-        <span>Clientes</span>
-        <span className="badge">42</span>
-      </div>
+      {NAV_PRINCIPAL.map(renderItem)}
 
       {/* Sección sistema */}
       <div className="nav-h">Sistema</div>
-      <div className="nav-i" data-v2-nav="catalog">
-        <span>Catálogo</span>
-      </div>
-      <div className="nav-i" data-v2-nav="settings">
-        <span>Configuración</span>
-      </div>
+      {NAV_SISTEMA.map(renderItem)}
 
       {/* Spacer empuja el CTA + avatar al fondo */}
       <div style={{ flex: 1 }} />
 
-      {/* CTA "+ Nuevo presupuesto" · Sprint 4 fix-up · antes era `<div>`
-          placeholder no clickeable (Sprint 2 chrome-refactor). Cuando el
-          operador estaba dentro de un quote y quería arrancar otro, el
-          click no hacía nada · ahora navega a /quotes/new. */}
+      {/* CTA "+ Nuevo presupuesto" · Sprint 4 (PR #481 lo wireó).
+          Sigue siendo button (no Link) porque el estilo dashed
+          override se aplica mejor inline · navega via router. */}
       <button
         type="button"
         className="nav-i"
