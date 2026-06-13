@@ -247,11 +247,29 @@ def _build_assumptions(
                     "nunca apoyo. El operador puede corregir si es excepción.",
         })
 
+    # Sub-PR 22.3 · Alzada default informativa (Regla 11 master D'Angelo).
+    # Si `sync_alzada_in_dual_read` aplicó el default 60cm porque ni brief
+    # ni operador especificaron alto → surface-eamos como assumption para
+    # que Marina vea "Alzada · default 60cm · puede confirmar/corregir".
+    if dual_result.get("_alzada_default_applied"):
+        alto_m = dual_result.get("alzada_alto_m") or config_defaults.get(
+            "default_alzada_height", 0.60,
+        )
+        alto_cm = int(round(float(alto_m) * 100))
+        assumptions.append({
+            "field": "Alzada (alto)",
+            "value": f"{alto_cm} cm",
+            "source": "rule",
+            "note": "Default master D'Angelo: brief no especificó alto · aplicado "
+                    f"{alto_cm}cm. Largo = perímetro del sector (cubre frente de "
+                    "la mesada). El operador puede corregir si es excepción.",
+        })
+
     # Zócalos: si brief dice "yes" → aplicamos regla default (trasero por tramo)
     z_val = analysis.get("zocalos")
     if z_val == "yes":
         alto_brief = analysis.get("zocalos_alto_cm")
-        alto = alto_brief / 100.0 if alto_brief else config_defaults.get("default_zocalo_height", 0.07)
+        alto = alto_brief / 100.0 if alto_brief else config_defaults.get("default_zocalo_height", 0.05)
         assumptions.append({
             "field": "Zócalos",
             "value": f"Trasero por tramo, {int(alto * 100)} cm",

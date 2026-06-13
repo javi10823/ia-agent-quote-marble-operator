@@ -153,6 +153,9 @@ def _build_extraction_request(page_image: bytes) -> dict:
     return {
         "model": EXTRACTION_MODEL,
         "max_tokens": MAX_TOKENS_PER_PAGE,
+        # temperature=0 universal en pipeline determinístico
+        # (lección #57 generalizada · sub-PR 22.3)
+        "temperature": 0,
         "system": EXTRACTION_SYSTEM_PROMPT,
         "messages": [{
             "role": "user",

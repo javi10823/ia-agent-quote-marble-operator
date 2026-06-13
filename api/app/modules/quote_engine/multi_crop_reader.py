@@ -230,6 +230,9 @@ async def _call_global_topology(
             client.messages.create(
                 model=model,
                 max_tokens=1500,
+                # temperature=0 universal en pipeline determinístico
+                # (lección #57 generalizada · sub-PR 22.3)
+                temperature=0,
                 system=_GLOBAL_SYSTEM_PROMPT,
                 messages=[{
                     "role": "user",
@@ -1744,6 +1747,9 @@ async def _measure_region(
             client.messages.create(
                 model=model,
                 max_tokens=800,
+                # temperature=0 universal en pipeline determinístico
+                # (lección #57 generalizada · sub-PR 22.3)
+                temperature=0,
                 system=_REGION_SYSTEM_PROMPT,
                 messages=[{
                     "role": "user",

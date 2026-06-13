@@ -149,6 +149,9 @@ async def _call_vision(
             client.messages.create(
                 model=model,
                 max_tokens=3000,
+                # temperature=0 universal en pipeline determinístico
+                # (lección #57 generalizada · sub-PR 22.3)
+                temperature=0,
                 system=PLAN_READER_SYSTEM_PROMPT,
                 messages=[{
                     "role": "user",
@@ -1454,6 +1457,27 @@ def merge_alzada_tramos_into_dual_read(
         alto_val = float(alto_m) if alto_m is not None else 0.0
     except (TypeError, ValueError):
         alto_val = 0.0
+
+    # Sub-PR 22.3 · Regla 11 master D'Angelo · Si alzada está activa pero
+    # no se especificó alto (brief sin alto + operator sin override) →
+    # aplicar default del config (60cm). Largo se deriva del perímetro
+    # del sector (igual que antes · ya cubre "frente de la mesada"). El
+    # flag `_alzada_default_applied` permite que context_analyzer surface
+    # el dato como assumption informativa.
+    default_applied = False
+    if bool(active) and alto_val <= 0:
+        try:
+            from app.core.company_config import get as _cfg
+            default_alto = float(_cfg("measurements.default_alzada_height", 0.60) or 0.60)
+        except Exception:
+            default_alto = 0.60
+        if default_alto > 0:
+            alto_val = default_alto
+            default_applied = True
+
+    new_dr["_alzada_default_applied"] = default_applied
+    if default_applied:
+        new_dr["alzada_alto_m"] = round(alto_val, 2)
 
     should_emit = bool(active) and alto_val > 0
 
