@@ -39,11 +39,13 @@ test.describe("Items del Sidebar navegan (Next Link nativo)", () => {
     await expect(page.locator(".crumbs .now")).toContainText("Catálogo");
   });
 
-  test("click Configuración navega a /configuracion · renderea placeholder", async ({ page }) => {
+  test("click Configuración navega a /configuracion · renderea form real", async ({ page }) => {
+    // Sub-PR 22.2.a config-ui-page reemplazó el placeholder por el form
+    // real (`configuracion-page` + `config-form`). Antes: configuracion-placeholder.
     await page.goto("/");
     await page.locator('[data-testid="sidebar-nav-configuracion"]').click();
     await page.waitForURL("**/configuracion");
-    await expect(page.locator('[data-testid="configuracion-placeholder"]')).toBeVisible();
+    await expect(page.locator('[data-testid="configuracion-page"]')).toBeVisible();
   });
 
   test("click Clientes navega a /clientes · renderea placeholder", async ({ page }) => {
