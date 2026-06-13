@@ -551,3 +551,55 @@ export async function getContextForQuote(
   // como FALTA (preserva el current "—" behavior del UI).
   return breakdownToContext(detail.quote_breakdown ?? null);
 }
+
+/* ─── getCatalogConfig / updateCatalogConfig · sub-PR 22.2.a ──────────
+   GET /api/catalog/config → CatalogConfig blob.
+   PUT /api/catalog/config { content } → { ok, catalog }.
+
+   Endpoint backend ya existe (catalog/router.py · ALLOWED). PUT dispara
+   3 invalidaciones de cache module-level en el worker actual · caveat
+   multi-worker: otros workers tardan unos segundos. */
+
+import type { CatalogConfig } from "./types";
+
+export async function getCatalogConfig(options?: {
+  signal?: AbortSignal;
+  bearerToken?: string | null;
+}): Promise<CatalogConfig> {
+  const { signal, bearerToken } = options ?? {};
+  const response = await apiFetch(`/api/catalog/config`, { signal, bearerToken }, 15_000);
+  if (!response.ok) {
+    throw new ApiError(
+      "CONFIG_LOAD_FAILED",
+      `GET /api/catalog/config falló (${response.status})`,
+      response.status,
+    );
+  }
+  return (await response.json()) as CatalogConfig;
+}
+
+export async function updateCatalogConfig(
+  content: CatalogConfig,
+  options?: { signal?: AbortSignal; bearerToken?: string | null },
+): Promise<{ ok: boolean; catalog: string }> {
+  const { signal, bearerToken } = options ?? {};
+  const response = await apiFetch(
+    `/api/catalog/config`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+      signal,
+      bearerToken,
+    },
+    20_000,
+  );
+  if (!response.ok) {
+    throw new ApiError(
+      "CONFIG_SAVE_FAILED",
+      `PUT /api/catalog/config falló (${response.status})`,
+      response.status,
+    );
+  }
+  return (await response.json()) as { ok: boolean; catalog: string };
+}

@@ -785,8 +785,10 @@ export function _resetGeneratedStore() {
 
 const _generatedByQuote: Record<string, import("./types").PdfGeneratedInfo> = {
   "PRES-2026-018": {
-    pdfUrl: "/quotes/2026/PRES-2026-018/Cueto-Heredia Arquitectura - Silestone Blanco Norte - 03.05.2026.pdf",
-    excelUrl: "/quotes/2026/PRES-2026-018/Cueto-Heredia Arquitectura - Silestone Blanco Norte - 03.05.2026.xlsx",
+    pdfUrl:
+      "/quotes/2026/PRES-2026-018/Cueto-Heredia Arquitectura - Silestone Blanco Norte - 03.05.2026.pdf",
+    excelUrl:
+      "/quotes/2026/PRES-2026-018/Cueto-Heredia Arquitectura - Silestone Blanco Norte - 03.05.2026.xlsx",
     driveUrl: "https://drive.google.com/drive/folders/PRES-2026-018-mock",
     driveFolderPath: "/Presupuestos/2026/05-mayo/",
     pdfSizeKb: 926,
@@ -799,7 +801,8 @@ const _generatedByQuote: Record<string, import("./types").PdfGeneratedInfo> = {
   },
   "PRES-2026-017": {
     pdfUrl: "/quotes/2026/PRES-2026-017/Familia Pereyra - Silestone Blanco Norte - 03.05.2026.pdf",
-    excelUrl: "/quotes/2026/PRES-2026-017/Familia Pereyra - Silestone Blanco Norte - 03.05.2026.xlsx",
+    excelUrl:
+      "/quotes/2026/PRES-2026-017/Familia Pereyra - Silestone Blanco Norte - 03.05.2026.xlsx",
     driveUrl: "https://drive.google.com/drive/folders/PRES-2026-017-mock",
     driveFolderPath: "/Presupuestos/2026/05-mayo/",
     pdfSizeKb: 718,
@@ -842,9 +845,7 @@ export async function triggerPdfGeneration(
 ): Promise<import("./types").PdfGeneratedInfo> {
   await delay(800 + Math.random() * 700, options?.signal);
   if (quoteId.endsWith("-ERROR")) {
-    throw new Error(
-      "No se pudo generar el presupuesto · servicio Drive caído (mock-only).",
-    );
+    throw new Error("No se pudo generar el presupuesto · servicio Drive caído (mock-only).");
   }
   const baseId = quoteId.endsWith("-GENERATED") ? quoteId.slice(0, -"-GENERATED".length) : quoteId;
   const info = _generatedByQuote[baseId] ?? _generatedGeneric;
@@ -950,9 +951,25 @@ const _v2DiffByQuote: Record<string, import("./types").PdfV2RevisionData> = {
     rows: [
       { field: "Vigencia", v1Value: "10 días", v2Value: "10 días", display: "mono" },
       { field: "Anticipo", v1Value: "60%", v2Value: "60%", display: "mono" },
-      { field: "Plazo entrega", v1Value: "15 días hábiles", v2Value: "15 días hábiles", display: "mono" },
-      { field: "Datos de envío", v1Value: "Rosario, zona sur", v2Value: "Rosario, zona sur", display: "text" },
-      { field: "Notas internas", v1Value: "— vacío", v2Value: "— vacío", display: "text", v1Empty: true },
+      {
+        field: "Plazo entrega",
+        v1Value: "15 días hábiles",
+        v2Value: "15 días hábiles",
+        display: "mono",
+      },
+      {
+        field: "Datos de envío",
+        v1Value: "Rosario, zona sur",
+        v2Value: "Rosario, zona sur",
+        display: "text",
+      },
+      {
+        field: "Notas internas",
+        v1Value: "— vacío",
+        v2Value: "— vacío",
+        display: "text",
+        v1Empty: true,
+      },
       {
         field: "Subtotal MO",
         v1Value: "$258.430",
@@ -984,9 +1001,7 @@ export async function getPdfV2DiffData(
   options?: { signal?: AbortSignal },
 ): Promise<import("./types").PdfV2RevisionData> {
   await delay(80 + Math.random() * 120, options?.signal);
-  const stripped = quoteId.endsWith("-REVISING")
-    ? quoteId.slice(0, -"-REVISING".length)
-    : quoteId;
+  const stripped = quoteId.endsWith("-REVISING") ? quoteId.slice(0, -"-REVISING".length) : quoteId;
   // Lookup directo · luego intentar normalizar PRES-018 → PRES-2026-018.
   const direct = _v2DiffByQuote[stripped];
   if (direct) return direct;
@@ -1008,9 +1023,7 @@ export async function triggerPdfV2Generation(
   if (quoteId.endsWith("-ERROR")) {
     throw new Error("No se pudo generar v2 · servicio Drive caído (mock-only).");
   }
-  const baseId = quoteId.endsWith("-REVISING")
-    ? quoteId.slice(0, -"-REVISING".length)
-    : quoteId;
+  const baseId = quoteId.endsWith("-REVISING") ? quoteId.slice(0, -"-REVISING".length) : quoteId;
   const v1 = _generatedByQuote[baseId] ?? _generatedGeneric;
   // Variante v2: filenames con suffix " v2" antes de la extensión + nuevo traceId.
   const v2: import("./types").PdfGeneratedInfo = {
@@ -1197,4 +1210,56 @@ export async function getAuditLog(
     tools_used: [],
     errors: [],
   };
+}
+
+/* ─── Catalog config · sub-PR 22.2.a config-ui-page ──────────────────
+   Store in-memory que refleja el shape REAL de api/catalog/config.json
+   (lección #60). Solo expone los campos editables del scope + algunos
+   bloques representativos para que el adapter no rompa.
+
+   Para tests: _resetCatalogConfigStore() restaura defaults canónicos.
+*/
+
+import type { CatalogConfig } from "./types";
+
+const _catalogConfigDefaults: CatalogConfig = {
+  iva: { multiplier: 1.21, percentage: 21 },
+  delivery_days: { default: 30 },
+  measurements: {
+    default_depth: 0.6,
+    default_zocalo_height: 0.05,
+    default_alzada_height: 0.6,
+    tall_zocalo_threshold: 0.1,
+  },
+  defaults: {
+    _comment: "Mock fixture · shape REAL del config.json",
+    colocacion_particulares: true,
+    delivery_zone_sku: "ENVIOROS",
+    forma_pago: "Contado",
+  },
+  company: {
+    name: "D'ANGELO",
+    subtitle: "MARMOLERIA",
+    address: "SAN NICOLAS 1160",
+    phone: "341-3082996",
+    email: "marmoleriadangelo@gmail.com",
+  },
+  conditions: { general: "", payment: "" },
+};
+
+let _catalogConfigStore: CatalogConfig = structuredClone(_catalogConfigDefaults);
+
+export async function getCatalogConfig(): Promise<CatalogConfig> {
+  return structuredClone(_catalogConfigStore);
+}
+
+export async function updateCatalogConfig(
+  content: CatalogConfig,
+): Promise<{ ok: boolean; catalog: string }> {
+  _catalogConfigStore = structuredClone(content);
+  return { ok: true, catalog: "config" };
+}
+
+export function _resetCatalogConfigStore(): void {
+  _catalogConfigStore = structuredClone(_catalogConfigDefaults);
 }

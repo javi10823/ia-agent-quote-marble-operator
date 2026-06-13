@@ -107,3 +107,21 @@
   .dashboard-v2 .dashboard-list-desktop { display: none; }
   .dashboard-v2 .dashboard-list-mobile { display: block; }
 }
+
+/* ─────────────────────────────────────────────────────────
+   Sprint 4 config-ui-page (sub-PR 22.2.a) · scope `.config-v2`
+   ~18 LOC media query · operator-shared.css INTACTO (lección #66).
+   ───────────────────────────────────────────────────────── */
+.config-v2 .config-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 24px;
+  max-width: 720px;
+}
+.config-v2 .config-fields-grid .input { width: 100%; box-sizing: border-box; }
+@media (max-width: 767px) {
+  .config-v2 .body { padding: 16px; }
+  .config-v2 .config-fields-grid { grid-template-columns: 1fr; gap: 16px; }
+  .config-v2 .config-actions { flex-wrap: wrap; }
+  .config-v2 .config-actions .btn { flex: 1; min-width: 120px; }
+}
