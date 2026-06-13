@@ -50,14 +50,14 @@ export function DashboardView() {
 
   if (error) {
     return (
-      <main style={{ padding: "32px 24px" }} data-testid="dashboard-error">
+      <section style={{ padding: "32px 24px" }} data-testid="dashboard-error">
         <p style={{ color: "var(--error)" }}>{error}</p>
-      </main>
+      </section>
     );
   }
 
   return (
-    <main data-testid="dashboard">
+    <section data-testid="dashboard">
       {/* ─────── DESKTOP ─────── */}
       <section
         data-testid="dashboard-desktop"
@@ -324,6 +324,6 @@ export function DashboardView() {
           + Nuevo
         </Link>
       </section>
-    </main>
+    </section>
   );
 }

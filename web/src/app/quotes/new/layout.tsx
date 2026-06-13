@@ -18,7 +18,7 @@ export default function NewQuoteLayout({ children }: { children: React.ReactNode
       <main className="main">
         <div className="topbar">
           <div className="crumbs">
-            <Link href="/v2">Presupuestos</Link>
+            <Link href="/">Presupuestos</Link>
             <span className="sep">/</span>
             <span className="now">Nuevo</span>
           </div>
