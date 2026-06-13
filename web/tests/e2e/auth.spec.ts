@@ -13,8 +13,10 @@ import { expect, test } from "@playwright/test";
 const REQUIRE_AUTH = process.env.NEXT_PUBLIC_REQUIRE_AUTH === "true";
 
 test("modo mock: no requiere login, acceso directo a /", async ({ page }) => {
+  // Sprint 4 dashboard-redesign: KpiCard removido · validamos acceso al
+  // dashboard via el head testid (agnóstico al rediseño interno).
   await page.goto("/");
-  await expect(page.locator(".kpi-card").first()).toBeVisible();
+  await expect(page.locator('[data-testid="dashboard-head"]')).toBeVisible();
 });
 
 test("modo mock: /quotes/[id]/contexto sin login carga el canon", async ({ page }) => {
