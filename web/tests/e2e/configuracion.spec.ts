@@ -95,7 +95,10 @@ test.describe("Configuración · responsive mobile", () => {
   test("grid 1 col en mobile + form visible", async ({ page }) => {
     await page.goto("/configuracion");
     await expect(page.locator('[data-testid="config-form"]')).toBeVisible();
-    const grid = page.locator(".config-fields-grid");
+    // Sub-PR 22.2.a.III: ahora hay múltiples `.config-fields-grid` (uno
+    // por sección abierta · mesada + operativos default-open). `.first()`
+    // evita strict-mode violation.
+    const grid = page.locator(".config-fields-grid").first();
     const cols = await grid.evaluate(
       (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
     );
