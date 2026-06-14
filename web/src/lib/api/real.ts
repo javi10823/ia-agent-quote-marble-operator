@@ -603,3 +603,157 @@ export async function updateCatalogConfig(
   }
   return (await response.json()) as { ok: boolean; catalog: string };
 }
+
+/* ─── Catálogo · viewer + Dux importer + backups (sub-PR 22.2.b) ──────
+   Wire directo contra los 8 endpoints de catalog/router.py. Mismo patrón
+   que getCatalogConfig: apiFetch + bearerToken opcional (SSR) + ApiError
+   con code semántico. Los multipart (import) NO setean Content-Type (el
+   browser lo arma con el boundary). */
+
+import type {
+  CatalogBackup,
+  CatalogContent,
+  CatalogMeta,
+  ImportApplyResponse,
+  ImportPreview,
+  RestoreBackupResponse,
+} from "./types";
+
+type AuthOpts = { signal?: AbortSignal; bearerToken?: string | null };
+
+export async function listCatalogs(options?: AuthOpts): Promise<CatalogMeta[]> {
+  const { signal, bearerToken } = options ?? {};
+  const response = await apiFetch(`/api/catalog/`, { signal, bearerToken }, 15_000);
+  if (!response.ok) {
+    throw new ApiError(
+      "CATALOG_LIST_FAILED",
+      `GET /api/catalog/ falló (${response.status})`,
+      response.status,
+    );
+  }
+  return (await response.json()) as CatalogMeta[];
+}
+
+export async function getCatalog(
+  name: string,
+  options?: AuthOpts,
+): Promise<CatalogContent> {
+  const { signal, bearerToken } = options ?? {};
+  const response = await apiFetch(
+    `/api/catalog/${encodeURIComponent(name)}`,
+    { signal, bearerToken },
+    15_000,
+  );
+  if (!response.ok) {
+    throw new ApiError(
+      response.status === 404 ? "CATALOG_NOT_FOUND" : "CATALOG_LOAD_FAILED",
+      `GET /api/catalog/${name} falló (${response.status})`,
+      response.status,
+    );
+  }
+  return (await response.json()) as CatalogContent;
+}
+
+export async function listBackups(
+  name: string,
+  options?: AuthOpts,
+): Promise<CatalogBackup[]> {
+  const { signal, bearerToken } = options ?? {};
+  const response = await apiFetch(
+    `/api/catalog/backups/${encodeURIComponent(name)}`,
+    { signal, bearerToken },
+    15_000,
+  );
+  if (!response.ok) {
+    throw new ApiError(
+      "BACKUPS_LIST_FAILED",
+      `GET /api/catalog/backups/${name} falló (${response.status})`,
+      response.status,
+    );
+  }
+  return (await response.json()) as CatalogBackup[];
+}
+
+export async function restoreBackup(
+  backupId: number,
+  options?: AuthOpts,
+): Promise<RestoreBackupResponse> {
+  const { signal, bearerToken } = options ?? {};
+  const response = await apiFetch(
+    `/api/catalog/backups/${backupId}/restore`,
+    { method: "POST", signal, bearerToken },
+    20_000,
+  );
+  if (!response.ok) {
+    throw new ApiError(
+      response.status === 404 ? "BACKUP_NOT_FOUND" : "RESTORE_FAILED",
+      `POST /api/catalog/backups/${backupId}/restore falló (${response.status})`,
+      response.status,
+    );
+  }
+  return (await response.json()) as RestoreBackupResponse;
+}
+
+/** Lee `detail` del error 400 del backend (mensajes user-friendly de
+    encoding/formato) y lo propaga como mensaje del ApiError. */
+async function _errorDetail(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { detail?: string };
+    return body.detail || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export async function importPreview(
+  file: File,
+  options?: AuthOpts,
+): Promise<ImportPreview> {
+  const { signal, bearerToken } = options ?? {};
+  const form = new FormData();
+  form.append("file", file);
+  // Parser sincrónico sin timeout backend → damos 60s holgados (caveat PR).
+  const response = await apiFetch(
+    `/api/catalog/import-preview`,
+    { method: "POST", body: form, signal, bearerToken },
+    60_000,
+  );
+  if (!response.ok) {
+    throw new ApiError(
+      "IMPORT_PREVIEW_FAILED",
+      await _errorDetail(response, `import-preview falló (${response.status})`),
+      response.status,
+    );
+  }
+  return (await response.json()) as ImportPreview;
+}
+
+export async function importApply(
+  input: {
+    file: File;
+    catalogs: string[];
+    includeNew: boolean;
+    sourceFile: string;
+  },
+  options?: AuthOpts,
+): Promise<ImportApplyResponse> {
+  const { signal, bearerToken } = options ?? {};
+  const form = new FormData();
+  form.append("file", input.file);
+  form.append("catalogs", JSON.stringify(input.catalogs));
+  form.append("include_new", String(input.includeNew));
+  form.append("source_file", input.sourceFile);
+  const response = await apiFetch(
+    `/api/catalog/import-apply`,
+    { method: "POST", body: form, signal, bearerToken },
+    60_000,
+  );
+  if (!response.ok) {
+    throw new ApiError(
+      "IMPORT_APPLY_FAILED",
+      await _errorDetail(response, `import-apply falló (${response.status})`),
+      response.status,
+    );
+  }
+  return (await response.json()) as ImportApplyResponse;
+}

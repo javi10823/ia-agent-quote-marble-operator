@@ -31,11 +31,13 @@ test.describe("Sidebar presente en chrome global", () => {
 });
 
 test.describe("Items del Sidebar navegan (Next Link nativo)", () => {
-  test("click Catálogo navega a /catalogo · renderea placeholder", async ({ page }) => {
+  test("click Catálogo navega a /catalogo · renderea lista real", async ({ page }) => {
+    // Sub-PR 22.2.b catalogo-and-dux-importer-ui reemplazó el placeholder
+    // por la lista real (`catalogo-page`). Antes: catalogo-placeholder.
     await page.goto("/");
     await page.locator('[data-testid="sidebar-nav-catalogo"]').click();
     await page.waitForURL("**/catalogo");
-    await expect(page.locator('[data-testid="catalogo-placeholder"]')).toBeVisible();
+    await expect(page.locator('[data-testid="catalogo-page"]')).toBeVisible();
     await expect(page.locator(".crumbs .now")).toContainText("Catálogo");
   });
 

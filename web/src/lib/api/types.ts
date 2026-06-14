@@ -645,3 +645,115 @@ export function applyEditableFields(
     },
   };
 }
+
+/* ─── Catálogo · viewer + Dux importer + backups (sub-PR 22.2.b) ──────
+   Shapes espejados 1:1 del backend (api/app/modules/catalog/router.py +
+   import_parser.py). El diff `unchanged` es un COUNT (int), no lista. */
+
+/** Metadata por catálogo (GET /api/catalog/). */
+export interface CatalogMeta {
+  name: string;
+  item_count: number;
+  last_updated: string | null;
+}
+
+/** Contenido crudo de un catálogo (GET /api/catalog/{name}) — lista de
+    ítems o blob (config). El viewer lo muestra read-only. */
+export type CatalogContent = unknown;
+
+/** Backup de un catálogo (GET /api/catalog/backups/{name}). */
+export interface CatalogBackup {
+  id: number;
+  created_at: string | null;
+  source_file: string | null;
+  /** stats serializado por el backend — shape libre (items_before, updated, new...). */
+  stats: Record<string, unknown> | string | null;
+}
+
+/* ── Diff de import (POST /api/catalog/import-preview) ── */
+
+export interface ImportUpdatedItem {
+  sku: string;
+  name: string;
+  old_price: number;
+  new_price: number;
+  change_pct: number;
+}
+
+export interface ImportNormalizedItem {
+  sku: string;
+  name: string;
+  old_price: number;
+  new_price: number;
+}
+
+export interface ImportNewItem {
+  sku: string;
+  name: string;
+  price: number;
+}
+
+export interface ImportMissingItem {
+  sku: string;
+  name: string;
+  price: number;
+}
+
+export interface ImportZeroPriceItem {
+  sku: string;
+  name: string;
+}
+
+/** Diff por catálogo dentro del preview. */
+export interface CatalogDiff {
+  catalog: string;
+  currency: string;
+  file_currency: string;
+  price_field: string;
+  updated: ImportUpdatedItem[];
+  normalized: ImportNormalizedItem[];
+  new: ImportNewItem[];
+  missing: ImportMissingItem[];
+  zero_price: ImportZeroPriceItem[];
+  /** COUNT (no lista) de ítems sin cambios. */
+  unchanged: number;
+  warnings: string[];
+  total_in_file: number;
+  total_in_catalog: number;
+}
+
+/** Respuesta de POST /api/catalog/import-preview. */
+export interface ImportPreview {
+  format: string;
+  total_items: number;
+  catalogs: Record<string, CatalogDiff>;
+  unmatched: ImportNewItem[];
+  /** Flag GLOBAL — banner único (decisión 22.2.b · backend solo emite global). */
+  iva_warning: boolean;
+  currency_mismatch: boolean;
+  warnings: string[];
+}
+
+/** Resultado por catálogo dentro de import-apply. */
+export interface ImportApplyResult {
+  ok: boolean;
+  updated?: number;
+  normalized?: number;
+  added?: number;
+  skipped_zero?: number;
+  error?: string;
+}
+
+/** Respuesta de POST /api/catalog/import-apply. */
+export interface ImportApplyResponse {
+  ok: boolean;
+  results: Record<string, ImportApplyResult>;
+  source_file: string;
+}
+
+/** Respuesta de POST /api/catalog/backups/{id}/restore. */
+export interface RestoreBackupResponse {
+  ok: boolean;
+  catalog: string;
+  restored_from_backup: number;
+}
