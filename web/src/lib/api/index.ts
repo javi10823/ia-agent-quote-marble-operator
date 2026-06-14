@@ -62,6 +62,16 @@ export const triggerPdfV2Generation = mocks.triggerPdfV2Generation;
 /* ─── Audit trail copy · Sprint 4 audit-trail-copy ────────────────── */
 export const getAuditLog = USE_REAL_API ? real.getAuditLog : mocks.getAuditLog;
 
+/* ─── Catálogo · viewer + Dux importer + backups · sub-PR 22.2.b ───
+   Los 8 endpoints catalog mapean limpio a REST → wire real con el flag
+   activo · mocks deterministas en CI/dev. */
+export const listCatalogs = USE_REAL_API ? real.listCatalogs : mocks.listCatalogs;
+export const getCatalog = USE_REAL_API ? real.getCatalog : mocks.getCatalog;
+export const listBackups = USE_REAL_API ? real.listBackups : mocks.listBackups;
+export const restoreBackup = USE_REAL_API ? real.restoreBackup : mocks.restoreBackup;
+export const importPreview = USE_REAL_API ? real.importPreview : mocks.importPreview;
+export const importApply = USE_REAL_API ? real.importApply : mocks.importApply;
+
 /* ─── Catalog config · sub-PR 22.2.a config-ui-page ──────────────── */
 export const getCatalogConfig = USE_REAL_API ? real.getCatalogConfig : mocks.getCatalogConfig;
 export const updateCatalogConfig = USE_REAL_API
