@@ -1,19 +1,26 @@
 /**
- * ConfigForm · sub-PR 22.2.a config-ui-page.
+ * ConfigForm · sub-PR 22.2.a config-ui-page + 22.2.a.III expansion.
  *
- * 6 defaults operativos editables:
- *   - default_depth (m · profundidad de mesada)
- *   - default_zocalo_height (m · BUG PROD FIX 0.07→0.05)
- *   - default_alzada_height (m)
- *   - colocacion_particulares (bool)
- *   - delivery_zone_sku (string · SKU de delivery-zones.json)
- *   - forma_pago (string)
+ * Fields editables agrupados en 4 secciones colapsables:
+ *
+ *  1. DEFAULTS DE MESADA (3 · default expanded · sub-PR 22.2.a)
+ *     - default_zocalo_height, default_alzada_height, default_depth
+ *
+ *  2. DEFAULTS OPERATIVOS (3 · default expanded · sub-PR 22.2.a)
+ *     - colocacion_particulares, delivery_zone_sku, forma_pago
+ *
+ *  3. DESCUENTOS (5 · default collapsed · sub-PR 22.2.a.III)
+ *     - discount.imported_percentage, national_percentage, building_percentage
+ *     - discount.building_min_m2_threshold, min_m2_threshold
+ *
+ *  4. COSTING (1 · default collapsed · sub-PR 22.2.a.III)
+ *     - merma.small_piece_threshold_m2
  *
  * Flow: fetch initial blob → editable state local → "Guardar" abre diff
  * modal (solo si hay cambios) → onConfirm → PUT → badge "Guardado" 3s.
  *
- * Cero CSS nuevo en operator-shared.css. Scope CSS responsive vive en
- * globals.css bajo `.config-v2` (Step 6 · ~15-20 LOC media query).
+ * Cero CSS nuevo en operator-shared.css. Scope responsive vive en
+ * globals.css bajo `.config-v2` (~15-20 LOC media query · lección #66).
  */
 "use client";
 
@@ -27,21 +34,28 @@ import {
 import { getCatalogConfig, updateCatalogConfig } from "@/lib/api";
 import { ConfigDiffModal, type DiffRow } from "./ConfigDiffModal";
 
+type SectionId = "mesada" | "operativos" | "descuentos" | "costing";
+
 interface FieldDef {
   key: keyof ConfigEditableFields;
   label: string;
   helper?: string;
-  type: "number_m" | "text" | "bool";
+  type: "number_m" | "number" | "percent" | "text" | "bool";
   step?: string;
+  min?: number;
+  max?: number;
+  section: SectionId;
 }
 
 const FIELDS: FieldDef[] = [
+  // ─── Sección 1 · DEFAULTS DE MESADA ────────────────────────────────
   {
     key: "default_zocalo_height",
     label: "Alto de zócalo (m)",
     helper: "Default master D'Angelo = 5cm",
     type: "number_m",
     step: "0.01",
+    section: "mesada",
   },
   {
     key: "default_alzada_height",
@@ -49,6 +63,7 @@ const FIELDS: FieldDef[] = [
     helper: "Default cuando brief no especifica = 60cm",
     type: "number_m",
     step: "0.01",
+    section: "mesada",
   },
   {
     key: "default_depth",
@@ -56,25 +71,102 @@ const FIELDS: FieldDef[] = [
     helper: "Default 60cm cuando brief no aclara",
     type: "number_m",
     step: "0.01",
+    section: "mesada",
   },
+  // ─── Sección 2 · DEFAULTS OPERATIVOS ───────────────────────────────
   {
     key: "delivery_zone_sku",
     label: "Zona de flete por defecto (SKU)",
     helper: "SKU de delivery-zones.json · default ENVIOROS (Rosario)",
     type: "text",
+    section: "operativos",
   },
   {
     key: "forma_pago",
     label: "Forma de pago default",
     helper: "Texto que aparece en el PDF",
     type: "text",
+    section: "operativos",
   },
   {
     key: "colocacion_particulares",
     label: "Colocación incluida para particulares",
     helper: "Edificios siempre van sin colocación (regla aparte)",
     type: "bool",
+    section: "operativos",
   },
+  // ─── Sección 3 · DESCUENTOS (sub-PR 22.2.a.III) ────────────────────
+  {
+    key: "discount_imported_percentage",
+    label: "Descuento material importado %",
+    helper:
+      "Este % aplica tanto al descuento arquitecto como al descuento cantidad por volumen, según moneda del material.",
+    type: "percent",
+    step: "0.5",
+    min: 0,
+    max: 50,
+    section: "descuentos",
+  },
+  {
+    key: "discount_national_percentage",
+    label: "Descuento material nacional %",
+    helper:
+      "Este % aplica tanto al descuento arquitecto como al descuento cantidad por volumen, según moneda del material.",
+    type: "percent",
+    step: "0.5",
+    min: 0,
+    max: 50,
+    section: "descuentos",
+  },
+  {
+    key: "discount_building_percentage",
+    label: "Descuento edificio %",
+    helper: "Aplicado cuando es_edificio=true Y m² ≥ Edificio mínimo m².",
+    type: "percent",
+    step: "0.5",
+    min: 0,
+    max: 50,
+    section: "descuentos",
+  },
+  {
+    key: "discount_building_min_m2_threshold",
+    label: "Edificio mínimo m²",
+    helper: "Umbral para que el descuento edificio se aplique automáticamente.",
+    type: "number",
+    step: "1",
+    min: 0,
+    max: 100,
+    section: "descuentos",
+  },
+  {
+    key: "discount_min_m2_threshold",
+    label: "Cantidad mínimo m² (no-arquitecto/no-edificio)",
+    helper:
+      "Umbral para que el descuento por cantidad se aplique automáticamente (regla > 6m² · 4to tier · sub-PR #494).",
+    type: "number",
+    step: "1",
+    min: 0,
+    max: 100,
+    section: "descuentos",
+  },
+  // ─── Sección 4 · COSTING (sub-PR 22.2.a.III) ───────────────────────
+  {
+    key: "merma_small_piece_threshold_m2",
+    label: "Umbral merma (m²)",
+    helper: "Piezas por debajo de este umbral se consideran retazos a efectos de merma.",
+    type: "number",
+    step: "0.1",
+    min: 0,
+    max: 10,
+    section: "costing",
+  },
+];
+
+const SECTIONS: { id: SectionId; title: string; defaultOpen: boolean }[] = [
+  { id: "mesada", title: "Defaults de mesada", defaultOpen: true },
+  { id: "operativos", title: "Defaults operativos", defaultOpen: true },
+  { id: "descuentos", title: "Descuentos", defaultOpen: false },
+  { id: "costing", title: "Costing", defaultOpen: false },
 ];
 
 function formatValue(key: keyof ConfigEditableFields, value: unknown): string {
@@ -86,6 +178,9 @@ function formatValue(key: keyof ConfigEditableFields, value: unknown): string {
   ) {
     return `${(value as number).toFixed(2)} m`;
   }
+  const def = FIELDS.find((f) => f.key === key);
+  if (def?.type === "percent") return `${value}%`;
+  if (def?.type === "number") return String(value);
   return String(value);
 }
 
@@ -103,6 +198,12 @@ function diffRows(prev: ConfigEditableFields, next: ConfigEditableFields): DiffR
   return rows;
 }
 
+function isOutOfRange(field: FieldDef, value: number): boolean {
+  if (field.min !== undefined && value < field.min) return true;
+  if (field.max !== undefined && value > field.max) return true;
+  return false;
+}
+
 export function ConfigForm() {
   const [baseBlob, setBaseBlob] = useState<CatalogConfig | null>(null);
   const [original, setOriginal] = useState<ConfigEditableFields | null>(null);
@@ -110,6 +211,12 @@ export function ConfigForm() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [savedBadge, setSavedBadge] = useState(false);
+  const [openSections, setOpenSections] = useState<Record<SectionId, boolean>>(() =>
+    SECTIONS.reduce(
+      (acc, s) => ({ ...acc, [s.id]: s.defaultOpen }),
+      {} as Record<SectionId, boolean>,
+    ),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -157,6 +264,14 @@ export function ConfigForm() {
   const rowsToDiff = diffRows(original, draft);
   const hasChanges = rowsToDiff.length > 0;
 
+  // Validación: bloquear guardar si algún número quedó fuera de rango.
+  const hasInvalid = FIELDS.some((f) => {
+    if (f.type !== "number" && f.type !== "percent" && f.type !== "number_m") return false;
+    const v = draft[f.key];
+    if (typeof v !== "number" || !Number.isFinite(v)) return true;
+    return isOutOfRange(f, v);
+  });
+
   const handleField = <K extends keyof ConfigEditableFields>(
     key: K,
     value: ConfigEditableFields[K],
@@ -178,74 +293,125 @@ export function ConfigForm() {
     setSavedBadge(true);
   };
 
+  const toggleSection = (id: SectionId) => {
+    setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
   return (
     <form
       data-testid="config-form"
       onSubmit={(e) => {
         e.preventDefault();
-        if (hasChanges) setShowModal(true);
+        if (hasChanges && !hasInvalid) setShowModal(true);
       }}
       style={{ display: "flex", flexDirection: "column", gap: 16 }}
     >
-      <div className="config-fields-grid">
-        {FIELDS.map((f) => {
-          const val = draft[f.key];
-          const id = `config-field-${f.key}`;
-          return (
-            <div
-              key={f.key}
-              data-testid={`config-row-${f.key}`}
-              style={{ display: "flex", flexDirection: "column", gap: 4 }}
+      {SECTIONS.map((section) => {
+        const fields = FIELDS.filter((f) => f.section === section.id);
+        const isOpen = openSections[section.id];
+        return (
+          <section
+            key={section.id}
+            className="config-section"
+            data-testid={`config-section-${section.id}`}
+            data-open={isOpen ? "true" : "false"}
+          >
+            <button
+              type="button"
+              className="config-section-header"
+              data-testid={`config-section-toggle-${section.id}`}
+              aria-expanded={isOpen}
+              onClick={() => toggleSection(section.id)}
             >
-              <label htmlFor={id} style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>
-                {f.label}
-              </label>
-              {f.type === "bool" ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <input
-                    id={id}
-                    data-testid={`config-input-${f.key}`}
-                    type="checkbox"
-                    checked={val as boolean}
-                    onChange={(e) => handleField(f.key, e.target.checked as never)}
-                  />
-                  <span style={{ fontSize: 13, color: "var(--ink-mute)" }}>
-                    {(val as boolean) ? "Activada" : "Desactivada"}
-                  </span>
-                </div>
-              ) : f.type === "number_m" ? (
-                <input
-                  id={id}
-                  data-testid={`config-input-${f.key}`}
-                  className="input num"
-                  type="number"
-                  step={f.step}
-                  min="0"
-                  value={val as number}
-                  onChange={(e) => handleField(f.key, Number(e.target.value) as never)}
-                />
-              ) : (
-                <input
-                  id={id}
-                  data-testid={`config-input-${f.key}`}
-                  className="input"
-                  type="text"
-                  value={val as string}
-                  onChange={(e) => handleField(f.key, e.target.value as never)}
-                />
-              )}
-              {f.helper && (
-                <span
-                  data-testid={`config-helper-${f.key}`}
-                  style={{ fontSize: 11, color: "var(--ink-mute)" }}
-                >
-                  {f.helper}
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
+              <span className="config-section-chevron" aria-hidden="true">
+                {isOpen ? "▼" : "▶"}
+              </span>
+              <span className="config-section-title">{section.title}</span>
+              <span className="config-section-count">{fields.length}</span>
+            </button>
+            {isOpen && (
+              <div className="config-fields-grid">
+                {fields.map((f) => {
+                  const val = draft[f.key];
+                  const id = `config-field-${f.key}`;
+                  const isNum =
+                    f.type === "number" || f.type === "percent" || f.type === "number_m";
+                  const numVal = val as number;
+                  const outOfRange =
+                    isNum && (typeof numVal !== "number" || isOutOfRange(f, numVal));
+                  return (
+                    <div
+                      key={f.key}
+                      data-testid={`config-row-${f.key}`}
+                      style={{ display: "flex", flexDirection: "column", gap: 4 }}
+                    >
+                      <label
+                        htmlFor={id}
+                        style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}
+                      >
+                        {f.label}
+                      </label>
+                      {f.type === "bool" ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <input
+                            id={id}
+                            data-testid={`config-input-${f.key}`}
+                            type="checkbox"
+                            checked={val as boolean}
+                            onChange={(e) => handleField(f.key, e.target.checked as never)}
+                          />
+                          <span style={{ fontSize: 13, color: "var(--ink-mute)" }}>
+                            {(val as boolean) ? "Activada" : "Desactivada"}
+                          </span>
+                        </div>
+                      ) : f.type === "text" ? (
+                        <input
+                          id={id}
+                          data-testid={`config-input-${f.key}`}
+                          className="input"
+                          type="text"
+                          value={val as string}
+                          onChange={(e) => handleField(f.key, e.target.value as never)}
+                        />
+                      ) : (
+                        <input
+                          id={id}
+                          data-testid={`config-input-${f.key}`}
+                          className="input num"
+                          type="number"
+                          step={f.step ?? "1"}
+                          min={f.min ?? 0}
+                          max={f.max}
+                          value={val as number}
+                          onChange={(e) => handleField(f.key, Number(e.target.value) as never)}
+                          aria-invalid={outOfRange ? "true" : "false"}
+                        />
+                      )}
+                      {f.helper && (
+                        <span
+                          data-testid={`config-helper-${f.key}`}
+                          style={{ fontSize: 11, color: "var(--ink-mute)" }}
+                        >
+                          {f.helper}
+                        </span>
+                      )}
+                      {outOfRange && (
+                        <span
+                          data-testid={`config-error-${f.key}`}
+                          role="alert"
+                          style={{ fontSize: 11, color: "var(--error)" }}
+                        >
+                          Valor fuera de rango ({f.min ?? 0}–{f.max ?? "∞"})
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        );
+      })}
 
       <div
         className="config-actions"
@@ -254,7 +420,7 @@ export function ConfigForm() {
         <button
           type="submit"
           className="btn primary"
-          disabled={!hasChanges}
+          disabled={!hasChanges || hasInvalid}
           data-testid="config-save"
         >
           Guardar
