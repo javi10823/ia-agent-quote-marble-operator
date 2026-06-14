@@ -102,3 +102,119 @@ test.describe("Configuración · responsive mobile", () => {
     expect(cols).toBe(1);
   });
 });
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Sub-PR 22.2.a.III · expansion config-ui · descuentos + costing
+ * ─────────────────────────────────────────────────────────────────── */
+
+test.describe("Configuración · accordion · secciones nuevas", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("sección Descuentos arranca colapsada (collapsed default)", async ({ page }) => {
+    await page.goto("/configuracion");
+    const section = page.locator('[data-testid="config-section-descuentos"]');
+    await expect(section).toBeVisible();
+    await expect(section).toHaveAttribute("data-open", "false");
+    // Fields NO visibles hasta expandir
+    await expect(
+      page.locator('[data-testid="config-row-discount_imported_percentage"]'),
+    ).toBeHidden();
+  });
+
+  test("expandir Descuentos muestra 5 fields", async ({ page }) => {
+    await page.goto("/configuracion");
+    await page.locator('[data-testid="config-section-toggle-descuentos"]').click();
+    for (const key of [
+      "discount_imported_percentage",
+      "discount_national_percentage",
+      "discount_building_percentage",
+      "discount_building_min_m2_threshold",
+      "discount_min_m2_threshold",
+    ]) {
+      await expect(page.locator(`[data-testid="config-row-${key}"]`)).toBeVisible();
+    }
+  });
+
+  test("validation range descuento importado (0-50) muestra error + bloquea Guardar", async ({
+    page,
+  }) => {
+    await page.goto("/configuracion");
+    await page.locator('[data-testid="config-section-toggle-descuentos"]').click();
+    const input = page.locator('[data-testid="config-input-discount_imported_percentage"]');
+    await input.fill("75");
+    await expect(
+      page.locator('[data-testid="config-error-discount_imported_percentage"]'),
+    ).toBeVisible();
+    await expect(page.locator('[data-testid="config-save"]')).toBeDisabled();
+    // Volver al rango → desaparece error
+    await input.fill("6");
+    await expect(
+      page.locator('[data-testid="config-error-discount_imported_percentage"]'),
+    ).toBeHidden();
+    await expect(page.locator('[data-testid="config-save"]')).toBeEnabled();
+  });
+
+  test("sección Costing arranca colapsada", async ({ page }) => {
+    await page.goto("/configuracion");
+    const section = page.locator('[data-testid="config-section-costing"]');
+    await expect(section).toBeVisible();
+    await expect(section).toHaveAttribute("data-open", "false");
+  });
+
+  test("validation range merma (0-10) bloquea Guardar fuera de rango", async ({ page }) => {
+    await page.goto("/configuracion");
+    await page.locator('[data-testid="config-section-toggle-costing"]').click();
+    const input = page.locator('[data-testid="config-input-merma_small_piece_threshold_m2"]');
+    await input.fill("15");
+    await expect(
+      page.locator('[data-testid="config-error-merma_small_piece_threshold_m2"]'),
+    ).toBeVisible();
+    await expect(page.locator('[data-testid="config-save"]')).toBeDisabled();
+  });
+
+  test("accordion mantiene estado al toggle independiente por sección", async ({ page }) => {
+    await page.goto("/configuracion");
+    const descuentos = page.locator('[data-testid="config-section-descuentos"]');
+    const costing = page.locator('[data-testid="config-section-costing"]');
+    await page.locator('[data-testid="config-section-toggle-descuentos"]').click();
+    await expect(descuentos).toHaveAttribute("data-open", "true");
+    await expect(costing).toHaveAttribute("data-open", "false");
+    await page.locator('[data-testid="config-section-toggle-costing"]').click();
+    await expect(descuentos).toHaveAttribute("data-open", "true");
+    await expect(costing).toHaveAttribute("data-open", "true");
+    // Cerrar descuentos · costing sigue abierta
+    await page.locator('[data-testid="config-section-toggle-descuentos"]').click();
+    await expect(descuentos).toHaveAttribute("data-open", "false");
+    await expect(costing).toHaveAttribute("data-open", "true");
+  });
+
+  test("diff modal muestra solo cambios cross-section", async ({ page }) => {
+    await page.goto("/configuracion");
+    // Cambio en mesada (siempre visible)
+    await page.locator('[data-testid="config-input-default_zocalo_height"]').fill("0.06");
+    // Cambio en costing (expandir primero)
+    await page.locator('[data-testid="config-section-toggle-costing"]').click();
+    await page.locator('[data-testid="config-input-merma_small_piece_threshold_m2"]').fill("2");
+    await page.locator('[data-testid="config-save"]').click();
+    const modal = page.locator('[data-testid="config-diff-modal"]');
+    await expect(modal).toBeVisible();
+    await expect(modal).toContainText("Alto de zócalo (m)");
+    await expect(modal).toContainText("Umbral merma (m²)");
+    // NO debe mostrar fields que no cambiaron
+    await expect(modal).not.toContainText("Forma de pago default");
+  });
+
+  test("helper text del descuento explica acoplamiento arquitecto+cantidad", async ({ page }) => {
+    await page.goto("/configuracion");
+    await page.locator('[data-testid="config-section-toggle-descuentos"]').click();
+    await expect(
+      page.locator('[data-testid="config-helper-discount_imported_percentage"]'),
+    ).toContainText(/arquitecto/i);
+    await expect(
+      page.locator('[data-testid="config-helper-discount_imported_percentage"]'),
+    ).toContainText(/cantidad/i);
+    await expect(
+      page.locator('[data-testid="config-helper-discount_national_percentage"]'),
+    ).toContainText(/arquitecto/i);
+  });
+});

@@ -587,20 +587,53 @@ export interface CatalogConfigDefaults {
   [k: string]: unknown;
 }
 
-export interface CatalogConfig {
-  measurements: CatalogConfigMeasurements;
-  defaults: CatalogConfigDefaults;
+export interface CatalogConfigDiscount {
+  imported_percentage?: number;
+  national_percentage?: number;
+  building_percentage?: number;
+  building_min_m2_threshold?: number;
+  min_m2_threshold?: number;
   [k: string]: unknown;
 }
 
-/** Los 6 campos editables desde /configuracion (sub-PR 22.2.a). */
+export interface CatalogConfigMerma {
+  small_piece_threshold_m2?: number;
+  [k: string]: unknown;
+}
+
+export interface CatalogConfig {
+  measurements: CatalogConfigMeasurements;
+  defaults: CatalogConfigDefaults;
+  discount?: CatalogConfigDiscount;
+  merma?: CatalogConfigMerma;
+  [k: string]: unknown;
+}
+
+/** Campos editables desde /configuracion.
+ *
+ * Sub-PR 22.2.a · 6 fields (mesada + operativos).
+ * Sub-PR 22.2.a.III · +6 fields (descuentos + costing).
+ *
+ * El nombre del field es flat (camel-ish) · el path JSON real al que
+ * mapea está documentado en `extractEditableFields` / `applyEditableFields`.
+ */
 export interface ConfigEditableFields {
+  // 22.2.a · mesada
   default_depth: number;
   default_zocalo_height: number;
   default_alzada_height: number;
+  // 22.2.a · operativos
   colocacion_particulares: boolean;
   delivery_zone_sku: string;
   forma_pago: string;
+  // 22.2.a.III · descuentos
+  discount_imported_percentage: number;
+  discount_national_percentage: number;
+  discount_building_percentage: number;
+  discount_building_min_m2_threshold: number;
+  discount_min_m2_threshold: number;
+  // 22.2.a.III · costing
+  merma_small_piece_threshold_m2: number;
 }
 
 export const CONFIG_EDITABLE_KEYS: ReadonlyArray<keyof ConfigEditableFields> = [
@@ -610,20 +643,36 @@ export const CONFIG_EDITABLE_KEYS: ReadonlyArray<keyof ConfigEditableFields> = [
   "colocacion_particulares",
   "delivery_zone_sku",
   "forma_pago",
+  "discount_imported_percentage",
+  "discount_national_percentage",
+  "discount_building_percentage",
+  "discount_building_min_m2_threshold",
+  "discount_min_m2_threshold",
+  "merma_small_piece_threshold_m2",
 ];
+
+function _num(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
 
 export function extractEditableFields(cfg: CatalogConfig): ConfigEditableFields {
   return {
-    default_depth: cfg.measurements?.default_depth ?? 0.6,
-    default_zocalo_height: cfg.measurements?.default_zocalo_height ?? 0.05,
-    default_alzada_height: cfg.measurements?.default_alzada_height ?? 0.6,
+    default_depth: _num(cfg.measurements?.default_depth, 0.6),
+    default_zocalo_height: _num(cfg.measurements?.default_zocalo_height, 0.05),
+    default_alzada_height: _num(cfg.measurements?.default_alzada_height, 0.6),
     colocacion_particulares: cfg.defaults?.colocacion_particulares ?? true,
     delivery_zone_sku: cfg.defaults?.delivery_zone_sku ?? "ENVIOROS",
     forma_pago: cfg.defaults?.forma_pago ?? "Contado",
+    discount_imported_percentage: _num(cfg.discount?.imported_percentage, 5),
+    discount_national_percentage: _num(cfg.discount?.national_percentage, 8),
+    discount_building_percentage: _num(cfg.discount?.building_percentage, 18),
+    discount_building_min_m2_threshold: _num(cfg.discount?.building_min_m2_threshold, 15),
+    discount_min_m2_threshold: _num(cfg.discount?.min_m2_threshold, 6),
+    merma_small_piece_threshold_m2: _num(cfg.merma?.small_piece_threshold_m2, 1.0),
   };
 }
 
-/** Devuelve un nuevo blob con los 6 fields del UI aplicados sobre el
+/** Devuelve un nuevo blob con los fields del UI aplicados sobre el
  * blob original (preserva todas las keys que NO edita el UI). */
 export function applyEditableFields(
   base: CatalogConfig,
@@ -642,6 +691,18 @@ export function applyEditableFields(
       colocacion_particulares: edits.colocacion_particulares,
       delivery_zone_sku: edits.delivery_zone_sku,
       forma_pago: edits.forma_pago,
+    },
+    discount: {
+      ...(base.discount ?? {}),
+      imported_percentage: edits.discount_imported_percentage,
+      national_percentage: edits.discount_national_percentage,
+      building_percentage: edits.discount_building_percentage,
+      building_min_m2_threshold: edits.discount_building_min_m2_threshold,
+      min_m2_threshold: edits.discount_min_m2_threshold,
+    },
+    merma: {
+      ...(base.merma ?? {}),
+      small_piece_threshold_m2: edits.merma_small_piece_threshold_m2,
     },
   };
 }
