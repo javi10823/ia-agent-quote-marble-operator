@@ -1459,6 +1459,28 @@ def calculate_quote(input_data: dict) -> dict:
                 f"(total_m2 {total_m2} ≥ {_bmin})"
             )
 
+    # 4c. Auto-apply cantidad discount (sub-PR 22.W · Regla 14 master).
+    #
+    # Precedencia: manual > arquitecto > edificio > **cantidad**. Solo
+    # aplica si ninguno de los 3 tiers anteriores ya seteó discount_pct.
+    # Trigger: cliente NO-arquitecto + cotización NO-edificio + total_m2
+    # > min_m2_threshold (default 6). USD → imported_percentage (5%),
+    # ARS → national_percentage (8%). Mismo scope que arquitecto: solo
+    # sobre material (NO mo, NO flete). Decisión Agos OPCIÓN A 12.06.
+    if not discount_pct:
+        _qmin = cfg("discount.min_m2_threshold", 6)
+        if total_m2 > _qmin:
+            _qpct = (
+                cfg("discount.imported_percentage", 5)
+                if currency == "USD"
+                else cfg("discount.national_percentage", 8)
+            )
+            discount_pct = _qpct
+            logging.info(
+                f"Applied auto cantidad discount: {discount_pct}% "
+                f"(total_m2 {total_m2} > {_qmin}, currency {currency})"
+            )
+
     # 4b. Material total
     material_total = round(total_m2 * price_unit)
     if discount_pct > 0:
