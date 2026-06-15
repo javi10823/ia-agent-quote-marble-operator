@@ -86,31 +86,67 @@
    Reemplaza el dual render `.dashboard-desktop`/`.dashboard-mobile`
    por un único árbol React con CSS responsive. Breakpoint 767px.
    ───────────────────────────────────────────────────────── */
-.dashboard-v2 { padding: 32px 24px 24px; }
-.dashboard-v2 .row-greet-actions {
-  display: flex; align-items: flex-end; gap: 24px; flex-wrap: wrap;
+.dashboard-v2 {
+  padding: 32px 24px 24px;
 }
-.dashboard-v2 .dh-greet { flex: 1; min-width: 200px; }
-.dashboard-v2 .dh-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.dashboard-v2 .row-greet-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.dashboard-v2 .dh-greet {
+  flex: 1;
+  min-width: 200px;
+}
+.dashboard-v2 .dh-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
 .dashboard-v2 .dashboard-filterbar {
-  display: flex; align-items: center; margin-top: 16px;
+  display: flex;
+  align-items: center;
+  margin-top: 16px;
   border-bottom: 1px solid var(--line);
 }
-.dashboard-v2 .dashboard-list-mobile { display: none; }
+.dashboard-v2 .dashboard-list-mobile {
+  display: none;
+}
 @media (max-width: 767px) {
-  .dashboard-v2 { padding: 20px 0 80px; }
-  .dashboard-v2 .row-greet-actions { padding: 0 16px; gap: 12px; }
-  .dashboard-v2 .dh-actions { width: 100%; }
-  .dashboard-v2 .dh-actions input { flex: 1; min-width: 0; }
-  .dashboard-v2 .dh-meta { padding: 0 16px; }
-  .dashboard-v2 .dashboard-results-meta { padding: 12px 16px 8px !important; }
-  .dashboard-v2 .dashboard-list-desktop { display: none; }
-  .dashboard-v2 .dashboard-list-mobile { display: block; }
+  .dashboard-v2 {
+    padding: 20px 0 80px;
+  }
+  .dashboard-v2 .row-greet-actions {
+    padding: 0 16px;
+    gap: 12px;
+  }
+  .dashboard-v2 .dh-actions {
+    width: 100%;
+  }
+  .dashboard-v2 .dh-actions input {
+    flex: 1;
+    min-width: 0;
+  }
+  .dashboard-v2 .dh-meta {
+    padding: 0 16px;
+  }
+  .dashboard-v2 .dashboard-results-meta {
+    padding: 12px 16px 8px !important;
+  }
+  .dashboard-v2 .dashboard-list-desktop {
+    display: none;
+  }
+  .dashboard-v2 .dashboard-list-mobile {
+    display: block;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────
    Sprint 4 config-ui-page (sub-PR 22.2.a) · scope `.config-v2`
    ~18 LOC media query · operator-shared.css INTACTO (lección #66).
+   Expansión sub-PR 22.2.a.III: accordion sections.
    ───────────────────────────────────────────────────────── */
 .config-v2 .config-fields-grid {
   display: grid;
@@ -118,12 +154,74 @@
   gap: 20px 24px;
   max-width: 720px;
 }
-.config-v2 .config-fields-grid .input { width: 100%; box-sizing: border-box; }
+.config-v2 .config-fields-grid .input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.config-v2 .config-section {
+  max-width: 720px;
+}
+.config-v2 .config-section + .config-section {
+  margin-top: 12px;
+}
+.config-v2 .config-section[data-open="true"] .config-fields-grid {
+  padding-top: 12px;
+}
+.config-v2 .config-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 10px 0;
+  width: 100%;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+}
+.config-v2 .config-section-chevron {
+  display: inline-block;
+  width: 12px;
+  color: var(--ink-mute);
+  font-size: 10px;
+}
+.config-v2 .config-section-title {
+  flex: 1;
+}
+.config-v2 .config-section-count {
+  font-size: 11px;
+  color: var(--ink-mute);
+  background: var(--surface);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
 @media (max-width: 767px) {
-  .config-v2 .body { padding: 16px; }
-  .config-v2 .config-fields-grid { grid-template-columns: 1fr; gap: 16px; }
-  .config-v2 .config-actions { flex-wrap: wrap; }
-  .config-v2 .config-actions .btn { flex: 1; min-width: 120px; }
+  .config-v2 .body {
+    padding: 16px 16px 96px;
+  }
+  .config-v2 .config-fields-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .config-v2 .config-actions {
+    flex-wrap: wrap;
+    position: sticky;
+    bottom: 0;
+    background: var(--bg, var(--surface));
+    padding: 12px 16px;
+    margin: 0 -16px;
+    border-top: 1px solid var(--line);
+  }
+  .config-v2 .config-actions .btn {
+    flex: 1;
+    min-width: 120px;
+  }
+  .config-v2 .config-actions [data-testid="config-saved-badge"] {
+    flex-basis: 100%;
+  }
 }
 
 /* ─── Catálogo · viewer + Dux importer (sub-PR 22.2.b) ───────────────
