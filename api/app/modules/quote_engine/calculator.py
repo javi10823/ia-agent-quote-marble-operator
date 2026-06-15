@@ -1912,6 +1912,14 @@ def calculate_quote(input_data: dict) -> dict:
         "material_price_unit": price_unit,
         "material_price_base": price_base,
         "material_currency": currency,
+        # Sub-PR paso-5-pdf-real-wire: dual key para cerrar Bug 1 (descuento
+        # aplicado 2× en resumen-obra PDF + Excel renderers).
+        # - `material_total_bruto` = pre-descuento (source of truth para
+        #   renderers que muestran un "Descuento N%" separado).
+        # - `material_total` = post-descuento (mantiene shape histórico
+        #   consumido por UI /contexto, comparison PDF, breakdown adapters).
+        # Si discount_pct == 0, ambos coinciden.
+        "material_total_bruto": material_total,
         "material_total": material_total_net,
         "discount_pct": discount_pct,
         "discount_amount": discount_amount,

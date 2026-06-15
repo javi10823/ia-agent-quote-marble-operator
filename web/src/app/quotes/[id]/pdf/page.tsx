@@ -36,13 +36,18 @@ export default async function PdfPage({ params }: { params: { id: string } }) {
   // Sprint 4 paso-5-d-revision-v2 (mockup 21) · sufijo `-REVISING` SSR-seedea
   // el estado D · cargamos el diff data en paralelo cuando matchea.
   const isRevising = params.id.endsWith("-REVISING");
+  // Sub-PR paso-5-pdf-real-wire: `getPdfGeneratedInfo` ahora pasa por real
+  // wire (GET /api/quotes/{id} con extracción de pdf_url/excel_url). Sin
+  // bearer en SSR el real wire falla con 401. El `-GENERATED`/`-REVISING`
+  // suffix sigue funcionando en mocks (cero cambio de E2E) porque mocks
+  // ignora el token.
   const [metaR, calcR, ctxR, traceR, piecesR, genR, diffR] = await Promise.allSettled([
     getQuoteMetadata(params.id, { bearerToken }),
     getCalculationForQuote(params.id),
     getContextForQuote(params.id),
     getPdfTrace(params.id),
     listPiecesForQuote(params.id),
-    getPdfGeneratedInfo(params.id),
+    getPdfGeneratedInfo(params.id, { bearerToken }),
     isRevising ? getPdfV2DiffData(params.id) : Promise.resolve(null),
   ]);
 
@@ -70,8 +75,7 @@ export default async function PdfPage({ params }: { params: { id: string } }) {
   // Fix-up #1: piezas para sub-filas row-piece + tipologia para campo
   // "Proyecto" del grid cliente (template HTML del backend).
   const pieces = piecesR.status === "fulfilled" ? piecesR.value.pieces : [];
-  const proyecto =
-    (ctx?.tipologia?.value && String(ctx.tipologia.value)) || quote.client || "";
+  const proyecto = (ctx?.tipologia?.value && String(ctx.tipologia.value)) || quote.client || "";
 
   // Sprint 4 paso-5 · `pdfDateIso` calculado server-side y pasado como
   // string al client → evita hydration mismatch por `new Date()` corriendo
@@ -81,13 +85,10 @@ export default async function PdfPage({ params }: { params: { id: string } }) {
   // que es determinístico.
   const pdfDateIso = new Date().toISOString();
 
-  const initialGenerated =
-    genR.status === "fulfilled" && genR.value !== null ? genR.value : null;
+  const initialGenerated = genR.status === "fulfilled" && genR.value !== null ? genR.value : null;
 
   const initialDiffData =
-    isRevising && diffR.status === "fulfilled" && diffR.value !== null
-      ? diffR.value
-      : null;
+    isRevising && diffR.status === "fulfilled" && diffR.value !== null ? diffR.value : null;
 
   return (
     <PdfView

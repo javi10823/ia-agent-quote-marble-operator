@@ -142,6 +142,32 @@ _M2_OVERRIDE_FOOTNOTE = (
 )
 
 
+def _read_material_bruto(data: dict, mat_m2: float, mat_price: float) -> int:
+    """Lee el `material_total_bruto` del breakdown (sub-PR paso-5-pdf-real-wire
+    fix Bug 1 · descuento aplicado 2× en edificio PDF + Excel).
+
+    Precedencia:
+    1. `material_total_bruto` explícito (calculator post-fix · pre-descuento).
+    2. `material_total` legacy (calculator pre-fix · POST-descuento) →
+       derivar bruto: `net / (1 - discount_pct/100)`.
+    3. Recalcular desde `mat_m2 * mat_price` (último recurso).
+
+    Backward compat: quotes generados antes del fix tienen `material_total`
+    como NET. La derivación los normaliza al BRUTO esperado. Si `discount_pct`
+    es 0 o falta, los 3 paths coinciden.
+    """
+    bruto = data.get("material_total_bruto")
+    if bruto is not None:
+        return int(round(bruto))
+    net = data.get("material_total")
+    if net is not None:
+        pct = float(data.get("discount_pct") or 0)
+        if pct > 0 and pct < 100:
+            return int(round(net / (1 - pct / 100)))
+        return int(round(net))
+    return int(round(mat_m2 * mat_price))
+
+
 def _pdf_has_m2_override(data: dict) -> bool:
     """Return True if the renderer should show the Planilla-de-Cómputo footnote.
 
@@ -262,6 +288,21 @@ def _strip_duplicate_dims_in_labels(quote_data: dict) -> None:
 async def generate_documents(quote_id: str, quote_data: dict) -> dict:
     """Generate PDF and Excel for a quote."""
     try:
+        # Sub-PR paso-5-pdf-real-wire: log warning si faltan campos críticos
+        # del breakdown · ayuda a detectar quotes con breakdowns parciales
+        # antes de que el operador descubra que el PDF salió incompleto.
+        _required_pdf_fields = (
+            "client_name", "project", "material_name",
+            "material_m2", "material_currency",
+            "total_ars", "total_usd",
+        )
+        _missing = [f for f in _required_pdf_fields if f not in quote_data]
+        if _missing:
+            logging.warning(
+                f"[PDF] quote {quote_id} missing top-level breakdown fields: "
+                f"{_missing} · el PDF puede renderear vacío/incorrecto."
+            )
+
         # PR #48 — strip defensivo de dimensiones duplicadas en piece labels.
         # Aplica acá (entry point de render) para que /regenerate también
         # limpie breakdowns legacy que tienen labels duplicados guardados.
@@ -853,7 +894,11 @@ def _generate_edificio_pdf(pdf_path: Path, data: dict) -> None:
     pdf.ln(2)
 
     # Material row
-    mat_total_bruto = data.get("material_total") or round(mat_m2 * mat_price)
+    # Sub-PR paso-5-pdf-real-wire · Bug 1 fix: leer BRUTO via helper.
+    # Antes: `data.get("material_total") or recalc` → `material_total` es
+    # NET post-descuento (calculator.py:1915) → el bloque "Descuento N%"
+    # más abajo restaba sobre un valor ya descontado · double-discount.
+    mat_total_bruto = _read_material_bruto(data, mat_m2, mat_price)
     _mat_display = f"{mat_name} - {thickness}mm ESPESOR" if not _re.search(r'\d+[Mm][Mm]', mat_name) else mat_name
 
     f = row_fill()
@@ -1093,8 +1138,9 @@ def _generate_edificio_excel(excel_path: Path, data: dict) -> None:
     ws["F22"].alignment = right_align
 
     # Row 23: Material (PDF: bold 9pt)
+    # Sub-PR paso-5-pdf-real-wire · Bug 1 fix idem _generate_edificio_pdf:871.
     _mat_display = f"{mat_name} - {thickness}mm ESPESOR" if not _re.search(r'\d+[Mm][Mm]', mat_name) else mat_name
-    mat_total_bruto = data.get("material_total") or round(mat_m2 * mat_price)
+    mat_total_bruto = _read_material_bruto(data, mat_m2, mat_price)
 
     apply_zebra(23)
     ws.merge_cells("A23:C23")

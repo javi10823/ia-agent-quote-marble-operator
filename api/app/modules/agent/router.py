@@ -1422,23 +1422,21 @@ async def generate_quote_documents(quote_id: str, db: AsyncSession = Depends(get
     if not bd:
         raise HTTPException(status_code=400, detail="Este presupuesto no tiene datos de cálculo (quote_breakdown)")
 
-    # Build doc_data from breakdown (same structure as quote_engine/router.py)
-    doc_data = {
-        "client_name": bd.get("client_name", quote.client_name),
-        "project": bd.get("project", quote.project),
-        "date": bd.get("date", ""),
-        "delivery_days": bd.get("delivery_days", ""),
-        "material_name": bd.get("material_name", quote.material or ""),
-        "material_m2": bd.get("material_m2", 0),
-        "material_price_unit": bd.get("material_price_unit", 0),
-        "material_currency": bd.get("material_currency", "USD"),
-        "discount_pct": bd.get("discount_pct", 0),
-        "sectors": bd.get("sectors", []),
-        "sinks": bd.get("sinks", []),
-        "mo_items": bd.get("mo_items", []),
-        "total_ars": bd.get("total_ars", 0),
-        "total_usd": bd.get("total_usd", 0),
-    }
+    # Sub-PR paso-5-pdf-real-wire: copia full breakdown como /validate y
+    # /regenerate. Antes este endpoint copiaba 14 keys a mano · faltaban
+    # sobrante_m2/total, mo_discount_pct/amount, has_m2_override, is_edificio,
+    # thickness_mm, notes, material_total_bruto · el PDF no renderea bloques
+    # cuando faltan. `dict(bd)` cierra el gap en una línea (FASE 1 mapeo).
+    doc_data = dict(bd)
+    # Fallbacks defensivos para breakdowns legacy sin estos top-level fields.
+    doc_data.setdefault("client_name", quote.client_name)
+    doc_data.setdefault("project", quote.project)
+    doc_data.setdefault("date", "")
+    doc_data.setdefault("material_name", quote.material or "")
+    # Notes vienen del Quote DB (no del breakdown) · cierra deuda PR #439.
+    # El operador puede editar notas después del cálculo · el breakdown
+    # podría tener una versión vieja o no tenerlas.
+    doc_data["notes"] = quote.notes
 
     # Generate PDF + Excel
     doc_result = await generate_documents(quote_id, doc_data)

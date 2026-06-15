@@ -23,6 +23,42 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ApiError } from "@/lib/api/types";
+
+/** Sub-PR paso-5-pdf-real-wire · mapeo de códigos de error backend a
+ * mensajes user-friendly en español. El adapter `_mapPdfError` en
+ * `real.ts` traduce el status + detail a un `code` semántico; acá lo
+ * usamos para mostrar el mensaje correcto en el banner del modal.
+ *
+ * Códigos cubiertos:
+ * - PDF_TIMEOUT       · backend lento o uvicorn saturado.
+ * - DRIVE_QUOTA       · Drive sin espacio.
+ * - BREAKDOWN_MISSING · quote sin paso 2 procesado.
+ * - QUOTE_NOT_FOUND   · 404 puro (quote borrado entre el load y el click).
+ * - PDF_NO_URL        · backend devuelve ok=true pero sin pdf_url (bug raro).
+ * - PDF_GENERIC       · cualquier otro · usa el mensaje del backend.
+ */
+function _friendlyMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    switch (err.code) {
+      case "PDF_TIMEOUT":
+        return "La generación está tardando más de lo normal. Probá de nuevo en unos segundos.";
+      case "DRIVE_QUOTA":
+        return "El almacenamiento de Drive está al límite. Avisale al admin antes de reintentar.";
+      case "BREAKDOWN_MISSING":
+        return "Falta procesar el contexto del quote. Volvé al paso anterior y confirmá los datos antes de generar.";
+      case "QUOTE_NOT_FOUND":
+        return "No encontramos este presupuesto · puede haber sido borrado en otro tab.";
+      case "PDF_NO_URL":
+        return "Algo raro pasó · el backend confirmó pero no devolvió el archivo. Reintentá.";
+      case "PDF_GENERIC":
+      default:
+        return err.message || "No se pudo generar el presupuesto.";
+    }
+  }
+  if (err instanceof Error) return err.message;
+  return "No se pudo generar el presupuesto.";
+}
 
 interface Props {
   pdfFilename: string;
@@ -55,7 +91,7 @@ export function PdfConfirmModal({ pdfFilename, xlsxFilename, onCancel, onConfirm
       await onConfirm();
       // Caller cierra el modal en success (transición a estado C).
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "No se pudo generar el presupuesto.");
+      setErrorMsg(_friendlyMessage(err));
       setLoading(false);
     }
   };
