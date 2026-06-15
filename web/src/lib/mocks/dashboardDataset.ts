@@ -13,9 +13,14 @@
 
 export type DashboardStatus = "draft" | "sent" | "expired" | "lost";
 export type DashboardCurrency = "ARS" | "USD";
+/** Canal de origen · "web" = generado por el cliente desde la web pública
+ * (id `web-*`, Quote.source="web") · "operator" = cargado por Marina.
+ * Opcional: legacy/mocks sin el campo se derivan del prefijo del id. */
+export type DashboardSource = "web" | "operator";
 
 export interface DashboardQuote {
   readonly id: string;
+  readonly source?: DashboardSource;
   readonly client: string;
   readonly clientFull: string;
   readonly material: string;
@@ -44,6 +49,7 @@ export const DASHBOARD_QUOTES: ReadonlyArray<DashboardQuote> = [
   // ─── ENVIADO (12) ─────────────────────────────────────────────────────
   {
     id: "PRES-2026-018",
+    source: "operator",
     client: "Cueto-Heredia",
     clientFull: "Estudio Cueto-Heredia · cocina Belgrano",
     material: "Granito Negro Brasil",
@@ -58,6 +64,7 @@ export const DASHBOARD_QUOTES: ReadonlyArray<DashboardQuote> = [
   },
   {
     id: "PRES-2026-017",
+    source: "web",
     client: "Familia Pereyra",
     clientFull: "Familia Pereyra · cocina U + isla",
     material: "Silestone Blanco Norte",

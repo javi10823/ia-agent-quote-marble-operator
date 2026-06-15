@@ -6,7 +6,8 @@
 import Link from "next/link";
 import type { DashboardQuote } from "@/lib/api";
 import { StatusChip } from "./StatusChip";
-import { formatAmount, formatM2 } from "./format";
+import { SourceTag } from "./SourceTag";
+import { formatAmount, formatM2, resolveQuoteSource } from "./format";
 
 export function QuoteListItem({ quote }: { quote: DashboardQuote }) {
   return (
@@ -26,12 +27,7 @@ export function QuoteListItem({ quote }: { quote: DashboardQuote }) {
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span
-          className="font-mono"
-          style={{ fontSize: 10, color: "var(--ink-mute)", letterSpacing: "0.4px" }}
-        >
-          {quote.id}
-        </span>
+        <SourceTag source={resolveQuoteSource(quote)} />
         <StatusChip status={quote.status} />
       </div>
       <div style={{ fontSize: 14, color: "var(--ink)" }}>{quote.client}</div>
