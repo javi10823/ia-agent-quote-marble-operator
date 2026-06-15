@@ -634,10 +634,7 @@ export async function listCatalogs(options?: AuthOpts): Promise<CatalogMeta[]> {
   return (await response.json()) as CatalogMeta[];
 }
 
-export async function getCatalog(
-  name: string,
-  options?: AuthOpts,
-): Promise<CatalogContent> {
+export async function getCatalog(name: string, options?: AuthOpts): Promise<CatalogContent> {
   const { signal, bearerToken } = options ?? {};
   const response = await apiFetch(
     `/api/catalog/${encodeURIComponent(name)}`,
@@ -654,10 +651,7 @@ export async function getCatalog(
   return (await response.json()) as CatalogContent;
 }
 
-export async function listBackups(
-  name: string,
-  options?: AuthOpts,
-): Promise<CatalogBackup[]> {
+export async function listBackups(name: string, options?: AuthOpts): Promise<CatalogBackup[]> {
   const { signal, bearerToken } = options ?? {};
   const response = await apiFetch(
     `/api/catalog/backups/${encodeURIComponent(name)}`,
@@ -705,10 +699,7 @@ async function _errorDetail(response: Response, fallback: string): Promise<strin
   }
 }
 
-export async function importPreview(
-  file: File,
-  options?: AuthOpts,
-): Promise<ImportPreview> {
+export async function importPreview(file: File, options?: AuthOpts): Promise<ImportPreview> {
   const { signal, bearerToken } = options ?? {};
   const form = new FormData();
   form.append("file", file);
@@ -756,4 +747,194 @@ export async function importApply(
     );
   }
   return (await response.json()) as ImportApplyResponse;
+}
+
+/* ─── PDF real wire · sub-PR paso-5-pdf-real-wire ─────────────────────
+   POST /api/quotes/{id}/generate    → PdfGeneratedInfo (gen v1)
+   POST /api/quotes/{id}/regenerate  → PdfGeneratedInfo (gen v2 / refresh)
+   GET  /api/quotes/{id}             → PdfGeneratedInfo | null (SSR estado C)
+   getPdfV2DiffData queda en MOCK · no hay endpoint backend equivalente
+   (mockup 21 paso-5-d-revision-v2 · sub-PR posterior abre el endpoint).
+
+   Adapter de shape: backend devuelve `{ok, pdf_url, excel_url, drive_url}`
+   snake_case + sin metadatos UI (pdfSizeKb, generatedBy, traceId, etc).
+   El adapter mapea camelCase y degrada lo faltante a "—" o defaults
+   conservadores (timestamp current). El UI ya muestra "—" cuando los
+   placeholders aparecen (pattern de getQuoteMetadata real).
+
+   Error mapping: el backend solo expone status code + detail string. El
+   handler `_mapPdfError` traduce a codes UI-friendly (PDF_TIMEOUT,
+   DRIVE_QUOTA, BREAKDOWN_MISSING, GENERIC) para que el modal renderee
+   mensajes en español específicos.
+*/
+
+import type { PdfGeneratedInfo } from "./types";
+
+interface RealGenerateResponse {
+  ok?: boolean;
+  pdf_url?: string | null;
+  excel_url?: string | null;
+  drive_url?: string | null;
+  drive_file_id?: string | null;
+  error?: string | null;
+  detail?: string | null;
+}
+
+interface RealQuoteWithDocs {
+  id: string;
+  pdf_url?: string | null;
+  excel_url?: string | null;
+  drive_url?: string | null;
+  drive_file_id?: string | null;
+  updated_at?: string | null;
+  client_name?: string | null;
+  [key: string]: unknown;
+}
+
+// EM_DASH legacy del adapter de listQuotes (línea 91) es `as number` para
+// degradar m². Acá usamos string puro · campos faltantes del backend se
+// renderean como "—" en el UI sin cast.
+const EM_DASH_STR = "—";
+
+function _displayTimestamp(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2, "0");
+    const min = String(d.getMinutes()).padStart(2, "0");
+    return `${dd}.${mm}.${yyyy} ${hh}:${min}`;
+  } catch {
+    return EM_DASH_STR;
+  }
+}
+
+function _adaptToPdfInfo(
+  raw: RealGenerateResponse | RealQuoteWithDocs,
+  fallbackIso?: string,
+): PdfGeneratedInfo | null {
+  const pdfUrl = raw.pdf_url ?? "";
+  if (!pdfUrl) return null;
+  const generatedAtIso =
+    ("updated_at" in raw && typeof raw.updated_at === "string" ? raw.updated_at : fallbackIso) ??
+    new Date().toISOString();
+  return {
+    pdfUrl,
+    excelUrl: raw.excel_url ?? "",
+    driveUrl: raw.drive_url ?? "",
+    driveFolderPath: EM_DASH_STR,
+    pdfSizeKb: 0,
+    excelSizeKb: 0,
+    generatedAtIso,
+    generatedAtDisplay: _displayTimestamp(generatedAtIso),
+    generatedBy: EM_DASH_STR,
+    traceId: EM_DASH_STR,
+    driveId: raw.drive_file_id ?? EM_DASH_STR,
+  };
+}
+
+async function _readErrorBody(response: Response): Promise<string> {
+  try {
+    const data = await response.json();
+    if (typeof data?.detail === "string") return data.detail;
+    if (typeof data?.error === "string") return data.error;
+  } catch {
+    /* response no es JSON · cae al statusText */
+  }
+  return response.statusText || `HTTP ${response.status}`;
+}
+
+/** Mapea el status + detail del backend a un code UI-friendly. El modal
+ * `PdfConfirmModal` consume el `code` para mostrar mensaje en español
+ * específico (PDF_TIMEOUT → "está tardando...", BREAKDOWN_MISSING →
+ * "falta procesar el contexto", etc). */
+function _mapPdfError(status: number, detail: string): { code: string; message: string } {
+  const lower = detail.toLowerCase();
+  if (status === 504 || lower.includes("timeout")) {
+    return { code: "PDF_TIMEOUT", message: detail };
+  }
+  if (
+    lower.includes("drive") &&
+    (lower.includes("quota") || lower.includes("límite") || lower.includes("limite"))
+  ) {
+    return { code: "DRIVE_QUOTA", message: detail };
+  }
+  if (
+    status === 400 &&
+    (lower.includes("quote_breakdown") ||
+      lower.includes("datos de cálculo") ||
+      lower.includes("datos de calculo"))
+  ) {
+    return { code: "BREAKDOWN_MISSING", message: detail };
+  }
+  if (status === 404) {
+    return { code: "QUOTE_NOT_FOUND", message: detail };
+  }
+  return { code: "PDF_GENERIC", message: detail };
+}
+
+async function _doGenerateRequest(
+  path: string,
+  options?: { signal?: AbortSignal; bearerToken?: string | null },
+): Promise<PdfGeneratedInfo> {
+  const { signal, bearerToken } = options ?? {};
+  const response = await apiFetch(
+    path,
+    { method: "POST", signal, bearerToken },
+    90_000, // PDF + Drive upload puede tardar
+  );
+  if (!response.ok) {
+    const detail = await _readErrorBody(response);
+    const { code, message } = _mapPdfError(response.status, detail);
+    throw new ApiError(code, message, response.status);
+  }
+  const data = (await response.json()) as RealGenerateResponse;
+  if (!data.ok) {
+    const { code, message } = _mapPdfError(500, data.error ?? "Error desconocido");
+    throw new ApiError(code, message, 500);
+  }
+  const adapted = _adaptToPdfInfo(data);
+  if (!adapted) {
+    throw new ApiError("PDF_NO_URL", "El backend respondió ok pero sin pdf_url", 500);
+  }
+  return adapted;
+}
+
+export async function triggerPdfGeneration(
+  quoteId: string,
+  options?: { signal?: AbortSignal; bearerToken?: string | null },
+): Promise<PdfGeneratedInfo> {
+  return _doGenerateRequest(`/api/quotes/${encodeURIComponent(quoteId)}/generate`, options);
+}
+
+export async function triggerPdfV2Generation(
+  quoteId: string,
+  options?: { signal?: AbortSignal; bearerToken?: string | null },
+): Promise<PdfGeneratedInfo> {
+  // /regenerate refresca PDF sin recalcular · semánticamente v2 (cambios
+  // editoriales del operador sin tocar números del calculator).
+  return _doGenerateRequest(`/api/quotes/${encodeURIComponent(quoteId)}/regenerate`, options);
+}
+
+export async function getPdfGeneratedInfo(
+  quoteId: string,
+  options?: { signal?: AbortSignal; bearerToken?: string | null },
+): Promise<PdfGeneratedInfo | null> {
+  const { signal, bearerToken } = options ?? {};
+  const response = await apiFetch(
+    `/api/quotes/${encodeURIComponent(quoteId)}`,
+    { signal, bearerToken },
+    20_000,
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new ApiError(
+      "PDF_INFO_LOAD_FAILED",
+      `GET /api/quotes/{id} falló (${response.status})`,
+      response.status,
+    );
+  }
+  const quote = (await response.json()) as RealQuoteWithDocs;
+  return _adaptToPdfInfo(quote);
 }

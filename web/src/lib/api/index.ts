@@ -51,13 +51,23 @@ export const getAuditSnapshot = mocks.getAuditSnapshot;
 /* ─── Paso 5 PDF · Sprint 4 paso-5-pdf-preview · mockup 18 ── */
 export const getPdfTrace = mocks.getPdfTrace;
 
-/* ─── Paso 5 estado C · Sprint 4 paso-5-c-generado · mockup 20 ── */
-export const triggerPdfGeneration = mocks.triggerPdfGeneration;
-export const getPdfGeneratedInfo = mocks.getPdfGeneratedInfo;
+/* ─── Paso 5 estado C · Sprint 4 paso-5-c-generado · mockup 20
+   Wire real con sub-PR paso-5-pdf-real-wire · cierra el MVP loop. */
+export const triggerPdfGeneration = USE_REAL_API
+  ? real.triggerPdfGeneration
+  : mocks.triggerPdfGeneration;
+export const getPdfGeneratedInfo = USE_REAL_API
+  ? real.getPdfGeneratedInfo
+  : mocks.getPdfGeneratedInfo;
 
-/* ─── Paso 5 estado D · Sprint 4 paso-5-d-revision-v2 · mockup 21 ── */
+/* ─── Paso 5 estado D · Sprint 4 paso-5-d-revision-v2 · mockup 21
+   `triggerPdfV2Generation` wirea contra POST /quotes/{id}/regenerate.
+   `getPdfV2DiffData` SIGUE en mock · backend no expone diff v1 vs v2
+   todavía (sub-PR posterior `paso-5-v2-diff-real`). */
 export const getPdfV2DiffData = mocks.getPdfV2DiffData;
-export const triggerPdfV2Generation = mocks.triggerPdfV2Generation;
+export const triggerPdfV2Generation = USE_REAL_API
+  ? real.triggerPdfV2Generation
+  : mocks.triggerPdfV2Generation;
 
 /* ─── Audit trail copy · Sprint 4 audit-trail-copy ────────────────── */
 export const getAuditLog = USE_REAL_API ? real.getAuditLog : mocks.getAuditLog;
