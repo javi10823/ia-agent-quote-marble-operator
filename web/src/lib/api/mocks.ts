@@ -1263,3 +1263,159 @@ export async function updateCatalogConfig(
 export function _resetCatalogConfigStore(): void {
   _catalogConfigStore = structuredClone(_catalogConfigDefaults);
 }
+
+/* ─── Catálogo · viewer + Dux importer + backups (sub-PR 22.2.b) ──────
+   Mocks deterministas para CI/dev (modo mock · sin NEXT_PUBLIC_API_URL).
+   Espejan el shape del backend. El importPreview varía por nombre de
+   archivo para que los e2e ejerciten el banner iva_warning y el diff. */
+
+import type {
+  CatalogBackup,
+  CatalogContent,
+  CatalogMeta,
+  ImportApplyResponse,
+  ImportPreview,
+  RestoreBackupResponse,
+} from "./types";
+
+const _catalogMetaMock: readonly CatalogMeta[] = [
+  { name: "materials-silestone", item_count: 24, last_updated: "04/11/2025" },
+  { name: "materials-purastone", item_count: 18, last_updated: "08/01/2026" },
+  { name: "materials-dekton", item_count: 20, last_updated: "08/09/2025" },
+  { name: "materials-neolith", item_count: 15, last_updated: "08/09/2025" },
+  { name: "materials-puraprima", item_count: 12, last_updated: "29/09/2025" },
+  { name: "materials-laminatto", item_count: 10, last_updated: "02/12/2025" },
+  { name: "materials-granito-nacional", item_count: 30, last_updated: "05/02/2026" },
+  { name: "materials-granito-importado", item_count: 22, last_updated: "08/09/2025" },
+  { name: "materials-marmol", item_count: 16, last_updated: "08/09/2025" },
+  { name: "labor", item_count: 8, last_updated: "25/03/2026" },
+  { name: "delivery-zones", item_count: 32, last_updated: "15/12/2025" },
+  { name: "sinks", item_count: 14, last_updated: "31/10/2025" },
+  { name: "architects", item_count: 8, last_updated: null },
+  { name: "config", item_count: 1, last_updated: null },
+];
+
+export async function listCatalogs(): Promise<CatalogMeta[]> {
+  return structuredClone(_catalogMetaMock) as CatalogMeta[];
+}
+
+export async function getCatalog(name: string): Promise<CatalogContent> {
+  if (name === "config") return structuredClone(_catalogConfigStore);
+  // Lista representativa de ítems para el viewer.
+  const currency = name === "labor" || name.includes("nacional") ? "ARS" : "USD";
+  const field = currency === "ARS" ? "price_ars" : "price_usd";
+  return [
+    { sku: "SKU001", name: `${name} · item 1`, [field]: 12500, currency, price_includes_vat: false, last_updated: "04/11/2025" },
+    { sku: "SKU002", name: `${name} · item 2`, [field]: 18900, currency, price_includes_vat: false, last_updated: "04/11/2025" },
+    { sku: "SKU003", name: `${name} · item 3`, [field]: 9300, currency, price_includes_vat: false, last_updated: "04/11/2025" },
+  ];
+}
+
+const _backupsMock: Record<number, { catalog_name: string } & CatalogBackup> = {
+  101: {
+    id: 101,
+    catalog_name: "materials-silestone",
+    created_at: "2026-05-20T14:32:00",
+    source_file: "dux_materials_2026-05.xlsx",
+    stats: { items_before: 24, updated: 6, new: 2 },
+  },
+  102: {
+    id: 102,
+    catalog_name: "materials-silestone",
+    created_at: "2026-04-02T09:10:00",
+    source_file: "dux_materials_2026-04.xlsx",
+    stats: { items_before: 22, updated: 4, new: 0 },
+  },
+};
+
+export async function listBackups(name: string): Promise<CatalogBackup[]> {
+  return Object.values(_backupsMock)
+    .filter((b) => b.catalog_name === name)
+    .map(({ catalog_name: _c, ...rest }) => structuredClone(rest));
+}
+
+export async function restoreBackup(backupId: number): Promise<RestoreBackupResponse> {
+  const b = _backupsMock[backupId];
+  return {
+    ok: true,
+    catalog: b?.catalog_name ?? "materials-silestone",
+    restored_from_backup: backupId,
+  };
+}
+
+export async function importPreview(file: File): Promise<ImportPreview> {
+  // El nombre del archivo dispara el flag global iva_warning (e2e del banner).
+  const ivaWarning = /iva/i.test(file.name);
+  return {
+    format: "dux_materials",
+    total_items: 28,
+    iva_warning: ivaWarning,
+    currency_mismatch: false,
+    warnings: ivaWarning
+      ? ["El archivo solo tiene columna de precio CON IVA."]
+      : ["SKU 'SIL-999': cambio de precio +42.0% (100 → 142)"],
+    catalogs: {
+      "materials-silestone": {
+        catalog: "materials-silestone",
+        currency: "USD",
+        file_currency: "USD",
+        price_field: "price_usd",
+        updated: [
+          { sku: "SIL-001", name: "Silestone Blanco", old_price: 120, new_price: 135, change_pct: 12.5 },
+          { sku: "SIL-999", name: "Silestone Negro", old_price: 100, new_price: 142, change_pct: 42.0 },
+        ],
+        normalized: [{ sku: "SIL-010", name: "Silestone Gris", old_price: 99.999, new_price: 100.0 }],
+        new: [{ sku: "SIL-200", name: "Silestone Arena", price: 155 }],
+        missing: [{ sku: "SIL-050", name: "Silestone Marfil", price: 110 }],
+        zero_price: [{ sku: "SIL-300", name: "Silestone Demo" }],
+        unchanged: 19,
+        warnings: ["SKU 'SIL-999': cambio de precio +42.0% (100 → 142)"],
+        total_in_file: 23,
+        total_in_catalog: 24,
+      },
+      "materials-dekton": {
+        catalog: "materials-dekton",
+        currency: "USD",
+        file_currency: "USD",
+        price_field: "price_usd",
+        updated: [{ sku: "DEK-001", name: "Dekton Aura", old_price: 200, new_price: 210, change_pct: 5.0 }],
+        normalized: [],
+        new: [],
+        missing: [],
+        zero_price: [],
+        unchanged: 19,
+        warnings: [],
+        total_in_file: 20,
+        total_in_catalog: 20,
+      },
+    },
+    unmatched: [{ sku: "XYZ-001", name: "Item sin catálogo", price: 50 }],
+  };
+}
+
+export async function importApply(input: {
+  file: File;
+  catalogs: string[];
+  includeNew: boolean;
+  sourceFile: string;
+}): Promise<ImportApplyResponse> {
+  const results: ImportApplyResponse["results"] = {};
+  for (const cat of input.catalogs) {
+    if (cat === "materials-silestone") {
+      results[cat] = {
+        ok: true,
+        updated: 2,
+        normalized: 1,
+        added: input.includeNew ? 1 : 0,
+        skipped_zero: 1,
+      };
+    } else {
+      results[cat] = { ok: true, updated: 1, normalized: 0, added: 0, skipped_zero: 0 };
+    }
+  }
+  return {
+    ok: true,
+    results,
+    source_file: input.sourceFile || input.file.name,
+  };
+}

@@ -149,7 +149,20 @@ def _read_xlsx(data: bytes) -> tuple[list[str], list[list]]:
 
 
 def _read_csv(data: bytes) -> tuple[list[str], list[list]]:
-    text = data.decode("utf-8-sig")  # Handle BOM
+    # Dux exporta UTF-8 normalmente, pero los CSV guardados desde Excel en
+    # Windows AR vienen en latin-1 (cp1252) y rompían el decode. Fallback
+    # explícito + mensaje user-friendly si ninguno de los dos sirve.
+    try:
+        text = data.decode("utf-8-sig")  # Handle BOM
+    except UnicodeDecodeError:
+        try:
+            text = data.decode("latin-1")
+            logging.warning("[import] CSV usó encoding latin-1 fallback (no UTF-8)")
+        except UnicodeDecodeError:
+            raise ValueError(
+                "No se pudo leer el archivo: encoding no soportado. "
+                "Guardá el CSV como UTF-8 y volvé a subirlo."
+            )
     reader = csv.reader(io.StringIO(text))
     all_rows = list(reader)
     if not all_rows:

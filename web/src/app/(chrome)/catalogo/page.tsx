@@ -1,24 +1,40 @@
 /**
- * Catálogo · placeholder · Sprint 4 sidebar-and-navigation-fix.
+ * Catálogo · lista · sub-PR 22.2.b catalogo-and-dux-importer-ui.
  *
- * Cierra ruta 404 que el item del Sidebar generaba. Backend ya expone
- * `GET /api/catalog` con los 15 JSONs de materiales/MO/sinks. Sub-PR
- * posterior construye la vista de gestión.
+ * Reemplaza el placeholder (#490) por la lista real de los 14 catálogos
+ * importables + config. Fetch + search + sort viven en el component
+ * cliente (los catálogos son cross-quote · no necesitan SSR aggressive,
+ * mismo criterio que /configuracion).
+ *
+ * Scope CSS: `.catalogo-v2` wrapper · ver globals.css · operator-shared.css
+ * INTACTO.
  */
+import Link from "next/link";
+import { CatalogList } from "@/components/catalog/CatalogList";
+
 export default function CatalogoPage() {
   return (
-    <>
+    <div className="catalogo-v2">
       <div className="topbar">
         <div className="crumbs">
           <span className="now">Catálogo</span>
         </div>
+        <Link href="/catalogo/import" className="btn primary" data-testid="catalog-import-cta">
+          Importar desde Dux
+        </Link>
       </div>
-      <div className="body" data-testid="catalogo-placeholder">
-        <p>Próximamente · UI de gestión de catálogos.</p>
-        <p style={{ color: "var(--ink-mute)", fontSize: 12, marginTop: 8 }}>
-          Backend ya expone <code>GET /api/catalog</code>. Sub-PR posterior construye la vista.
-        </p>
+      <div className="body" data-testid="catalogo-page">
+        <div className="col">
+          <div className="section-head">
+            <h2>Catálogos</h2>
+            <span className="meta">
+              Precios sin IVA · fuente de verdad del cálculo. Para actualizar precios masivos usá
+              Importar desde Dux.
+            </span>
+          </div>
+          <CatalogList />
+        </div>
       </div>
-    </>
+    </div>
   );
 }
