@@ -105,6 +105,31 @@
   align-items: center;
   flex-wrap: wrap;
 }
+/* Search input dark · alineado al resto del shell (antes era el browser
+ * default blanco · destacaba feo sobre el bg oscuro). Apple-flat:
+ * surface bg, borde sutil, focus ring tenue con accent · sin shadow. */
+.dashboard-v2 .dh-search {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  min-width: 240px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.dashboard-v2 .dh-search::placeholder { color: var(--ink-mute); }
+.dashboard-v2 .dh-search:hover { border-color: var(--line-strong); }
+.dashboard-v2 .dh-search:focus,
+.dashboard-v2 .dh-search:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 22%, transparent);
+}
 .dashboard-v2 .dashboard-filterbar {
   display: flex;
   align-items: center;
