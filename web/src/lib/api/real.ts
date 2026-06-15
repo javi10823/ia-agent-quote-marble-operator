@@ -81,6 +81,7 @@ interface RealQuoteListItem {
   total_usd: number | null;
   status: string;
   created_at: string;
+  source?: string | null;
 }
 
 function adaptStatus(s: string): DashboardStatus {
@@ -95,6 +96,9 @@ function adaptListItem(item: RealQuoteListItem): DashboardQuote {
   const amount = currency === "USD" ? (item.total_usd ?? 0) : (item.total_ars ?? 0);
   return {
     id: item.id,
+    // Quote.source del backend ("web" | "operator"). Si el backend no lo
+    // manda, resolveQuoteSource cae al prefijo del id (`web-*`).
+    source: item.source === "web" ? "web" : item.source === "operator" ? "operator" : undefined,
     client: item.client_name || "Cliente sin identificar",
     clientFull: item.client_name || item.project || "—",
     material: item.material || "—",

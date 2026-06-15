@@ -6,6 +6,7 @@
  *   - USD: `USD 1.538` (espacio, separador miles con punto)
  *   - m²:  `6,50 m²` (coma decimal · 2 decimales)
  */
+import type { DashboardSource } from "@/lib/mocks/dashboardDataset";
 
 export function formatARS(value: number): string {
   return `$${value.toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
@@ -24,4 +25,17 @@ export function formatM2(value: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })} m²`;
+}
+
+/**
+ * Resuelve el canal de origen del presupuesto. Preferimos el campo
+ * autoritativo `source` (Quote.source del backend); si falta (mocks legacy
+ * o respuestas viejas) caemos al prefijo del id (`web-*` = web pública).
+ */
+export function resolveQuoteSource(quote: {
+  source?: DashboardSource;
+  id: string;
+}): DashboardSource {
+  if (quote.source === "web" || quote.source === "operator") return quote.source;
+  return quote.id.startsWith("web-") ? "web" : "operator";
 }

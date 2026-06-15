@@ -9,7 +9,8 @@
 import Link from "next/link";
 import type { DashboardQuote } from "@/lib/api";
 import { StatusChip } from "./StatusChip";
-import { formatAmount, formatM2 } from "./format";
+import { SourceTag } from "./SourceTag";
+import { formatAmount, formatM2, resolveQuoteSource } from "./format";
 
 interface Props {
   quotes: DashboardQuote[];
@@ -63,10 +64,10 @@ export function QuoteTable({ quotes, loading }: Props) {
                 style={{ display: "block", color: "inherit" }}
                 data-testid={`quote-link-${q.id}`}
               >
-                <div className="font-mono" style={{ fontSize: 11, color: "var(--ink-mute)" }}>
-                  {q.id}
+                <div>{q.client}</div>
+                <div style={{ marginTop: 4 }}>
+                  <SourceTag source={resolveQuoteSource(q)} />
                 </div>
-                <div style={{ marginTop: 2 }}>{q.client}</div>
               </Link>
             </td>
             <td>{q.material}</td>

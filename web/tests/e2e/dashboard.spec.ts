@@ -194,6 +194,34 @@ test.describe("Regression · scope eliminado (KPIs + aside)", () => {
   });
 });
 
+test.describe("SourceTag · canal web/operador + id oculto", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("el id crudo ya NO se muestra en la fila de la lista", async ({ page }) => {
+    await page.goto("/");
+    const row = page.locator('[data-testid="quote-row-PRES-2026-018"]');
+    await expect(row).toContainText("Cueto-Heredia");
+    // El id (UUID `web-…` en prod, PRES-* en mock) ya no se renderiza como texto.
+    await expect(row).not.toContainText("PRES-2026-018");
+  });
+
+  test("tag 'Web' en quote source=web · tag 'Operador' en source=operator", async ({ page }) => {
+    await page.goto("/");
+    // PRES-2026-017 (Pereyra) tiene source: "web" en el dataset.
+    await expect(
+      page
+        .locator('[data-testid="quote-row-PRES-2026-017"]')
+        .locator('[data-testid="source-tag-web"]'),
+    ).toBeVisible();
+    // PRES-2026-018 (Cueto-Heredia) tiene source: "operator".
+    await expect(
+      page
+        .locator('[data-testid="quote-row-PRES-2026-018"]')
+        .locator('[data-testid="source-tag-operator"]'),
+    ).toContainText("Operador");
+  });
+});
+
 test.describe("Mobile · responsive single layout", () => {
   test.use({ viewport: { width: 375, height: 812 } });
 
