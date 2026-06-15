@@ -306,12 +306,75 @@ def _compute_pdf_outdated(quote: Quote) -> tuple[bool, Optional[datetime]]:
     return pdf_outdated, last_pdf_ts
 
 
+def _client_name_from_breakdown(bd: dict | None) -> str | None:
+    """Extrae el nombre del cliente desde el `quote_breakdown`.
+
+    El wizard (brief → contexto → despiece) guarda el cliente extraído SOLO
+    dentro del JSON `quote_breakdown` (en `verified_context_analysis` /
+    `context_analysis_pending`), nunca en la columna denormalizada
+    `Quote.client_name`. Por eso el header (`GET /quotes/{id}`) y el dashboard
+    (que filtra drafts con `client_name` vacío) no veían el nombre y caían al
+    fallback `Presupuesto {uuid}`.
+
+    Replica la MISMA precedencia que el adapter del frontend
+    (`web/src/lib/api/adapters/context-from-breakdown.ts`):
+
+      1. entry "Cliente" en `data_known`/`assumptions` de `verified_*`
+      2. ídem en `context_analysis_pending`
+      3. `_brief_analysis_raw.client_name` (verified → pending → top-level)
+
+    Devuelve `None` si no hay nombre utilizable.
+    """
+    if not isinstance(bd, dict):
+        return None
+
+    verified = bd.get("verified_context_analysis")
+    pending = bd.get("context_analysis_pending")
+
+    def _find_entry(analysis: object, field_name: str) -> str | None:
+        if not isinstance(analysis, dict):
+            return None
+        for bucket in ("data_known", "assumptions"):
+            for entry in analysis.get(bucket) or []:
+                if isinstance(entry, dict) and entry.get("field") == field_name:
+                    val = (entry.get("value") or "").strip()
+                    if val:
+                        return val
+        return None
+
+    name = _find_entry(verified, "Cliente") or _find_entry(pending, "Cliente")
+    if name:
+        return name
+
+    for source in (verified, pending, bd):
+        raw = source.get("_brief_analysis_raw") if isinstance(source, dict) else None
+        if isinstance(raw, dict):
+            raw_name = (raw.get("client_name") or "").strip() if raw.get("client_name") else ""
+            if raw_name:
+                return raw_name
+
+    return None
+
+
 @router.get("/quotes/{quote_id}")
 async def get_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Quote).where(Quote.id == quote_id))
     quote = result.scalar_one_or_none()
     if not quote:
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+
+    # Lazy denormalization — si la fila no tiene `client_name` pero el
+    # `quote_breakdown` ya lo extrajo (caso típico del wizard), lo copiamos a
+    # la columna y persistimos una sola vez. Así el header deja de mostrar
+    # "Presupuesto {uuid}" y el quote aparece/agrupa en el dashboard. Mismo
+    # patrón de cache lazy que `email_draft`. Idempotente: corre solo mientras
+    # `client_name` esté vacío.
+    if not (quote.client_name or "").strip():
+        derived = _client_name_from_breakdown(quote.quote_breakdown)
+        if derived:
+            quote.client_name = derived[:500]
+            await db.commit()
+            await db.refresh(quote)
 
     # PR #442 — computar pdf_outdated antes de armar el response.
     pdf_outdated, pdf_generated_at = _compute_pdf_outdated(quote)
