@@ -76,14 +76,20 @@ def _extract_metrics(quote: Quote) -> dict | None:
         return None
     is_edificio = bool(bd.get("is_edificio"))
     if not is_edificio:
-        # El Bug 1 solo afecta a edificio PDF y al Excel del flujo
-        # standard (que también pasa por _generate_excel · línea 1112).
-        # El standard `_generate_pdf` NO tenía el bug (recalculaba
-        # bruto desde m² × precio).
-        # Para conservar el universo afectable, incluimos NO-edificio
-        # si el quote tiene Excel generado (asumimos que sí, todos
-        # los quotes lo generan).
-        pass
+        # Bug 1 fue EXCLUSIVO de los renderers edificio:
+        # - `_generate_edificio_pdf` (document_tool.py:871 · pre-fix leía
+        #   `material_total` legacy NET y restaba descuento de nuevo).
+        # - `_generate_edificio_excel` (line 1112 · mismo patrón).
+        #
+        # Los renderers standard NUNCA tuvieron el bug: ambos recalculan
+        # bruto desde `m² × precio` ignorando `material_total` del breakdown:
+        # - `_generate_pdf` standard (~1415): `round(mat_m2 * mat_price)`.
+        # - `_generate_excel` standard (~1798): `round(mat_m2 * mat_price)`.
+        #
+        # Incluir quotes NO-edificio inflaría el universo con falsos
+        # positivos y generaría plata fantasma si Agos re-factura sobre
+        # el CSV. Hallazgo audit indep · fix bloqueante pre-merge.
+        return None
     return {
         "discount_pct": discount_pct,
         "material_total_net": material_total_net,
