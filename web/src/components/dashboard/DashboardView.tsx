@@ -78,16 +78,12 @@ export function DashboardView() {
           </div>
           <div className="dh-actions">
             <input
-              type="text"
+              type="search"
               placeholder="Buscar cliente…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               data-testid="search-input"
-              className="input"
-              style={{
-                padding: "8px 12px",
-                minWidth: 240,
-              }}
+              className="dh-search"
             />
             <Link href="/quotes/new" className="btn primary" data-testid="cta-new-quote">
               + Nuevo presupuesto
