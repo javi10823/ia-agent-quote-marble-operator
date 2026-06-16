@@ -566,9 +566,12 @@ async def _run_dual_read(
             # Construir y emitir context_analysis
             try:
                 from app.modules.quote_engine.context_analyzer import build_context_analysis
-                from app.modules.agent.tools.catalog_tool import get_ai_config as _get_ai
                 _cfg_defaults = {
-                    "default_zocalo_height": (_get_ai() or {}).get("default_zocalo_height", 0.07),
+                    # sprint-4/zocalo-config-unification: leer del MISMO bloque
+                    # (measurements.*) que edita /configuracion (#492). Antes leía
+                    # de ai_engine.* vía get_ai_config → la key no existe ahí →
+                    # caía SIEMPRE al fallback 0.07 (bug financiero · sobre-cobro).
+                    "default_zocalo_height": _cfg("measurements.default_zocalo_height", 0.05),
                     "default_payment": "Contado",
                     "default_delivery_days": "30 días",
                 }
@@ -2918,12 +2921,12 @@ class AgentService:
                             from app.modules.quote_engine.context_analyzer import (
                                 build_context_analysis,
                             )
-                            from app.modules.agent.tools.catalog_tool import (
-                                get_ai_config as _get_ai_tp,
-                            )
                             _cfg_tp = {
-                                "default_zocalo_height": (_get_ai_tp() or {}).get(
-                                    "default_zocalo_height", 0.07
+                                # sprint-4/zocalo-config-unification: idem site 1 ·
+                                # leer measurements.* (bloque que edita /configuracion),
+                                # no ai_engine.* · fallback master D'Angelo 0.05 (5cm).
+                                "default_zocalo_height": _cfg(
+                                    "measurements.default_zocalo_height", 0.05
                                 ),
                                 "default_payment": "Contado",
                                 "default_delivery_days": "30 días",
