@@ -1,6 +1,8 @@
 import json
 import logging
 import math
+import re
+import unicodedata
 from pathlib import Path
 
 from app.core.catalog_dir import CATALOG_DIR
@@ -253,40 +255,93 @@ def catalog_batch_lookup(queries: list[dict]) -> dict:
     return {"results": results, "count": len(results)}
 
 
+def _normalize_architect_text(value: str) -> str:
+    """Lowercase + NFKD + drop accents + collapse whitespace + trim.
+
+    NFKD decomposes accented chars (á → a + ◌́); category Mn filter drops
+    the combining marks. Lets "María" match "MARIA" deterministically.
+    """
+    if not value:
+        return ""
+    nfkd = unicodedata.normalize("NFKD", value)
+    no_accents = "".join(c for c in nfkd if unicodedata.category(c) != "Mn")
+    return " ".join(no_accents.lower().split())
+
+
+def _matches_token_word_boundary(haystack: str, token: str) -> bool:
+    """True if `token` appears in `haystack` as a contiguous match with
+    word boundaries on both sides. Both inputs are expected normalized."""
+    if not token or not haystack:
+        return False
+    return bool(re.search(r"\b" + re.escape(token) + r"\b", haystack))
+
+
 def check_architect(client_name: str) -> dict:
-    """Check if a client is a registered architect with discount."""
+    """Check if a client is a registered architect with discount.
+
+    Two-pass strict matching:
+      1. Exact match (normalized) against `name` or `firm`.
+      2. `match_tokens` declared per architect entry, matched as contiguous
+         word-boundary sequences in the client name.
+
+    Reverse substring matching was removed (pre-2026-06 bug B): clients whose
+    name happened to contain an architect's firm got auto-discount. The
+    `match_tokens` field is the source of truth — to broaden matching for an
+    architect, add tokens to architects.json, not loosen the algorithm.
+    """
     items = _load_catalog("architects")
-    name_lower = client_name.lower().strip()
+    name_norm = _normalize_architect_text(client_name)
 
-    # Exact match
+    if not name_norm:
+        return {"found": False, "message": f"'{client_name}' no está en architects.json"}
+
+    # Pass 1: exact match against `name` only.
+    # `firm` is intentionally excluded — short firms like "Munge" (5 chars) caused
+    # false positives for clients whose name matched the firm by coincidence.
+    # To match a firm exactly, declare it in `match_tokens` (pass 2).
     for item in items:
-        item_name = (item.get("name") or "").lower()
-        item_firm = (item.get("firm") or "").lower()
-        if name_lower == item_name or name_lower == item_firm:
-            return {"found": True, "exact": True, "name": item["name"], "firm": item.get("firm"), "discount": item.get("discount", True)}
+        if name_norm == _normalize_architect_text(item.get("name") or ""):
+            return {
+                "found": True,
+                "exact": True,
+                "name": item["name"],
+                "firm": item.get("firm"),
+                "discount": item.get("discount", True),
+            }
 
-    # Substring match only — word-overlap fuzzy removed because generic tokens
-    # ("estudio", "arquitectura") produced false positives (e.g. "Estudio 72"
-    # matching "ALMA ESTUDIO"). Substring is strict enough to catch legitimate
-    # partial inputs ("MUNGE" ⊂ "ESTUDIO MUNGE", "FURIGO" ⊂ "ARQ. PAMELA FURIGO").
-    partial = []
+    matches = []
     for item in items:
-        item_name = (item.get("name") or "").lower()
-        item_firm = (item.get("firm") or "").lower()
+        for token in (item.get("match_tokens") or []):
+            token_norm = _normalize_architect_text(token)
+            if _matches_token_word_boundary(name_norm, token_norm):
+                matches.append({
+                    "name": item["name"],
+                    "firm": item.get("firm"),
+                    "discount": item.get("discount", True),
+                })
+                break
 
-        # Guard against empty strings (empty in anything is always True)
-        if (name_lower and name_lower in item_name) or (name_lower and item_firm and name_lower in item_firm) or (item_name and item_name in name_lower) or (item_firm and item_firm in name_lower):
-            partial.append({"name": item["name"], "firm": item.get("firm"), "discount": item.get("discount", True)})
+    if not matches:
+        return {"found": False, "message": f"'{client_name}' no está en architects.json"}
 
-    if partial:
-        # Ambiguous: multiple architects matched — do NOT auto-apply discount.
-        # Require operator confirmation to avoid applying the wrong discount.
-        if len(partial) > 1:
-            names = ", ".join(p["name"] for p in partial)
-            return {"found": False, "ambiguous": True, "candidates": partial, "message": f"Ambiguo: '{client_name}' matchea {len(partial)} arquitectas ({names}). Confirmar con operador antes de aplicar descuento."}
-        return {"found": True, "exact": True, "name": partial[0]["name"], "firm": partial[0].get("firm"), "discount": partial[0].get("discount", True), "matches": partial, "message": f"Arquitecta encontrada: {partial[0]['name']}. Aplicar descuento."}
+    if len(matches) > 1:
+        names = ", ".join(m["name"] for m in matches)
+        return {
+            "found": False,
+            "ambiguous": True,
+            "candidates": matches,
+            "message": f"Ambiguo: '{client_name}' matchea {len(matches)} arquitectas ({names}). Confirmar con operador antes de aplicar descuento.",
+        }
 
-    return {"found": False, "message": f"'{client_name}' no está en architects.json"}
+    return {
+        "found": True,
+        "exact": True,
+        "name": matches[0]["name"],
+        "firm": matches[0].get("firm"),
+        "discount": matches[0].get("discount", True),
+        "matches": matches,
+        "message": f"Arquitecta encontrada: {matches[0]['name']}. Aplicar descuento.",
+    }
 
 
 def fuzzy_sink_lookup(query: str) -> dict:

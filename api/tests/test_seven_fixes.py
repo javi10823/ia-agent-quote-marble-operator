@@ -112,14 +112,18 @@ class TestFuzzySinkLookup:
 # ═══════════════════════════════════════════════════════
 
 class TestArchitectDiscount:
-    def test_munge_partial_match(self):
-        """MUNGE should match ESTUDIO MUNGE in architects.json."""
-        result = check_architect("MUNGE")
+    def test_pamela_furigo_token_match(self):
+        """'Pamela Furigo' is declared as match_token for ARQ. PAMELA FURIGO."""
+        result = check_architect("Pamela Furigo")
         assert result["found"] is True
+        assert "FURIGO" in result["name"]
 
-    def test_munge_case_insensitive(self):
-        result = check_architect("munge")
+    def test_estudio_munge_case_insensitive(self):
+        """Exact match is case + accent insensitive after sprint-4 strict refactor.
+        Note: 'munge' alone no longer matches (conservative token policy)."""
+        result = check_architect("estudio munge")
         assert result["found"] is True
+        assert result["name"] == "ESTUDIO MUNGE"
 
     def test_auto_discount_without_explicit_flag(self):
         """Calculator must auto-apply architect discount even if agent doesn't pass discount_pct."""
