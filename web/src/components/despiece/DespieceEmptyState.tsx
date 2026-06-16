@@ -43,7 +43,7 @@ export function DespieceEmptyState({ onProcessWithAI, onCompleteManual }: Props)
             Subí el brief, el plano, o ambos. <em>Valentina</em> identifica las piezas y propone el
             despiece completo. Después editás lo que quieras.
           </div>
-          <div className="meta">→ vuelve al paso 1 · procesa con IA</div>
+          <div className="meta">→ revisá el contexto y reintentá</div>
         </div>
 
         <div

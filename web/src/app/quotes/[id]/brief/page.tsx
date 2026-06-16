@@ -1,18 +1,15 @@
 /**
- * Paso 1 · Brief — placeholder.
+ * Paso 1 · Brief — redirect a Paso 2 · Contexto.
  *
- * Implementación real (drag & drop de plano, brief libre, extracción
- * IA) en sub-PR `sprint-2/paso-1-brief-upload`.
+ * La ruta persiste como safety net. El step `brief` sigue declarado en
+ * `STEPS` (canonicalQuote.ts) para preservar la semántica del Stepper.
  */
-export default function BriefPage() {
-  return (
-    <div className="col placeholder-section">
-      <h2 className="font-serif italic" style={{ marginBottom: 8 }}>
-        Paso 1 · Brief
-      </h2>
-      <p className="font-serif italic text-ink-soft">
-        Placeholder. Implementación viene en sprint-2/paso-1-brief-upload.
-      </p>
-    </div>
-  );
+import { redirect } from "next/navigation";
+
+interface Props {
+  params: { id: string };
+}
+
+export default function BriefPage({ params }: Props) {
+  redirect(`/quotes/${params.id}/contexto`);
 }

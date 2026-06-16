@@ -18,28 +18,9 @@ test("/ home muestra dashboard con saludo Marina + CTA Nuevo presupuesto", async
   await expect(page.locator('[data-testid="cta-new-quote"]')).toBeVisible();
 });
 
-test("chrome shell renderea en /quotes/[id]/brief", async ({ page }) => {
+test("/quotes/[id]/brief redirige a /contexto", async ({ page }) => {
   await page.goto("/quotes/PRES-2026-018/brief");
-
-  // Sidebar visible con brand
-  await expect(page.locator(".sidebar")).toBeVisible();
-  await expect(page.locator(".sidebar .brand")).toContainText("D'Angelo Operator");
-
-  // Topbar visible con breadcrumb del quote
-  await expect(page.locator(".topbar")).toBeVisible();
-  await expect(page.locator(".topbar .crumbs .now")).toContainText("PRES-2026-018");
-  await expect(page.locator(".topbar .crumbs .now")).toContainText("Cueto-Heredia");
-
-  // Status chip · PRES-018 está en status "sent" en DASHBOARD_QUOTES
-  await expect(page.locator(".status-chip.sent")).toBeVisible();
-
-  // Qhead muestra cliente canon (DASHBOARD_QUOTES: PRES-018 = Cueto-Heredia · Granito Negro Brasil)
-  await expect(page.locator(".qhead h1")).toContainText("Cueto-Heredia");
-  await expect(page.locator(".qhead .sub")).toContainText("Negro Brasil");
-
-  // Stepper presente con 5 pasos y paso 1 activo
-  await expect(page.locator(".stepper")).toHaveAttribute("data-current-step", "brief");
-  await expect(page.locator('.stepper .step[data-step="brief"]')).toHaveClass(/now/);
+  await page.waitForURL(/\/quotes\/PRES-2026-018\/contexto/, { timeout: 5000 });
 });
 
 test("stepper se actualiza al navegar entre rutas", async ({ page }) => {
