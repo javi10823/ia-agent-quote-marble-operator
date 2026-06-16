@@ -214,3 +214,24 @@ class TestCardEditorAddZocalo:
         patched, _a, _e = apply_card_patch(_card_un_tramo_sin_zocalo(), [_add_zocalo_op(alto_m=0)])
         z = patched["sectores"][0]["tramos"][0]["zocalos"][0]
         assert z["alto_m"] == 0.05
+
+
+# ── capa de INFERENCIA LLM (prompt del extractor) · CIERRE FINAL saga zócalo ─
+# Quinto sitio (audit #503): el ejemplo de _EXTRACTOR_SYSTEM mostraba
+# alto_m: 0.07 → sesgaba al LLM a emitir 0.07 explícito, que gana sobre el
+# default config en apply_card_patch → bypassa el fix de #503. Este guard
+# blinda el prompt contra regresión.
+
+from app.modules.agent.card_editor import _EXTRACTOR_SYSTEM
+
+
+class TestExtractorPromptNoZocalo007:
+    def test_prompt_no_contiene_007(self):
+        # Regresión: ningún 0.07 (ni el ejemplo) que sesgue al modelo.
+        assert "0.07" not in _EXTRACTOR_SYSTEM
+
+    def test_prompt_instruye_omitir_alto_si_no_especificado(self):
+        # El prompt debe decirle al modelo que omita alto_m cuando el
+        # operador no lo especifica (así gobierna el default del config).
+        assert "alto_m" in _EXTRACTOR_SYSTEM
+        assert "OMIT" in _EXTRACTOR_SYSTEM.upper()
