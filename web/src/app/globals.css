@@ -399,3 +399,41 @@
   background: transparent;
   color: var(--ink-mute);
 }
+
+/* ─────────────────────────────────────────────────────────
+   Sprint 4 config-scroll-fix · scroll vertical en páginas wrapped
+   del route-group (chrome) · operator-shared.css INTACTO (lección #66).
+
+   El layout fijo a viewport (Sprint 1.5 · operator-shared.css) asume que
+   `.body` es hijo DIRECTO de `.main`: `.main` es grid de 4 filas
+   (auto auto auto 1fr) para topbar/qhead/stepper/body de /quotes, y solo
+   `.main > .body` recibe overflow-y:auto. Las páginas /configuracion y
+   /catalogo envuelven topbar+body en un único `<div .config-v2/.catalogo-v2>`,
+   así que:
+     1) ese wrapper cae en la fila 1 (auto = altura de contenido) y desborda
+        `.page` (height:100vh; overflow:hidden) → recorta sin scroll.
+     2) `.body` es NIETO de `.main` → el selector `.main > .body` no matchea
+        → no hay scroll interno.
+   (/clientes usa Fragment, así que su `.body` sí es hijo directo y se salva.)
+
+   Fix: el wrapper llena `.main` (fila 1fr), se vuelve grid auto/1fr (topbar
+   fijo + body flexible), y el `.body` recupera el scroll interno. Scoped a
+   los dos wrappers afectados · NO toca la lógica del accordion.
+   ───────────────────────────────────────────────────────── */
+@media (min-width: 1024px) {
+  body:not([data-print]):not([data-mobile]) .main:has(> .config-v2),
+  body:not([data-print]):not([data-mobile]) .main:has(> .catalogo-v2) {
+    grid-template-rows: 1fr;
+  }
+  body:not([data-print]):not([data-mobile]) .config-v2,
+  body:not([data-print]):not([data-mobile]) .catalogo-v2 {
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto 1fr;
+  }
+  body:not([data-print]):not([data-mobile]) .config-v2 > .body,
+  body:not([data-print]):not([data-mobile]) .catalogo-v2 > .body {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
