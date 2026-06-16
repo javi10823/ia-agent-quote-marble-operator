@@ -20,6 +20,7 @@ from typing import Any
 import anthropic
 
 from app.core.config import settings
+from app.core.company_config import get as _cfg
 
 logger = logging.getLogger(__name__)
 
@@ -235,7 +236,11 @@ def apply_card_patch(dr: dict, ops: list[dict]) -> tuple[dict, list[str], list[s
                 t.setdefault("zocalos", []).append({
                     "lado": op.get("lado", "trasero"),
                     "ml": float(op.get("ml", 0) or 0),
-                    "alto_m": float(op.get("alto_m", 0.07) or 0.07),
+                    # sprint-4/zocalo-card-editor-fix (cierre saga · fast-follow
+                    # audit #502): default del alto desde config editable, no 0.07
+                    # hardcodeado. `or` preserva el comportamiento previo (0 o
+                    # ausente → default · un zócalo de 0cm no es válido).
+                    "alto_m": float(op.get("alto_m") or _cfg("measurements.default_zocalo_height", 0.05)),
                     "status": "CONFIRMADO",
                     "opus_ml": None,
                     "sonnet_ml": None,

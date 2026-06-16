@@ -158,3 +158,59 @@ class TestApplyZocalosAnswer:
         )
         z = dr["sectores"][0]["tramos"][0]["zocalos"][0]
         assert z["alto_m"] == 0.10
+
+
+# ── card_editor (path EDICIÓN MANUAL) · cierre saga · fast-follow audit #502 ─
+# Cuarto y último sitio del bug 7cm: la op add_zocalo del editor manual de
+# card (card_editor.py:238) defaulteaba a 0.07 hardcodeado e ignoraba el
+# config. Detectado por el barrido amplio (grep del VALOR, no de la función).
+
+from app.modules.agent import card_editor
+from app.modules.agent.card_editor import apply_card_patch
+
+
+def _card_un_tramo_sin_zocalo() -> dict:
+    return {
+        "sectores": [
+            {"id": "cocina", "tipo": "L", "tramos": [
+                {"id": "t1", "largo_m": {"valor": 1.61}, "zocalos": []},
+            ]},
+        ],
+    }
+
+
+def _add_zocalo_op(**extra) -> dict:
+    return {"op": "add_zocalo", "sector_id": "cocina", "tramo_id": "t1",
+            "lado": "trasero", "ml": 1.61, **extra}
+
+
+class TestCardEditorAddZocalo:
+    def test_sin_alto_m_usa_config_005(self, monkeypatch):
+        monkeypatch.setattr(
+            card_editor, "_cfg",
+            lambda key, default=None: 0.05 if key == "measurements.default_zocalo_height" else default,
+        )
+        patched, _applied, _errors = apply_card_patch(_card_un_tramo_sin_zocalo(), [_add_zocalo_op()])
+        z = patched["sectores"][0]["tramos"][0]["zocalos"][0]
+        assert z["alto_m"] == 0.05
+
+    def test_alto_m_explicito_008_ignora_config(self, monkeypatch):
+        monkeypatch.setattr(
+            card_editor, "_cfg",
+            lambda key, default=None: 0.05 if key == "measurements.default_zocalo_height" else default,
+        )
+        patched, _a, _e = apply_card_patch(_card_un_tramo_sin_zocalo(), [_add_zocalo_op(alto_m=0.08)])
+        z = patched["sectores"][0]["tramos"][0]["zocalos"][0]
+        assert z["alto_m"] == 0.08
+
+    def test_alto_m_cero_cae_al_config(self, monkeypatch):
+        # Comportamiento documentado: un zócalo de 0cm de alto no es válido ·
+        # 0 (falsy) se trata como "no especificado" → default del config.
+        # Preserva la semántica `or` previa (antes 0 → 0.07; ahora 0 → config).
+        monkeypatch.setattr(
+            card_editor, "_cfg",
+            lambda key, default=None: 0.05 if key == "measurements.default_zocalo_height" else default,
+        )
+        patched, _a, _e = apply_card_patch(_card_un_tramo_sin_zocalo(), [_add_zocalo_op(alto_m=0)])
+        z = patched["sectores"][0]["tramos"][0]["zocalos"][0]
+        assert z["alto_m"] == 0.05
