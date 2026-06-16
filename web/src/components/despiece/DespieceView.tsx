@@ -184,7 +184,7 @@ export function DespieceView({ quoteId }: Props) {
           </div>
         </div>
         <DespieceEmptyState
-          onProcessWithAI={() => router.push(`/quotes/${quoteId}/brief`)}
+          onProcessWithAI={() => router.push(`/quotes/${quoteId}/contexto`)}
           onCompleteManual={() => setManualMode(true)}
         />
       </div>
