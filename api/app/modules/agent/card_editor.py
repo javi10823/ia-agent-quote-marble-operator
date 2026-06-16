@@ -240,7 +240,7 @@ def apply_card_patch(dr: dict, ops: list[dict]) -> tuple[dict, list[str], list[s
                     "lado": op.get("lado", "trasero"),
                     "ml": float(op.get("ml", 0) or 0),
                     # sprint-4/zocalo-card-editor-fix (cierre saga · fast-follow
-                    # audit #502): default del alto desde config editable, no 0.07
+                    # audit #502): default del alto desde config editable, no
                     # hardcodeado. `or` preserva el comportamiento previo (0 o
                     # ausente → default · un zócalo de 0cm no es válido).
                     "alto_m": float(op.get("alto_m") or _cfg("measurements.default_zocalo_height", 0.05)),

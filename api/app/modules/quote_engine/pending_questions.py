@@ -9,7 +9,7 @@ Este módulo define:
 - El shape del objeto PendingQuestion.
 - Detectores (funciones puras que toman contexto y devuelven preguntas).
 - Un aplicador que toma las respuestas del operador y las materializa en el
-  JSON de medidas verificadas (ej: "Sí, trasero 7cm" → agrega zócalos).
+  JSON de medidas verificadas (ej: "Sí, trasero 5cm" → agrega zócalos).
 
 Arranca con UN detector: zócalos cuando el brief no los menciona. Siguientes
 PRs agregan más (profundidad de isla, patas, anafe count, etc.) sobre la
@@ -519,7 +519,7 @@ def _detect_frentin_question(brief: str, dual_result: dict) -> dict | None:
             {"value": "10", "label": "Sí — 10 cm frente"},
             {"value": "custom", "label": "Sí — otro alto o lados (detallar)"},
         ],
-        "detail_placeholder": "Ej: 7 cm, frente y lateral izq",
+        "detail_placeholder": "Ej: 5 cm, frente y lateral izq",
     }
 
 
@@ -574,7 +574,7 @@ def _detect_zocalos_question(brief: str, dual_result: dict) -> dict | None:
 
     # sprint-4/zocalo-pending-questions-fix: el alto default sale del config
     # editable (/configuracion · measurements.default_zocalo_height), NO
-    # hardcodeado. Antes 0.07 fijo → ignoraba el config + sobre-cobro 40%
+    # hardcodeado. Antes valor fijo → ignoraba el config + sobre-cobro 40%
     # (fast-follow del audit de #501 · el path interactivo no se había unificado).
     _alto_default = _cfg("measurements.default_zocalo_height", 0.05)
     _alto_cm = int(round(_alto_default * 100))
@@ -702,7 +702,7 @@ def apply_zocalos_answer(dual_result: dict, answer: dict, default_alto_m: float 
 
     sprint-4/zocalo-pending-questions-fix: `default_alto_m=None` → se lee del
     config editable (measurements.default_zocalo_height, default master 0.05).
-    Antes era 0.07 fijo → ignoraba /configuracion + sobre-cobro 40%.
+    Antes era valor fijo → ignoraba /configuracion + sobre-cobro 40%.
 
     Muta y devuelve dual_result in-place.
     """

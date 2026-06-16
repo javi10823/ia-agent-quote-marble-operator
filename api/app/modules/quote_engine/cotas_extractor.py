@@ -333,7 +333,7 @@ def format_cotas_for_prompt(cotas: list[Cota]) -> str:
 # ═══════════════════════════════════════════════════════
 #
 # El plano normalmente tiene, al costado del dibujo o debajo, una tabla de
-# características con texto tipo "ZOCALOS: 7 cm de altura", "PILETA: Johnson
+# características con texto tipo "ZOCALOS: 5 cm de altura", "PILETA: Johnson
 # LUXOR COMPACT SI71", "MATERIAL: Purastone Blanco Paloma", etc.
 #
 # `extract_cotas_from_drawing` ignora todo esto porque filtra por decimales
@@ -392,7 +392,7 @@ def extract_specs_from_table(page, table_x0: float) -> list[str]:
 
     Captura texto a la DERECHA de table_x0 (típicamente la tabla de
     especificaciones) y también el margen inferior del área del dibujo
-    (notas "ZOCALOS 7 cm", etc.). Filtra por keywords conocidas para
+    (notas "ZOCALOS 5 cm", etc.). Filtra por keywords conocidas para
     descartar ruido (nombre del estudio, logo, escalas, etc.).
     """
     if not page:
@@ -404,7 +404,7 @@ def extract_specs_from_table(page, table_x0: float) -> list[str]:
         return []
 
     # Tabla lateral: x0 >= table_x0. Además, capturamos cualquier texto del
-    # dibujo que matchee keywords (notas al pie tipo "ZOCALOS 7 cm altura").
+    # dibujo que matchee keywords (notas al pie tipo "ZOCALOS 5 cm altura").
     page_h = float(getattr(page, "height", 0) or 0)
     footer_cutoff = page_h * 0.95 if page_h else float("inf")
     caratula_cutoff = page_h * 0.05 if page_h else 0

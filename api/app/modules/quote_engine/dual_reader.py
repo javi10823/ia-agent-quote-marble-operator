@@ -29,8 +29,8 @@ def _default_zocalo_alto() -> float:
     de hardcodear. Permite que el operador lo edite desde el panel de
     Configuración web sin redeploy.
 
-    sprint-4/zocalo-config-unification: fallback corregido 0.07 → 0.05
-    (default master D'Angelo · mismo root-cause que agent.py:571/2925)."""
+    sprint-4/zocalo-config-unification: fallback corregido al default
+    master D'Angelo (5cm · cerrado #501)."""
     return _cfg("measurements.default_zocalo_height", 0.05)
 
 logger = logging.getLogger(__name__)
@@ -219,8 +219,8 @@ async def _call_vision(
 # ═══════════════════════════════════════════════════════
 #
 # Los modelos Opus y Sonnet a veces escriben el mismo warning con palabras
-# distintas (ej. "altura de zócalo asumida 0.07m" vs "se asume 0.07 m por
-# convención estándar (7 cm)"). Un `set()` no las dedupea porque las strings
+# distintas (ej. "altura de zócalo asumida" vs "se asume altura por
+# convención estándar"). Un `set()` no las dedupea porque las strings
 # difieren. Además, a veces un modelo levanta una ambigüedad que el otro
 # modelo resolvió, y después de reconciliar queda como warning "huérfano"
 # que contradice el resultado final (ej. "solo 1 zócalo" cuando Opus
@@ -239,10 +239,11 @@ _AMBIG_BUCKETS: list[tuple[str, list[list[str]]]] = [
         ["altura", "zocal", "default"],
         ["altura", "zócal", "convenci"],
         ["altura", "zocal", "convenci"],
-        ["altura", "zócal", "7 cm"],
-        ["altura", "zocal", "7 cm"],
-        ["altura", "zócal", "7cm"],
-        ["altura", "zocal", "7cm"],
+        # PR #505 saga zócalo cosmetic cleanup — removidas 4 entries que
+        # detectaban el valor pre-#501 en el bucket. Post-#501 el config
+        # es 5cm; el LLM ya no debería emitir el valor pre-fix como
+        # default. Si lo hace, NO queremos blanquearlo silenciosamente
+        # en este bucket — que quede como ambigüedad cruda para revisión.
     ]),
     ("pileta_sin_modelo", [
         ["pileta", "modelo"],
@@ -367,7 +368,11 @@ def _is_obsolete(warning: str, rec_tramos: list[dict]) -> bool:
 def _categorize(warning: str) -> str:
     """Classify warning as DEFAULT (info-only), INFO (falta dato externo), REVISION (necesita vista al plano)."""
     t = _normalize_text(warning)
-    if any(k in t for k in ("asum", "default", "convenci")) and ("altura" in t or "7 cm" in t or "7cm" in t):
+    # PR #505 saga zócalo cosmetic cleanup — quitamos los triggers por
+    # valor literal (pre-#501). Post-#501 master es 5cm; si el LLM emite
+    # el valor pre-fix como default, NO queremos blanquearlo como DEFAULT
+    # (info-only). Que quede como ambigüedad cruda.
+    if any(k in t for k in ("asum", "default", "convenci")) and "altura" in t:
         return "DEFAULT"
     if "pileta" in t and any(k in t for k in ("modelo", "marca", "no indicad")):
         return "INFO"
@@ -808,7 +813,7 @@ def _check_m2(result: dict, planilla_m2: Optional[float]) -> Optional[str]:
     ve en la card y escondía casos de piezas faltantes.
 
     Threshold: 2%. Una diff de 2% suele indicar un zócalo no detectado
-    (ej: 0.05 m² = ~0.75 ml × 0.07 m). Con threshold más alto se perdía
+    (ej: ~0.04 m² = ~0.75 ml × 0.05 m). Con threshold más alto se perdía
     esa señal.
     """
     if planilla_m2 is None or planilla_m2 <= 0:
