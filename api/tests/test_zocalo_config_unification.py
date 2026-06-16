@@ -86,3 +86,75 @@ class TestContextAssumptionsZocalo:
         )
         z = _zocalo_assumption(out)
         assert z is not None and "6 cm" in z["value"]
+
+
+# ── pending_questions (path INTERACTIVO) · fast-follow audit #501 ───────────
+# El audit independiente de #501 detectó que el path interactivo seguía
+# hardcodeando 7cm (pending_questions.py:585 opción default + :683 apply).
+# Es probablemente el path MÁS frecuente (cualquier brief sin zócalo dispara
+# la pregunta). Estos tests cierran ese gap.
+
+from app.modules.quote_engine import pending_questions
+from app.modules.quote_engine.pending_questions import (
+    _detect_zocalos_question,
+    apply_zocalos_answer,
+)
+
+
+def _dr_un_tramo() -> dict:
+    """dual_result mínimo · 1 sector / 1 tramo / sin zócalos (dispara la pregunta)."""
+    return {
+        "sectores": [
+            {
+                "tipo": "cocina",
+                "tramos": [
+                    {"largo_m": {"valor": 2.05, "status": "CONFIRMADO"}, "zocalos": []},
+                ],
+            }
+        ]
+    }
+
+
+class TestPendingQuestionInteractivo:
+    def test_pregunta_default_usa_config_005_no_007(self, monkeypatch):
+        monkeypatch.setattr(
+            pending_questions, "_cfg",
+            lambda key, default=None: 0.05 if key == "measurements.default_zocalo_height" else default,
+        )
+        q = _detect_zocalos_question("", _dr_un_tramo())
+        assert q is not None
+        opt = next(o for o in q["options"] if o["value"] == "default_trasero")
+        assert "5cm" in opt["label"] and "7cm" not in opt["label"]
+        assert opt["apply"]["alto_m"] == 0.05
+
+    def test_pregunta_default_respeta_config_editable_008(self, monkeypatch):
+        monkeypatch.setattr(
+            pending_questions, "_cfg",
+            lambda key, default=None: 0.08 if key == "measurements.default_zocalo_height" else default,
+        )
+        q = _detect_zocalos_question("", _dr_un_tramo())
+        opt = next(o for o in q["options"] if o["value"] == "default_trasero")
+        assert "8cm" in opt["label"]
+        assert opt["apply"]["alto_m"] == 0.08
+
+
+class TestApplyZocalosAnswer:
+    def test_sin_default_explicito_lee_config_005(self, monkeypatch):
+        monkeypatch.setattr(
+            pending_questions, "_cfg",
+            lambda key, default=None: 0.05 if key == "measurements.default_zocalo_height" else default,
+        )
+        dr = apply_zocalos_answer(_dr_un_tramo(), {"id": "zocalos", "value": "default_trasero"})
+        z = dr["sectores"][0]["tramos"][0]["zocalos"][0]
+        assert z["alto_m"] == 0.05
+
+    def test_alto_m_explicito_en_answer_gana(self, monkeypatch):
+        monkeypatch.setattr(
+            pending_questions, "_cfg",
+            lambda key, default=None: 0.05 if key == "measurements.default_zocalo_height" else default,
+        )
+        dr = apply_zocalos_answer(
+            _dr_un_tramo(), {"id": "zocalos", "value": "default_trasero", "alto_m": 0.10}
+        )
+        z = dr["sectores"][0]["tramos"][0]["zocalos"][0]
+        assert z["alto_m"] == 0.10

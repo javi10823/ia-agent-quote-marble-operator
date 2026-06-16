@@ -20,6 +20,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.core.company_config import get as _cfg
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Brief matchers (keyword detection sobre el texto libre del operador)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -570,6 +572,12 @@ def _detect_zocalos_question(brief: str, dual_result: dict) -> dict | None:
     if has_zocalos_in_card:
         return None
 
+    # sprint-4/zocalo-pending-questions-fix: el alto default sale del config
+    # editable (/configuracion · measurements.default_zocalo_height), NO
+    # hardcodeado. Antes 0.07 fijo → ignoraba el config + sobre-cobro 40%
+    # (fast-follow del audit de #501 · el path interactivo no se había unificado).
+    _alto_default = _cfg("measurements.default_zocalo_height", 0.05)
+    _alto_cm = int(round(_alto_default * 100))
     return {
         "id": "zocalos",
         "label": "Zócalos",
@@ -581,8 +589,8 @@ def _detect_zocalos_question(brief: str, dual_result: dict) -> dict | None:
         "options": [
             {
                 "value": "default_trasero",
-                "label": "Sí — trasero por tramo, 7cm (default)",
-                "apply": {"mode": "trasero_default", "alto_m": 0.07},
+                "label": f"Sí — trasero por tramo, {_alto_cm}cm (default)",
+                "apply": {"mode": "trasero_default", "alto_m": _alto_default},
             },
             {
                 "value": "custom",
@@ -680,7 +688,7 @@ def detect_pending_questions(
 # Answer applicator — materializa las respuestas del operador en el card
 # ─────────────────────────────────────────────────────────────────────────────
 
-def apply_zocalos_answer(dual_result: dict, answer: dict, default_alto_m: float = 0.07) -> dict:
+def apply_zocalos_answer(dual_result: dict, answer: dict, default_alto_m: float | None = None) -> dict:
     """Dada la respuesta del operador a la pregunta de zócalos, agrega
     los zócalos determinísticamente al card.
 
@@ -689,8 +697,12 @@ def apply_zocalos_answer(dual_result: dict, answer: dict, default_alto_m: float 
       "id": "zocalos",
       "value": "default_trasero" | "custom" | "no",
       "detail": "texto libre si value == custom" (opcional),
-      "alto_m": 0.07 (opcional, override del default),
+      "alto_m": 0.05 (opcional, override del default),
     }
+
+    sprint-4/zocalo-pending-questions-fix: `default_alto_m=None` → se lee del
+    config editable (measurements.default_zocalo_height, default master 0.05).
+    Antes era 0.07 fijo → ignoraba /configuracion + sobre-cobro 40%.
 
     Muta y devuelve dual_result in-place.
     """
@@ -701,6 +713,8 @@ def apply_zocalos_answer(dual_result: dict, answer: dict, default_alto_m: float 
         # nada que agregar
         return dual_result
 
+    if default_alto_m is None:
+        default_alto_m = _cfg("measurements.default_zocalo_height", 0.05)
     alto = float(answer.get("alto_m") or default_alto_m)
     for sector in dual_result.get("sectores") or []:
         for tramo in sector.get("tramos") or []:
