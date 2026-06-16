@@ -2,7 +2,7 @@
 
 Flujo:
     1. Operador sube plano → dual_read emite card
-    2. Sin confirmar, escribe en chat: "te falto un zócalo 0.5 × 0.07 en tramo 2"
+    2. Sin confirmar, escribe en chat: "te faltó un zócalo trasero de 0.5 ml en tramo 2"
     3. `is_card_modification_message()` detecta por keywords
     4. `extract_card_patch()` llama a Claude para parsear el texto → ops JSON
     5. `apply_card_patch()` aplica las ops al dict del dual_read_result
@@ -72,7 +72,7 @@ detectado automáticamente. Devolvé JSON con las operaciones a aplicar.
 Operaciones válidas:
 - add_zocalo: {"op": "add_zocalo", "sector_id": "X", "tramo_id": "Y",
               "lado": "trasero|lateral_izq|lateral_der|frontal|<custom>",
-              "ml": <number>, "alto_m": <number>}
+              "ml": <number>, "alto_m": <number, OPCIONAL>}
 - remove_zocalo: {"op": "remove_zocalo", "sector_id": "X", "tramo_id": "Y",
                   "lado": "<lado>"}
 - edit_zocalo_ml: {"op": "edit_zocalo_ml", "sector_id": "X", "tramo_id": "Y",
@@ -92,15 +92,18 @@ Reglas:
 - Si el operador dice "tramo 2" o "segundo tramo" → mapeá al tramo_id
   por posición (primer tramo = tramos[0], segundo = tramos[1], etc.).
 - Si el operador dice medidas en cm, convertilas a m (50 cm → 0.50).
+- ALTO DEL ZÓCALO: si el operador NO especifica el alto, OMITÍ el campo
+  `alto_m` por completo. El sistema aplica el default configurable de la
+  marmolería. NUNCA inventes ni asumas un alto cuando el operador no lo dijo.
 - Si no hay suficiente info para una op concreta, devolvé operación
   `ask_operator` con el campo faltante:
   {"op": "ask_operator", "reason": "..."}
 
 Devolvé SOLO JSON. Si son múltiples ops, array. Sin texto extra.
-Ejemplo de output:
+Ejemplo de output (zócalo sin alto especificado → SIN `alto_m`):
 ```json
 [{"op": "add_zocalo", "sector_id": "cocina", "tramo_id": "tramo_2",
-  "lado": "trasero", "ml": 0.5, "alto_m": 0.07}]
+  "lado": "trasero", "ml": 0.5}]
 ```
 """
 
