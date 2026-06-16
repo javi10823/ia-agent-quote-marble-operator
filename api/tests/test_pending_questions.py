@@ -119,7 +119,10 @@ class TestApplyZocalosAnswer:
         assert len(t1_z) == 1
         assert t1_z[0]["lado"] == "trasero"
         assert t1_z[0]["ml"] == 2.05
-        assert t1_z[0]["alto_m"] == 0.07
+        # sprint-4/zocalo-pending-questions-fix: el default ahora sale del
+        # config (measurements.default_zocalo_height=0.05 · master D'Angelo),
+        # no del 0.07 hardcodeado.
+        assert t1_z[0]["alto_m"] == 0.05
         assert t1_z[0]["source"] == "brief_rule"
         assert len(t2_z) == 1
         assert t2_z[0]["ml"] == 2.95
