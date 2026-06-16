@@ -27,8 +27,11 @@ from app.core.company_config import get as _cfg
 def _default_zocalo_alto() -> float:
     """PR #57 — leer alto zócalo default desde catalog/config.json en vez
     de hardcodear. Permite que el operador lo edite desde el panel de
-    Configuración web sin redeploy."""
-    return _cfg("measurements.default_zocalo_height", 0.07)
+    Configuración web sin redeploy.
+
+    sprint-4/zocalo-config-unification: fallback corregido 0.07 → 0.05
+    (default master D'Angelo · mismo root-cause que agent.py:571/2925)."""
+    return _cfg("measurements.default_zocalo_height", 0.05)
 
 logger = logging.getLogger(__name__)
 
