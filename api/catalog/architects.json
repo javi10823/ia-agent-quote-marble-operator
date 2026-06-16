@@ -4,6 +4,7 @@
     "firm": null,
     "discount": true,
     "discount_percentage": null,
+    "match_tokens": ["arq. nadia", "arq nadia"],
     "notes": "Cliente frecuente — usar porcentaje de config.json"
   },
   {
@@ -11,6 +12,7 @@
     "firm": "Furigo Arquitectura",
     "discount": true,
     "discount_percentage": null,
+    "match_tokens": ["pamela furigo", "furigo arquitectura", "arq. pamela furigo"],
     "notes": "Proyecto Sole-Mosqui, Juan XXIII 964 Pérez — usar porcentaje de config.json"
   },
   {
@@ -18,6 +20,7 @@
     "firm": "Alma Estudio",
     "discount": true,
     "discount_percentage": null,
+    "match_tokens": ["alma estudio"],
     "notes": "Estudio de arquitectura conocido — usar porcentaje de config.json. Confirmado en presupuesto 00005494 fecha 09/03/2026."
   },
   {
@@ -25,6 +28,7 @@
     "firm": null,
     "discount": true,
     "discount_percentage": null,
+    "match_tokens": ["rafael araya", "arq. rafael araya"],
     "notes": "Arquitecto conocido — usar porcentaje de config.json"
   },
   {
@@ -32,6 +36,7 @@
     "firm": null,
     "discount": true,
     "discount_percentage": null,
+    "match_tokens": ["luciana pacor"],
     "notes": "Arquitecta — usar porcentaje de config.json"
   },
   {
@@ -39,6 +44,7 @@
     "firm": "Scalona Arquitectura",
     "discount": true,
     "discount_percentage": null,
+    "match_tokens": ["scalona arquitectura"],
     "notes": "Arquitecta — usar porcentaje de config.json (5% importado)"
   },
   {
@@ -46,6 +52,7 @@
     "firm": "Cueto-Heredia Arquitectas",
     "discount": true,
     "discount_percentage": null,
+    "match_tokens": ["cueto-heredia", "cueto heredia", "cueto-heredia arquitectas"],
     "notes": "Arquitectas — usar porcentaje de config.json (5% importado)"
   },
   {
@@ -53,6 +60,7 @@
     "firm": "Munge",
     "discount": true,
     "discount_percentage": null,
+    "match_tokens": ["estudio munge"],
     "notes": "Arquitectas — usar porcentaje de config.json (5% importado)"
   }
 ]
