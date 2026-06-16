@@ -570,7 +570,7 @@ async def _run_dual_read(
                     # sprint-4/zocalo-config-unification: leer del MISMO bloque
                     # (measurements.*) que edita /configuracion (#492). Antes leía
                     # de ai_engine.* vía get_ai_config → la key no existe ahí →
-                    # caía SIEMPRE al fallback 0.07 (bug financiero · sobre-cobro).
+                    # caía SIEMPRE al fallback hardcodeado (bug financiero · cerrado #501).
                     "default_zocalo_height": _cfg("measurements.default_zocalo_height", 0.05),
                     "default_payment": "Contado",
                     "default_delivery_days": "30 días",
@@ -2411,7 +2411,7 @@ class AgentService:
                             "No entendí bien el cambio. ¿Podés detallar qué pieza "
                             "(zócalo / mesada / sector), dónde (qué tramo) y qué "
                             "medidas? Ej: 'agregá zócalo lateral_der de 0.60 ml × "
-                            "0.07 m en el tramo L-retorno'."
+                            "0.05 m en el tramo L-retorno'."
                         )
                         yield {"type": "text", "content": _fallback}
                         yield {"type": "done", "content": ""}
