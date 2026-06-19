@@ -33,13 +33,11 @@ BRIEF_ANALYZER_TIMEOUT_SECONDS = 20
 EMPTY_SCHEMA: dict = {
     # Globales
     "client_name": None,
-    # Contacto del cliente — sub-PR sprint-4/contacto-extraction-fix
-    # cierra deuda documentada desde PR #483 (sub-PR 9.3). Extrae del
-    # bloque "Contacto:" del brief o de las palabras-ancla típicas
-    # ("Tel:", "Email:", etc.). Persistido en el JSON pero NO mirroreado
-    # a `Quote.client_phone` / `Quote.client_email` (las columnas
-    # existen pero el wire post-confirm es follow-up de otro sub-PR
-    # — toca agent.py).
+    # Contacto del cliente. Extraído del bloque "Contacto:" del brief o de
+    # las palabras-ancla típicas ("Tel:", "Email:", etc.). Sub-PR
+    # `brief-analyzer-deuda-cleanup` cerró el wire de mirroreo a las
+    # columnas `Quote.client_phone` / `Quote.client_email` vía lazy denorm
+    # en `agent/router.py::get_quote` (pareja del `client_name` denorm).
     "phone": None,   # string | null  · ej "3464696027"
     "email": None,   # string | null  · ej "x@y.com"
     "project": None,
@@ -215,9 +213,39 @@ Devolvé SOLO el JSON. Sin markdown, sin comentarios."""
 # ─────────────────────────────────────────────────────────────────────────────
 
 _CLIENT_RE = re.compile(
-    r"cliente\s*[:=]?\s*"
-    r"([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){0,3})",
+    # Ancla "cliente" case-insensitive (`(?i:...)` inline) · captura sigue
+    # case-sensitive para preservar Title Case del nombre. Dos defensas
+    # contra contaminación del captura:
+    #   1. Separador interno `[ \t]+` (no `\s+`) impide cruzar newlines · así
+    #      "Cliente: Juan Pérez\nLocalidad:" captura solo "Juan Pérez".
+    #   2. `_clean_client_match()` trunca palabras-ancla legítimas ("Tel",
+    #      "Email") que también son Title Case válido y entran al match.
+    r"(?i:cliente)\s*[:=]?[ \t]*"
+    r"([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:[ \t]+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){0,3})",
 )
+
+_CLIENT_STOP_WORDS = {
+    "tel", "cel", "teléfono", "telefono", "whatsapp",
+    "móvil", "movil", "email", "mail",
+    "en", "de", "con", "sin", "para",
+}
+
+
+def _clean_client_match(raw: str) -> str:
+    """Trunca el nombre cuando aparece una stop-word (tel/email/preposición).
+
+    Defensive safety net post-regex: el captura de `_CLIENT_RE` toma hasta
+    4 Title-Case palabras consecutivas, y "Tel" cuenta como Title Case válido
+    así que entra al match cuando el brief es "Cliente Juan Pérez Tel: 341...".
+    Este helper trunca al primer match de stop-word (case-insensitive).
+    """
+    parts = raw.strip().split()
+    out: list[str] = []
+    for p in parts:
+        if p.lower().rstrip(":,.;") in _CLIENT_STOP_WORDS:
+            break
+        out.append(p)
+    return " ".join(out)
 # Contacto · sub-PR sprint-4/contacto-extraction-fix.
 # Phone requiere palabra-ancla cercana (Tel/Cel/Teléfono/WhatsApp/Móvil)
 # para evitar falsos positivos: DNI (8 dígitos sueltos), CUIT (11 con
@@ -394,7 +422,9 @@ def _analyze_regex_fallback(brief: str) -> dict:
 
     m = _CLIENT_RE.search(b)
     if m:
-        result["client_name"] = m.group(1).strip()
+        cleaned = _clean_client_match(m.group(1))
+        if cleaned:
+            result["client_name"] = cleaned
 
     # Phone con palabra-ancla · sub-PR contacto-extraction. Limpiamos
     # formato (espacios/guiones/paréntesis) y validamos rango 8-16

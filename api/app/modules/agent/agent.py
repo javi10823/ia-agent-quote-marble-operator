@@ -1398,6 +1398,12 @@ def _extract_quote_info(user_message: str) -> dict:
     # línea `CLIENTE: DYSCON S.A. OBRA: Unidad...` no cortaba en `OBRA:`
     # porque después de OBRA hay `:` (no whitespace) → cliente absorbía
     # todo. Mismo bug aplica a `MATERIAL:`, `PROYECTO:`, etc.
+    #
+    # PR #511 — anclas de contacto (tel/cel/email/...). Mismo bug class que
+    # el lookahead de brief_analyzer y products_only_detector: sin estos
+    # delimiters, `Cliente: Juan Pérez Tel: 3415... Email: juan@x.com` en una
+    # sola línea hacía que `client_name` absorbiera el teléfono y el mail.
+    # Cortamos antes del label de contacto (acepta `Tel:` o `Tel `).
     _DELIMITERS = (
         r"\s*,|\s+con\s|\s+en\s|\s+lleva|\s+sin\s"
         r"|\s+proyecto[:\s]|\s+obra[:\s]|\s+presupuesto[:\s]|\s+mesada\s|\s+cocina\s"
@@ -1407,6 +1413,9 @@ def _extract_quote_info(user_message: str) -> dict:
         r"|\s+plazo\s|\s+material[:\s]|\s+isla\s|\s+lavadero\s|\s+vanitory\s"
         r"|\s+revestimiento\s|\s+frentin\s|\s+frent[ií]n\s|\s+regrueso\s"
         r"|\s+pulido\s|\s+descuento\s|\s+consultar\s"
+        r"|\s+tel[:\s]|\s+tel[eé]fono[:\s]|\s+cel[:\s]|\s+celular[:\s]"
+        r"|\s+whats?app[:\s]|\s+m[oó]vil[:\s]"
+        r"|\s+e-?mail[:\s]|\s+mail[:\s]|\s+correo[:\s]"
     )
 
     # PR #410 helper — preservar capitalización del input cuando viene

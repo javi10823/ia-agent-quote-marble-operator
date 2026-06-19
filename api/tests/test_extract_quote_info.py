@@ -77,6 +77,45 @@ class TestPlainBriefsStillWork:
         assert "silestone" in info.get("material", "").lower()
 
 
+import pytest  # noqa: E402
+
+
+class TestClientNameDoesNotAbsorbContact:
+    """PR #511 — tercer path del mismo bug class cerrado en brief_analyzer
+    y products_only_detector. `_DELIMITERS` no tenía anclas de contacto, así
+    que un brief en una sola línea `Cliente: X Tel: ... Email: ...` dejaba el
+    teléfono y el mail pegados al `client_name`, que luego se denormaliza a
+    la columna Quote.client_name. Las anclas cortan antes del label."""
+
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            "Cliente: Juan Pérez Tel: 3415551234 Email: juan@gmail.com",
+            "Cliente: Juan Pérez tel 3415551234",
+            "Cliente: Juan Pérez Cel: 3415551234",
+            "Cliente: Juan Pérez Teléfono: 3415551234",
+            "Cliente: Juan Pérez WhatsApp 3415551234",
+            "Cliente: Juan Pérez Email: juan@gmail.com",
+            "Cliente: Juan Pérez e-mail juan@gmail.com",
+            "Cliente: Juan Pérez Móvil: 3415551234",
+        ],
+    )
+    def test_contact_anchors_truncate_client_name(self, msg):
+        info = _extract_quote_info(msg)
+        assert info.get("client_name") == "Juan Pérez", info
+
+    def test_does_not_break_existing_delimiter(self):
+        """Regresión: `en` sigue cortando (no lo tocamos)."""
+        info = _extract_quote_info("Cliente: Juan Pérez en Rosario")
+        assert info.get("client_name") == "Juan Pérez"
+
+    def test_uppercase_client_with_contact(self):
+        """Convención DYSCON (todo mayúsculas) + tel pegado: preserva case
+        del nombre y no arrastra el teléfono."""
+        info = _extract_quote_info("Cliente: DYSCON S.A. Tel: 3415551234")
+        assert info.get("client_name") == "DYSCON S.A."
+
+
 # ═══════════════════════════════════════════════════════
 # PR #375 — persistencia temprana de columnas Quote.* desde brief_analysis
 # ═══════════════════════════════════════════════════════
