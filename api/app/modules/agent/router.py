@@ -356,6 +356,31 @@ def _client_name_from_breakdown(bd: dict | None) -> str | None:
     return None
 
 
+def _phone_email_from_breakdown(bd: dict | None) -> tuple[str | None, str | None]:
+    """Extrae phone + email desde el `_brief_analysis_raw` del breakdown JSON.
+
+    Pareja de `_client_name_from_breakdown` · cierra la deuda documentada en
+    `brief_analyzer.EMPTY_SCHEMA` (phone/email se persistían al JSON pero
+    nunca al column `Quote.client_phone` / `Quote.client_email`). Sigue la
+    misma precedencia: verified → pending → top-level. Devuelve tupla con
+    cualquier campo None si no hay valor utilizable.
+    """
+    if not isinstance(bd, dict):
+        return None, None
+
+    verified = bd.get("verified_context_analysis")
+    pending = bd.get("context_analysis_pending")
+
+    for source in (verified, pending, bd):
+        raw = source.get("_brief_analysis_raw") if isinstance(source, dict) else None
+        if isinstance(raw, dict):
+            phone = (raw.get("phone") or "").strip() or None
+            email = (raw.get("email") or "").strip() or None
+            if phone or email:
+                return phone, email
+    return None, None
+
+
 @router.get("/quotes/{quote_id}")
 async def get_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Quote).where(Quote.id == quote_id))
@@ -363,18 +388,29 @@ async def get_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
     if not quote:
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
 
-    # Lazy denormalization — si la fila no tiene `client_name` pero el
-    # `quote_breakdown` ya lo extrajo (caso típico del wizard), lo copiamos a
-    # la columna y persistimos una sola vez. Así el header deja de mostrar
-    # "Presupuesto {uuid}" y el quote aparece/agrupa en el dashboard. Mismo
-    # patrón de cache lazy que `email_draft`. Idempotente: corre solo mientras
-    # `client_name` esté vacío.
+    # Lazy denormalization — si la fila no tiene `client_name` / `client_phone`
+    # / `client_email` pero el `quote_breakdown` ya los extrajo (caso típico
+    # del wizard), los copiamos a las columnas y persistimos una sola vez. Así
+    # el header deja de mostrar "Presupuesto {uuid}" y el quote aparece/agrupa
+    # en el dashboard. Mismo patrón de cache lazy que `email_draft`.
+    # Idempotente: cada campo se llena solo mientras esté vacío.
+    bd_changed = False
     if not (quote.client_name or "").strip():
         derived = _client_name_from_breakdown(quote.quote_breakdown)
         if derived:
             quote.client_name = derived[:500]
-            await db.commit()
-            await db.refresh(quote)
+            bd_changed = True
+    if not (quote.client_phone or "").strip() or not (quote.client_email or "").strip():
+        bd_phone, bd_email = _phone_email_from_breakdown(quote.quote_breakdown)
+        if bd_phone and not (quote.client_phone or "").strip():
+            quote.client_phone = bd_phone[:100]
+            bd_changed = True
+        if bd_email and not (quote.client_email or "").strip():
+            quote.client_email = bd_email[:200]
+            bd_changed = True
+    if bd_changed:
+        await db.commit()
+        await db.refresh(quote)
 
     # PR #442 — computar pdf_outdated antes de armar el response.
     pdf_outdated, pdf_generated_at = _compute_pdf_outdated(quote)

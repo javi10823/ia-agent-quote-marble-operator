@@ -146,7 +146,11 @@ _DISCOUNT_RE = re.compile(
 # obra, proyecto, pago, entrega, archivo, material, demora, plazo).
 _FIELD_LABEL_LOOKAHEAD = (
     r"(?=\s*(?:cliente|obra|proyecto|pago|entrega|archivo|material|"
-    r"demora|plazo|localidad|forma\s+de\s+pago)\s*:|$|\n|\|)"
+    r"demora|plazo|localidad|forma\s+de\s+pago|"
+    # Sub-PR brief-analyzer-deuda-cleanup · agregar palabras-ancla de contacto
+    # para que "cliente: X tel: ..." no arrastre tel/email al capture.
+    r"tel|cel|tel[eé]fono|whats?app|m[oó]vil|email|mail"
+    r")\s*[:.]|$|\n|\|)"
 )
 
 _CLIENT_RE = re.compile(
