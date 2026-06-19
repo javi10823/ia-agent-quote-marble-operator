@@ -1,20 +1,33 @@
 /**
- * Estado C procesando del paso 1 · LITERAL del mockup oficial
- * `00-paso1-C-procesando.html`.
+ * Estado C procesando del paso 1 · basado en el mockup oficial
+ * `00-paso1-C-procesando.html` (estructura/skeleton/timer), sin clonar
+ * su sample-data.
  *
- * Cambios Sprint 4 paso-1-chips-brief-libre:
- * - Timer dinámico en `.status-msg .muted` "(N s · esto suele tardar 12 s,
- *   dame uno más)" via `setInterval(1000)` desde mount.
- * - `.brief-status` muted con extraction snapshot del mockup
- *   ("3 datos del WhatsApp ya extraídos · plano en proceso · ...").
- *   En este sub-PR es texto estático del mockup (esperando wire SSE del
- *   sub-PR `paso-1-sse-stream` que parsea chunks `action`/`context_analysis`).
+ * Cambios Sprint 4 paso-1-processing-statusbar-fix:
+ * - Heading, subtexto del heading, status-bar y span secundario son
+ *   condicionales según `planName`. Con plano: copy actual ("Estoy
+ *   leyendo el plano", etc.). Sin plano: copy genérico ("Estoy
+ *   procesando el brief", etc.), sin mencionar plano ni "arquitectos
+ *   automáticos" (alinea con architect-match-strict · no asumir
+ *   arquitectos cuando no hay evidencia visual).
+ * - Timer dinámico en `.status-msg .muted` "(N s · esto suele tardar
+ *   12 s, dame uno más)" via `setInterval(1000)` desde mount · mismo
+ *   en ambas variantes por consistencia (sin data real de latencia
+ *   brief-only vs brief+plano).
+ * - `.brief-status` span secundario solo se renderea con plano (sin
+ *   plano duplica el copy del heading + status-bar). Antes clonaba
+ *   sample-data del mockup ("…arquitecta encontrada (Cueto-Heredia)…")
+ *   que mostraba info fabricada para cualquier cliente (Mockup Fidelity
+ *   violation #2 del PR #457). Los chips estructurados con progreso
+ *   real quedan para el sub-PR `paso-1-sse-stream` (wire de chunks
+ *   `action`/`context_analysis` del SSE · Ola 4).
  * - Botón ghost "Completar a mano →" visible cuando elapsed ≥25s
  *   (threshold del mockup) · click muestra alert visual-only (deuda
  *   explícita: sub-PR `paso-1-partial-commit` lo hace funcional).
- * - `ph-head` extendido con `.muted` "· 3 hojas · página 1/3" cuando
- *   el filename trae info de páginas. En este sub-PR se renderea siempre
- *   con dato estático del mockup.
+ * - `preview-card` (filename real + skeleton) se renderea solo cuando hay
+ *   `planName`; sin plano se omite (el skeleton no aporta sin archivo).
+ *   El sufijo fabricado "· 3 hojas · página 1/3" se eliminó (no hay
+ *   page-count real disponible en este sub-PR).
  *
  * Reusa clases legacy `.brief-hero`, `.status-bar.slow`, `.dot`,
  * `.status-msg`, `.processing-stage`, `.preview-card`, `.ph-head`,
@@ -60,10 +73,11 @@ export function BriefProcessing({ onCancel, planName }: Props) {
         <div className="vbubble-lg" />
         <div className="hero-text">
           <div className="eyebrow">Paso 1 de 5 · Brief · procesando</div>
-          <h2>Estoy leyendo el plano</h2>
+          <h2>{planName ? "Estoy leyendo el plano" : "Estoy procesando el brief"}</h2>
           <div className="lead">
-            Extraigo medidas reales (no las marcadas), identifico ambiente, busco el cliente en mi
-            base de arquitectos y armo el contexto del paso 2.
+            {planName
+              ? "Extraigo medidas reales (no las marcadas), identifico ambiente, busco el cliente en mi base de arquitectos y armo el contexto del paso 2."
+              : "Extraigo datos del cliente, ambiente y armo el contexto del paso 2."}
           </div>
         </div>
       </div>
@@ -71,7 +85,8 @@ export function BriefProcessing({ onCancel, planName }: Props) {
       <div className="status-bar slow" data-testid="brief-status-bar">
         <div className="dot" />
         <div className="status-msg">
-          <em>Valentina</em> está leyendo el plano y extrayendo medidas…{" "}
+          <em>Valentina</em>{" "}
+          {planName ? "está leyendo el plano y extrayendo medidas…" : "está extrayendo datos del brief…"}{" "}
           <span style={{ color: "var(--ink-mute)" }} data-testid="brief-status-timer">
             ({elapsedSec} s · esto suele tardar 12 s, dame uno más)
           </span>
@@ -79,31 +94,33 @@ export function BriefProcessing({ onCancel, planName }: Props) {
       </div>
 
       <div className="processing-stage" data-testid="brief-processing">
-        <div className="preview-card">
-          <div className="ph-head">
-            <span>📄 {planName ?? "Plano en proceso"}</span>
-            <span style={{ color: "var(--ink-mute)" }}>· 3 hojas · página 1/3</span>
+        {planName && (
+          <div className="preview-card">
+            <div className="ph-head">
+              <span>📄 {planName}</span>
+            </div>
+            <div className="ph-rows">
+              <div className="skel short" />
+              <div className="skel long" />
+              <div className="skel medium" />
+              <div className="skel long" />
+              <div className="skel short" />
+              <div className="skel medium" />
+              <div className="skel long" />
+            </div>
           </div>
-          <div className="ph-rows">
-            <div className="skel short" />
-            <div className="skel long" />
-            <div className="skel medium" />
-            <div className="skel long" />
-            <div className="skel short" />
-            <div className="skel medium" />
-            <div className="skel long" />
-          </div>
-        </div>
+        )}
 
         <div className="cancel-row">
-          <span
-            className="brief-status"
-            style={{ color: "var(--ink-mute)" }}
-            data-testid="brief-status-snapshot"
-          >
-            3 datos del WhatsApp ya extraídos · plano en proceso · arquitecta encontrada en
-            architects.json (Cueto-Heredia, match exacto)
-          </span>
+          {planName && (
+            <span
+              className="brief-status"
+              style={{ color: "var(--ink-mute)" }}
+              data-testid="brief-status-snapshot"
+            >
+              Extrayendo datos del brief y leyendo el plano…
+            </span>
+          )}
           <span className="spacer" />
           {showPartialCommit && (
             <button

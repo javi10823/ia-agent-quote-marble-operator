@@ -239,23 +239,13 @@ test("Estado C · timer dinámico en status-msg actualiza segundos", async ({ pa
   await expect(timer).toContainText(/\(\d+ s · esto suele tardar 12 s, dame uno más\)/);
 });
 
-test("Estado C · brief-status snapshot LITERAL del mockup visible", async ({ page }) => {
+test("Estado C · brief-status snapshot copy honesto con plano", async ({ page }) => {
   await page.goto("/quotes/new");
   await uploadPdf(page);
   await page.locator('[data-testid="brief-submit"]').click();
   await expect(page.locator('[data-testid="brief-status-snapshot"]')).toContainText(
-    "3 datos del WhatsApp ya extraídos",
+    "Extrayendo datos del brief y leyendo el plano",
   );
-  await expect(page.locator('[data-testid="brief-status-snapshot"]')).toContainText(
-    "arquitecta encontrada",
-  );
-});
-
-test("Estado C · ph-head incluye '· 3 hojas · página 1/3'", async ({ page }) => {
-  await page.goto("/quotes/new");
-  await uploadPdf(page);
-  await page.locator('[data-testid="brief-submit"]').click();
-  await expect(page.locator(".ph-head")).toContainText("· 3 hojas · página 1/3");
 });
 
 test("Persistencia A↔B · chips llenos en A se mantienen al subir PDF (estado B)", async ({
