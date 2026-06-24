@@ -34,7 +34,11 @@ export const getContextForQuote = USE_REAL_API ? real.getContextForQuote : mocks
 export const updateContextForQuote = mocks.updateContextForQuote;
 export const getDashboardKpis = mocks.getDashboardKpis;
 export const getValentinaBriefSummary = mocks.getValentinaBriefSummary;
-export const listPiecesForQuote = mocks.listPiecesForQuote;
+/* Sprint 4 despiece-real-wire · `listPiecesForQuote` wireada contra
+   `GET /api/quotes/{id}/pieces` (backend serializa desde dual_read_result).
+   Las 4 mutaciones siguen mock-only · sub-PR siguiente migra al modelo
+   agentic via /chat. */
+export const listPiecesForQuote = USE_REAL_API ? real.listPiecesForQuote : mocks.listPiecesForQuote;
 export const updatePieceForQuote = mocks.updatePieceForQuote;
 export const addPieceForQuote = mocks.addPieceForQuote;
 export const deletePieceForQuote = mocks.deletePieceForQuote;

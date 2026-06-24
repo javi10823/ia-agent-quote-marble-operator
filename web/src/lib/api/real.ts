@@ -942,3 +942,29 @@ export async function getPdfGeneratedInfo(
   const quote = (await response.json()) as RealQuoteWithDocs;
   return _adaptToPdfInfo(quote);
 }
+
+
+/* ─── listPiecesForQuote · Sprint 4 despiece-real-wire ───────────────────
+   GET /api/quotes/{id}/pieces · backend serializa desde
+   `quote_breakdown.dual_read_result.sectores[].tramos[]`. Las 4 mutaciones
+   (update/add/delete/regenerate) siguen mock-only hasta sub-PR siguiente. */
+
+import type { PieceList } from "./types";
+
+export async function listPiecesForQuote(
+  quoteId: string,
+  options?: { signal?: AbortSignal },
+): Promise<PieceList> {
+  const response = await apiFetch(
+    `/api/quotes/${encodeURIComponent(quoteId)}/pieces`,
+    { signal: options?.signal },
+  );
+  if (!response.ok) {
+    throw new ApiError(
+      "LIST_PIECES_FAILED",
+      `GET /api/quotes/{id}/pieces ${response.status}`,
+      response.status,
+    );
+  }
+  return (await response.json()) as PieceList;
+}

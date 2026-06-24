@@ -215,3 +215,41 @@ class AuditLogResponse(BaseModel):
     tools_used: list[AuditLogToolUsage] = Field(default_factory=list)
     quote_breakdown: Optional[dict] = None
     errors: list[AuditLogEventItem] = Field(default_factory=list)
+
+
+# ── PieceList REST · sub-PR sprint-4/despiece-real-wire ──────────────────
+# Cierra el gap del frontend `useDespiece` hook que usaba 100% mocks. Sólo
+# `listPiecesForQuote` se cablea real en este sub-PR; las 4 mutaciones
+# (update/add/delete/regenerate) siguen mock-only hasta sub-PR siguiente
+# que migre al modelo agentic via /chat (no CRUD plano).
+# Shape mirroreado del frontend `web/src/lib/api/types.ts:172-212`.
+
+
+class PieceOptionsSchema(BaseModel):
+    pileta: Optional[dict] = None
+    anafe: bool = False
+    tomas: Optional[int] = None
+    alzada: bool = False
+    regrueso_mm: Optional[int] = None
+
+
+class PieceSchema(BaseModel):
+    id: str
+    type: str  # "encimera" | "zocalo" | "alzada" | "frente" | "isla" | string
+    label: str
+    sublabel: Optional[str] = None
+    width_mm: float
+    depth_mm: float
+    quantity: int = 1
+    options: PieceOptionsSchema = Field(default_factory=PieceOptionsSchema)
+    origin: str = "IA"  # "IA" | "EDITADO" | "AGREGADO_MANUAL"
+    confidence: Optional[float] = None
+    extracted_from: Optional[str] = None
+    edited: bool = False
+
+
+class PieceListResponse(BaseModel):
+    pieces: list[PieceSchema] = Field(default_factory=list)
+    status: str  # "pending" | "inferring" | "done" | "failed"
+    timeline: list = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
