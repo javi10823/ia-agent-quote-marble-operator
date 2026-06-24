@@ -10,8 +10,9 @@
  */
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ContextData, ContextResponse } from "@/lib/api";
+import { streamChat, type ContextData, type ContextResponse } from "@/lib/api";
 import { ContextField } from "./ContextField";
 
 export interface FieldDef {
@@ -82,6 +83,35 @@ export function ContextForm({
   chatOpen,
 }: Props) {
   const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+
+  // Sub-PR sprint-4/despiece-real-wire · cierra el gap del botón confirmar.
+  // Antes: solo `router.push(/despiece)` · no triggereaba el segundo agent
+  // call · `context_analysis_pending` quedaba sin promover a
+  // `verified_context_analysis` · useDespiece mostraba status="failed".
+  //
+  // Ahora: POST /chat con prefijo `[CONTEXT_CONFIRMED]` (agent.py:1956
+  // ya lo procesa) · drain del SSE para esperar persistencia · DESPUÉS
+  // navegar a /despiece. Payload `{answers: []}` mínimo (text-only no
+  // tiene pending_answers · agent las skip si _is_text_dispiece).
+  async function handleConfirm() {
+    setConfirming(true);
+    setConfirmError(null);
+    try {
+      const payload = JSON.stringify({ answers: [] });
+      const stream = streamChat(quoteId, `[CONTEXT_CONFIRMED]${payload}`, "contexto");
+      const reader = stream.getReader();
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+      router.push(`/quotes/${quoteId}/despiece`);
+    } catch (err) {
+      setConfirmError(err instanceof Error ? err.message : "Error al confirmar contexto");
+      setConfirming(false);
+    }
+  }
 
   return (
     <div className="col" data-testid="context-form" data-state={isDirty ? "B" : "A"}>
@@ -176,10 +206,20 @@ export function ContextForm({
           type="button"
           className="btn primary"
           data-testid="confirm-context"
-          onClick={() => router.push(`/quotes/${quoteId}/despiece`)}
+          onClick={handleConfirm}
+          disabled={confirming}
         >
-          Confirmar y continuar a despiece →
+          {confirming ? "Confirmando…" : "Confirmar y continuar a despiece →"}
         </button>
+        {confirmError && (
+          <div
+            className="error-msg"
+            data-testid="confirm-context-error"
+            style={{ color: "var(--color-error, #c33)", marginTop: 8, fontSize: 13 }}
+          >
+            {confirmError}
+          </div>
+        )}
       </div>
     </div>
   );

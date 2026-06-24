@@ -30,6 +30,9 @@ from app.modules.agent.schemas import (
     QuoteStatusUpdate,
     QuotePatchRequest,
     DeriveMaterialRequest,
+    PieceListResponse,
+    PieceSchema,
+    PieceOptionsSchema,
 )
 
 router = APIRouter(tags=["agent"])
@@ -356,6 +359,92 @@ def _client_name_from_breakdown(bd: dict | None) -> str | None:
     return None
 
 
+def _field_valor(field: object) -> float | None:
+    """Extrae `.valor` de un FieldValue (shape `{valor, opus, sonnet, status}`
+    usado por `dual_read_result`), o asume un número plano. None si no se
+    puede extraer."""
+    if field is None:
+        return None
+    if isinstance(field, dict):
+        v = field.get("valor")
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+    if isinstance(field, (int, float)):
+        return float(field)
+    return None
+
+
+def _serialize_dual_read_to_pieces(dual_read: dict | None) -> list[dict]:
+    """Convierte `dual_read_result.sectores[].tramos[]` a lista de `Piece`
+    dicts en el shape que espera el frontend `useDespiece` hook.
+
+    Sub-PR despiece-real-wire · cierra deuda de mocks → real backend.
+    `verified_derived_pieces` ya no se persiste (PR #386), todo vive en
+    `dual_read_result` post-confirm via `apply_answers` + merges.
+
+    Cada tramo (mesada) emite 1 `Piece` de tipo "encimera". Cada zócalo del
+    tramo emite 1 `Piece` adicional de tipo "zocalo". `_manual:true` del
+    tramo se traduce a `origin="EDITADO"` (operador puede haber tocado);
+    sin flag, `origin="IA"`. `_manual:true` NO se expone al frontend.
+    """
+    pieces: list[dict] = []
+    sectores = (dual_read or {}).get("sectores") or []
+    for sector in sectores:
+        tramos = sector.get("tramos") or []
+        for tramo in tramos:
+            largo_m = _field_valor(tramo.get("largo_m"))
+            ancho_m = _field_valor(tramo.get("ancho_m"))
+            if largo_m is None or ancho_m is None:
+                continue
+            quantity_raw = tramo.get("quantity") or 1
+            try:
+                quantity = max(1, int(quantity_raw))
+            except (TypeError, ValueError):
+                quantity = 1
+            tramo_id = str(tramo.get("id") or f"t{len(pieces) + 1}")
+            pieces.append({
+                "id": tramo_id,
+                "type": "encimera",
+                "label": str(tramo.get("descripcion") or "Mesada"),
+                "width_mm": round(largo_m * 1000, 2),
+                "depth_mm": round(ancho_m * 1000, 2),
+                "quantity": quantity,
+                "options": {},
+                "origin": "EDITADO" if tramo.get("_manual") else "IA",
+                "edited": False,
+            })
+            for idx, z in enumerate(tramo.get("zocalos") or []):
+                ml = z.get("ml")
+                alto_m = z.get("alto_m")
+                if ml is None or alto_m is None:
+                    continue
+                try:
+                    ml_f = float(ml)
+                    alto_f = float(alto_m)
+                except (TypeError, ValueError):
+                    continue
+                z_quantity_raw = z.get("quantity") or 1
+                try:
+                    z_quantity = max(1, int(z_quantity_raw))
+                except (TypeError, ValueError):
+                    z_quantity = 1
+                lado = str(z.get("lado") or "").strip() or "trasero"
+                pieces.append({
+                    "id": f"{tramo_id}-z{idx + 1}",
+                    "type": "zocalo",
+                    "label": f"Zócalo {lado}",
+                    "width_mm": round(ml_f * 1000, 2),
+                    "depth_mm": round(alto_f * 1000, 2),
+                    "quantity": z_quantity,
+                    "options": {},
+                    "origin": "IA",
+                    "edited": False,
+                })
+    return pieces
+
+
 def _phone_email_from_breakdown(bd: dict | None) -> tuple[str | None, str | None]:
     """Extrae phone + email desde el `_brief_analysis_raw` del breakdown JSON.
 
@@ -431,6 +520,52 @@ async def get_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
         return response_dict
 
     return response
+
+
+# ── DESPIECE PIECES (read-only · sub-PR despiece-real-wire) ─────────────────
+
+@router.get("/quotes/{quote_id}/pieces", response_model=PieceListResponse)
+async def list_pieces_for_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
+    """Lista piezas del despiece desde el `quote_breakdown.dual_read_result`.
+
+    Cierra el gap del frontend `useDespiece` hook que consumía 100% mocks.
+    Source único: `dual_read_result.sectores[].tramos[]` (pre o post-confirm
+    del operador · `verified_derived_pieces` ya no se persiste · PR #386).
+
+    Las 4 mutaciones (update/add/delete/regenerate) siguen mock-only · sub-PR
+    siguiente las migra al modelo agentic via /chat (no CRUD plano).
+    """
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(status_code=404, detail="quote_not_found")
+
+    breakdown = quote.quote_breakdown or {}
+    dual_read = breakdown.get("dual_read_result")
+
+    if not dual_read:
+        return PieceListResponse(
+            pieces=[],
+            status="pending",
+            timeline=[],
+            warnings=[],
+        )
+
+    pieces = _serialize_dual_read_to_pieces(dual_read)
+    if not pieces:
+        return PieceListResponse(
+            pieces=[],
+            status="failed",
+            timeline=[],
+            warnings=["Valentina no detectó piezas en este despiece"],
+        )
+
+    return PieceListResponse(
+        pieces=[PieceSchema(**p) for p in pieces],
+        status="done",
+        timeline=[],
+        warnings=[],
+    )
 
 
 # ── COMPARE QUOTES ───────────────────────────────────────────────────────────
