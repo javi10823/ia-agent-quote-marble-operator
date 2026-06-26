@@ -36,12 +36,14 @@ export const getDashboardKpis = mocks.getDashboardKpis;
 export const getValentinaBriefSummary = mocks.getValentinaBriefSummary;
 /* Sprint 4 despiece-real-wire · `listPiecesForQuote` wireada contra
    `GET /api/quotes/{id}/pieces` (backend serializa desde dual_read_result).
-   Las 4 mutaciones siguen mock-only · sub-PR siguiente migra al modelo
-   agentic via /chat. */
+   Sprint 4 despiece-mutations-agentic-wire · 3 mutaciones cableadas al
+   chat endpoint con mensajes NL (card_editor.py · PR #79).
+   `regenerateDespiece` sigue mock-only · no tiene equivalente agentic
+   directo · deuda explícita. */
 export const listPiecesForQuote = USE_REAL_API ? real.listPiecesForQuote : mocks.listPiecesForQuote;
-export const updatePieceForQuote = mocks.updatePieceForQuote;
-export const addPieceForQuote = mocks.addPieceForQuote;
-export const deletePieceForQuote = mocks.deletePieceForQuote;
+export const updatePieceForQuote = USE_REAL_API ? real.updatePieceForQuote : mocks.updatePieceForQuote;
+export const addPieceForQuote = USE_REAL_API ? real.addPieceForQuote : mocks.addPieceForQuote;
+export const deletePieceForQuote = USE_REAL_API ? real.deletePieceForQuote : mocks.deletePieceForQuote;
 export const regenerateDespiece = mocks.regenerateDespiece;
 
 /* ─── Cálculo (paso 4 · siempre mock · Sprint 4 wire chat-driven) ── */

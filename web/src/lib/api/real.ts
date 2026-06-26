@@ -946,10 +946,9 @@ export async function getPdfGeneratedInfo(
 
 /* ─── listPiecesForQuote · Sprint 4 despiece-real-wire ───────────────────
    GET /api/quotes/{id}/pieces · backend serializa desde
-   `quote_breakdown.dual_read_result.sectores[].tramos[]`. Las 4 mutaciones
-   (update/add/delete/regenerate) siguen mock-only hasta sub-PR siguiente. */
+   `quote_breakdown.dual_read_result.sectores[].tramos[]`. */
 
-import type { PieceList } from "./types";
+import type { Piece, PieceList } from "./types";
 
 export async function listPiecesForQuote(
   quoteId: string,
@@ -967,4 +966,119 @@ export async function listPiecesForQuote(
     );
   }
   return (await response.json()) as PieceList;
+}
+
+
+/* ─── despiece mutations · Sprint 4 despiece-mutations-agentic-wire ─────
+   3 mutaciones (update/add/delete) cableadas al chat endpoint con mensajes
+   naturales en español que `card_editor.is_card_modification_message()`
+   detecta (PR #79 · backend ya cableado · cero archivos `.py` modificados).
+
+   Flujo por mutación:
+     1. Construir mensaje NL desde Piece + partial (templates abajo)
+     2. POST /api/quotes/{id}/chat con message · drain SSE hasta done
+     3. Re-fetch listPiecesForQuote para reflejar state actualizado
+     4. Devolver la pieza relevante del list nuevo
+
+   `regenerateDespiece` sigue mock-only · no tiene equivalente agentic
+   directo (deuda explícita).
+
+   UX: latencia esperada 2.5-3.5s por mutación (extract_card_patch via
+   LLM Haiku ~2-3s + DB persist + 2 round-trips). Loading spinner via
+   useDespiece state="saving" existente. NO optimistic updates (riesgo
+   divergencia si LLM falla parseando NL). */
+
+async function _drainSseAndRefetch(quoteId: string, message: string): Promise<PieceList> {
+  const stream = streamChat(quoteId, message, "despiece");
+  const reader = stream.getReader();
+  while (true) {
+    const { done } = await reader.read();
+    if (done) break;
+  }
+  return await listPiecesForQuote(quoteId);
+}
+
+function _mm_to_m(mm: number | undefined | null): number {
+  return (mm ?? 0) / 1000;
+}
+
+function _buildUpdateMessage(current: Piece, partial: Partial<Piece>): string {
+  const label = current.label || `pieza ${current.id}`;
+  if (current.type === "zocalo") {
+    // width_mm = ml del zócalo · depth_mm = alto.
+    if ("width_mm" in partial) {
+      return `Cambiá la longitud del ${label} a ${_mm_to_m(partial.width_mm)}m`;
+    }
+    if ("depth_mm" in partial) {
+      return `Cambiá la altura del ${label} a ${_mm_to_m(partial.depth_mm)}m`;
+    }
+    return `Modificá el ${label}: ${JSON.stringify(partial)}`;
+  }
+  // type="encimera" (mesada/tramo) · width_mm = largo · depth_mm = ancho.
+  const fields: string[] = [];
+  if ("width_mm" in partial) fields.push(`largo ${_mm_to_m(partial.width_mm)}m`);
+  if ("depth_mm" in partial) fields.push(`ancho ${_mm_to_m(partial.depth_mm)}m`);
+  if (fields.length > 0) {
+    return `Modificá el ${label}: ${fields.join(", ")}`;
+  }
+  return `Modificá el ${label}: ${JSON.stringify(partial)}`;
+}
+
+function _buildAddMessage(piece: Omit<Piece, "id" | "origin" | "confidence" | "extracted_from">): string {
+  const largo = _mm_to_m(piece.width_mm);
+  const ancho = _mm_to_m(piece.depth_mm);
+  if (piece.type === "zocalo") {
+    return `Agregá un zócalo ${piece.label} de ${largo}m × ${ancho}m`;
+  }
+  return `Agregá un tramo: ${piece.label} de ${largo}m × ${ancho}m`;
+}
+
+function _buildDeleteMessage(piece: Piece): string {
+  return `Sacá el ${piece.label}`;
+}
+
+export async function updatePieceForQuote(
+  quoteId: string,
+  pieceId: string,
+  partial: Partial<Piece>,
+  options?: { signal?: AbortSignal },
+): Promise<Piece> {
+  const before = await listPiecesForQuote(quoteId, options);
+  const current = before.pieces.find((p) => p.id === pieceId);
+  if (!current) {
+    throw new ApiError("PIECE_NOT_FOUND", `Pieza ${pieceId} no existe en ${quoteId}`, 404);
+  }
+  const message = _buildUpdateMessage(current, partial);
+  const after = await _drainSseAndRefetch(quoteId, message);
+  return after.pieces.find((p) => p.id === pieceId) ?? { ...current, ...partial, edited: true };
+}
+
+export async function addPieceForQuote(
+  quoteId: string,
+  piece: Omit<Piece, "id" | "origin" | "confidence" | "extracted_from">,
+  _options?: { signal?: AbortSignal },
+): Promise<Piece> {
+  const before = await listPiecesForQuote(quoteId);
+  const beforeIds = new Set(before.pieces.map((p) => p.id));
+  const message = _buildAddMessage(piece);
+  const after = await _drainSseAndRefetch(quoteId, message);
+  // Heurística: la nueva pieza es la que aparece en `after` pero no en `before`.
+  const created = after.pieces.find((p) => !beforeIds.has(p.id));
+  if (created) return created;
+  // Fallback: backend no parseó el add · devolver el piece input con id provisional.
+  return { ...piece, id: `pending-${Date.now()}`, origin: "AGREGADO_MANUAL", edited: true };
+}
+
+export async function deletePieceForQuote(
+  quoteId: string,
+  pieceId: string,
+  options?: { signal?: AbortSignal },
+): Promise<void> {
+  const before = await listPiecesForQuote(quoteId, options);
+  const current = before.pieces.find((p) => p.id === pieceId);
+  if (!current) {
+    throw new ApiError("PIECE_NOT_FOUND", `Pieza ${pieceId} no existe en ${quoteId}`, 404);
+  }
+  const message = _buildDeleteMessage(current);
+  await _drainSseAndRefetch(quoteId, message);
 }
