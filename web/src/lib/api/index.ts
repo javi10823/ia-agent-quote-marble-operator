@@ -46,6 +46,13 @@ export const addPieceForQuote = USE_REAL_API ? real.addPieceForQuote : mocks.add
 export const deletePieceForQuote = USE_REAL_API ? real.deletePieceForQuote : mocks.deletePieceForQuote;
 export const regenerateDespiece = mocks.regenerateDespiece;
 
+/* Sprint 4 derive-material-ui-wire · clonar quote con otro material.
+   getMaterialsList: 9 fetch paralelos a /api/catalog/materials-*.
+   deriveMaterialForQuote: POST /api/quotes/{id}/derive-material. */
+export const getMaterialsList = USE_REAL_API ? real.getMaterialsList : mocks.getMaterialsList;
+export const deriveMaterialForQuote = USE_REAL_API ? real.deriveMaterialForQuote : mocks.deriveMaterialForQuote;
+export type { MaterialOption, DeriveMaterialResponse } from "./real";
+
 /* ─── Cálculo (paso 4 · siempre mock · Sprint 4 wire chat-driven) ── */
 export const getCalculationForQuote = mocks.getCalculationForQuote;
 export const triggerCalculation = mocks.triggerCalculation;

@@ -1082,3 +1082,106 @@ export async function deletePieceForQuote(
   const message = _buildDeleteMessage(current);
   await _drainSseAndRefetch(quoteId, message);
 }
+
+
+/* ─── derive material · Sprint 4 derive-material-ui-wire ────────────────
+   Carga los 9 catálogos materiales en paralelo + POST al endpoint backend
+   `/api/quotes/{id}/derive-material` (router.py:1363 · ya cableado).
+   `calculate_quote._find_material()` hace fuzzy lookup por `name`
+   (case-insensitive + normalize) · el dropdown envía `item.name`. */
+
+export interface MaterialOption {
+  brand: string;
+  name: string;
+  sku: string;
+  thickness_mm?: number;
+}
+
+export interface DeriveMaterialResponse {
+  ok: true;
+  quote_id: string;
+  material: string;
+  total_ars: number | null;
+  total_usd: number | null;
+  derived_from: string;
+}
+
+const _MATERIAL_CATALOGS = [
+  "materials-silestone",
+  "materials-purastone",
+  "materials-dekton",
+  "materials-neolith",
+  "materials-puraprima",
+  "materials-laminatto",
+  "materials-granito-nacional",
+  "materials-granito-importado",
+  "materials-marmol",
+];
+
+export async function getMaterialsList(
+  options?: { signal?: AbortSignal },
+): Promise<MaterialOption[]> {
+  const results = await Promise.all(
+    _MATERIAL_CATALOGS.map(async (name) => {
+      try {
+        const response = await apiFetch(`/api/catalog/${encodeURIComponent(name)}`, {
+          signal: options?.signal,
+        });
+        if (!response.ok) return { name, items: [] as unknown[] };
+        const data = (await response.json()) as { items?: unknown[] } | unknown[];
+        // Backend devuelve `{items: [...]}` o array directo según catalog · normalizar.
+        const items = Array.isArray(data)
+          ? data
+          : Array.isArray((data as { items?: unknown[] }).items)
+            ? (data as { items: unknown[] }).items
+            : [];
+        return { name, items };
+      } catch {
+        return { name, items: [] as unknown[] };
+      }
+    }),
+  );
+  const out: MaterialOption[] = [];
+  for (const { name: catalogName, items } of results) {
+    const brand = catalogName.replace("materials-", "").replace(/-/g, " ");
+    for (const raw of items) {
+      const it = raw as { name?: string; sku?: string; thickness_mm?: number };
+      if (typeof it.name !== "string" || !it.name.trim()) continue;
+      out.push({
+        brand,
+        name: it.name,
+        sku: typeof it.sku === "string" ? it.sku : "",
+        thickness_mm: typeof it.thickness_mm === "number" ? it.thickness_mm : undefined,
+      });
+    }
+  }
+  return out;
+}
+
+export async function deriveMaterialForQuote(
+  quoteId: string,
+  material: string,
+  options?: { signal?: AbortSignal },
+): Promise<DeriveMaterialResponse> {
+  const response = await apiFetch(
+    `/api/quotes/${encodeURIComponent(quoteId)}/derive-material`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ material }),
+      signal: options?.signal,
+    },
+    30_000, // backend hace calculate_quote completo · puede tardar 3-5s
+  );
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const err = await response.json();
+      if (err?.detail) detail = String(err.detail);
+    } catch {
+      /* ignore parse error */
+    }
+    throw new ApiError("DERIVE_MATERIAL_FAILED", detail, response.status);
+  }
+  return (await response.json()) as DeriveMaterialResponse;
+}
