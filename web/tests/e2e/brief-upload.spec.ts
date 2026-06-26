@@ -144,7 +144,9 @@ test("Estado A · brief-textarea-wrap con placeholder LITERAL del mockup", async
 test("Estado A · CTA disabled cuando todo vacío + helper LITERAL", async ({ page }) => {
   await page.goto("/quotes/new");
   await expect(page.locator('[data-testid="brief-submit"]')).toBeDisabled();
-  await expect(page.locator('[data-testid="brief-helper"]')).toContainText(/Necesito al menos el/);
+  await expect(page.locator('[data-testid="brief-helper"]')).toContainText(
+    /Necesito al menos un brief/,
+  );
 });
 
 test("Estado A · llenar 3 chips sin PDF habilita CTA (cliente+ambiente)", async ({ page }) => {
@@ -264,10 +266,10 @@ test("Persistencia A↔B · chips llenos en A se mantienen al subir PDF (estado 
   await expect(page.locator('[data-testid="brief-text"]')).toHaveValue("brief preservado");
 });
 
-test("Estado A · h2 LITERAL 'Subí lo que tengas y arranco' + lead con 'cargá a mano →'", async ({
+test("Estado A · h2 LITERAL 'Subí lo que tengas y arranco' + lead con CTA 'Cargá los datos a mano'", async ({
   page,
 }) => {
   await page.goto("/quotes/new");
   await expect(page.locator(".brief-hero h2")).toContainText("Subí lo que tengas y arranco");
-  await expect(page.locator(".brief-hero .lead")).toContainText("cargá a mano");
+  await expect(page.locator(".brief-hero .lead")).toContainText("Cargá los datos a mano");
 });

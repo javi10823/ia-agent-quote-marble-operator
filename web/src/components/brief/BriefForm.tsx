@@ -101,11 +101,16 @@ export function BriefForm({
       </>
     );
   } else if (hasMinBrief || hasChips) {
-    helperContent = "Sin plano voy a intentar igual pero será aproximado.";
+    helperContent = (
+      <>
+        Sin plano voy a intentar igual pero será aproximado.{" "}
+        <em>Valentina</em> tarda unos segundos en procesar el brief.
+      </>
+    );
   } else {
     helperContent = (
       <>
-        Necesito al menos el <em>plano en PDF</em> para arrancar. ¿No tenés?{" "}
+        Necesito al menos un brief con medidas o un <em>plano en PDF</em> para arrancar. ¿No tenés?{" "}
         <a
           href="#"
           className="link-inline"
@@ -164,11 +169,10 @@ export function BriefForm({
               "Cuando le des dale, voy a leer el plano, extraer medidas, identificar ambiente y armar el contexto del paso 2. Te aviso si encuentro algo raro."
             ) : (
               <>
-                Soy <em>Valentina</em>. Si me das el plano y un brief — aunque sea informal —
+                Soy <em>Valentina</em>. Si me das un brief con medidas — aunque sea informal —
                 extraigo cliente, ambiente, medidas, material y armo el contexto del paso 2 sola.
                 <br />
                 <br />
-                ¿No tenés plano todavía?{" "}
                 <a
                   href="#"
                   className="link-inline"
@@ -178,7 +182,7 @@ export function BriefForm({
                   }}
                   data-testid="brief-manual-hero-link"
                 >
-                  cargá a mano →
+                  Cargá los datos a mano →
                 </a>
               </>
             )}
