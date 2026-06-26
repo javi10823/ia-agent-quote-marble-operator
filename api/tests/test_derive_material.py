@@ -246,3 +246,65 @@ class TestDeriveMaterial:
         data = resp.json()
         assert data["ok"]
         assert "PALOMA" in data["material"].upper()
+
+    @pytest.mark.asyncio
+    async def test_pieces_from_dual_read_fallback(self, client):
+        """Sub-PR derive-material-ui-wire (destapado por validación visual #515):
+        quotes del flujo Operador (post-#512 text_parse) tienen piezas SOLO en
+        `breakdown.dual_read_result`, no en `quote.pieces` ni `piece_details`.
+        El guard debe usar el 3er fallback `_extract_calc_pieces_from_dual_read`."""
+        resp = await client.post("/api/quotes")
+        qid = resp.json()["id"]
+
+        # Breakdown con SOLO dual_read_result · sin pieces raw ni piece_details
+        from app.core.database import get_db
+        from app.main import app
+        from sqlalchemy import update as sql_update
+        from app.models.quote import Quote
+
+        dual_read_breakdown = {
+            "dual_read_result": {
+                "source": "TEXT",
+                "sectores": [{
+                    "id": "sector_1",
+                    "tipo": "cocina",
+                    "tramos": [
+                        {
+                            "id": "t1",
+                            "descripcion": "Mesada principal",
+                            "largo_m": {"valor": 2.5, "opus": None, "sonnet": None, "status": "CONFIRMADO"},
+                            "ancho_m": {"valor": 0.6, "opus": None, "sonnet": None, "status": "CONFIRMADO"},
+                            "quantity": 1,
+                            "zocalos": [{
+                                "lado": "trasero",
+                                "ml": 2.5,
+                                "alto_m": 0.05,
+                                "quantity": 1,
+                            }],
+                        },
+                    ],
+                }],
+            }
+        }
+
+        async for db in app.dependency_overrides[get_db]():
+            await db.execute(
+                sql_update(Quote).where(Quote.id == qid).values(
+                    client_name="Operador Flow Test",
+                    project="Cocina",
+                    material="SILESTONE BLANCO NORTE",
+                    localidad="rosario",
+                    quote_breakdown=dual_read_breakdown,
+                    pieces=None,  # NO raw pieces (flujo Operador)
+                )
+            )
+            await db.commit()
+
+        resp = await client.post(f"/api/quotes/{qid}/derive-material", json={
+            "material": "Blanco Paloma",
+        })
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["ok"]
+        assert "PALOMA" in data["material"].upper()
+        assert data["derived_from"] == qid

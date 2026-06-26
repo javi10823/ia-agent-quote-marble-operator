@@ -445,6 +445,62 @@ def _serialize_dual_read_to_pieces(dual_read: dict | None) -> list[dict]:
     return pieces
 
 
+def _extract_calc_pieces_from_dual_read(dual_read: dict | None) -> list[dict]:
+    """Itera `dual_read_result.sectores[].tramos[]` y emite shape
+    `{description, largo, prof|alto, quantity?}` apto para `calculate_quote.pieces[]`.
+
+    Sub-PR derive-material-ui-wire backend fix · destapado por validación visual
+    #515: quotes del flujo Operador (post-#512 text_parse) tienen piezas SOLO en
+    `dual_read_result`, no en `quote.pieces` raw ni en `breakdown.piece_details`.
+    El endpoint `/derive-material` necesita este fallback adicional para no
+    rechazar esos quotes con HTTP 400.
+
+    Hermano de `_serialize_dual_read_to_pieces` (mismo source · distinto target
+    shape: el helper de #512 emite `Piece` del frontend, este emite el shape
+    que el calculator consume).
+    """
+    if not isinstance(dual_read, dict):
+        return []
+    pieces: list[dict] = []
+    for sector in dual_read.get("sectores") or []:
+        for tramo in sector.get("tramos") or []:
+            largo_m = _field_valor(tramo.get("largo_m"))
+            ancho_m = _field_valor(tramo.get("ancho_m"))
+            if largo_m is None:
+                continue
+            t_piece: dict = {
+                "description": tramo.get("descripcion") or "Mesada",
+                "largo": largo_m,
+            }
+            if ancho_m is not None:
+                t_piece["prof"] = ancho_m
+            t_qty = tramo.get("quantity")
+            if isinstance(t_qty, int) and t_qty > 1:
+                t_piece["quantity"] = t_qty
+            pieces.append(t_piece)
+            for z in tramo.get("zocalos") or []:
+                ml = z.get("ml")
+                alto = z.get("alto_m")
+                if ml is None or alto is None:
+                    continue
+                try:
+                    ml_f = float(ml)
+                    alto_f = float(alto)
+                except (TypeError, ValueError):
+                    continue
+                lado = str(z.get("lado") or "trasero").strip() or "trasero"
+                z_piece: dict = {
+                    "description": f"Zócalo {lado}",
+                    "largo": ml_f,
+                    "alto": alto_f,
+                }
+                z_qty = z.get("quantity")
+                if isinstance(z_qty, int) and z_qty > 1:
+                    z_piece["quantity"] = z_qty
+                pieces.append(z_piece)
+    return pieces
+
+
 def _phone_email_from_breakdown(bd: dict | None) -> tuple[str | None, str | None]:
     """Extrae phone + email desde el `_brief_analysis_raw` del breakdown JSON.
 
@@ -1385,8 +1441,12 @@ async def derive_material(
         raise HTTPException(status_code=404, detail="Presupuesto original no encontrado")
 
     # ── Source of truth for pieces ──
-    # Priority: quote.pieces (raw input) > breakdown.piece_details (calculated)
-    # If neither exists, reject — we need a reliable base to recalculate.
+    # Priority order:
+    #   1. quote.pieces (raw input · flujo web/chatbot legacy)
+    #   2. breakdown.piece_details (calculator output reconstruido)
+    #   3. breakdown.dual_read_result (flujo Operador post-#512 · sub-PR
+    #      derive-material-ui-wire fix destapado por validación visual #515)
+    # If none, reject — no reliable base to recalculate.
     pieces = None
     if original.pieces:
         # Raw pieces saved at creation — best source
@@ -1405,6 +1465,16 @@ async def derive_material(
                     piece["prof"] = pd["dim2"]
             pieces.append(piece)
         logging.info(f"[derive] Reconstructed {len(pieces)} pieces from breakdown for {quote_id}")
+    elif original.quote_breakdown and original.quote_breakdown.get("dual_read_result"):
+        # Fallback flujo Operador (sub-PR derive-material-ui-wire):
+        # quotes del text_parse tienen piezas solo en dual_read_result.
+        pieces = _extract_calc_pieces_from_dual_read(
+            original.quote_breakdown["dual_read_result"]
+        )
+        if pieces:
+            logging.info(
+                f"[derive] Extracted {len(pieces)} pieces from dual_read_result for {quote_id}"
+            )
     if not pieces:
         raise HTTPException(status_code=400, detail="El presupuesto original no tiene piezas. No se puede derivar.")
 
