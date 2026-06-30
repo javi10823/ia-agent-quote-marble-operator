@@ -253,3 +253,113 @@ class PieceListResponse(BaseModel):
     status: str  # "pending" | "inferring" | "done" | "failed"
     timeline: list = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+
+
+# ── Calculation Response · sub-PR sprint-4/calculation-real-wire ──────────
+# Cierra el gap del paso 4 que consumía 100% mocks. Solo `getCalculationForQuote`
+# se cablea real en este sub-PR; `triggerCalculation` y `applyAutoFix` siguen
+# mock-only hasta sub-PR siguiente (decisión: trigger ya está cubierto por
+# agent loop · applyAutoFix es caso nicho mockup 08 patch error).
+# Shape mirroreado del frontend `web/src/lib/api/types.ts:267-342` (CalcStatus,
+# MaterialRow, LaborRowData, MermaSection, PiletaSection, FleteRow, GrandTotals,
+# DatosPdfDefaults, ValentinaAdjustment, CalculationResult).
+
+
+class AuditEntrySchema(BaseModel):
+    kind: str  # "SOURCE" | "REGLA" | "CALC" | "IVA" | "SUMA"
+    text: str
+
+
+class MaterialRowSchema(BaseModel):
+    label: str
+    sub: Optional[str] = None
+    qty: str
+    unit: str
+    total: str
+    variant: Optional[str] = None  # "default" | "discount" | "subtotal"
+    audit: Optional[list[AuditEntrySchema]] = None
+
+
+class LaborRowDataSchema(BaseModel):
+    sku: str
+    label: str
+    sub: Optional[str] = None
+    qty: str
+    basePrice: str
+    iva: str
+    total: str
+    audit: Optional[list[AuditEntrySchema]] = None
+
+
+class MermaSobranteToggleSchema(BaseModel):
+    label: str
+    defaultChecked: bool
+
+
+class MermaErrorRowSchema(BaseModel):
+    label: str
+    detail: str
+    fixLabel: str
+
+
+class MermaSectionSchema(BaseModel):
+    status: str  # "na" | "aplica" | "error"
+    chipLabel: str
+    sub: Optional[str] = None
+    rows: Optional[list[MaterialRowSchema]] = None
+    sobranteToggle: Optional[MermaSobranteToggleSchema] = None
+    stockToggle: Optional[MermaSobranteToggleSchema] = None
+    errorRow: Optional[MermaErrorRowSchema] = None
+
+
+class PiletaSectionSchema(BaseModel):
+    chipLabel: str
+    variant: str  # "na" | "info"
+    sub: Optional[str] = None
+
+
+class FleteRowSchema(BaseModel):
+    zona: str
+    qty: str
+    basePrice: str
+    total: str
+    audit: Optional[list[AuditEntrySchema]] = None
+
+
+class GrandTotalsCurrencySchema(BaseModel):
+    value: str
+    meta: str
+
+
+class GrandTotalsSchema(BaseModel):
+    ars: GrandTotalsCurrencySchema
+    usd: GrandTotalsCurrencySchema
+    warnDetail: Optional[str] = None
+
+
+class DatosPdfDefaultsSchema(BaseModel):
+    plazo: str
+    anticipoPct: str
+    saldo: str
+    envio: str
+    notas: str
+    vigenciaDias: str
+
+
+class ValentinaAdjustmentSchema(BaseModel):
+    text: str
+
+
+class CalculationResponse(BaseModel):
+    quoteId: str
+    status: str  # "pending" | "ok" | "error"
+    bannerSummary: str
+    bannerAdjustments: list[ValentinaAdjustmentSchema] = Field(default_factory=list)
+    material: dict  # {"rows": list[MaterialRowSchema], "subtotal": str}
+    merma: MermaSectionSchema
+    labor: dict  # {"rows": list[LaborRowDataSchema], "subtotal": str}
+    piletas: PiletaSectionSchema
+    flete: FleteRowSchema
+    totals: GrandTotalsSchema
+    patchError: Optional[dict] = None
+    datosPdf: DatosPdfDefaultsSchema

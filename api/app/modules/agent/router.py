@@ -33,6 +33,15 @@ from app.modules.agent.schemas import (
     PieceListResponse,
     PieceSchema,
     PieceOptionsSchema,
+    CalculationResponse,
+    MaterialRowSchema,
+    LaborRowDataSchema,
+    MermaSectionSchema,
+    PiletaSectionSchema,
+    FleteRowSchema,
+    GrandTotalsSchema,
+    GrandTotalsCurrencySchema,
+    DatosPdfDefaultsSchema,
 )
 
 router = APIRouter(tags=["agent"])
@@ -501,6 +510,266 @@ def _extract_calc_pieces_from_dual_read(dual_read: dict | None) -> list[dict]:
     return pieces
 
 
+# ── Calculation serializer helpers · sub-PR calculation-real-wire ────────
+# Convierten el shape backend (`calculate_quote()` return inlined al top-level
+# del `quote_breakdown`) al shape `CalculationResult` del frontend
+# (types.ts:344). PASO 0 EXP-2 confirmó shapes vía Railway query:
+#   - mo_items: [{description, quantity, unit_price, base_price, total}]
+#   - sinks: [{name, quantity, unit_price}]
+#   - merma: {aplica, desperdicio, sobrante_m2, motivo}
+#   - piece_details: [{description, largo, dim2, m2, quantity, override, _is_frentin}]
+
+
+def _format_ars(value: float | int | None) -> str:
+    """Locale es-AR · "$1.234,56" (separador miles "." · decimal ",")."""
+    if value is None:
+        return "—"
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    formatted = f"{v:,.2f}"
+    formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"${formatted}"
+
+
+def _format_usd(value: float | int | None) -> str:
+    """Locale es-AR · "USD 1.234"."""
+    if value is None:
+        return "—"
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    formatted = f"{v:,.0f}".replace(",", ".")
+    return f"USD {formatted}"
+
+
+def _format_qty_m2(value: float | int | None) -> str:
+    if value is None:
+        return "—"
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    formatted = f"{v:.2f}".replace(".", ",")
+    return f"{formatted} m²"
+
+
+def _is_flete_item(item: dict) -> bool:
+    """Heurística confirmada PASO 0 EXP-2: el item flete tiene `description`
+    que arranca con "flete" (case-insensitive). Sample real:
+    "Flete + toma medidas ibarlucea"."""
+    desc = (item.get("description") or "").lower().strip()
+    return desc.startswith("flete")
+
+
+def _serialize_residential_calc(breakdown: dict, quote) -> CalculationResponse:
+    """Adapter no trivial · mapea ~7 secciones del shape backend al shape
+    `CalculationResult` del frontend. Solo residential (edificio out-of-scope).
+
+    Shape source confirmado PASO 0 EXP + EXP-2 vs Railway DB.
+    """
+    quote_id = str(quote.id)
+    mo_items = breakdown.get("mo_items") or []
+    sinks = breakdown.get("sinks") or []
+    merma = breakdown.get("merma") or {}
+    material_currency = breakdown.get("material_currency") or "USD"
+    pileta = (breakdown.get("pileta") or "").strip().lower()
+
+    # ── Material section · 1 row + descuento opcional + subtotal ──
+    material_name = breakdown.get("material_name") or "Material"
+    material_m2 = breakdown.get("material_m2") or 0
+    material_total = breakdown.get("material_total") or 0
+    material_total_bruto = breakdown.get("material_total_bruto") or material_total
+    material_price_unit = breakdown.get("material_price_unit") or 0
+    discount_pct = breakdown.get("discount_pct") or 0
+    discount_amount = breakdown.get("discount_amount") or 0
+
+    is_usd = material_currency == "USD"
+    _fmt_money = _format_usd if is_usd else _format_ars
+
+    material_rows: list[MaterialRowSchema] = [
+        MaterialRowSchema(
+            label=material_name,
+            qty=_format_qty_m2(material_m2),
+            unit=f"{material_currency} {int(material_price_unit)}",
+            total=_fmt_money(material_total_bruto),
+        )
+    ]
+    if discount_amount and discount_pct:
+        material_rows.append(
+            MaterialRowSchema(
+                label=f"Descuento {discount_pct}%",
+                qty="",
+                unit="",
+                total="−" + _fmt_money(discount_amount),
+                variant="discount",
+            )
+        )
+    material_subtotal = _fmt_money(material_total)
+
+    # ── Merma section ──
+    if bool(merma.get("aplica")):
+        sobrante_m2 = breakdown.get("sobrante_m2") or 0
+        sobrante_total = breakdown.get("sobrante_total") or 0
+        merma_rows: list[MaterialRowSchema] = []
+        if sobrante_m2 > 0:
+            merma_rows.append(
+                MaterialRowSchema(
+                    label="Sobrante recuperable",
+                    qty=_format_qty_m2(sobrante_m2),
+                    unit="",
+                    total=_fmt_money(sobrante_total),
+                )
+            )
+        merma_section = MermaSectionSchema(
+            status="aplica",
+            chipLabel="APLICA",
+            sub=str(merma.get("motivo") or ""),
+            rows=merma_rows or None,
+        )
+    else:
+        merma_section = MermaSectionSchema(
+            status="na",
+            chipLabel=f"N/A — {merma.get('motivo') or 'sin merma'}",
+        )
+
+    # ── Labor section · mo_items filtrados (skip flete) ──
+    labor_rows: list[LaborRowDataSchema] = []
+    labor_subtotal_total = 0.0
+    for item in mo_items:
+        if not isinstance(item, dict) or _is_flete_item(item):
+            continue
+        item_total = item.get("total") or 0
+        labor_subtotal_total += float(item_total)
+        labor_rows.append(
+            LaborRowDataSchema(
+                sku="MO",
+                label=str(item.get("description") or ""),
+                qty=str(item.get("quantity") or 1),
+                basePrice=_format_ars(item.get("base_price")),
+                iva="×1,21",
+                total=_format_ars(item_total),
+            )
+        )
+    labor_subtotal_str = _format_ars(labor_subtotal_total)
+
+    # ── Flete section · single trip residential ──
+    flete_item = next((it for it in mo_items if isinstance(it, dict) and _is_flete_item(it)), None)
+    localidad = breakdown.get("localidad") or "—"
+    if flete_item:
+        flete_section = FleteRowSchema(
+            zona=str(localidad).title(),
+            qty="1 viaje",
+            basePrice=_format_ars(flete_item.get("base_price")),
+            total=_format_ars(flete_item.get("total")),
+        )
+    else:
+        flete_section = FleteRowSchema(
+            zona=str(localidad).title(),
+            qty="—",
+            basePrice="—",
+            total="—",
+        )
+
+    # ── Piletas section · 3 escenarios por `pileta` value ──
+    if pileta == "empotrada_cliente":
+        piletas_section = PiletaSectionSchema(
+            chipLabel="N/A — pileta empotrada (la trae el cliente)",
+            variant="na",
+        )
+    elif pileta == "empotrada_johnson":
+        if sinks:
+            sink0 = sinks[0]
+            piletas_section = PiletaSectionSchema(
+                chipLabel="APLICA",
+                variant="info",
+                sub=f"{sink0.get('name', '—')} × {sink0.get('quantity', 1)} · {_format_ars(sink0.get('unit_price'))}",
+            )
+        else:
+            piletas_section = PiletaSectionSchema(
+                chipLabel="APLICA",
+                variant="info",
+                sub="Johnson (catálogo)",
+            )
+    elif pileta == "apoyo":
+        piletas_section = PiletaSectionSchema(
+            chipLabel="N/A — pileta de apoyo",
+            variant="na",
+        )
+    else:
+        piletas_section = PiletaSectionSchema(chipLabel="—", variant="na")
+
+    # ── Totals ──
+    total_ars = breakdown.get("total_ars") or 0
+    total_usd = breakdown.get("total_usd") or 0
+    totals = GrandTotalsSchema(
+        ars=GrandTotalsCurrencySchema(value=_format_ars(total_ars), meta="MO + flete (ARS)"),
+        usd=GrandTotalsCurrencySchema(value=_format_usd(total_usd), meta="Material importado (USD)"),
+    )
+
+    # ── DatosPdf defaults · desde columnas Quote + breakdown ──
+    delivery_days = breakdown.get("delivery_days") or "30 días"
+    datos_pdf = DatosPdfDefaultsSchema(
+        plazo=str(delivery_days),
+        anticipoPct="50%",
+        saldo="Contra entrega",
+        envio="Incluye flete" if flete_item else "Retira en taller",
+        notas=str(quote.notes or ""),
+        vigenciaDias="30",
+    )
+
+    # ── Banner summary · pre-rendered string ──
+    n_pieces = len(breakdown.get("piece_details") or [])
+    banner_parts = [
+        f"✓ Calculado",
+        material_name,
+        _format_qty_m2(material_m2),
+        f"{_format_ars(total_ars)} + {_format_usd(total_usd)}",
+    ]
+    if n_pieces:
+        banner_parts.insert(0, f"{n_pieces} piezas")
+    banner_summary = " · ".join(banner_parts)
+
+    return CalculationResponse(
+        quoteId=quote_id,
+        status="ok",
+        bannerSummary=banner_summary,
+        bannerAdjustments=[],
+        material={"rows": [r.model_dump() for r in material_rows], "subtotal": material_subtotal},
+        merma=merma_section,
+        labor={"rows": [r.model_dump() for r in labor_rows], "subtotal": labor_subtotal_str},
+        piletas=piletas_section,
+        flete=flete_section,
+        totals=totals,
+        datosPdf=datos_pdf,
+    )
+
+
+def _pending_calculation_response(quote_id: str, summary: str) -> CalculationResponse:
+    """Empty CalculationResponse para pending / edificio_not_supported."""
+    return CalculationResponse(
+        quoteId=quote_id,
+        status="pending",
+        bannerSummary=summary,
+        bannerAdjustments=[],
+        material={"rows": [], "subtotal": "—"},
+        merma=MermaSectionSchema(status="na", chipLabel="—"),
+        labor={"rows": [], "subtotal": "—"},
+        piletas=PiletaSectionSchema(chipLabel="—", variant="na"),
+        flete=FleteRowSchema(zona="—", qty="—", basePrice="—", total="—"),
+        totals=GrandTotalsSchema(
+            ars=GrandTotalsCurrencySchema(value="—", meta=""),
+            usd=GrandTotalsCurrencySchema(value="—", meta=""),
+        ),
+        datosPdf=DatosPdfDefaultsSchema(
+            plazo="30 días", anticipoPct="50%", saldo="Contra entrega",
+            envio="—", notas="", vigenciaDias="30",
+        ),
+    )
+
+
 def _phone_email_from_breakdown(bd: dict | None) -> tuple[str | None, str | None]:
     """Extrae phone + email desde el `_brief_analysis_raw` del breakdown JSON.
 
@@ -622,6 +891,47 @@ async def list_pieces_for_quote(quote_id: str, db: AsyncSession = Depends(get_db
         timeline=[],
         warnings=[],
     )
+
+
+# ── CALCULATION (read-only display · sub-PR calculation-real-wire) ─────────
+
+@router.get("/quotes/{quote_id}/calculation", response_model=CalculationResponse)
+async def get_calculation_for_quote(quote_id: str, db: AsyncSession = Depends(get_db)):
+    """Serializa `quote_breakdown` al shape `CalculationResult` del frontend.
+
+    Cierra el gap del paso 4 que consumía 100% mocks. Sub-PR scope:
+    - Residential (top-level breakdown.material_*, mo_items, merma, etc.)
+    - Edificio out-of-scope · devuelve status=pending con summary específico
+      (multi-material UI no soportado por `CalculationResult` actual)
+    - Sin cálculo → status=pending
+
+    Helpers de mapeo en `_serialize_residential_calc()` y
+    `_pending_calculation_response()`. `triggerCalculation` y `applyAutoFix`
+    siguen mock-only · sub-PR aparte si Marina los necesita.
+    """
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(status_code=404, detail="quote_not_found")
+
+    breakdown = quote.quote_breakdown or {}
+
+    # Edificio out-of-scope (multi-material via paso2_calc.calc_results)
+    if breakdown.get("is_edificio") or "paso2_calc" in breakdown:
+        return _pending_calculation_response(
+            str(quote.id),
+            "Cálculo de edificios no disponible en esta vista todavía",
+        )
+
+    # Residential sin cálculo aún
+    if not breakdown.get("material_name") or not breakdown.get("total_ars"):
+        return _pending_calculation_response(
+            str(quote.id),
+            "Cálculo pendiente · esperá a que Valentina termine el paso 3",
+        )
+
+    # Residential con cálculo completo
+    return _serialize_residential_calc(breakdown, quote)
 
 
 # ── COMPARE QUOTES ───────────────────────────────────────────────────────────
