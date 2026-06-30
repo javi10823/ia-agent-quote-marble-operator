@@ -574,6 +574,38 @@ export function _resetCalcStore() {
   _calcStore.clear();
 }
 
+/* ─── derive material · stubs Sprint 4 derive-material-ui-wire ──────── */
+
+export async function getMaterialsList(
+  options?: { signal?: AbortSignal },
+): Promise<import("./real").MaterialOption[]> {
+  await delay(300, options?.signal);
+  return [
+    { brand: "silestone", name: "SILESTONE BLANCO NORTE", sku: "SILESTONENORTE", thickness_mm: 20 },
+    { brand: "silestone", name: "SILESTONE ETHER GLOW", sku: "SILGLOW", thickness_mm: 20 },
+    { brand: "purastone", name: "PURASTONE MILK WHITE", sku: "PURAMILK", thickness_mm: 20 },
+    { brand: "dekton", name: "DEKTON KELYA", sku: "DEKKELYA", thickness_mm: 12 },
+    { brand: "neolith", name: "NEOLITH CALACATTA GOLD", sku: "NEOCALA", thickness_mm: 12 },
+  ];
+}
+
+export async function deriveMaterialForQuote(
+  quoteId: string,
+  material: string,
+  options?: { signal?: AbortSignal },
+): Promise<import("./real").DeriveMaterialResponse> {
+  await delay(800, options?.signal);
+  return {
+    ok: true,
+    quote_id: `mock-derived-${Date.now()}`,
+    material,
+    total_ars: 0,
+    total_usd: 0,
+    derived_from: quoteId,
+  };
+}
+
+
 /**
  * GET calculation para un quote. Fallback gracioso desde el inicio
  * (lección Sprint 3 día 3): IDs desconocidos (UUIDs del backend real,
