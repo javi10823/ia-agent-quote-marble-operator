@@ -53,8 +53,16 @@ export const getMaterialsList = USE_REAL_API ? real.getMaterialsList : mocks.get
 export const deriveMaterialForQuote = USE_REAL_API ? real.deriveMaterialForQuote : mocks.deriveMaterialForQuote;
 export type { MaterialOption, DeriveMaterialResponse } from "./real";
 
-/* ─── Cálculo (paso 4 · siempre mock · Sprint 4 wire chat-driven) ── */
-export const getCalculationForQuote = mocks.getCalculationForQuote;
+/* ─── Cálculo (paso 4) · Sprint 4 calculation-real-wire ──────────────────
+   getCalculationForQuote: wireada contra GET /api/quotes/{id}/calculation
+   (backend serializa breakdown residential al shape CalculationResult).
+   triggerCalculation y applyAutoFix siguen mock-only · deuda explícita:
+   - triggerCalculation: el cálculo real se dispara via agent loop cuando
+     Marina edita pieces (post-#514). Botón "↻ Re-calcular" es legacy del
+     mockup · sub-PR aparte si Marina pide explícito.
+   - applyAutoFix: caso nicho del mockup 08 patch error · validators
+     post-#506/#511 limpian inconsistencias antes que aparezca. */
+export const getCalculationForQuote = USE_REAL_API ? real.getCalculationForQuote : mocks.getCalculationForQuote;
 export const triggerCalculation = mocks.triggerCalculation;
 export const applyAutoFix = mocks.applyAutoFix;
 

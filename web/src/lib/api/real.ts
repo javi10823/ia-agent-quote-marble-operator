@@ -1185,3 +1185,30 @@ export async function deriveMaterialForQuote(
   }
   return (await response.json()) as DeriveMaterialResponse;
 }
+
+
+/* ─── getCalculationForQuote · Sprint 4 calculation-real-wire ────────────
+   GET /api/quotes/{id}/calculation · backend serializa `quote_breakdown`
+   al shape `CalculationResult` (residential top-level · edificio out-of-scope
+   con status="pending" + summary específico). `triggerCalculation` y
+   `applyAutoFix` siguen mock-only (deuda explícita · sub-PR aparte). */
+
+import type { CalculationResult } from "./types";
+
+export async function getCalculationForQuote(
+  quoteId: string,
+  options?: { signal?: AbortSignal },
+): Promise<CalculationResult> {
+  const response = await apiFetch(
+    `/api/quotes/${encodeURIComponent(quoteId)}/calculation`,
+    { signal: options?.signal },
+  );
+  if (!response.ok) {
+    throw new ApiError(
+      "GET_CALCULATION_FAILED",
+      `GET /api/quotes/{id}/calculation ${response.status}`,
+      response.status,
+    );
+  }
+  return (await response.json()) as CalculationResult;
+}
