@@ -18,7 +18,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { piecesTotalM2, type Piece } from "@/lib/api";
+import { getCalculationForQuote, piecesTotalM2, streamChat, type Piece } from "@/lib/api";
 import { useDespiece } from "@/lib/hooks/useDespiece";
 import { useChatScoped } from "@/lib/hooks/useChatScoped";
 import { DESPIECE_LOADING_TIMELINE } from "@/lib/mocks/canonicalQuote";
@@ -80,6 +80,41 @@ export function DespieceView({ quoteId }: Props) {
   );
 
   const totalM2 = piecesTotalM2(pieces);
+
+  // Confirmar despiece: manda `[DUAL_READ_CONFIRMED]{}` (backend usa el despiece
+  // guardado), espera a que termine el turno y recién ahí navega a /calculo.
+  // Si el cálculo sigue pendiente (Valentina pidió un dato) nos quedamos acá
+  // con el chat abierto.
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  async function handleConfirm() {
+    setConfirming(true);
+    setConfirmError(null);
+    try {
+      const reader = streamChat(quoteId, "[DUAL_READ_CONFIRMED]{}", "despiece").getReader();
+      let failed = false;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value && (value.type === "error" || (value.type === "done" && value.error))) {
+          failed = true;
+        }
+      }
+      if (failed) throw new Error("No se pudo confirmar el despiece. Reintentá.");
+      const calc = await getCalculationForQuote(quoteId);
+      if (calc.status === "pending") {
+        setConfirmError("Valentina necesita un dato para calcular · respondele en el chat.");
+        setFocusedPieceId(null);
+        chat.open();
+        setConfirming(false);
+        return;
+      }
+      router.push(`/quotes/${quoteId}/calculo`);
+    } catch (err) {
+      setConfirmError(err instanceof Error ? err.message : "Error al confirmar el despiece");
+      setConfirming(false);
+    }
+  }
 
   function openStepChat() {
     setFocusedPieceId(null);
@@ -270,7 +305,8 @@ export function DespieceView({ quoteId }: Props) {
   /* ── A / B / C / manual ────────────────────────────────────────────── */
   const showTimeline = timeline.length > 0 && status !== "failed";
   const symbolsCount = pieces.reduce((n, p) => n + (p.detected_symbols?.length ?? 0), 0);
-  const canConfirm = pieces.length > 0 && state !== "regenerating";
+  const canConfirm =
+    pieces.length > 0 && state !== "regenerating" && state !== "saving" && !confirming;
 
   return (
     <div
@@ -492,14 +528,19 @@ export function DespieceView({ quoteId }: Props) {
           >
             💬 Ayuda con esta sección
           </button>
+          {confirmError && (
+            <div className="summary t-human" role="alert" data-testid="confirm-error">
+              {confirmError}
+            </div>
+          )}
           <button
             type="button"
             className="btn primary"
             data-testid="confirm-despiece"
             disabled={!canConfirm}
-            onClick={() => router.push(`/quotes/${quoteId}/calculo`)}
+            onClick={handleConfirm}
           >
-            Confirmar y seguir →
+            {confirming ? "Confirmando…" : "Confirmar y seguir →"}
           </button>
         </div>
       </div>

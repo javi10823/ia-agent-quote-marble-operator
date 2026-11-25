@@ -2166,6 +2166,20 @@ class AgentService:
             _just_confirmed_dual_read = True
             try:
                 _confirmed_json = json.loads(user_message[len("[DUAL_READ_CONFIRMED]"):])
+                # Paso 3 (/despiece): el front manda payload vacío (`{}`) y el
+                # despiece vigente (con las ediciones) ya está en
+                # `quote_breakdown.dual_read_result`. Lo usamos como confirmado.
+                if not _confirmed_json:
+                    _qr_saved = await db.execute(select(Quote).where(Quote.id == quote_id))
+                    _q_saved = _qr_saved.scalar_one_or_none()
+                    _confirmed_json = json.loads(json.dumps(
+                        ((_q_saved.quote_breakdown or {}) if _q_saved else {}).get("dual_read_result") or {},
+                        default=str,
+                    ))
+                    if not _confirmed_json:
+                        yield {"type": "text", "content": "No hay despiece guardado para confirmar."}
+                        yield {"type": "done", "content": ""}
+                        return
                 # PR #385 — payload crudo que llegó del frontend. Este es el
                 # punto que el usuario ve en la card editable cuando aprieta
                 # "Confirmar medidas". Si aquí el dual_read no refleja lo
