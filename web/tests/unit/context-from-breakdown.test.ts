@@ -772,3 +772,30 @@ describe("Bug 7 RESIDUAL · precedencia verified > pending > top-level (drift gu
     expect(ctx.anafe.value).toBe(true);
   });
 });
+
+describe("breakdownToContext · obra / proyecto", () => {
+  test("project_source inferred → INFERIDO", () => {
+    const ctx = breakdownToContext({ project: "Juan - Silestone", project_source: "inferred" });
+    expect(ctx.project).toEqual({ value: "Juan - Silestone", origin: "INFERIDO" });
+  });
+
+  test("sin marca → BRIEF", () => {
+    const ctx = breakdownToContext({ project: "Cocina Belgrano" });
+    expect(ctx.project).toEqual({ value: "Cocina Belgrano", origin: "BRIEF" });
+  });
+
+  test("vacío o solo espacios → FALTA", () => {
+    expect(breakdownToContext({ project: "" }).project).toEqual({ value: null, origin: "FALTA" });
+    expect(breakdownToContext({ project: "   " }).project).toEqual({ value: null, origin: "FALTA" });
+    expect(breakdownToContext(null).project).toEqual({ value: null, origin: "FALTA" });
+  });
+
+  test("la columna Quote.project tiene prioridad sobre breakdown.project", () => {
+    const ctx = breakdownToContext(
+      { project: "Viejo", project_source: "inferred" },
+      "Cocina Belgrano",
+    );
+    expect(ctx.project.value).toBe("Cocina Belgrano");
+  });
+});
+

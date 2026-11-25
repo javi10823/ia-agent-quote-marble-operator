@@ -43,6 +43,7 @@ export const GROUPS: Group[] = [
   {
     title: "Proyecto",
     fields: [
+      { name: "project", label: "Obra / Proyecto", hint: "título del sector en el PDF" },
       { name: "tipologia", label: "Tipología", hint: "cocina, baño, mesa, etc." },
       { name: "tipo_obra", label: "Tipo de obra", hint: "define colocación + flete" },
       { name: "material", label: "Material", hint: "piedra o engineered" },
@@ -180,6 +181,11 @@ export function ContextForm({
                 hint={f.hint}
                 type={f.type}
                 field={context[f.name]}
+                originLabel={
+                  f.name === "project" && context.project.origin === "INFERIDO"
+                    ? "SUGERIDO"
+                    : undefined
+                }
                 onCommit={(value) => onUpdateField(f.name, value as ContextData[typeof f.name])}
               />
             ))}
@@ -207,7 +213,7 @@ export function ContextForm({
           className="btn primary"
           data-testid="confirm-context"
           onClick={handleConfirm}
-          disabled={confirming}
+          disabled={confirming || saving}
         >
           {confirming ? "Confirmando…" : "Confirmar y continuar a despiece →"}
         </button>

@@ -134,6 +134,14 @@ export async function updateContextForQuote(
   return result;
 }
 
+export async function patchQuoteProject(
+  quoteId: string,
+  project: string,
+  options?: { signal?: AbortSignal },
+): Promise<void> {
+  await updateContextForQuote(quoteId, { project }, options);
+}
+
 /* ─── Chat scoped (mock SSE via ReadableStream) ──────────────────── */
 
 function pickResponse(scope: ChatScope, message: string, targetPieceId?: string): string {

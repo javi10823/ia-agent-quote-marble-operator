@@ -14,12 +14,12 @@ async function gotoContexto(page: Page) {
   await expect(page.locator('[data-testid="context-form"]')).toBeVisible();
 }
 
-test("estado A — 11 campos canon visibles, banner pristine", async ({ page }) => {
+test("estado A — 12 campos canon visibles, banner pristine", async ({ page }) => {
   await gotoContexto(page);
   await expect(page.locator('[data-testid="context-form"]')).toHaveAttribute("data-state", "A");
-  // 11 rows de contexto
+  // 12 rows de contexto (11 + Obra / Proyecto)
   const rows = page.locator('[data-testid^="context-row-"]');
-  await expect(rows).toHaveCount(11);
+  await expect(rows).toHaveCount(12);
   // Cifras canon Cueto-Heredia
   await expect(page.locator('[data-testid="context-value-cliente"]')).toContainText(
     "Cueto-Heredia",
@@ -64,6 +64,30 @@ test("estado A → B — editar 1 campo aplica row-edited + chip EDITADO", async
   await expect(page.locator('[data-testid="context-form"]')).toHaveAttribute("data-state", "B");
   // Banner se vuelve muted con copy distinto
   await expect(page.locator('[data-testid="context-banner"]')).toContainText("Marina");
+});
+
+test("obra / proyecto — chip SUGERIDO; editar → EDITADO; vacío no cambia", async ({ page }) => {
+  await gotoContexto(page);
+  await expect(page.locator('[data-testid="origin-chip-project"]')).toHaveText("SUGERIDO");
+  // Vacío → no cambia
+  await page.locator('[data-testid="context-value-project"]').click();
+  await page.locator('[data-testid="context-input-project"]').fill("");
+  await page.keyboard.press("Enter");
+  await expect(page.locator('[data-testid="context-row-project"]')).toHaveAttribute(
+    "data-edited",
+    "false",
+  );
+  await expect(page.locator('[data-testid="origin-chip-project"]')).toHaveText("SUGERIDO");
+  // Editar → EDITADO
+  await page.locator('[data-testid="context-value-project"]').click();
+  await page.locator('[data-testid="context-input-project"]').fill("Cocina Belgrano");
+  await page.keyboard.press("Enter");
+  await expect(page.locator('[data-testid="context-row-project"]')).toHaveAttribute(
+    "data-edited",
+    "true",
+    { timeout: 3000 },
+  );
+  await expect(page.locator('[data-testid="origin-chip-project"]')).toHaveText("EDITADO");
 });
 
 test("chat panel — abrir, enviar, recibir streaming, cerrar borra mensajes", async ({ page }) => {

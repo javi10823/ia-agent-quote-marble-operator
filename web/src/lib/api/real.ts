@@ -527,6 +527,7 @@ import type { ContextResponse } from "./types";
 interface RealQuoteDetailResponse {
   id: string;
   quote_breakdown?: QuoteBreakdownLike | null;
+  project?: string | null;
   [key: string]: unknown;
 }
 
@@ -553,7 +554,7 @@ export async function getContextForQuote(
   const detail = (await response.json()) as RealQuoteDetailResponse;
   // Adapter tolera breakdown null/undefined → devuelve todos los fields
   // como FALTA (preserva el current "—" behavior del UI).
-  return breakdownToContext(detail.quote_breakdown ?? null);
+  return breakdownToContext(detail.quote_breakdown ?? null, detail.project ?? null);
 }
 
 /* ─── getCatalogConfig / updateCatalogConfig · sub-PR 22.2.a ──────────
@@ -1186,6 +1187,34 @@ export async function deriveMaterialForQuote(
   return (await response.json()) as DeriveMaterialResponse;
 }
 
+/** PATCH /api/quotes/{id} { project } · persiste la obra editada en /contexto
+ * (columna + mirror en breakdown; el backend saca la marca "inferred"). */
+export async function patchQuoteProject(
+  quoteId: string,
+  project: string,
+  options?: { signal?: AbortSignal },
+): Promise<void> {
+  const response = await apiFetch(
+    `/api/quotes/${encodeURIComponent(quoteId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project }),
+      signal: options?.signal,
+    },
+    30_000,
+  );
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const err = await response.json();
+      if (err?.detail) detail = String(err.detail);
+    } catch {
+      /* ignore parse error */
+    }
+    throw new ApiError("QUOTE_PATCH_FAILED", detail, response.status);
+  }
+}
 
 /* ─── getCalculationForQuote · Sprint 4 calculation-real-wire ────────────
    GET /api/quotes/{id}/calculation · backend serializa `quote_breakdown`

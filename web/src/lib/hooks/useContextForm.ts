@@ -13,6 +13,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getContextForQuote,
   updateContextForQuote,
+  patchQuoteProject,
+  IS_REAL_API,
   type ContextData,
   type ContextResponse,
 } from "../api";
@@ -50,6 +52,41 @@ export function useContextForm(quoteId: string) {
 
   const updateField = useCallback(
     async <K extends keyof ContextData>(key: K, value: ContextData[K]) => {
+      const markEdited = () =>
+        setContext((prev) =>
+          prev ? { ...prev, [key]: { value, origin: "EDITADO", edited: true } } : prev,
+        );
+      if (key === "project") {
+        const text = typeof value === "string" ? value.trim() : "";
+        if (!text) {
+          setError("La obra no puede quedar vacía");
+          return;
+        }
+        saveAbortRef.current?.abort();
+        const ctrl = new AbortController();
+        saveAbortRef.current = ctrl;
+        setState("saving");
+        setError(null);
+        try {
+          await patchQuoteProject(quoteId, text, { signal: ctrl.signal });
+          setContext((prev) =>
+            prev ? { ...prev, project: { value: text, origin: "EDITADO", edited: true } } : prev,
+          );
+          setState("idle");
+        } catch (err) {
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          setError(err instanceof Error ? err.message : "Error al guardar");
+          setState("error");
+        }
+        return;
+      }
+      if (IS_REAL_API) {
+        // Modo real: el resto de los campos no tiene endpoint · edición
+        // solo local (sin backend). `updateContextForQuote` es del mock y
+        // vaciaría el form para un UUID real.
+        markEdited();
+        return;
+      }
       saveAbortRef.current?.abort();
       const ctrl = new AbortController();
       saveAbortRef.current = ctrl;

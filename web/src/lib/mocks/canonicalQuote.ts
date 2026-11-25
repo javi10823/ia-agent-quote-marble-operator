@@ -78,6 +78,7 @@ import type { ContextResponse, Piece, TimelineStep } from "../api";
 
 export const CANONICAL_CONTEXT: ContextResponse = {
   cliente: { value: "Cueto-Heredia Arquitectura", origin: "BRIEF" },
+  project: { value: "Cueto-Heredia - Silestone Blanco Norte", origin: "INFERIDO" },
   contacto: { value: "estudio@cueto-heredia.ar", origin: "INFERIDO" },
   localidad: { value: "Belgrano · CABA", origin: "BRIEF" },
   plazo: { value: "3 semanas", origin: "BRIEF" },
@@ -104,6 +105,7 @@ export const CANONICAL_CONTEXT: ContextResponse = {
 /** PRES-2026-017 · Familia Pereyra · Silestone Blanco Norte (Master §13). */
 export const CANONICAL_CONTEXT_PEREYRA: ContextResponse = {
   cliente: { value: "Familia Pereyra", origin: "BRIEF" },
+  project: { value: null, origin: "FALTA" },
   contacto: { value: null, origin: "FALTA" },
   localidad: { value: "Rosario · zona sur", origin: "BRIEF" },
   plazo: { value: null, origin: "FALTA" },
@@ -119,6 +121,7 @@ export const CANONICAL_CONTEXT_PEREYRA: ContextResponse = {
 /** Fallback para quotes del dataset sin canon definido. */
 export const CANONICAL_CONTEXT_GENERIC: ContextResponse = {
   cliente: { value: null, origin: "FALTA" },
+  project: { value: null, origin: "FALTA" },
   contacto: { value: null, origin: "FALTA" },
   localidad: { value: null, origin: "FALTA" },
   plazo: { value: null, origin: "FALTA" },
