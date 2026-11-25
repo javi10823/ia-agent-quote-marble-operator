@@ -77,7 +77,7 @@ class TestDerive:
 
 class TestSuggest:
     def test_ambos(self):
-        assert suggest_project_name("Juan Pérez", "Silestone Blanco Norte") == "Juan Pérez · Silestone Blanco Norte"
+        assert suggest_project_name("Juan Pérez", "Silestone Blanco Norte") == "Juan Pérez - Silestone Blanco Norte"
 
     def test_solo_cliente(self):
         assert suggest_project_name("Juan Pérez", None) == "Juan Pérez"
@@ -93,7 +93,7 @@ class TestSuggest:
         assert suggest_project_name("n/a", "Silestone") == "Silestone"
 
     def test_limpia_markdown(self):
-        assert suggest_project_name("**Juan**", "Granito\nNegro") == "Juan · Granito Negro"
+        assert suggest_project_name("**Juan**", "Granito\nNegro") == "Juan - Granito Negro"
 
 
 class TestResolve:
@@ -108,7 +108,7 @@ class TestResolve:
 
     def test_cliente_material_antes_que_work_types(self):
         r = self._r({"work_types": ["cocina"]}, client_name="Juan", material="Silestone")
-        assert r == ("Juan · Silestone", "inferred")
+        assert r == ("Juan - Silestone", "inferred")
 
     def test_work_types_ultimo(self):
         r = self._r({"work_types": ["cocina"], "isla_mentioned": True})

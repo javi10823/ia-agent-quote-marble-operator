@@ -79,7 +79,7 @@ async def test_cliente_y_material_arman_el_project(db_session, monkeypatch):
     qid = await _new_quote(db_session)
     _assert_flow_ran(await _run(db_session, qid))
     q = await _reload(db_session, qid)
-    assert q.project == "Juan Pérez · Silestone Blanco Norte"
+    assert q.project == "Juan Pérez - Silestone Blanco Norte"
     assert q.quote_breakdown["project_source"] == "inferred"
 
 
@@ -163,7 +163,7 @@ def test_flujo_plano_mismo_patron_con_quote_mock():
         client_name=col_updates.get("client_name") or quote.client_name,
         material=col_updates.get("material") or quote.material,
     )
-    assert res == ("Erica Bernardi · Puraprima Onix", "inferred")
+    assert res == ("Erica Bernardi - Puraprima Onix", "inferred")
 
 
 def test_flujo_plano_con_project_del_brief_no_marca():

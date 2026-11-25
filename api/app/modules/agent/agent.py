@@ -2961,8 +2961,11 @@ class AgentService:
                     _persist_update = {}
                     if _info_hint.get("client_name") and not _tp_quote.client_name:
                         _persist_update["client_name"] = _info_hint["client_name"]
-                    if _info_hint.get("project") and not _tp_quote.project:
+                    _tp_pj_inferred = isinstance(_tp_bd, dict) and _tp_bd.get("project_source") == "inferred"
+                    _tp_pj_overridden = False
+                    if _info_hint.get("project") and (not _tp_quote.project or _tp_pj_inferred):
                         _persist_update["project"] = _info_hint["project"]
+                        _tp_pj_overridden = bool(_tp_quote.project)
                     if _info_hint.get("material") and not _tp_quote.material:
                         _persist_update["material"] = _info_hint["material"]
 
@@ -3060,6 +3063,9 @@ class AgentService:
                                         or _tp_quote.material
                                     ),
                                 )
+                                if _tp_pj_overridden:
+                                    # El operador dio la obra: deja de ser inferred.
+                                    _persist_bd.pop("project_source", None)
                                 if _pj_res:
                                     _persist_update["project"] = _pj_res[0]
                                     if _pj_res[1] == "inferred":
@@ -6114,8 +6120,28 @@ class AgentService:
                         f"[save] generate_documents intentó cambiar client_name "
                         f"'{_existing_cn}' → '{_new_cn}' — preservando valor DB."
                     )
-                # project: idem.
-                if (_looks_placeholder(_existing_pj) or not _existing_pj.strip()) and _new_pj:
+                # project: idem. Un project "inferred" (sugerido por el
+                # sistema) es pisable por uno válido del operador.
+                _existing_pj_inferred = bool(
+                    existing_bd_quote
+                    and isinstance(existing_bd_quote.quote_breakdown, dict)
+                    and existing_bd_quote.quote_breakdown.get("project_source") == "inferred"
+                )
+                if (
+                    _existing_pj_inferred
+                    and _new_pj
+                    and not _looks_placeholder(_new_pj)
+                    and _new_pj != _existing_pj
+                ):
+                    save_vals["project"] = _new_pj
+                    if isinstance(qdata, dict):
+                        qdata = {k: v for k, v in qdata.items() if k != "project_source"}
+                        save_vals["quote_breakdown"] = qdata
+                    logging.info(
+                        f"[save] overwriting inferred project "
+                        f"'{_existing_pj}' → '{_new_pj}'"
+                    )
+                elif (_looks_placeholder(_existing_pj) or not _existing_pj.strip()) and _new_pj:
                     save_vals["project"] = _new_pj
                     if _existing_pj.strip():
                         logging.info(
@@ -7442,6 +7468,7 @@ class AgentService:
                             "dual_read_result", "verified_measurements",
                             "verified_context", "dual_read_planilla_m2",
                             "dual_read_crop_label", "files_v2",
+                            "project_source",
                         ):
                             if _keep_key in old_quote.quote_breakdown and _keep_key not in _merged_bd:
                                 _merged_bd[_keep_key] = old_quote.quote_breakdown[_keep_key]

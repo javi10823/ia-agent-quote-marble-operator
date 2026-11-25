@@ -20,7 +20,7 @@ from typing import Optional
 PROJECT_PLACEHOLDERS = {"", "n/a", "n/d", "sin proyecto", "sin obra", "-", "—", "."}
 
 _MAX_FIELD = 450
-_SEPARATOR = " · "
+_SEPARATOR = " - "
 
 _WORK_TYPE_NAMES = {
     "cocina": "Cocina",
@@ -77,7 +77,7 @@ def derive_project_from_brief(analysis) -> Optional[str]:
 
 
 def suggest_project_name(client, material) -> Optional[str]:
-    """'Cliente · Material' (o el que haya). None si no hay ninguno útil."""
+    """'Cliente - Material' (o el que haya). None si no hay ninguno útil."""
     parts = []
     for value in (client, material):
         cleaned = clean_project(value)
@@ -85,7 +85,7 @@ def suggest_project_name(client, material) -> Optional[str]:
             parts.append(cleaned)
     if not parts:
         return None
-    return _SEPARATOR.join(parts)
+    return _SEPARATOR.join(parts)[:_MAX_FIELD]
 
 
 def resolve_project_for_persist(

@@ -48,10 +48,10 @@ async def _calc(db_session, qid: str, project: str) -> dict:
 class TestCalculateQuoteFallback:
     @pytest.mark.asyncio
     async def test_db_valido_e_input_vacio_completa(self, db_session):
-        qid = await _quote(db_session, "Juan Pérez · Silestone Blanco Norte")
+        qid = await _quote(db_session, "Juan Pérez - Silestone Blanco Norte")
         res = await _calc(db_session, qid, "")
         assert res["ok"] is True, res.get("error")
-        assert res["project"] == "Juan Pérez · Silestone Blanco Norte"
+        assert res["project"] == "Juan Pérez - Silestone Blanco Norte"
 
     @pytest.mark.asyncio
     async def test_input_na_se_completa(self, db_session):
@@ -93,8 +93,8 @@ class TestUpdateQuoteProjectSource:
 
     @pytest.mark.asyncio
     async def test_project_nuevo_borra_la_marca(self, db_session):
-        qid = await _quote(db_session, "Juan · Silestone", {
-            "project": "Juan · Silestone", "project_source": "inferred", "x": 1,
+        qid = await _quote(db_session, "Juan - Silestone", {
+            "project": "Juan - Silestone", "project_source": "inferred", "x": 1,
         })
         q = await self._update(db_session, qid, {"project": "Casa López"})
         assert q.project == "Casa López"
@@ -103,16 +103,16 @@ class TestUpdateQuoteProjectSource:
 
     @pytest.mark.asyncio
     async def test_project_igual_al_sugerido_tambien_borra_la_marca(self, db_session):
-        qid = await _quote(db_session, "Juan · Silestone", {
-            "project": "Juan · Silestone", "project_source": "inferred",
+        qid = await _quote(db_session, "Juan - Silestone", {
+            "project": "Juan - Silestone", "project_source": "inferred",
         })
-        q = await self._update(db_session, qid, {"project": "Juan · Silestone"})
+        q = await self._update(db_session, qid, {"project": "Juan - Silestone"})
         assert "project_source" not in q.quote_breakdown
 
     @pytest.mark.asyncio
     async def test_solo_client_name_mantiene_la_marca(self, db_session):
-        qid = await _quote(db_session, "Juan · Silestone", {
-            "project": "Juan · Silestone", "project_source": "inferred",
+        qid = await _quote(db_session, "Juan - Silestone", {
+            "project": "Juan - Silestone", "project_source": "inferred",
         })
         q = await self._update(db_session, qid, {"client_name": "Otro Cliente"})
         assert q.quote_breakdown["project_source"] == "inferred"
@@ -124,10 +124,10 @@ class TestInferredProjectBlock:
 
     def test_inferred_devuelve_bloque_sin_cache_control(self):
         b = _build_inferred_project_block(
-            self._q("Juan · Silestone", {"project_source": "inferred"})
+            self._q("Juan - Silestone", {"project_source": "inferred"})
         )
         assert b["type"] == "text"
-        assert "Juan · Silestone" in b["text"]
+        assert "Juan - Silestone" in b["text"]
         assert "PROYECTO/OBRA YA DEFINIDO" in b["text"]
         assert "cache_control" not in b
 
