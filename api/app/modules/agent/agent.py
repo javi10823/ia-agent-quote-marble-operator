@@ -621,6 +621,29 @@ async def _run_dual_read(
                     _col_updates = _extract_column_updates_from_analysis(
                         _brief_raw or {}, _ck_quote,
                     )
+                    # Project sugerido (cliente + material, o tipo de trabajo)
+                    # si ni el brief ni el quote lo traen. Marcado "inferred".
+                    from app.modules.quote_engine.project_inference import (
+                        resolve_project_for_persist,
+                    )
+                    _brief_pj = _brief_raw if isinstance(_brief_raw, dict) else {}
+                    _pj_res = resolve_project_for_persist(
+                        _brief_pj,
+                        current_project=_ck_quote.project if _ck_quote else None,
+                        pending_project=_col_updates.get("project"),
+                        client_name=(
+                            _col_updates.get("client_name")
+                            or (_ck_quote.client_name if _ck_quote else None)
+                        ),
+                        material=(
+                            _col_updates.get("material")
+                            or (_ck_quote.material if _ck_quote else None)
+                        ),
+                    ) if _ck_quote else None
+                    if _pj_res:
+                        _col_updates["project"] = _pj_res[0]
+                        if _pj_res[1] == "inferred":
+                            _bd2["project_source"] = "inferred"
                     if _col_updates:
                         await db.execute(
                             update(Quote)
@@ -2989,6 +3012,32 @@ class AgentService:
                                 _persist_bd = dict(_tp_bd)
                                 _persist_bd["dual_read_result"] = _text_card
                                 _persist_bd["context_analysis_pending"] = _context_tp
+                                # Project sugerido: el brief de solo texto no
+                                # persiste analysis.project y el calculator
+                                # rechaza project vacío. Marcado "inferred".
+                                from app.modules.quote_engine.project_inference import (
+                                    resolve_project_for_persist,
+                                )
+                                _brief_tp = _context_tp.get("_brief_analysis_raw") or {}
+                                _pj_res = resolve_project_for_persist(
+                                    _brief_tp,
+                                    current_project=_tp_quote.project,
+                                    pending_project=_persist_update.get("project"),
+                                    client_name=(
+                                        _persist_update.get("client_name")
+                                        or _tp_quote.client_name
+                                        or (_brief_tp.get("client_name") if isinstance(_brief_tp, dict) else None)
+                                    ),
+                                    material=(
+                                        (_brief_tp.get("material") if isinstance(_brief_tp, dict) else None)
+                                        or _persist_update.get("material")
+                                        or _tp_quote.material
+                                    ),
+                                )
+                                if _pj_res:
+                                    _persist_update["project"] = _pj_res[0]
+                                    if _pj_res[1] == "inferred":
+                                        _persist_bd["project_source"] = "inferred"
                                 _persist_update["quote_breakdown"] = _persist_bd
                                 # PR #379 — JSON real en content para que el
                                 # chat reconstruya la card al reabrir.
