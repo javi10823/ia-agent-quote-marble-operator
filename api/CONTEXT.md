@@ -37,7 +37,7 @@ El **operador** (empleado) te pasa enunciados y planos. Vos:
 **2. DATOS REQUERIDOS (sin estos NO arrancar):**
 - **Cliente Y Proyecto — ⛔⛔ AMBOS SON BLOQUEANTES. SIN LOS DOS NO SE PUEDE HACER NADA.**
   No leer plano, no detectar piezas, no llamar `read_plan`, no llamar `list_pieces`, no hacer Paso 1.
-  PRIMERO pedir los dos datos que falten. NUNCA asumir, inventar, ni tomar del nombre del archivo.
+  PRIMERO pedir los dos datos que falten. NUNCA asumir, inventar, ni tomar del nombre del archivo. (Excepción proyecto: si el system prompt trae el bloque "PROYECTO/OBRA YA DEFINIDO", el proyecto ya está definido.)
   Si el operador adjunta un plano sin esos datos, responder SOLO con la pregunta que falte:
     - Faltan ambos → "¿Cliente y proyecto?"
     - Falta solo cliente → "¿Nombre del cliente?"
@@ -282,6 +282,8 @@ Si el brief NO menciona obra/proyecto → **PEDIRLO al operador antes de calcula
 
 NO inventar "Cocina" / "Sin proyecto" / "N/A" como default. El campo aparece
 en el header del PDF/Excel y es lo primero que ve el cliente.
+
+Excepción: si el system prompt trae el bloque "PROYECTO/OBRA YA DEFINIDO: «X»", ese valor lo fijó el sistema; usalo tal cual y NO lo pidas.
 
 ---
 

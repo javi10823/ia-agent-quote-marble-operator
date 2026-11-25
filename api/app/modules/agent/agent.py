@@ -19,6 +19,7 @@ from app.modules.agent.tools.plan_tool import read_plan, save_plan_to_temp
 from app.modules.agent.tools.document_tool import generate_documents
 from app.modules.agent.tools.drive_tool import upload_to_drive
 from app.modules.quote_engine.calculator import calculate_quote, list_pieces
+from app.modules.quote_engine.project_inference import is_placeholder_project
 from app.modules.agent.tools.validation_tool import validate_despiece
 
 BASE_DIR = Path(__file__).parent.parent.parent.parent
@@ -621,6 +622,29 @@ async def _run_dual_read(
                     _col_updates = _extract_column_updates_from_analysis(
                         _brief_raw or {}, _ck_quote,
                     )
+                    # Project sugerido (cliente + material, o tipo de trabajo)
+                    # si ni el brief ni el quote lo traen. Marcado "inferred".
+                    from app.modules.quote_engine.project_inference import (
+                        resolve_project_for_persist,
+                    )
+                    _brief_pj = _brief_raw if isinstance(_brief_raw, dict) else {}
+                    _pj_res = resolve_project_for_persist(
+                        _brief_pj,
+                        current_project=_ck_quote.project if _ck_quote else None,
+                        pending_project=_col_updates.get("project"),
+                        client_name=(
+                            _col_updates.get("client_name")
+                            or (_ck_quote.client_name if _ck_quote else None)
+                        ),
+                        material=(
+                            _col_updates.get("material")
+                            or (_ck_quote.material if _ck_quote else None)
+                        ),
+                    ) if _ck_quote else None
+                    if _pj_res:
+                        _col_updates["project"] = _pj_res[0]
+                        if _pj_res[1] == "inferred":
+                            _bd2["project_source"] = "inferred"
                     if _col_updates:
                         await db.execute(
                             update(Quote)
@@ -1366,6 +1390,31 @@ def _extract_column_updates_from_analysis(
         if cleaned:
             updates[field] = cleaned
     return updates
+
+
+def _build_inferred_project_block(quote) -> Optional[dict]:
+    """Bloque de system prompt con el project sugerido por el sistema.
+
+    Solo si `quote_breakdown.project_source == "inferred"` y hay project.
+    Sin `cache_control` (el prompt ya usa breakpoints; tope de 4).
+    """
+    if quote is None:
+        return None
+    bd = getattr(quote, "quote_breakdown", None)
+    if not isinstance(bd, dict) or bd.get("project_source") != "inferred":
+        return None
+    pj = getattr(quote, "project", None)
+    if not isinstance(pj, str) or not pj.strip():
+        return None
+    return {
+        "type": "text",
+        "text": (
+            f"PROYECTO/OBRA YA DEFINIDO: «{pj.strip()}» (sugerido por el sistema "
+            "desde cliente/material/tipo de trabajo). Usalo tal cual como "
+            "`project` en calculate_quote y generate_documents. NO lo pidas. "
+            "Si el operador indica otro nombre de obra, actualizalo con update_quote."
+        ),
+    }
 
 
 def _extract_quote_info(user_message: str) -> dict:
@@ -2912,8 +2961,11 @@ class AgentService:
                     _persist_update = {}
                     if _info_hint.get("client_name") and not _tp_quote.client_name:
                         _persist_update["client_name"] = _info_hint["client_name"]
-                    if _info_hint.get("project") and not _tp_quote.project:
+                    _tp_pj_inferred = isinstance(_tp_bd, dict) and _tp_bd.get("project_source") == "inferred"
+                    _tp_pj_overridden = False
+                    if _info_hint.get("project") and (not _tp_quote.project or _tp_pj_inferred):
                         _persist_update["project"] = _info_hint["project"]
+                        _tp_pj_overridden = bool(_tp_quote.project)
                     if _info_hint.get("material") and not _tp_quote.material:
                         _persist_update["material"] = _info_hint["material"]
 
@@ -2989,6 +3041,35 @@ class AgentService:
                                 _persist_bd = dict(_tp_bd)
                                 _persist_bd["dual_read_result"] = _text_card
                                 _persist_bd["context_analysis_pending"] = _context_tp
+                                # Project sugerido: el brief de solo texto no
+                                # persiste analysis.project y el calculator
+                                # rechaza project vacío. Marcado "inferred".
+                                from app.modules.quote_engine.project_inference import (
+                                    resolve_project_for_persist,
+                                )
+                                _brief_tp = _context_tp.get("_brief_analysis_raw") or {}
+                                _pj_res = resolve_project_for_persist(
+                                    _brief_tp,
+                                    current_project=_tp_quote.project,
+                                    pending_project=_persist_update.get("project"),
+                                    client_name=(
+                                        _persist_update.get("client_name")
+                                        or _tp_quote.client_name
+                                        or (_brief_tp.get("client_name") if isinstance(_brief_tp, dict) else None)
+                                    ),
+                                    material=(
+                                        (_brief_tp.get("material") if isinstance(_brief_tp, dict) else None)
+                                        or _persist_update.get("material")
+                                        or _tp_quote.material
+                                    ),
+                                )
+                                if _tp_pj_overridden:
+                                    # El operador dio la obra: deja de ser inferred.
+                                    _persist_bd.pop("project_source", None)
+                                if _pj_res:
+                                    _persist_update["project"] = _pj_res[0]
+                                    if _pj_res[1] == "inferred":
+                                        _persist_bd["project_source"] = "inferred"
                                 _persist_update["quote_breakdown"] = _persist_bd
                                 # PR #379 — JSON real en content para que el
                                 # chat reconstruya la card al reabrir.
@@ -3223,6 +3304,11 @@ class AgentService:
                 # Append to system prompt as additional context block
                 system_prompt.append({"type": "text", "text": _vc, "cache_control": {"type": "ephemeral"}})
                 logging.info(f"[dual-read] Injected verified measurements into system prompt ({len(_vc)} chars)")
+            # Project sugerido por el sistema: el LLM no lee Quote.project.
+            # Bloque SIN cache_control (tope de 4 breakpoints).
+            _pj_block = _build_inferred_project_block(_q_vm)
+            if _pj_block:
+                system_prompt.append(_pj_block)
         except Exception:
             pass
 
@@ -6034,8 +6120,28 @@ class AgentService:
                         f"[save] generate_documents intentó cambiar client_name "
                         f"'{_existing_cn}' → '{_new_cn}' — preservando valor DB."
                     )
-                # project: idem.
-                if (_looks_placeholder(_existing_pj) or not _existing_pj.strip()) and _new_pj:
+                # project: idem. Un project "inferred" (sugerido por el
+                # sistema) es pisable por uno válido del operador.
+                _existing_pj_inferred = bool(
+                    existing_bd_quote
+                    and isinstance(existing_bd_quote.quote_breakdown, dict)
+                    and existing_bd_quote.quote_breakdown.get("project_source") == "inferred"
+                )
+                if (
+                    _existing_pj_inferred
+                    and _new_pj
+                    and not _looks_placeholder(_new_pj)
+                    and _new_pj != _existing_pj
+                ):
+                    save_vals["project"] = _new_pj
+                    if isinstance(qdata, dict):
+                        qdata = {k: v for k, v in qdata.items() if k != "project_source"}
+                        save_vals["quote_breakdown"] = qdata
+                    logging.info(
+                        f"[save] overwriting inferred project "
+                        f"'{_existing_pj}' → '{_new_pj}'"
+                    )
+                elif (_looks_placeholder(_existing_pj) or not _existing_pj.strip()) and _new_pj:
                     save_vals["project"] = _new_pj
                     if _existing_pj.strip():
                         logging.info(
@@ -6366,12 +6472,18 @@ class AgentService:
                     changed = True
                 if "project" in clean_columns and bd.get("project") != clean_columns["project"]:
                     bd["project"] = clean_columns["project"]
+                    bd.pop("project_source", None)
                     changed = True
                 # PR #436 — campos que viven solo en breakdown.
                 for k, v in clean_breakdown_only.items():
                     if bd.get(k) != v:
                         bd[k] = v
                         changed = True
+                # Si el operador fija el project (aunque coincida con el
+                # sugerido), deja de ser "inferred".
+                if "project" in clean_columns and "project_source" in bd:
+                    bd.pop("project_source", None)
+                    changed = True
                 if changed:
                     clean_columns["quote_breakdown"] = bd
             elif clean_breakdown_only:
@@ -6455,6 +6567,19 @@ class AgentService:
             try:
                 existing_q = await db.execute(select(Quote).where(Quote.id == save_to_qid))
                 existing_quote = existing_q.scalar_one_or_none()
+                # Fallback determinístico: si el LLM manda project vacío o
+                # placeholder y el quote ya tiene uno válido (p.ej. el sugerido
+                # por el sistema), usarlo en vez de rechazar el cálculo.
+                if (
+                    existing_quote
+                    and is_placeholder_project(inputs.get("project"))
+                    and not is_placeholder_project(existing_quote.project)
+                ):
+                    inputs["project"] = existing_quote.project.strip()
+                    logging.info(
+                        f"[project-fallback] calculate_quote sin project válido · "
+                        f"usando el del quote {save_to_qid}: {inputs['project']!r}"
+                    )
                 if existing_quote and existing_quote.quote_breakdown:
                     ebd = existing_quote.quote_breakdown
                     msg_lower = current_user_message.lower()
@@ -7343,6 +7468,7 @@ class AgentService:
                             "dual_read_result", "verified_measurements",
                             "verified_context", "dual_read_planilla_m2",
                             "dual_read_crop_label", "files_v2",
+                            "project_source",
                         ):
                             if _keep_key in old_quote.quote_breakdown and _keep_key not in _merged_bd:
                                 _merged_bd[_keep_key] = old_quote.quote_breakdown[_keep_key]
