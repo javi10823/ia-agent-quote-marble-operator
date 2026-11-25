@@ -100,8 +100,11 @@ class TestTokenBudget:
         # `regrueso_ml` agregados al tool schema de calculate_quote
         # (~16 tokens). Sigue muy lejos del límite real de Anthropic
         # (200K) — esto es un guardrail defensivo, no la API ceiling.
-        assert raw_tokens < 55_500, (
-            f"Raw prompt exceeds 55.5K token limit: {raw_tokens} tokens ({total_chars} chars)"
+        # sprint-4/project-inferred — bump 55_500 → 55_700 para acomodar las dos
+        # frases de excepción "PROYECTO/OBRA YA DEFINIDO" en CONTEXT.md
+        # (~100 tokens). Mismo criterio que PR #401: guardrail defensivo.
+        assert raw_tokens < 55_700, (
+            f"Raw prompt exceeds 55.7K token limit: {raw_tokens} tokens ({total_chars} chars)"
         )
 
     def test_dynamic_examples_capped_at_2(self):
