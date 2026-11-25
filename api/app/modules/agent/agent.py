@@ -19,6 +19,7 @@ from app.modules.agent.tools.plan_tool import read_plan, save_plan_to_temp
 from app.modules.agent.tools.document_tool import generate_documents
 from app.modules.agent.tools.drive_tool import upload_to_drive
 from app.modules.quote_engine.calculator import calculate_quote, list_pieces
+from app.modules.quote_engine.project_inference import is_placeholder_project
 from app.modules.agent.tools.validation_tool import validate_despiece
 
 BASE_DIR = Path(__file__).parent.parent.parent.parent
@@ -1389,6 +1390,31 @@ def _extract_column_updates_from_analysis(
         if cleaned:
             updates[field] = cleaned
     return updates
+
+
+def _build_inferred_project_block(quote) -> Optional[dict]:
+    """Bloque de system prompt con el project sugerido por el sistema.
+
+    Solo si `quote_breakdown.project_source == "inferred"` y hay project.
+    Sin `cache_control` (el prompt ya usa breakpoints; tope de 4).
+    """
+    if quote is None:
+        return None
+    bd = getattr(quote, "quote_breakdown", None)
+    if not isinstance(bd, dict) or bd.get("project_source") != "inferred":
+        return None
+    pj = getattr(quote, "project", None)
+    if not isinstance(pj, str) or not pj.strip():
+        return None
+    return {
+        "type": "text",
+        "text": (
+            f"PROYECTO/OBRA YA DEFINIDO: «{pj.strip()}» (sugerido por el sistema "
+            "desde cliente/material/tipo de trabajo). Usalo tal cual como "
+            "`project` en calculate_quote y generate_documents. NO lo pidas. "
+            "Si el operador indica otro nombre de obra, actualizalo con update_quote."
+        ),
+    }
 
 
 def _extract_quote_info(user_message: str) -> dict:
@@ -3272,6 +3298,11 @@ class AgentService:
                 # Append to system prompt as additional context block
                 system_prompt.append({"type": "text", "text": _vc, "cache_control": {"type": "ephemeral"}})
                 logging.info(f"[dual-read] Injected verified measurements into system prompt ({len(_vc)} chars)")
+            # Project sugerido por el sistema: el LLM no lee Quote.project.
+            # Bloque SIN cache_control (tope de 4 breakpoints).
+            _pj_block = _build_inferred_project_block(_q_vm)
+            if _pj_block:
+                system_prompt.append(_pj_block)
         except Exception:
             pass
 
@@ -6415,12 +6446,18 @@ class AgentService:
                     changed = True
                 if "project" in clean_columns and bd.get("project") != clean_columns["project"]:
                     bd["project"] = clean_columns["project"]
+                    bd.pop("project_source", None)
                     changed = True
                 # PR #436 — campos que viven solo en breakdown.
                 for k, v in clean_breakdown_only.items():
                     if bd.get(k) != v:
                         bd[k] = v
                         changed = True
+                # Si el operador fija el project (aunque coincida con el
+                # sugerido), deja de ser "inferred".
+                if "project" in clean_columns and "project_source" in bd:
+                    bd.pop("project_source", None)
+                    changed = True
                 if changed:
                     clean_columns["quote_breakdown"] = bd
             elif clean_breakdown_only:
@@ -6504,6 +6541,19 @@ class AgentService:
             try:
                 existing_q = await db.execute(select(Quote).where(Quote.id == save_to_qid))
                 existing_quote = existing_q.scalar_one_or_none()
+                # Fallback determinístico: si el LLM manda project vacío o
+                # placeholder y el quote ya tiene uno válido (p.ej. el sugerido
+                # por el sistema), usarlo en vez de rechazar el cálculo.
+                if (
+                    existing_quote
+                    and is_placeholder_project(inputs.get("project"))
+                    and not is_placeholder_project(existing_quote.project)
+                ):
+                    inputs["project"] = existing_quote.project.strip()
+                    logging.info(
+                        f"[project-fallback] calculate_quote sin project válido · "
+                        f"usando el del quote {save_to_qid}: {inputs['project']!r}"
+                    )
                 if existing_quote and existing_quote.quote_breakdown:
                     ebd = existing_quote.quote_breakdown
                     msg_lower = current_user_message.lower()
