@@ -21,6 +21,10 @@
  *   - "config_default"                                   → "DEFAULT"
  *   - field no encontrado                                → "FALTA"
  *
+ * `project` (obra): sale de la columna `Quote.project` (si llega) o de
+ * `breakdown.project`; `breakdown.project_source === "inferred"` →
+ * INFERIDO (la UI lo muestra como "SUGERIDO"), si no BRIEF.
+ *
  * Pure function · vitest-testable · sin side effects.
  */
 import type { ContextField, ContextOrigin, ContextResponse } from "../types";
@@ -78,6 +82,8 @@ export interface QuoteBreakdownLike {
   verified_context_analysis?: ContextAnalysis | null;
   context_analysis_pending?: ContextAnalysis | null;
   _brief_analysis_raw?: BriefAnalysisRaw | null;
+  project?: string | null;
+  project_source?: string | null;
   [key: string]: unknown;
 }
 
@@ -181,7 +187,10 @@ function resolveString(
 
 // ─── Adapter principal ───────────────────────────────────────────────
 
-export function breakdownToContext(breakdown: QuoteBreakdownLike | null | undefined): ContextResponse {
+export function breakdownToContext(
+  breakdown: QuoteBreakdownLike | null | undefined,
+  quoteProject?: string | null,
+): ContextResponse {
   const verified = breakdown?.verified_context_analysis ?? null;
   const pending = breakdown?.context_analysis_pending ?? null;
   // Bug 7 RESIDUAL fix · pre-existente desde PR #483.
@@ -209,6 +218,16 @@ export function breakdownToContext(breakdown: QuoteBreakdownLike | null | undefi
 
   // ── Cliente
   const cliente = resolveString(verified, pending, "Cliente", raw.client_name);
+
+  // ── Obra / Proyecto · columna Quote.project > breakdown.project.
+  const pjRaw =
+    (typeof quoteProject === "string" && quoteProject.trim()) ||
+    (typeof breakdown?.project === "string" ? breakdown.project : null);
+  const pj = pjRaw?.trim() || null;
+  const project = field<string | null>(
+    pj,
+    breakdown?.project_source === "inferred" ? "INFERIDO" : "BRIEF",
+  );
 
   // ── Contacto · sub-PR sprint-4/contacto-extraction-fix (deuda
   // cerrada desde PR #483 sub-PR 9.3). Backend ahora extrae phone +
@@ -335,6 +354,7 @@ export function breakdownToContext(breakdown: QuoteBreakdownLike | null | undefi
 
   return {
     cliente,
+    project,
     contacto,
     localidad,
     plazo,

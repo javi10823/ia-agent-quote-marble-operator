@@ -12,7 +12,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { streamChat, type ContextData, type ContextResponse } from "@/lib/api";
+import { streamChat, IS_REAL_API, type ContextData, type ContextResponse } from "@/lib/api";
 import { ContextField } from "./ContextField";
 
 export interface FieldDef {
@@ -43,6 +43,7 @@ export const GROUPS: Group[] = [
   {
     title: "Proyecto",
     fields: [
+      { name: "project", label: "Obra / Proyecto", hint: "título del sector en el PDF" },
       { name: "tipologia", label: "Tipología", hint: "cocina, baño, mesa, etc." },
       { name: "tipo_obra", label: "Tipo de obra", hint: "define colocación + flete" },
       { name: "material", label: "Material", hint: "piedra o engineered" },
@@ -66,6 +67,7 @@ interface Props {
   isDirty: boolean;
   editedCount: number;
   saving: boolean;
+  fieldError?: string | null;
   onUpdateField: <K extends keyof ContextData>(key: K, value: ContextData[K]) => void;
   onOpenChat: () => void;
   chatOpen: boolean;
@@ -78,6 +80,7 @@ export function ContextForm({
   isDirty,
   editedCount,
   saving,
+  fieldError,
   onUpdateField,
   onOpenChat,
   chatOpen,
@@ -140,8 +143,10 @@ export function ContextForm({
         <div className="text">
           {isDirty ? (
             <>
-              <em>Marina</em> editó {editedCount} campo{editedCount === 1 ? "" : "s"}. Los cambios
-              se aplican al cálculo del paso 3.
+              <em>Marina</em> editó {editedCount} campo{editedCount === 1 ? "" : "s"}.{" "}
+              {IS_REAL_API
+                ? "La obra se guarda; los demás campos son solo visuales por ahora (corregilos por el chat con Valentina)."
+                : "Los cambios se aplican al cálculo del paso 3."}
               <div className="sub">
                 Click en cualquier campo para seguir editando · ✏ marca los editados
               </div>
@@ -158,6 +163,17 @@ export function ContextForm({
           )}
         </div>
       </div>
+
+      {fieldError && (
+        <div
+          role="alert"
+          className="error-msg"
+          data-testid="context-field-error"
+          style={{ color: "var(--color-error, #c33)", fontSize: 13 }}
+        >
+          {fieldError}
+        </div>
+      )}
 
       {GROUPS.map((group) => (
         <div key={group.title}>
@@ -179,7 +195,13 @@ export function ContextForm({
                 label={f.label}
                 hint={f.hint}
                 type={f.type}
+                maxLength={f.name === "project" ? 500 : undefined}
                 field={context[f.name]}
+                originLabel={
+                  f.name === "project" && context.project.origin === "INFERIDO"
+                    ? "SUGERIDO"
+                    : undefined
+                }
                 onCommit={(value) => onUpdateField(f.name, value as ContextData[typeof f.name])}
               />
             ))}
@@ -207,7 +229,7 @@ export function ContextForm({
           className="btn primary"
           data-testid="confirm-context"
           onClick={handleConfirm}
-          disabled={confirming}
+          disabled={confirming || saving}
         >
           {confirming ? "Confirmando…" : "Confirmar y continuar a despiece →"}
         </button>

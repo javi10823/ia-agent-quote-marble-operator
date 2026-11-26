@@ -70,6 +70,7 @@ export interface ContextField<T = string | number | boolean | null> {
 
 export interface ContextData {
   cliente: string | null;
+  project: string | null;
   contacto: string | null;
   localidad: string | null;
   plazo: string | null;

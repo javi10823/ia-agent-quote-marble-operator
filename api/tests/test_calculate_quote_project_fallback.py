@@ -61,11 +61,29 @@ class TestCalculateQuoteFallback:
         assert res["project"] == "Cocina con isla"
 
     @pytest.mark.asyncio
-    async def test_input_valido_no_se_pisa(self, db_session):
-        qid = await _quote(db_session, "Cocina con isla")
-        res = await _calc(db_session, qid, "Obra López")
+    async def test_columna_fijada_gana_sobre_input_del_llm(self, db_session):
+        # Ajustado (antes: el input del LLM pisaba la columna). La obra fijada
+        # por el operador/brief (sin marca inferred) gana.
+        qid = await _quote(db_session, "Cocina Belgrano")
+        res = await _calc(db_session, qid, "Otra obra")
         assert res["ok"] is True, res.get("error")
-        assert res["project"] == "Obra López"
+        assert res["project"] == "Cocina Belgrano"
+
+    @pytest.mark.asyncio
+    async def test_columna_inferida_es_pisada_por_input_valido(self, db_session):
+        qid = await _quote(db_session, "Juan - Silestone", {
+            "project": "Juan - Silestone", "project_source": "inferred",
+        })
+        res = await _calc(db_session, qid, "Casa López")
+        assert res["ok"] is True, res.get("error")
+        assert res["project"] == "Casa López"
+
+    @pytest.mark.asyncio
+    async def test_columna_vacia_e_input_valido_usa_input(self, db_session):
+        qid = await _quote(db_session, "")
+        res = await _calc(db_session, qid, "Casa López")
+        assert res["ok"] is True, res.get("error")
+        assert res["project"] == "Casa López"
 
     @pytest.mark.asyncio
     async def test_db_vacio_e_input_vacio_rechaza(self, db_session):

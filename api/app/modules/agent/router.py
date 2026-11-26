@@ -1967,6 +1967,10 @@ async def patch_quote(
             bd[k] = v
         for k, v in breakdown_mirror_updates.items():
             bd[k] = v
+        # Editar la obra a mano la saca del estado "sugerida": el
+        # operador la confirmó/cambió, ya no es una inferencia (#517).
+        if "project" in breakdown_mirror_updates:
+            bd.pop("project_source", None)
         # Si ya hay quote_breakdown en `updates` por algún motivo,
         # respetarlo y mergear arriba; si no, crear el patch.
         if "quote_breakdown" in updates and isinstance(updates["quote_breakdown"], dict):

@@ -32,6 +32,11 @@ export const getContextForQuote = USE_REAL_API ? real.getContextForQuote : mocks
 
 /* ─── Siempre en mock (B3 incremental · sin endpoint REST equivalente) ── */
 export const updateContextForQuote = mocks.updateContextForQuote;
+/* Contexto editable: en modo real SOLO `project` se persiste (PATCH
+   /api/quotes/{id}); el resto de los campos es edición local sin backend
+   (deuda · ver useContextForm). */
+export const IS_REAL_API = USE_REAL_API;
+export const patchQuoteProject = USE_REAL_API ? real.patchQuoteProject : mocks.patchQuoteProject;
 export const getDashboardKpis = mocks.getDashboardKpis;
 export const getValentinaBriefSummary = mocks.getValentinaBriefSummary;
 /* Sprint 4 despiece-real-wire · `listPiecesForQuote` wireada contra
