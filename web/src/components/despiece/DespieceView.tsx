@@ -90,12 +90,13 @@ export function DespieceView({ quoteId }: Props) {
   // Evita setState / router.push si el usuario se fue de la vista mientras
   // esperábamos el stream o el cálculo.
   const mountedRef = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // Se re-arma al montar: en StrictMode React monta, desmonta y vuelve a montar.
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
   // Un turno del chat: drena el stream y devuelve lo que dijo Valentina.
   async function runChatTurn(message: string): Promise<string> {
     const reader = streamChat(quoteId, message, "despiece").getReader();
