@@ -221,7 +221,8 @@ export function breakdownToContext(
 
   // ── Obra / Proyecto · columna Quote.project > breakdown.project.
   const pjRaw =
-    quoteProject ?? (typeof breakdown?.project === "string" ? breakdown.project : null);
+    (typeof quoteProject === "string" && quoteProject.trim()) ||
+    (typeof breakdown?.project === "string" ? breakdown.project : null);
   const pj = pjRaw?.trim() || null;
   const project = field<string | null>(
     pj,

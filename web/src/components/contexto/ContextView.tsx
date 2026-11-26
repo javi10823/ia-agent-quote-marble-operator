@@ -27,7 +27,7 @@ interface Props {
 }
 
 export function ContextView({ quoteId }: Props) {
-  const { context, state, error, updateField, isDirty, editedCount } = useContextForm(quoteId);
+  const { context, state, error, fieldError, updateField, isDirty, editedCount } = useContextForm(quoteId);
   const chat = useChatScoped(quoteId, "contexto");
   const chatOpen = chat.panelState !== "closed";
 
@@ -125,6 +125,7 @@ export function ContextView({ quoteId }: Props) {
         isDirty={isDirty}
         editedCount={editedCount}
         saving={state === "saving"}
+        fieldError={fieldError}
         onUpdateField={updateField}
         onOpenChat={chat.open}
         chatOpen={chatOpen}

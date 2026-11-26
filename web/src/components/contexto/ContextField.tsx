@@ -22,12 +22,13 @@ interface Props {
   hint?: string;
   field: ContextFieldData;
   type?: "text" | "boolean";
+  maxLength?: number;
   /** Reemplaza el texto del chip de origen (no editado). Ej: "SUGERIDO". */
   originLabel?: string;
   onCommit: (value: string | number | boolean | null) => void;
 }
 
-export function ContextField({ name, label, hint, field, type = "text", originLabel, onCommit }: Props) {
+export function ContextField({ name, label, hint, field, type = "text", maxLength, originLabel, onCommit }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(() => formatForInput(field.value));
   const inputRef = useRef<HTMLInputElement>(null);
@@ -88,6 +89,7 @@ export function ContextField({ name, label, hint, field, type = "text", originLa
             className="input"
             data-testid={`context-input-${name}`}
             value={draft}
+            maxLength={maxLength}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={commit}
             onKeyDown={(e) => {

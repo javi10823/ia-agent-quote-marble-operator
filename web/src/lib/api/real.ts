@@ -1194,23 +1194,43 @@ export async function patchQuoteProject(
   project: string,
   options?: { signal?: AbortSignal },
 ): Promise<void> {
-  const response = await apiFetch(
-    `/api/quotes/${encodeURIComponent(quoteId)}`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ project }),
-      signal: options?.signal,
-    },
-    30_000,
-  );
+  let response: Response;
+  try {
+    response = await apiFetch(
+      `/api/quotes/${encodeURIComponent(quoteId)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project }),
+        signal: options?.signal,
+      },
+      30_000,
+    );
+  } catch (err) {
+    if (err instanceof TypeError) {
+      throw new ApiError(
+        "QUOTE_PATCH_FAILED",
+        "No se pudo guardar la obra. Revisá tu conexión.",
+        0,
+      );
+    }
+    throw err;
+  }
   if (!response.ok) {
-    let detail = `HTTP ${response.status}`;
+    let detail = "No se pudo guardar la obra.";
     try {
       const err = await response.json();
-      if (err?.detail) detail = String(err.detail);
+      const d = err?.detail;
+      if (Array.isArray(d)) {
+        const msg = d[0]?.msg;
+        detail = typeof msg === "string" && msg ? msg : "La obra no es válida";
+      } else if (typeof d === "string" && d) {
+        detail = d;
+      } else {
+        detail = `HTTP ${response.status}`;
+      }
     } catch {
-      /* ignore parse error */
+      detail = `HTTP ${response.status}`;
     }
     throw new ApiError("QUOTE_PATCH_FAILED", detail, response.status);
   }

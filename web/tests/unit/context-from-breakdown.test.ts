@@ -797,5 +797,9 @@ describe("breakdownToContext · obra / proyecto", () => {
     );
     expect(ctx.project.value).toBe("Cocina Belgrano");
   });
-});
 
+  test("columna vacía + breakdown.project → usa el del breakdown (fallback)", () => {
+    const ctx = breakdownToContext({ project: "Casa López" }, "");
+    expect(ctx.project.value).toBe("Casa López");
+  });
+});

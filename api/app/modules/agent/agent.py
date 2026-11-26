@@ -6580,6 +6580,24 @@ class AgentService:
                         f"[project-fallback] calculate_quote sin project válido · "
                         f"usando el del quote {save_to_qid}: {inputs['project']!r}"
                     )
+                # La obra fijada por el operador/brief (columna válida sin marca
+                # "inferred") gana sobre lo que mande el LLM. Si es inferida, un
+                # valor válido del LLM la pisa (comportamiento previo).
+                elif (
+                    existing_quote
+                    and not is_placeholder_project(existing_quote.project)
+                    and not (
+                        isinstance(existing_quote.quote_breakdown, dict)
+                        and existing_quote.quote_breakdown.get("project_source") == "inferred"
+                    )
+                    and (inputs.get("project") or "").strip() != existing_quote.project.strip()
+                ):
+                    logging.info(
+                        f"[project-wins] calculate_quote · la obra fijada del quote "
+                        f"{save_to_qid} ({existing_quote.project.strip()!r}) gana sobre "
+                        f"la del LLM ({inputs.get('project')!r})"
+                    )
+                    inputs["project"] = existing_quote.project.strip()
                 if existing_quote and existing_quote.quote_breakdown:
                     ebd = existing_quote.quote_breakdown
                     msg_lower = current_user_message.lower()

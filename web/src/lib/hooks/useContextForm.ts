@@ -24,6 +24,8 @@ export function useContextForm(quoteId: string) {
   const [context, setContext] = useState<ContextResponse | null>(null);
   const [state, setState] = useState<ContextFormState>("loading");
   const [error, setError] = useState<string | null>(null);
+  // Errores de GUARDADO (no de carga): no reemplazan el form.
+  const [fieldError, setFieldError] = useState<string | null>(null);
   const saveAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -58,15 +60,15 @@ export function useContextForm(quoteId: string) {
         );
       if (key === "project") {
         const text = typeof value === "string" ? value.trim() : "";
+        setFieldError(null);
         if (!text) {
-          setError("La obra no puede quedar vacía");
+          setFieldError("La obra no puede quedar vacía");
           return;
         }
         saveAbortRef.current?.abort();
         const ctrl = new AbortController();
         saveAbortRef.current = ctrl;
         setState("saving");
-        setError(null);
         try {
           await patchQuoteProject(quoteId, text, { signal: ctrl.signal });
           setContext((prev) =>
@@ -74,9 +76,16 @@ export function useContextForm(quoteId: string) {
           );
           setState("idle");
         } catch (err) {
-          if (err instanceof DOMException && err.name === "AbortError") return;
-          setError(err instanceof Error ? err.message : "Error al guardar");
-          setState("error");
+          if (err instanceof DOMException && err.name === "AbortError") {
+            // Reemplazado por una edición posterior: esa se encarga del estado.
+            if (saveAbortRef.current !== ctrl) return;
+            // Sigue siendo el vigente: fue el timeout de apiFetch.
+            setState("idle");
+            setFieldError("El guardado tardó demasiado. Reintentá.");
+            return;
+          }
+          setState("idle");
+          setFieldError(err instanceof Error ? err.message : "Error al guardar la obra");
         }
         return;
       }
@@ -112,5 +121,5 @@ export function useContextForm(quoteId: string) {
   const isDirty = context ? Object.values(context).some((f) => f.edited === true) : false;
   const editedCount = context ? Object.values(context).filter((f) => f.edited === true).length : 0;
 
-  return { context, state, error, updateField, isDirty, editedCount };
+  return { context, state, error, fieldError, updateField, isDirty, editedCount };
 }
