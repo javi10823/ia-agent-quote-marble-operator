@@ -103,7 +103,7 @@ async function delay(ms: number, signal?: AbortSignal): Promise<void> {
 
 export async function getContextForQuote(
   quoteId: string,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; bearerToken?: string | null },
 ): Promise<ContextResponse> {
   await delay(150 + Math.random() * 200, options?.signal);
   const existing = _contextStore.get(quoteId);
@@ -474,7 +474,7 @@ async function seedPieceList(quoteId: string): Promise<PieceList> {
 
 export async function listPiecesForQuote(
   quoteId: string,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; bearerToken?: string | null },
 ): Promise<PieceList> {
   await delay(500 + Math.random() * 300, options?.signal);
   const existing = _piecesStore.get(quoteId);
@@ -625,7 +625,7 @@ export async function deriveMaterialForQuote(
  */
 export async function getCalculationForQuote(
   quoteId: string,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; bearerToken?: string | null },
 ): Promise<import("./types").CalculationResult> {
   await delay(180 + Math.random() * 220, options?.signal);
   const cached = _calcStore.get(quoteId);

@@ -43,10 +43,10 @@ export default async function PdfPage({ params }: { params: { id: string } }) {
   // ignora el token.
   const [metaR, calcR, ctxR, traceR, piecesR, genR, diffR] = await Promise.allSettled([
     getQuoteMetadata(params.id, { bearerToken }),
-    getCalculationForQuote(params.id),
-    getContextForQuote(params.id),
+    getCalculationForQuote(params.id, { bearerToken }),
+    getContextForQuote(params.id, { bearerToken }),
     getPdfTrace(params.id),
-    listPiecesForQuote(params.id),
+    listPiecesForQuote(params.id, { bearerToken }),
     getPdfGeneratedInfo(params.id, { bearerToken }),
     isRevising ? getPdfV2DiffData(params.id) : Promise.resolve(null),
   ]);
