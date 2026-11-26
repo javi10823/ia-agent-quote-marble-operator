@@ -226,7 +226,11 @@ export function breakdownToContext(
   const pj = pjRaw?.trim() || null;
   const project = field<string | null>(
     pj,
-    breakdown?.project_source === "inferred" ? "INFERIDO" : "BRIEF",
+    breakdown?.project_source === "inferred"
+      ? "INFERIDO"
+      : breakdown?.project_source === "edited"
+        ? "EDITADO"
+        : "BRIEF",
   );
 
   // ── Contacto · sub-PR sprint-4/contacto-extraction-fix (deuda

@@ -1,4 +1,4 @@
-"""PATCH /quotes/{id} con `project` saca la marca `project_source`
+"""PATCH /quotes/{id} con `project` marca "edited" en lugar de "inferred" `project_source`
 ("inferred") del breakdown: la obra editada a mano deja de ser una
 sugerencia. Otros campos no la tocan."""
 from __future__ import annotations
@@ -59,7 +59,7 @@ class TestPatchProjectSource:
         q = await _reload(db_session, qid)
         assert q.project == "Cocina Belgrano"
         assert q.quote_breakdown["project"] == "Cocina Belgrano"
-        assert "project_source" not in q.quote_breakdown
+        assert q.quote_breakdown["project_source"] == "edited"
 
     async def test_patch_same_suggested_value_also_removes_mark(
         self, client: AsyncClient, db_session,
@@ -71,7 +71,7 @@ class TestPatchProjectSource:
         assert resp.status_code == 200, resp.text
         q = await _reload(db_session, qid)
         assert q.quote_breakdown["project"] == "Juan - Silestone"
-        assert "project_source" not in q.quote_breakdown
+        assert q.quote_breakdown["project_source"] == "edited"
 
     async def test_patch_other_field_keeps_mark(
         self, client: AsyncClient, db_session,
@@ -95,4 +95,4 @@ class TestPatchProjectSource:
         assert resp.status_code == 200, resp.text
         q = await _reload(db_session, qid)
         assert q.quote_breakdown["project"] == "Obra nueva"
-        assert "project_source" not in q.quote_breakdown
+        assert q.quote_breakdown["project_source"] == "edited"
