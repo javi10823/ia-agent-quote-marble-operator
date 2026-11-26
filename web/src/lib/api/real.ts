@@ -953,11 +953,11 @@ import type { Piece, PieceList } from "./types";
 
 export async function listPiecesForQuote(
   quoteId: string,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; bearerToken?: string | null },
 ): Promise<PieceList> {
   const response = await apiFetch(
     `/api/quotes/${encodeURIComponent(quoteId)}/pieces`,
-    { signal: options?.signal },
+    { signal: options?.signal, bearerToken: options?.bearerToken ?? null },
   );
   if (!response.ok) {
     throw new ApiError(
@@ -1246,11 +1246,11 @@ import type { CalculationResult } from "./types";
 
 export async function getCalculationForQuote(
   quoteId: string,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; bearerToken?: string | null },
 ): Promise<CalculationResult> {
   const response = await apiFetch(
     `/api/quotes/${encodeURIComponent(quoteId)}/calculation`,
-    { signal: options?.signal },
+    { signal: options?.signal, bearerToken: options?.bearerToken ?? null },
   );
   if (!response.ok) {
     throw new ApiError(
