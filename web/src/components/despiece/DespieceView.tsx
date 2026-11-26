@@ -96,31 +96,46 @@ export function DespieceView({ quoteId }: Props) {
     },
     [],
   );
+  // Un turno del chat: drena el stream y devuelve lo que dijo Valentina.
+  async function runChatTurn(message: string): Promise<string> {
+    const reader = streamChat(quoteId, message, "despiece").getReader();
+    let failed = false;
+    let text = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value && value.type === "text") text += value.content;
+      if (value && (value.type === "error" || (value.type === "done" && value.error))) {
+        failed = true;
+      }
+    }
+    if (failed) throw new Error("No se pudo confirmar el despiece. Reintentá.");
+    return text;
+  }
+
   async function handleConfirm() {
     setConfirming(true);
     setConfirmError(null);
     try {
-      const reader = streamChat(quoteId, "[DUAL_READ_CONFIRMED]{}", "despiece").getReader();
-      let failed = false;
-      let valentinaText = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value && value.type === "text") valentinaText += value.content;
-        if (value && (value.type === "error" || (value.type === "done" && value.error))) {
-          failed = true;
-        }
-      }
-      if (failed) throw new Error("No se pudo confirmar el despiece. Reintentá.");
-      const calc = await getCalculationForQuote(quoteId);
+      // Turno 1: confirma las medidas. El agente responde con el resumen del
+      // Paso 1 y pide confirmar las piezas (no calcula todavía).
+      let valentinaText = await runChatTurn("[DUAL_READ_CONFIRMED]{}");
+      let calc = await getCalculationForQuote(quoteId);
       if (!mountedRef.current) return;
+      // Cálculo de edificios: el backend lo marca con este summary y nunca se
+      // resuelve por chat; /calculo ya muestra el estado pending.
+      if (calc.status === "pending" && !calc.bannerSummary.includes("edificios")) {
+        // Turno 2: es la confirmación que el operador escribiría después del
+        // resumen del Paso 1; con eso el agente corre calculate_quote.
+        valentinaText =
+          (await runChatTurn("Confirmo las piezas y medidas. Seguí con el Paso 2.")) ||
+          valentinaText;
+        calc = await getCalculationForQuote(quoteId);
+        if (!mountedRef.current) return;
+      }
       if (calc.status === "pending") {
         const question = valentinaText.trim();
-        // Sin pregunta de Valentina, o cálculo de edificios (el backend lo
-        // marca con este summary y nunca se resuelve por chat): /calculo ya
-        // muestra el estado pending con su summary, no atrapamos al usuario.
-        const isEdificio = calc.bannerSummary.includes("edificios");
-        if (!question || isEdificio) {
+        if (!question || calc.bannerSummary.includes("edificios")) {
           router.push(`/quotes/${quoteId}/calculo`);
           return;
         }
