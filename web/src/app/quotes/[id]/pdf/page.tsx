@@ -75,7 +75,12 @@ export default async function PdfPage({ params }: { params: { id: string } }) {
   // Fix-up #1: piezas para sub-filas row-piece + tipologia para campo
   // "Proyecto" del grid cliente (template HTML del backend).
   const pieces = piecesR.status === "fulfilled" ? piecesR.value.pieces : [];
-  const proyecto = (ctx?.tipologia?.value && String(ctx.tipologia.value)) || quote.client || "";
+  // La obra (editable en /contexto) manda; después tipología, después cliente.
+  const proyecto =
+    (ctx?.project?.value && String(ctx.project.value)) ||
+    (ctx?.tipologia?.value && String(ctx.tipologia.value)) ||
+    quote.client ||
+    "";
 
   // Sprint 4 paso-5 · `pdfDateIso` calculado server-side y pasado como
   // string al client → evita hydration mismatch por `new Date()` corriendo

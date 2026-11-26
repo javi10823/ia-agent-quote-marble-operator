@@ -9,7 +9,7 @@
  * - `fecha`                       → `fechaFmt` (server-side determinístico)
  * - `cliente`                     → `quote.clientFull`
  * - `forma_pago`                  → `${state.anticipoPct}% anticipo · ${datosPdf.saldo}`
- * - `proyecto`                    → `context.tipologia` ?? `quote.client`
+ * - `proyecto`                    → `context.project` ?? `context.tipologia` ?? `quote.client`
  * - `fecha_entrega`               → `state.plazo`
  * - `material_nombre+espesor`     → `calculation.material.rows[0].label`
  * - `material_m2/precio/total`    → `calculation.material.rows[0].qty/unit/total`
@@ -74,7 +74,7 @@ export function PdfPreviewDoc({
   const piletaInfo = calculation.piletas.variant === "info" ? calculation.piletas : null;
 
   const formaPago = isValidText(state.anticipoPct)
-    ? `${state.anticipoPct}% anticipo · ${calculation.datosPdf.saldo}`
+    ? `${String(state.anticipoPct).replace(/\s*%\s*$/, "")}% anticipo · ${calculation.datosPdf.saldo}`
     : calculation.datosPdf.saldo;
 
   return (
