@@ -147,6 +147,9 @@ export function DespieceView({ quoteId }: Props) {
         return;
       }
       router.push(`/quotes/${quoteId}/calculo`);
+      // El encabezado (m², material) viene del server layout: sin refresh
+      // mostraría los valores previos al cálculo.
+      router.refresh();
     } catch (err) {
       if (!mountedRef.current) return;
       setConfirmError(err instanceof Error ? err.message : "Error al confirmar el despiece");
