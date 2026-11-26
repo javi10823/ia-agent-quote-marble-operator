@@ -774,6 +774,12 @@ describe("Bug 7 RESIDUAL · precedencia verified > pending > top-level (drift gu
 });
 
 describe("breakdownToContext · obra / proyecto", () => {
+  test("project_source edited → EDITADO", () => {
+    const ctx = breakdownToContext({ project: "Cocina Belgrano", project_source: "edited" });
+    expect(ctx.project.origin).toBe("EDITADO");
+    expect(ctx.project.value).toBe("Cocina Belgrano");
+  });
+
   test("project_source inferred → INFERIDO", () => {
     const ctx = breakdownToContext({ project: "Juan - Silestone", project_source: "inferred" });
     expect(ctx.project).toEqual({ value: "Juan - Silestone", origin: "INFERIDO" });
