@@ -79,7 +79,7 @@ export function PdfSidebarGenerated({ baseFilename, info, trace, onCreateV2 }: P
               </span>
               <span className="f-icon">📄</span>
               <span className="f-name">PDF (cliente)</span>
-              <span className="f-size">{info.pdfSizeKb} KB</span>
+              <span className="f-size">{info.pdfSizeKb > 0 ? `${info.pdfSizeKb} KB` : "—"}</span>
             </div>
             <div className="file-row" data-testid="file-row-xlsx">
               <span className="saved-check" aria-hidden="true">
@@ -87,7 +87,7 @@ export function PdfSidebarGenerated({ baseFilename, info, trace, onCreateV2 }: P
               </span>
               <span className="f-icon">📊</span>
               <span className="f-name">Excel (taller)</span>
-              <span className="f-size">{info.excelSizeKb} KB</span>
+              <span className="f-size">{info.excelSizeKb > 0 ? `${info.excelSizeKb} KB` : "—"}</span>
             </div>
             <div className="file-row drive" data-testid="file-row-drive">
               <span className="saved-check" aria-hidden="true">
@@ -125,7 +125,7 @@ export function PdfSidebarGenerated({ baseFilename, info, trace, onCreateV2 }: P
             <span className="ab-content">
               <span className="ab-lbl">Descargar PDF</span>
               <span className="ab-helper">
-                {info.pdfSizeKb} KB · A4 · 1 página · para el cliente
+                {info.pdfSizeKb > 0 ? `${info.pdfSizeKb} KB · ` : ""}A4 · 1 página · para el cliente
               </span>
             </span>
           </button>
@@ -141,7 +141,7 @@ export function PdfSidebarGenerated({ baseFilename, info, trace, onCreateV2 }: P
             <span className="ab-content">
               <span className="ab-lbl">Descargar Excel</span>
               <span className="ab-helper">
-                {info.excelSizeKb} KB · taller · Sergio/Agos pueden modificar
+                {info.excelSizeKb > 0 ? `${info.excelSizeKb} KB · ` : ""}taller · Sergio/Agos pueden modificar
               </span>
             </span>
           </button>
