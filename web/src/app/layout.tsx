@@ -5,7 +5,7 @@
  * (el legacy AppShell fue eliminado en este sprint).
  *
  * Responsabilidades:
- *   1. <html> + <body> con las 3 CSS vars de next/font/google aplicadas
+ *   1. <html> + <body> con las 3 CSS vars de next/font/local aplicadas
  *      (Fraunces serif italic + Inter Tight sans + JetBrains Mono).
  *   2. Importa `globals.css` con los tokens del design system.
  *   3. Importa `operator-shared.css` literal (~4710 líneas, copia sin
@@ -21,29 +21,32 @@
  * docs/tech-debt/css-migration.md).
  */
 import type { Metadata } from "next";
-import { Fraunces, Inter_Tight, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import "./operator-shared.css";
 import "./globals.css";
 
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  style: ["normal", "italic"],
+// Fuentes locales (variable, subset latin): el build no depende de bajar
+// Google Fonts, que fallaba de forma intermitente en Vercel/CI.
+const fraunces = localFont({
+  src: [
+    { path: "./fonts/fraunces-latin-wght-normal.woff2", style: "normal", weight: "100 900" },
+    { path: "./fonts/fraunces-latin-wght-italic.woff2", style: "italic", weight: "100 900" },
+  ],
   variable: "--font-serif",
   display: "swap",
 });
 
-const interTight = Inter_Tight({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const interTight = localFont({
+  src: "./fonts/inter-tight-latin-wght-normal.woff2",
+  weight: "100 900",
   variable: "--font-sans",
   display: "swap",
 });
 
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
+const jetbrainsMono = localFont({
+  src: "./fonts/jetbrains-mono-latin-wght-normal.woff2",
+  weight: "100 800",
   variable: "--font-mono",
   display: "swap",
 });
