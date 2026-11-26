@@ -197,6 +197,21 @@ test("routing post-confirm — navega a /calculo", async ({ page }) => {
   await expect(page.locator(".stepper")).toHaveAttribute("data-current-step", "calculo");
 });
 
+test("confirm con cálculo pending — se queda en /despiece y muestra lo que dijo Valentina", async ({
+  page,
+}) => {
+  // `-FLAGGED` conserva las piezas de 018 pero su cálculo cae en
+  // CANONICAL_CALCULATION_GENERIC (status "pending"). El mock de chat para
+  // scope despiece responde siempre con texto → hay "pregunta" → no navega.
+  const url = "/quotes/PRES-2026-018-FLAGGED/despiece";
+  await gotoLoaded(page, url);
+  await page.locator('[data-testid="confirm-despiece"]').click();
+  const err = page.locator('[data-testid="confirm-error"]');
+  await expect(err).toBeVisible({ timeout: 8000 });
+  await expect(err).toContainText("Te ayudo con el despiece");
+  await expect(page).toHaveURL(/\/despiece$/);
+});
+
 test("datasources por quoteId — PRES-017 muestra piezas de Pereyra, no de 018", async ({
   page,
 }) => {
