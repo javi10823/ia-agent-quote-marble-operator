@@ -10,7 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { listQuoteVariants, type QuoteVariant } from "@/lib/api";
+import { fetchComparePdf, listQuoteVariants, type QuoteVariant } from "@/lib/api";
 
 export function variantLabel(v: QuoteVariant): string {
   const total = v.total_ars > 0 ? ` · $${Math.round(v.total_ars).toLocaleString("es-AR")}` : "";
@@ -20,6 +20,21 @@ export function variantLabel(v: QuoteVariant): string {
 export function QuoteVariants({ quoteId }: { quoteId: string }) {
   const router = useRouter();
   const [variants, setVariants] = useState<QuoteVariant[]>([]);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState(false);
+
+  async function openComparePdf() {
+    setPdfBusy(true);
+    setPdfError(false);
+    try {
+      const blob = await fetchComparePdf(quoteId);
+      window.open(URL.createObjectURL(blob), "_blank");
+    } catch {
+      setPdfError(true);
+    } finally {
+      setPdfBusy(false);
+    }
+  }
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -32,7 +47,8 @@ export function QuoteVariants({ quoteId }: { quoteId: string }) {
   if (variants.length < 2) return null;
 
   return (
-    <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+    <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
       Variantes
       <select
         data-testid="quote-variants"
@@ -48,5 +64,14 @@ export function QuoteVariants({ quoteId }: { quoteId: string }) {
         ))}
       </select>
     </label>
+    <button
+      type="button"
+      data-testid="quote-variants-pdf"
+      disabled={pdfBusy}
+      onClick={openComparePdf}
+    >
+      {pdfBusy ? "Generando…" : pdfError ? "Reintentar PDF" : "PDF comparativo"}
+    </button>
+    </span>
   );
 }

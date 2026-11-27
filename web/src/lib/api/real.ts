@@ -1204,6 +1204,19 @@ export interface QuoteVariant {
   status: string;
 }
 
+/** GET /api/quotes/{id}/compare/pdf · PDF comparativo de todas las variantes. */
+export async function fetchComparePdf(quoteId: string): Promise<Blob> {
+  const response = await apiFetch(
+    `/api/quotes/${encodeURIComponent(quoteId)}/compare/pdf`,
+    {},
+    60_000,
+  );
+  if (!response.ok) {
+    throw new ApiError("COMPARE_PDF_FAILED", `HTTP ${response.status}`, response.status);
+  }
+  return await response.blob();
+}
+
 export async function listQuoteVariants(
   quoteId: string,
   options?: { signal?: AbortSignal },

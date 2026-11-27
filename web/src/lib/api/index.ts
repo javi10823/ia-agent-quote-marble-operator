@@ -60,6 +60,7 @@ export type { MaterialOption, DeriveMaterialResponse } from "./real";
 
 /* Variantes del presupuesto (padre + derivados con otro material). */
 export const listQuoteVariants = USE_REAL_API ? real.listQuoteVariants : mocks.listQuoteVariants;
+export const fetchComparePdf = USE_REAL_API ? real.fetchComparePdf : mocks.fetchComparePdf;
 export type { QuoteVariant } from "./real";
 
 /* ─── Cálculo (paso 4) · Sprint 4 calculation-real-wire ──────────────────
