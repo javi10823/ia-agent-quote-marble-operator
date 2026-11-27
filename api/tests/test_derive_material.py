@@ -308,3 +308,50 @@ class TestDeriveMaterial:
         assert data["ok"]
         assert "PALOMA" in data["material"].upper()
         assert data["derived_from"] == qid
+
+
+class TestDeriveFlujoOperadorConservaPileta:
+    """Flujo Operador: columnas pileta/localidad vacías, el dato vive en el
+    breakdown. La variante tiene que conservar la MO de pileta y la localidad
+    (bug visto en prod: derivar perdía 'Agujero y pegado pileta')."""
+
+    @staticmethod
+    def _mo_total(bd, needle):
+        return sum(
+            (m.get("total") or 0)
+            for m in (bd.get("mo_items") or [])
+            if needle in (m.get("description") or "").lower()
+        )
+
+    @pytest.mark.asyncio
+    async def test_variante_conserva_pileta_y_localidad(self, client):
+        qid = await _create_original(client)
+
+        from app.core.database import get_db
+        from app.main import app
+        from sqlalchemy import update as sql_update
+        from app.models.quote import Quote
+
+        async for db in app.dependency_overrides[get_db]():
+            await db.execute(
+                sql_update(Quote).where(Quote.id == qid).values(
+                    pileta=None, localidad=None, anafe=None, colocacion=None,
+                )
+            )
+            await db.commit()
+
+        orig = (await client.get(f"/api/quotes/{qid}")).json()["quote_breakdown"]
+        assert orig.get("pileta") == "empotrada_cliente"
+        mo_pileta_orig = self._mo_total(orig, "pileta")
+        assert mo_pileta_orig > 0
+
+        resp = await client.post(
+            f"/api/quotes/{qid}/derive-material", json={"material": "Blanco Paloma"}
+        )
+        assert resp.status_code == 200, resp.text
+        new_bd = (
+            await client.get(f"/api/quotes/{resp.json()['quote_id']}")
+        ).json()["quote_breakdown"]
+
+        assert self._mo_total(new_bd, "pileta") == mo_pileta_orig
+        assert (new_bd.get("localidad") or "").lower() == (orig.get("localidad") or "").lower()
