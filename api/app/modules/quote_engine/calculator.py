@@ -1494,16 +1494,25 @@ def calculate_quote(input_data: dict) -> dict:
         logging.info(f"Applied auto architect discount: {discount_pct}% ({currency})")
 
     # 4b. Auto-apply building discount (edificio) if threshold met
-    # Rule: edificio + m² ≥ building_min_m2_threshold → discount_pct = building_percentage.
+    # Regla (decidida por Javi 27/11/2026): edificio + m² TOTALES DE LA OBRA
+    # (suma de todos los materiales) > building_min_m2_threshold → 18 %.
+    # `edificio_otros_m2` = m² de los otros materiales ya cotizados de la obra.
     # Only auto-applies if agent didn't already set a discount_pct.
+    edificio_total_m2 = None
+    if is_edificio:
+        try:
+            _otros_m2 = max(0.0, float(input_data.get("edificio_otros_m2") or 0))
+        except (TypeError, ValueError):
+            _otros_m2 = 0.0
+        edificio_total_m2 = round(total_m2 + _otros_m2, 2)
     if is_edificio and not discount_pct:
         _bmin = cfg("discount.building_min_m2_threshold", 15)
         _bpct = cfg("discount.building_percentage", 18)
-        if total_m2 >= _bmin:
+        if edificio_total_m2 > _bmin:
             discount_pct = _bpct
             logging.info(
                 f"Applied auto edificio discount: {discount_pct}% "
-                f"(total_m2 {total_m2} ≥ {_bmin})"
+                f"(total de la obra {edificio_total_m2} m² > {_bmin})"
             )
 
     # 4c. Auto-apply cantidad discount (sub-PR 22.W · Regla 14 master).
@@ -1989,6 +1998,7 @@ def calculate_quote(input_data: dict) -> dict:
         "material_total": material_total_net,
         "discount_pct": discount_pct,
         "discount_amount": discount_amount,
+        **({"edificio_total_m2": edificio_total_m2} if edificio_total_m2 is not None else {}),
         "mo_discount_pct": mo_discount_pct,
         "mo_discount_amount": mo_discount_amount,
         "merma": merma,

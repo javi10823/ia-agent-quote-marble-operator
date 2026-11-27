@@ -967,6 +967,30 @@ def _stash_prior_calcs(old_bd: dict | None, new_material: str) -> list[dict]:
     return prior[-5:]
 
 
+def _other_edificio_calcs(old_bd: dict | None, new_material: str) -> list[dict]:
+    """Cálculos de edificio de OTROS materiales de la misma obra (el actual del
+    quote si es otro material + los guardados en `_prior_calcs`), sin repetidos.
+    Sirven para el 18 % sobre el total de la obra."""
+    if not isinstance(old_bd, dict):
+        return []
+    new_mat = (new_material or "").strip().upper()
+
+    def _same(m: str) -> bool:
+        m = (m or "").strip().upper()
+        return not m or m == new_mat or m in new_mat or new_mat in m
+
+    pool = [old_bd] + [pc for pc in (old_bd.get("_prior_calcs") or []) if isinstance(pc, dict)]
+    out: list[dict] = []
+    seen: set[str] = set()
+    for c in pool:
+        mat = (c.get("material_name") or "").strip().upper()
+        if _same(mat) or mat in seen or not c.get("is_edificio"):
+            continue
+        seen.add(mat)
+        out.append(c)
+    return out
+
+
 def _match_calc_for_material(mat: str, candidates: list[dict]) -> dict | None:
     """Calc persistido para `mat`: primero nombre exacto; si no, substring
     solo cuando es único (evita "ZEUS" → "ZEUS SUEDE")."""
@@ -7279,6 +7303,20 @@ class AgentService:
             if _edif_warning:
                 _auth_warnings.append(_edif_warning)
 
+            # 18 % de edificio sobre el TOTAL de la obra (suma de materiales):
+            # el calculador recibe los m² de los otros materiales ya cotizados.
+            _other_edif: list[dict] = []
+            if _edif_value:
+                _other_edif = _other_edificio_calcs(
+                    _prior_quote.quote_breakdown if _prior_quote else None,
+                    inputs.get("material") or "",
+                )
+                inputs["edificio_otros_m2"] = round(
+                    sum(float(c.get("material_m2") or 0) for c in _other_edif), 2
+                )
+            else:
+                inputs.pop("edificio_otros_m2", None)
+
             if not _disc_decision.removed and (
                 not inputs.get("discount_pct") or not inputs.get("mo_discount_pct")
             ):
@@ -7536,6 +7574,17 @@ class AgentService:
                 logging.warning(f"[guardrail] paso1↔paso2 check failed: {e}")
 
             calc_result = calculate_quote(inputs)
+            if calc_result.get("ok") and calc_result.get("is_edificio") and _other_edif:
+                # Este material hizo que la obra pase el umbral: los otros que
+                # se cotizaron antes sin descuento quedaron desactualizados.
+                _bpct_cfg = _cfg("discount.building_percentage", 18)
+                if calc_result.get("discount_pct") == _bpct_cfg:
+                    for _oc in _other_edif:
+                        if _oc.get("discount_pct") != _bpct_cfg:
+                            _auth_warnings.append(
+                                f"La obra suma {calc_result.get('edificio_total_m2')} m² y pasa el umbral del "
+                                f"descuento de edificio: recalculá {_oc.get('material_name')} para que lo lleve."
+                            )
             if _auth_warnings and calc_result.get("ok"):
                 calc_result.setdefault("warnings", []).extend(_auth_warnings)
 

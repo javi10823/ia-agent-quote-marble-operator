@@ -531,10 +531,10 @@ def compute_edificio_aggregates(data: NormalizedEdificioData) -> EdificioSummary
         grand_faldon_ml += ms["faldon_ml_total"]
 
     grand_m2 = round(grand_m2, 2)
-    _per_trip = 8
+    _per_trip = 6
     try:
         from app.core.company_config import get as _cfg
-        _per_trip = _cfg("building.flete_mesadas_per_trip", 8)
+        _per_trip = _cfg("building.flete_mesadas_per_trip", 6)
     except Exception:
         pass
     flete_qty = math.ceil(grand_physical / _per_trip) if grand_physical > 0 else 1
@@ -557,10 +557,10 @@ def compute_edificio_aggregates(data: NormalizedEdificioData) -> EdificioSummary
 
 def validate_edificio(data: NormalizedEdificioData, summary: EdificioSummary) -> ValidationResult:
     """Hard validation. Errors block automatic quoting."""
-    _per_trip = 8
+    _per_trip = 6
     try:
         from app.core.company_config import get as _cfg
-        _per_trip = _cfg("building.flete_mesadas_per_trip", 8)
+        _per_trip = _cfg("building.flete_mesadas_per_trip", 6)
     except Exception:
         pass
     errors = []
