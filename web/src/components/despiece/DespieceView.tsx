@@ -527,15 +527,29 @@ export function DespieceView({ quoteId }: Props) {
           />
         )}
 
-        <DespieceTable
-          pieces={pieces}
-          focusedPieceId={focusedPieceId}
-          chatRefPieceId={chatFlagged?.pieceRefId}
-          onUpdatePiece={updatePiece}
-          onDeletePiece={deletePiece}
-          onOpenPieceChat={openPieceChat}
-          onAddPiece={() => void addPiece(NewPieceDefaults())}
-        />
+        {/* Mientras se confirma (2 turnos al agente) no se edita: el cálculo
+            correría con las piezas viejas y el operador vería otra cosa. */}
+        <div
+          aria-busy={confirming}
+          style={confirming ? { pointerEvents: "none", opacity: 0.6 } : undefined}
+          data-testid="despiece-table-wrap"
+        >
+          <DespieceTable
+            pieces={pieces}
+            focusedPieceId={focusedPieceId}
+            chatRefPieceId={chatFlagged?.pieceRefId}
+            onUpdatePiece={(...a: Parameters<typeof updatePiece>) =>
+              confirming ? undefined : updatePiece(...a)
+            }
+            onDeletePiece={(...a: Parameters<typeof deletePiece>) =>
+              confirming ? undefined : deletePiece(...a)
+            }
+            onOpenPieceChat={openPieceChat}
+            onAddPiece={() => {
+              if (!confirming) void addPiece(NewPieceDefaults());
+            }}
+          />
+        </div>
 
         {manualMode && (
           <div className="status-bar manual" data-testid="despiece-status-manual">
