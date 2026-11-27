@@ -1657,7 +1657,11 @@ def _extract_quote_info(user_message: str) -> dict:
             end = min(candidates) if candidates else min(len(msg), idx + 40)
             # Hard cap: material name never > 100 chars
             end = min(end, idx + 100)
-            info["material"] = msg[start:end].strip()
+            # El material es un nombre corto: se corta en el primer fin de
+            # frase. Sin esto la coma decimal de "2,40" partía la frase y
+            # quedaba "Silestone Blanco Norte 20mm. Mesada en L: tramo 1 de 2".
+            from app.modules.quote_engine.brief_analyzer import _clean_material
+            info["material"] = _clean_material(msg[start:end].strip()) or msg[start:end].strip()
             break
 
     return info
