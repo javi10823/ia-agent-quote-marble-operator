@@ -7709,6 +7709,19 @@ class AgentService:
                     return {"ok": False, "error": f"Quote {target_qid} no tiene breakdown"}
 
                 bd = dict(target_quote.quote_breakdown)
+                if bd.get("_quote_mode") == "products_only":
+                    return {
+                        "ok": False,
+                        "error": "Presupuesto de solo producto: no tiene mano de obra para modificar.",
+                    }
+                if add_colocacion and bd.get("is_edificio"):
+                    return {
+                        "ok": False,
+                        "error": (
+                            "En edificio no se cobra colocación (regla del sistema). "
+                            "Si el operador la pidió igual, recotizar con calculate_quote."
+                        ),
+                    }
                 original_mo = list(bd.get("mo_items", []))
                 new_mo = []
                 removed = []
@@ -7766,13 +7779,18 @@ class AgentService:
                         base = flete_result.get("price_ars_base", price)
                         # `quantity` viene del operador (flete_qty),
                         # no hardcodeado a 1. Total = price × qty.
-                        new_mo.append({
+                        _flete_item = {
                             "description": f"Flete + toma medidas {add_flete_localidad}",
                             "quantity": add_flete_qty,
                             "unit_price": price,
                             "base_price": base,
-                            "total": price * add_flete_qty,
-                        })
+                            "total": round(price * add_flete_qty),
+                        }
+                        # Mismo flag que arma calculate_quote: sin él el
+                        # validador de IVA bloquea el PDF en Piñero/Cañada/Alvear.
+                        if flete_result.get("price_includes_vat"):
+                            _flete_item["price_includes_vat"] = True
+                        new_mo.append(_flete_item)
                     else:
                         # Localidad inválida — error ruidoso. Sin esto,
                         # Sonnet podría declarar "flete agregado" pero
@@ -7787,10 +7805,10 @@ class AgentService:
                             ),
                         }
 
-                # Recalculate totals
+                # Recalculate totals — misma fórmula que calculate_quote
+                # (descuento de MO sin flete, sobrante, piletas, moneda).
+                from app.modules.quote_engine.calculator import compute_mo_totals
                 bd["mo_items"] = new_mo
-                total_mo = sum(m.get("total", 0) for m in new_mo)
-                total_sinks = sum(s.get("unit_price", 0) * s.get("quantity", 1) for s in bd.get("sinks", []))
                 currency = bd.get("material_currency", "ARS")
                 # material_total may not exist in breakdowns saved by generate_documents
                 material_total = bd.get("material_total")
@@ -7802,12 +7820,18 @@ class AgentService:
                     bd["material_total"] = material_total
                     logging.info(f"Reconstructed material_total={material_total} from {m2} * {price_unit}")
 
-                if currency == "USD":
-                    bd["total_ars"] = total_mo + total_sinks
-                    bd["total_usd"] = material_total
-                else:
-                    bd["total_ars"] = total_mo + total_sinks + material_total
-                    bd["total_usd"] = 0
+                _t = compute_mo_totals(
+                    new_mo,
+                    bd.get("sinks") or [],
+                    bd.get("mo_discount_pct") or 0,
+                    currency,
+                    material_total,
+                    bd.get("sobrante_total") or 0,
+                )
+                bd["mo_discount_amount"] = _t["mo_discount_amount"]
+                bd["total_mo_ars"] = _t["total_mo_ars"]
+                bd["total_ars"] = _t["total_ars"]
+                bd["total_usd"] = _t["total_usd"]
 
                 # Save to DB
                 history = list(target_quote.change_history or [])
