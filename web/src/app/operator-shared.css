@@ -1,7 +1,13 @@
 /* Sprint 4 paso-5 fix-up #2 · @import Barlow para el PDF preview inline.
    Debe ir al TOPE (CSS spec: @import antes de cualquier ruleset). La font
    se usa SOLO dentro de `.pdf-doc-inline` (ver bloque al final del archivo). */
-@import url('https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+/* Barlow local (antes @import de Google Fonts: el build/preview no debe depender de la red). */
+@font-face{font-family:'Barlow';font-style:normal;font-weight:300;font-display:swap;src:url('./fonts/barlow-latin-300-normal.woff2') format('woff2');}
+@font-face{font-family:'Barlow';font-style:normal;font-weight:400;font-display:swap;src:url('./fonts/barlow-latin-400-normal.woff2') format('woff2');}
+@font-face{font-family:'Barlow';font-style:normal;font-weight:500;font-display:swap;src:url('./fonts/barlow-latin-500-normal.woff2') format('woff2');}
+@font-face{font-family:'Barlow';font-style:normal;font-weight:600;font-display:swap;src:url('./fonts/barlow-latin-600-normal.woff2') format('woff2');}
+@font-face{font-family:'Barlow';font-style:normal;font-weight:700;font-display:swap;src:url('./fonts/barlow-latin-700-normal.woff2') format('woff2');}
+@font-face{font-family:'Barlow';font-style:italic;font-weight:400;font-display:swap;src:url('./fonts/barlow-latin-400-italic.woff2') format('woff2');}
 
 /* ─────────────────────────────────────────────────────────
    Operator · AI Scoped — design tokens + reusable styles
