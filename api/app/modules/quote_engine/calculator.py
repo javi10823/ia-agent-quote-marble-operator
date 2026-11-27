@@ -2348,7 +2348,19 @@ def build_deterministic_paso2(calc: dict) -> str:
         else:
             lines.append(f"⚠️ {_wtext}")
 
+    # Errores de validación determinística: el operador los ve y NO se le
+    # ofrece confirmar un cálculo que no cierra.
+    validation_errors = calc.get("_validation_errors") or []
+    for e in validation_errors:
+        lines.append(f"⛔ Error de validación: {e}")
+
     lines.append("")
-    lines.append("¿Confirmás para generar PDF y Excel?")
+    if validation_errors:
+        lines.append(
+            "No se puede generar el PDF hasta resolver esto. "
+            "Corregí los datos (o pedime recalcular) y lo verificamos de nuevo."
+        )
+    else:
+        lines.append("¿Confirmás para generar PDF y Excel?")
 
     return "\n".join(lines)
