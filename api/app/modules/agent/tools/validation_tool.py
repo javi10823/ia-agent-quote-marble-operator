@@ -42,6 +42,7 @@ def validate_despiece(qdata: dict) -> ValidationResult:
         _check_colocacion_qty,
         _check_regrueso_consistency,  # PR #419 — detecta double-count
         _check_products_only_consistency,  # PR #424 — modo solo producto
+        _check_grand_total,  # total general = suma de sus partes
     ):
         try:
             errors, warnings = check(qdata)
@@ -110,7 +111,10 @@ def _check_iva_mo(qdata: dict) -> tuple[list[str], list[str]]:
         price_includes_vat = bool(mo.get("price_includes_vat"))
 
         if bp is None:
-            continue  # Old data without base_price — skip silently
+            # Data vieja sin base_price: no se puede verificar el IVA de este
+            # ítem. Se avisa (antes se salteaba en silencio).
+            warnings.append(f"MO '{desc}' sin base_price: IVA no verificado")
+            continue
         if up is None:
             warnings.append(f"MO '{desc}' sin unit_price")
             continue
@@ -528,4 +532,70 @@ def _check_products_only_consistency(qdata: dict) -> tuple[list[str], list[str]]
             f"Sin este check el cliente se cobraría mal (caso DYSCON 29/04/2026)."
         )
 
+    return errors, warnings
+
+
+def _check_grand_total(qdata: dict) -> tuple[list[str], list[str]]:
+    """El total general tiene que ser la suma de sus partes (misma fórmula
+    que calculate_quote): un total que no cierra con el detalle nunca llega al PDF.
+
+    - Normal, material en USD: total_ars = Σ MO − desc. MO + Σ piletas;
+      total_usd = material_total + sobrante_total.
+    - Normal, material en ARS: total_ars suma además material y sobrante.
+    - Solo producto: total_ars = Σ piletas − descuento.
+    Se saltea lo que no se puede verificar por falta de datos."""
+    errors, warnings = [], []
+    total_ars = qdata.get("total_ars")
+    if total_ars is None:
+        return errors, warnings
+
+    sinks = qdata.get("sinks") or []
+    sinks_total = sum(
+        (s.get("unit_price") or 0) * (s.get("quantity") or 1) for s in sinks
+    )
+
+    if qdata.get("_quote_mode") == "products_only":
+        if not sinks:
+            return errors, warnings
+        expected = sinks_total - (qdata.get("discount_amount") or 0)
+        if abs(total_ars - expected) > 2:
+            errors.append(
+                f"Total inconsistente (solo producto): piletas {sinks_total} − "
+                f"descuento {qdata.get('discount_amount') or 0} → esperado={expected}, "
+                f"actual={total_ars}"
+            )
+        return errors, warnings
+
+    mo_items = qdata.get("mo_items")
+    if not isinstance(mo_items, list):
+        return errors, warnings
+    if any(m.get("total") is None for m in mo_items):
+        return errors, warnings  # sin total por ítem no hay con qué verificar
+    mo_total = sum(m["total"] for m in mo_items)
+    mo_disc = qdata.get("mo_discount_amount") or 0
+    sobrante = qdata.get("sobrante_total") or 0
+    material_total = qdata.get("material_total")
+    currency = (qdata.get("material_currency") or "USD").upper()
+
+    expected_ars = mo_total - mo_disc + sinks_total
+    if currency == "ARS":
+        if material_total is None:
+            return errors, warnings
+        expected_ars += material_total + sobrante
+    if abs(total_ars - expected_ars) > 2:
+        errors.append(
+            f"Total ARS no cierra con el detalle: MO {mo_total} − desc. MO {mo_disc} "
+            f"+ piletas {sinks_total}"
+            + (f" + material {material_total} + sobrante {sobrante}" if currency == "ARS" else "")
+            + f" → esperado={expected_ars}, actual={total_ars}"
+        )
+
+    total_usd = qdata.get("total_usd")
+    if currency == "USD" and total_usd is not None and material_total is not None:
+        expected_usd = material_total + sobrante
+        if abs(total_usd - expected_usd) > 2:
+            errors.append(
+                f"Total USD no cierra con el detalle: material {material_total} + "
+                f"sobrante {sobrante} → esperado={expected_usd}, actual={total_usd}"
+            )
     return errors, warnings

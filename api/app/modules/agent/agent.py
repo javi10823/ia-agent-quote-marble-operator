@@ -1025,6 +1025,7 @@ async def _canonicalize_quotes_data_from_db(
         "discount_pct", "discount_amount",
         "mo_items", "mo_discount_pct", "mo_discount_amount",
         "total_ars", "total_usd", "total_mo_ars",
+        "sobrante_total",  # lo necesita _check_grand_total (total_usd = material + sobrante)
         "thickness_mm",
         # PR #41 — canonicalizar también el producto pileta.
         # Antes la LLM podía dejar `sinks` con una pileta fantasma que el
