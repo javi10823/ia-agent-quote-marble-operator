@@ -1775,24 +1775,24 @@ def _user_intent(msg: str) -> str:
     # Padding con espacios para que substrings precisos matcheen
     # (ej: " sí " no matchea "siglo" pero sí "tengo sí en el medio").
     _padded = f" {m} "
-    for phrase in _CONFIRM_PHRASES:
-        if phrase in _padded:
-            return "confirm"
+    is_confirm = any(phrase in _padded for phrase in _CONFIRM_PHRASES)
 
     # 2. Modificación — DOS detectores OR'ed.
     # 2a. Imperativo + sustantivo en el mismo mensaje.
     has_imp = any(kw in m for kw in _MOD_IMPERATIVES)
     has_noun = any(kw in m for kw in _MOD_NOUNS)
-    if has_imp and has_noun:
-        return "modify"
-
+    is_modify = has_imp and has_noun
     # 2b. Negación + sustantivo (sin requerir imperativo).
     # Ej: "el frentín no va", "el descuento no aplica".
-    if has_noun:
-        for neg in _NEG_PATTERNS:
-            if neg in m:
-                return "modify"
+    if not is_modify and has_noun:
+        is_modify = any(neg in m for neg in _NEG_PATTERNS)
 
+    # Un pedido de cambio gana sobre la confirmación: "dale, pero sacá el
+    # flete" NO es una confirmación (saldría el PDF sin el cambio pedido).
+    if is_modify:
+        return "modify"
+    if is_confirm:
+        return "confirm"
     return "other"
 
 
