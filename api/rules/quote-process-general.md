@@ -96,3 +96,4 @@ Diferencia > 0.5 m2 → actualizar | <= 0.5 m2 → mantener
 - Precios incluyen IVA
 - Sujeto a variacion de precio
 - Toma medidas max 30 dias desde confirmacion
+- "Sin pileta" a secas: si cobra el agujero lo define `defaults.sin_pileta_cobra_agujero` (panel).

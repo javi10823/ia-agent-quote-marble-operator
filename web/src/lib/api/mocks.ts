@@ -1285,6 +1285,7 @@ const _catalogConfigDefaults: CatalogConfig = {
   defaults: {
     _comment: "Mock fixture · shape REAL del config.json",
     colocacion_particulares: true,
+    sin_pileta_cobra_agujero: true,
     delivery_zone_sku: "ENVIOROS",
     forma_pago: "Contado",
   },

@@ -21,6 +21,7 @@ test.describe("Configuración · render base", () => {
       "delivery_zone_sku",
       "forma_pago",
       "colocacion_particulares",
+      "sin_pileta_cobra_agujero",
     ]) {
       await expect(page.locator(`[data-testid="config-row-${key}"]`)).toBeVisible();
     }

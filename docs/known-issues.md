@@ -9,6 +9,31 @@ Reglas:
 
 ## Issues abiertos
 
+### cierre-27-11-2026 · DEUDA-PREGUNTA · Refuerzo MDF en sinterizados con frentín
+
+**Pregunta para Marina/Javi:** ¿el refuerzo MDF (SKU `MDF`, $167.628, 1 por trabajo) se cobra **automáticamente** cuando hay frentín en Dekton/Neolith/Puraprima/Laminatto, o lo agrega el operador a mano?
+
+**Hoy:** `rules/calculation-formulas.md` lo describe como regla, pero el calculador NO lo cobra solo: solo emite un aviso en el Paso 2 (PR #544). Si la respuesta es "automático", es un ítem MO nuevo en `calculate_quote` (+ opción en el panel para prenderlo/apagarlo).
+**Quién decide:** Marina / Javi.
+
+### cierre-27-11-2026 · DEUDA-PREGUNTA · Plazo de entrega: 40 días fijos vs tramos por m²
+
+**Pregunta para Marina/Javi:** ¿el plazo es siempre 30/40 días o varía por m² (20 días hasta 3 m², 30 hasta 6, 40 más)?
+
+**Hoy:** `rules/commercial-conditions.md` dice 40 días "parametrizable" y excepciones por m² (<1 m² 10-15 d · >15 m² 60-70 d); `CONTEXT.md` habla de tiers por m²; `catalog/config.json → delivery_days` tiene `tiers` pero `range_enabled=false` y `default: 30`, así que los tramos no se aplican. Tres fuentes, tres respuestas.
+**Quién decide:** Marina / Javi. Cuando se decida: dejar UNA fuente (config) y editarla desde el panel.
+
+### cierre-27-11-2026 · MAJOR · No todas las reglas de negocio viven en el panel /configuracion
+
+**Pedido de Javi:** todas las reglas de negocio deben vivir en una página del panel de configuración.
+
+**Estado verificado (27/11/2026):** el panel edita 13 campos (zócalo/alzada/profundidad, zona de flete, forma de pago, colocación particulares, "sin pileta" cobra agujero, 4 descuentos y umbrales, umbral de merma). `catalog/config.json` tiene ~148 claves y muchas reglas NO son editables desde el panel:
+- **En config.json pero sin campo en el panel:** IVA, plazos y tiers de entrega, piezas por viaje de flete en edificio (`building.flete_mesadas_per_trip`, 6), mínimo de colocación (`colocacion.min_quantity`), listas de familias (sintéticos/sinterizados/merma), tamaños de placa, alias de materiales y zonas, datos de empresa.
+- **Claves duplicadas o sin uso que confunden:** `building.discount_percentage` y `building.discount_min_m2` no las lee el código (manda `discount.building_*`); `ai_engine.*`, `company.*`, `iva.percentage` y otras figuran sin lectura detectada. Editar una clave muerta no cambia nada.
+- **Hardcodeado en el código (no está ni en config):** MO de edificio ÷ 1.05; regrueso 0,05 m² por ml; "Negro Brasil nunca lleva merma"; default Gris Mara = Extra 2; tolerancia Paso 1→Paso 2 `max(0,05 m²; 2 %)`; tolerancias de validación (±1 / ±2 pesos); rango válido de descuentos (1-50 %); orden de precedencia de descuentos (manual > arquitecta > edificio > cantidad).
+**Plan:** (1) borrar las claves muertas/duplicadas; (2) mover los hardcodeados a `config.json` con su default actual; (3) sumar al panel las que tienen sentido de negocio (IVA, plazos, flete por viaje, mín. colocación, MO edificio). Una PR chica por grupo.
+
+
 ### sprint-2/paso-1-brief-upload (PR #457) · MINOR · Cobertura E2E parcial de validaciones
 
 **Detectado:** audit independiente PR #457, 06.05.2026, NICE-TO-HAVE 2.

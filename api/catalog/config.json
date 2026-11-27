@@ -82,7 +82,8 @@
     "_comment": "Defaults operativos editables desde /configuracion (sub-PR 22.2.a). Consumidos por context_analyzer + agent cuando el brief no especifica.",
     "colocacion_particulares": true,
     "delivery_zone_sku": "ENVIOROS",
-    "forma_pago": "Contado"
+    "forma_pago": "Contado",
+    "sin_pileta_cobra_agujero": true
   },
   "colocacion": {
     "min_quantity": 1.0
