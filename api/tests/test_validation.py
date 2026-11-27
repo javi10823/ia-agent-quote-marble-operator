@@ -38,6 +38,11 @@ def _valid_qdata() -> dict:
     m2 = 1.30
     material_total = round(m2 * unit_price)  # round(815.1) = 815
 
+    mo_total = (
+        round(1 * mo_unit_pileta) + round(1.30 * mo_unit_coloc) + round(1 * mo_unit_flete)
+    )
+    sinks_total = 350000
+
     return {
         "ok": True,
         "client_name": "Juan Carlos",
@@ -95,7 +100,7 @@ def _valid_qdata() -> dict:
         "inglete": False,
         "pulido": False,
         "localidad": "Rosario",
-        "total_ars": 245458,
+        "total_ars": mo_total + sinks_total,  # = MO + piletas (material va en USD)
         "total_usd": material_total,
     }
 
@@ -153,7 +158,9 @@ class TestIVAMO:
             del mo["base_price"]
         errors, warnings = _check_iva_mo(qdata)
         assert errors == []
-        assert warnings == []
+        # No bloquea (data vieja), pero ya no se saltea en silencio.
+        assert len(warnings) == len(qdata["mo_items"])
+        assert all("base_price" in w for w in warnings)
 
     def test_edificio_discount_adjusts_expected(self):
         """MO items with edificio_discount=True must be validated against
