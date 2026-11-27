@@ -1448,6 +1448,10 @@ def calculate_quote(input_data: dict) -> dict:
                 regrueso_ml += p.get("largo", 0)
         if regrueso_ml <= 0:
             regrueso_ml = 1
+            warnings.append(
+                "⚠️ Regrueso sin metros lineales declarados: se cotizó 1 ml por defecto. "
+                "Confirmá los metros (regrueso_ml)."
+            )
 
     # 2. Calculate m2
     total_m2, piece_details = calculate_m2([p if isinstance(p, dict) else p.model_dump() for p in pieces])
@@ -1623,18 +1627,53 @@ def calculate_quote(input_data: dict) -> dict:
                 frentin_ml += p.get("largo", 0)
         if frentin_ml <= 0:
             frentin_ml = 1  # Fallback: at least 1 ml
+            warnings.append(
+                "⚠️ Frentín sin metros lineales declarados: se cotizó 1 ml por defecto. "
+                "Confirmá los metros (frentin_ml)."
+            )
     if frentin and frentin_ml > 0:
         # Pegado/armado faldón: ml × precio por ml
         sku = "FALDONDEKTON/NEOLITH" if is_sint else "FALDON"
         price, base = _get_mo_price(sku)
         ml = round(frentin_ml, 2)
         mo_items.append({"description": "Armado frentín", "quantity": ml, "unit_price": price, "base_price": base, "total": round(price * ml)})
+        if is_sint:
+            # rules/calculation-formulas.md: refuerzo MDF en sinterizados con
+            # frentín. No se cobra solo (decisión comercial): se avisa.
+            warnings.append(
+                "ℹ️ Sinterizado con frentín: según las reglas corresponde el refuerzo "
+                "MDF (SKU MDF, 1 por trabajo). No se incluyó: agregalo si aplica."
+            )
         if inglete:
             # Corte 45: ml × 2 × precio por ml (cut on both sides)
             sku_45 = "CORTE45DEKTON/NEOLITH" if is_sint else "CORTE45"
             price_45, base_45 = _get_mo_price(sku_45)
             ml_45 = round(frentin_ml * 2, 2)
             mo_items.append({"description": "Corte 45", "quantity": ml_45, "unit_price": price_45, "base_price": base_45, "total": round(price_45 * ml_45)})
+
+    # Pulido de cantos declarado por el operador: PUL (granito, mármol, Silestone,
+    # Purastone) o PUL2 (sinterizados), por metro lineal. Sin metros no se cobra
+    # (nunca se inventa una cantidad): se avisa.
+    pulido_ml = input_data.get("pulido_ml") or 0
+    try:
+        pulido_ml = float(pulido_ml)
+    except (TypeError, ValueError):
+        pulido_ml = 0
+    if pulido and pulido_ml > 0:
+        price, base = _get_mo_price("PUL2" if is_sint else "PUL")
+        ml = round(pulido_ml, 2)
+        mo_items.append({
+            "description": "Pulido de cantos x ml",
+            "quantity": ml,
+            "unit_price": price,
+            "base_price": base,
+            "total": round(price * ml),
+        })
+    elif pulido:
+        warnings.append(
+            "⚠️ Pulido de cantos pedido sin metros lineales (pulido_ml): no se cobró. "
+            "Indicá los metros para incluirlo."
+        )
 
     # PR #401 — Regrueso MO. La resolución de `regrueso_ml` se hace arriba
     # (antes del cálculo de total_m2) porque también consume material.
@@ -1807,7 +1846,8 @@ def calculate_quote(input_data: dict) -> dict:
             sink_price = sink_result.get("price_ars", 0)
             sinks.append({
                 "name": sink_result.get("name", "Pileta Johnson"),
-                "quantity": 1,
+                # Cantidad real (antes fija en 1 aunque pileta_qty fuera > 1).
+                "quantity": max(1, int(pileta_qty or 1)),
                 "unit_price": sink_price,
             })
             logging.info(f"Added sink product: {sink_result.get('name')} @ ${sink_price}")
