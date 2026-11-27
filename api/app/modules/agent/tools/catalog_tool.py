@@ -196,7 +196,17 @@ def catalog_lookup(catalog: str, sku: str) -> dict:
 
             return result
 
-    # Not found by exact SKU — try matching by name
+    # Not found by exact SKU — un nombre EXACTO gana sobre el substring.
+    # Sin esto "SILESTONE BLANCO ZEUS" (contenido en "… ZEUS SUEDE") daba 2
+    # coincidencias y se declaraba no encontrado, aunque existe tal cual.
+    exact_name = [i for i in items if i.get("name", "").strip().upper() == sku_upper.strip()]
+    if len(exact_name) == 1 and exact_name[0].get("sku"):
+        found = catalog_lookup(catalog, exact_name[0]["sku"])
+        if found.get("found"):
+            found["matched_by"] = "name"
+            return found
+
+    # Try matching by name (substring)
     name_matches = []
     for item in items:
         item_name = item.get("name", "").upper()

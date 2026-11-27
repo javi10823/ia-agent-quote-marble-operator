@@ -95,3 +95,24 @@ class TestCheckStock:
             for piece in result["pieces"]:
                 assert "m2" in piece
                 assert piece["m2"] >= 0
+
+
+# ── nombre exacto que es prefijo de otro ─────────────────────────────────────
+
+class TestCatalogLookupNombreExactoPrefijo:
+    def test_zeus_no_se_confunde_con_zeus_suede(self):
+        r = catalog_lookup("materials-silestone", "SILESTONE BLANCO ZEUS")
+        assert r["found"] is True
+        assert r["name"] == "SILESTONE BLANCO ZEUS"
+        assert r["sku"] == "SILESTONEZEUS"
+        assert r["currency"] == "USD"
+
+    def test_zeus_suede_sigue_funcionando(self):
+        r = catalog_lookup("materials-silestone", "SILESTONE BLANCO ZEUS SUEDE")
+        assert r["found"] is True
+        assert r["name"] == "SILESTONE BLANCO ZEUS SUEDE"
+
+    def test_parcial_ambiguo_sigue_sin_elegir(self):
+        r = catalog_lookup("materials-silestone", "ZEUS")
+        assert r["found"] is False
+        assert len(r["partial_matches"]) == 2
