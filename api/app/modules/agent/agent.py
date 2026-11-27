@@ -7208,13 +7208,14 @@ class AgentService:
             # guardado). "Sacá el descuento" lo anula y no se reinyecta.
             from app.modules.agent.discount_authority import authorize_discounts
             _persisted_pcts: set[float] = set()
+            _prior_quote = None
             try:
-                _pq = (await db.execute(
+                _prior_quote = (await db.execute(
                     select(Quote).where(Quote.id == save_to_qid)
                 )).scalar_one_or_none()
-                if _pq and isinstance(_pq.quote_breakdown, dict):
+                if _prior_quote and isinstance(_prior_quote.quote_breakdown, dict):
                     for _k in ("discount_pct", "mo_discount_pct"):
-                        _v = _pq.quote_breakdown.get(_k)
+                        _v = _prior_quote.quote_breakdown.get(_k)
                         if isinstance(_v, (int, float)) and _v > 0:
                             _persisted_pcts.add(float(_v))
             except Exception as _pe:
@@ -7243,6 +7244,36 @@ class AgentService:
                         f"[discount-authority] {save_to_qid}: rechazados="
                         f"{_disc_decision.rejected} removed={_disc_decision.removed}"
                     )
+
+            # ── Autoridad de is_edificio: lo decide el operador, no el LLM ──
+            from app.modules.agent.edificio_authority import authorize_is_edificio
+            _auth_warnings: list[str] = list(_disc_decision.warnings())
+            try:
+                _persisted_edif = bool(
+                    _prior_quote
+                    and (
+                        _prior_quote.is_building
+                        or (
+                            isinstance(_prior_quote.quote_breakdown, dict)
+                            and _prior_quote.quote_breakdown.get("is_edificio")
+                        )
+                    )
+                )
+            except Exception:
+                _persisted_edif = False
+            _edif_value, _edif_warning = authorize_is_edificio(
+                inputs.get("is_edificio"),
+                _operator_text(conversation_history, current_user_message),
+                _persisted_edif,
+            )
+            if bool(inputs.get("is_edificio")) != _edif_value:
+                logging.warning(
+                    f"[edificio-authority] {save_to_qid}: LLM is_edificio="
+                    f"{inputs.get('is_edificio')} → {_edif_value}"
+                )
+            inputs["is_edificio"] = _edif_value
+            if _edif_warning:
+                _auth_warnings.append(_edif_warning)
 
             if not _disc_decision.removed and (
                 not inputs.get("discount_pct") or not inputs.get("mo_discount_pct")
@@ -7501,8 +7532,8 @@ class AgentService:
                 logging.warning(f"[guardrail] paso1↔paso2 check failed: {e}")
 
             calc_result = calculate_quote(inputs)
-            if _disc_decision.rejected and calc_result.get("ok"):
-                calc_result.setdefault("warnings", []).extend(_disc_decision.warnings())
+            if _auth_warnings and calc_result.get("ok"):
+                calc_result.setdefault("warnings", []).extend(_auth_warnings)
 
             # PR #418 — observabilidad: log estructurado del par
             # (material_m2, piece_details) tal como queda al salir del
