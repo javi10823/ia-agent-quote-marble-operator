@@ -674,6 +674,49 @@ def _find_material(material_name: str) -> dict:
     }
 
 
+def compute_mo_totals(
+    mo_items: list[dict],
+    sinks: list[dict],
+    mo_discount_pct: float,
+    currency: str,
+    material_total_net: float,
+    sobrante_total: float,
+) -> dict:
+    """Totales del presupuesto a partir del detalle (única fuente de la fórmula).
+
+    - El descuento comercial de MO aplica SOLO a ítems que no son flete.
+    - Material en USD: total_ars = MO − desc. MO + piletas; total_usd = material + sobrante.
+    - Material en ARS: total_ars suma además material y sobrante; total_usd = 0.
+    Lo usan calculate_quote y patch_quote_mo."""
+    mo_discount_amount = 0
+    if mo_discount_pct and mo_discount_pct > 0:
+        _mo_subtotal_excl_flete = sum(
+            item["total"] for item in mo_items
+            if "flete" not in item["description"].lower()
+        )
+        mo_discount_amount = round(_mo_subtotal_excl_flete * mo_discount_pct / 100)
+        logging.info(
+            f"MO discount applied: {mo_discount_pct}% of ${_mo_subtotal_excl_flete} "
+            f"(excluding flete) = -${mo_discount_amount}"
+        )
+
+    total_sinks_ars = sum(s["unit_price"] * s["quantity"] for s in sinks)
+    total_mo_ars = sum(item["total"] for item in mo_items) - mo_discount_amount
+
+    if currency == "USD":
+        total_ars = total_mo_ars + total_sinks_ars
+        total_usd = material_total_net + sobrante_total
+    else:
+        total_ars = total_mo_ars + total_sinks_ars + material_total_net + sobrante_total
+        total_usd = 0
+    return {
+        "mo_discount_amount": mo_discount_amount,
+        "total_mo_ars": total_mo_ars,
+        "total_ars": total_ars,
+        "total_usd": total_usd,
+    }
+
+
 def _find_flete(localidad: str) -> dict:
     """Find flete price for a zone using exact match from config.json zone_aliases."""
     zone_key = localidad.lower().strip()
@@ -1785,32 +1828,15 @@ def calculate_quote(input_data: dict) -> dict:
                 item["edificio_discount"] = True
         logging.info(f"Edificio MO ÷1.05 applied (except flete)")
 
-    # Optional commercial MO discount (e.g. "5% sobre MO" for building quotes).
-    # Applies ONLY to MO items that are NOT flete. Sum then round.
-    mo_discount_amount = 0
-    if mo_discount_pct and mo_discount_pct > 0:
-        _mo_subtotal_excl_flete = sum(
-            item["total"] for item in mo_items
-            if "flete" not in item["description"].lower()
-        )
-        mo_discount_amount = round(_mo_subtotal_excl_flete * mo_discount_pct / 100)
-        logging.info(
-            f"MO discount applied: {mo_discount_pct}% of ${_mo_subtotal_excl_flete} "
-            f"(excluding flete) = -${mo_discount_amount}"
-        )
-
-    # Totals
-    total_sinks_ars = sum(s["unit_price"] * s["quantity"] for s in sinks)
-    total_mo_ars = sum(item["total"] for item in mo_items)
-    # Subtract MO commercial discount from the MO total (never affects flete).
-    total_mo_ars = total_mo_ars - mo_discount_amount
-
-    if currency == "USD":
-        total_ars = total_mo_ars + total_sinks_ars
-        total_usd = material_total_net + sobrante_total
-    else:
-        total_ars = total_mo_ars + total_sinks_ars + material_total_net + sobrante_total
-        total_usd = 0
+    # Optional commercial MO discount + totals: misma fórmula que usa
+    # patch_quote_mo (compute_mo_totals) para que ambos caminos den lo mismo.
+    _totals = compute_mo_totals(
+        mo_items, sinks, mo_discount_pct, currency, material_total_net, sobrante_total,
+    )
+    mo_discount_amount = _totals["mo_discount_amount"]
+    total_mo_ars = _totals["total_mo_ars"]
+    total_ars = _totals["total_ars"]
+    total_usd = _totals["total_usd"]
 
     # Build sectors for document generation (group identical pieces)
     sectors = []
