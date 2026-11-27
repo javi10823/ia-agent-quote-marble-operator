@@ -1814,10 +1814,12 @@ async def derive_material(
         "material": body.material,
         "pieces": pieces,
         "localidad": original.localidad or _bd.get("localidad") or "rosario",
+        # El breakdown es el cálculo real: manda sobre la columna, que en el
+        # flujo Operador vale False por defecto aunque se haya cobrado colocación.
         "colocacion": (
-            original.colocacion
-            if original.colocacion is not None
-            else _bd.get("colocacion", True)
+            _bd["colocacion"]
+            if "colocacion" in _bd
+            else (original.colocacion if original.colocacion is not None else True)
         ),
         "pileta": original.pileta or _bd.get("pileta"),
         "anafe": original.anafe or _bd.get("anafe") or False,
