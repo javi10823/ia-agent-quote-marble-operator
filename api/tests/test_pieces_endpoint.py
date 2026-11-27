@@ -274,3 +274,36 @@ class TestListPiecesEndpoint:
         # _manual flag NO se expone al frontend
         for p in data["pieces"]:
             assert "_manual" not in p
+
+
+class TestTramoDelBriefNoEsEditado:
+    """`_manual` habilita edición; un tramo parseado del brief (`_from_text`)
+    no es una edición del operador → origin IA, no EDITADO."""
+
+    def test_tramo_from_text_es_ia(self):
+        dr = {
+            "sectores": [{
+                "tramos": [{
+                    "id": "t1",
+                    "descripcion": "Mesada",
+                    "largo_m": _field(2.4),
+                    "ancho_m": _field(0.6),
+                    "_manual": True,
+                    "_from_text": True,
+                }]
+            }]
+        }
+        assert _serialize_dual_read_to_pieces(dr)[0]["origin"] == "IA"
+
+    def test_text_parser_marca_from_text(self):
+        from app.modules.quote_engine.text_parser import parsed_pieces_to_card as build
+        dr = build({
+            "pieces": [
+                {"description": "Mesada tramo 1", "largo": 2.4, "prof": 0.6},
+                {"description": "Zócalo", "largo": 2.4, "alto": 0.07},
+            ]
+        })
+        assert dr is not None
+        tramo = dr["sectores"][0]["tramos"][0]
+        assert tramo["_manual"] is True and tramo["_from_text"] is True
+        assert _serialize_dual_read_to_pieces(dr)[0]["origin"] == "IA"

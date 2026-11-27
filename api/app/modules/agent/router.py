@@ -421,7 +421,11 @@ def _serialize_dual_read_to_pieces(dual_read: dict | None) -> list[dict]:
                 "depth_mm": round(ancho_m * 1000, 2),
                 "quantity": quantity,
                 "options": {},
-                "origin": "EDITADO" if tramo.get("_manual") else "IA",
+                "origin": (
+                    "EDITADO"
+                    if tramo.get("_manual") and not tramo.get("_from_text")
+                    else "IA"
+                ),
                 "edited": False,
             })
             for idx, z in enumerate(tramo.get("zocalos") or []):

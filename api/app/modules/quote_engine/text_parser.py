@@ -228,6 +228,10 @@ def parsed_pieces_to_card(parsed: dict) -> dict | None:
                 # calculator usa este campo para `pieces[].quantity`.
                 "quantity": quantity,
                 "_manual": True,
+                # `_manual` solo habilita la edición en la UI; no significa que
+                # el operador haya tocado el tramo. `_from_text` evita que el
+                # despiece lo muestre como EDITADO al abrirlo.
+                "_from_text": True,
             }
             # Si hay zócalos pendientes sin tramo previo, asignarlos al primer tramo
             if pending_zocalos and not tramos:
