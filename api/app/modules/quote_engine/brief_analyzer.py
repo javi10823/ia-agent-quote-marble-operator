@@ -395,6 +395,22 @@ def _validate_llm_word_mentions(brief: str, result: dict) -> None:
         result[flag_key] = None
 
 
+_MATERIAL_SENTENCE_END = re.compile(r"[.;:](?:\s|$)|\n")
+
+
+def _clean_material(material):
+    """El material es un nombre corto, no una frase. Si el análisis arrastró
+    texto del brief ("Silestone Blanco Norte 20mm. Mesada en L: tramo 1…"),
+    se corta en el primer fin de frase. "1.2" o "Mr.White" no cortan: el
+    signo tiene que ir seguido de espacio o fin de texto."""
+    if not isinstance(material, str):
+        return material
+    m = _MATERIAL_SENTENCE_END.search(material)
+    cleaned = material[: m.start()] if m else material
+    cleaned = cleaned.strip().rstrip(",.;:").strip()
+    return cleaned or None
+
+
 def _extract_material_regex(brief: str) -> str | None:
     low = brief.lower()
     start_idx = -1
@@ -622,5 +638,6 @@ async def analyze_brief(brief: str) -> dict:
     # fallback ya usa los regex como única fuente y no produce false
     # positives por construcción.
     _validate_llm_word_mentions(brief, result)
+    result["material"] = _clean_material(result.get("material"))
 
     return result
