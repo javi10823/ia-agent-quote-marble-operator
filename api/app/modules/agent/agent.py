@@ -29,6 +29,43 @@ from app.core.company_config import get as _cfg
 _SYNTHETIC_MATERIALS = _cfg("materials.sinteticos", ["silestone", "dekton", "neolith", "puraprima", "purastone", "laminatto"])
 
 
+# update_quote: qué campos puede tocar el LLM. Los montos y el material NUNCA:
+# salen de calculate_quote (determinístico). Un total escrito acá quedaba en la
+# columna sin que ningún cálculo lo respaldara.
+UPDATE_QUOTE_COLUMN_FIELDS = frozenset({"client_name", "project", "status"})
+UPDATE_QUOTE_BREAKDOWN_FIELDS = frozenset({"delivery_days"})
+UPDATE_QUOTE_COMPUTED_FIELDS = frozenset({"total_ars", "total_usd", "material"})
+
+
+def _check_update_quote_fields(updates: dict) -> dict | None:
+    """Devuelve un error `{"ok": False, ...}` si `updates` trae campos no
+    permitidos; None si todo está bien."""
+    allowed = UPDATE_QUOTE_COLUMN_FIELDS | UPDATE_QUOTE_BREAKDOWN_FIELDS
+    computed = sorted(
+        k for k in updates if k in UPDATE_QUOTE_COMPUTED_FIELDS and updates[k] is not None
+    )
+    if computed:
+        return {
+            "ok": False,
+            "error": (
+                f"update_quote no puede modificar {computed}: son resultado del "
+                "cálculo. Para cambiar material, piezas o MO usar calculate_quote "
+                "o patch_quote_mo."
+            ),
+        }
+    unknown = [k for k in updates if k not in allowed and updates[k] is not None]
+    if unknown:
+        return {
+            "ok": False,
+            "error": (
+                f"Campos no soportados por update_quote: {unknown}. "
+                f"Permitidos: {sorted(allowed)}. Para cambios de despiece/MO "
+                "usar calculate_quote o patch_quote_mo."
+            ),
+        }
+    return None
+
+
 def _validate_quote_data(qdata: dict) -> tuple[list[str], list[str]]:
     """Pre-flight checklist before PDF generation. Returns (errors, warnings)."""
     errors: list[str] = []
@@ -1321,7 +1358,7 @@ TOOLS = [
     {"name": "check_architect", "description": "Verifica si cliente es arquitecta con descuento.", "input_schema": {"type": "object", "properties": {"client_name": {"type": "string"}}, "required": ["client_name"]}},
     {"name": "read_plan", "description": "AUXILIAR — zoom táctico en zonas de un plano. NO usar para análisis inicial (usá visión nativa sobre el PDF/imagen adjunto). Solo para: cotas chicas, detalles ilegibles, subregiones específicas. LÍMITE: máximo 2 crops por llamada. Si necesitás más, analizá los primeros 2 y después llamá de nuevo.", "input_schema": {"type": "object", "properties": {"filename": {"type": "string"}, "crop_instructions": {"type": "array", "maxItems": 2, "items": {"type": "object", "properties": {"label": {"type": "string"}, "x1": {"type": "integer"}, "y1": {"type": "integer"}, "x2": {"type": "integer"}, "y2": {"type": "integer"}}}}}, "required": ["filename"]}},
     {"name": "generate_documents", "description": "Genera PDF+Excel. 1 quote por material.", "input_schema": {"type": "object", "properties": {"quotes": {"type": "array", "items": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "date": {"type": "string"}, "delivery_days": {"type": "string"}, "material_name": {"type": "string"}, "material_m2": {"type": "number"}, "material_price_unit": {"type": "number"}, "material_currency": {"type": "string", "enum": ["USD", "ARS"]}, "discount_pct": {"type": "number"}, "sectors": {"type": "array", "items": {"type": "object", "properties": {"label": {"type": "string"}, "pieces": {"type": "array", "items": {"type": "string"}}}}}, "sinks": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "quantity": {"type": "integer"}, "unit_price": {"type": "number"}}}}, "mo_items": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}, "quantity": {"type": "number"}, "unit_price": {"type": "number"}, "total": {"type": "number"}}}}, "total_ars": {"type": "number"}, "total_usd": {"type": "number"}}, "required": ["client_name", "material_name"]}}}, "required": ["quotes"]}},
-    {"name": "update_quote", "description": "Actualiza client_name/project/status/delivery_days en DB sin recalcular. Para cambios estructurales (piezas/MO/material) usar calculate_quote.", "input_schema": {"type": "object", "properties": {"quote_id": {"type": "string"}, "updates": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "material": {"type": "string"}, "total_ars": {"type": "number"}, "total_usd": {"type": "number"}, "status": {"type": "string", "enum": ["draft", "validated", "sent"]}, "delivery_days": {"type": "string", "description": "Plazo/demora — ej: '30 días', '60 días', '4 meses'. Se persiste en quote_breakdown.delivery_days. Para cambiar SOLO la demora sin re-cotizar, usar este campo (no llamar a calculate_quote)."}}}}, "required": ["quote_id", "updates"]}},
+    {"name": "update_quote", "description": "Actualiza client_name/project/status/delivery_days en DB sin recalcular. NO modifica montos ni material: para cambios estructurales (piezas/MO/material) usar calculate_quote.", "input_schema": {"type": "object", "properties": {"quote_id": {"type": "string"}, "updates": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "status": {"type": "string", "enum": ["draft", "validated", "sent"]}, "delivery_days": {"type": "string", "description": "Plazo/demora — ej: '30 días', '60 días', '4 meses'. Se persiste en quote_breakdown.delivery_days. Para cambiar SOLO la demora sin re-cotizar, usar este campo (no llamar a calculate_quote)."}}}}, "required": ["quote_id", "updates"]}},
     {"name": "calculate_quote", "description": "Calcula m², MO, totales. SIEMPRE usar para cálculos.", "input_schema": {"type": "object", "properties": {"client_name": {"type": "string"}, "project": {"type": "string"}, "material": {"type": "string"}, "pieces": {"type": "array", "items": {"type": "object", "properties": {"description": {"type": "string"}, "largo": {"type": "number"}, "prof": {"type": "number"}, "alto": {"type": "number"}, "quantity": {"type": "integer", "description": "Cantidad de unidades físicas de esta pieza (para edificios con tipologías repetidas). Default 1 si no se pasa."}, "m2_override": {"type": "number", "description": "Usar SOLO cuando el operador declara el m² de la pieza en una Planilla de Cómputo (ej: edificios con valores pre-calculados que incluyen zócalos/frentes). Si se pasa, el calculador NO computa largo×prof — usa directamente este valor. No activar 'fallback de profundidades inversas'."}}, "required": ["description", "largo"]}}, "localidad": {"type": "string"}, "colocacion": {"type": "boolean"}, "is_edificio": {"type": "boolean"}, "pileta": {"type": "string", "enum": ["empotrada_cliente", "empotrada_johnson", "apoyo"]}, "pileta_qty": {"type": "integer"}, "pileta_sku": {"type": "string"}, "anafe": {"type": "boolean"}, "anafe_qty": {"type": "integer", "description": "Cantidad de anafes (para edificios con N tipologías). Default 1."}, "frentin": {"type": "boolean"}, "frentin_ml": {"type": "number"}, "regrueso": {"type": "boolean"}, "regrueso_ml": {"type": "number"}, "inglete": {"type": "boolean"}, "pulido": {"type": "boolean"}, "tomas_qty": {"type": "integer", "description": "Agujeros de toma corriente. REQUIERE alzada en pieces + pedido explícito del operador ('Agujero de toma × N'). NO inferir por anafe/zócalo/revestimiento. Sin alzada el calculator lo ignora con warning."}, "skip_flete": {"type": "boolean", "description": "true SOLO si el cliente retira en fábrica. Default false — siempre cobrar flete."}, "flete_qty": {"type": "integer", "description": "Cantidad de fletes declarada por el operador (ej: '× 5 fletes'). Override del cálculo automático. Usar SOLO cuando el operador lo dice explícito en el enunciado."}, "plazo": {"type": "string"}, "discount_pct": {"type": "number"}, "mo_discount_pct": {"type": "number", "description": "Descuento comercial % sobre MO (excluye flete). Usar SOLO si operador lo pide explícito (ej: '5% sobre MO')."}}, "required": ["client_name", "project", "material", "pieces", "localidad", "plazo"]}},
     {"name": "patch_quote_mo", "description": "Modifica MO. Cambiar cant flete: add_flete+flete_qty.", "input_schema": {"type": "object", "properties": {"remove_items": {"type": "array", "items": {"type": "string"}}, "add_colocacion": {"type": "boolean"}, "add_flete": {"type": "string"}, "flete_qty": {"type": "integer"}}, "required": []}},
 ]
@@ -6440,22 +6477,14 @@ class AgentService:
             # filtraba silenciosamente del `clean` y respondía "ok" sin
             # tocar nada → Sonnet le decía al operador "cambiado" mientras
             # la DB seguía con la demora vieja (caso DYSCON 29/04/2026).
-            _COLUMN_FIELDS = {"client_name", "project", "material", "total_ars", "total_usd", "status"}
-            _BREAKDOWN_ONLY_FIELDS = {"delivery_days"}
-            _ALL_ALLOWED = _COLUMN_FIELDS | _BREAKDOWN_ONLY_FIELDS
+            _COLUMN_FIELDS = UPDATE_QUOTE_COLUMN_FIELDS
+            _BREAKDOWN_ONLY_FIELDS = UPDATE_QUOTE_BREAKDOWN_FIELDS
 
-            # Validate: any field that's neither column-allowed nor
-            # breakdown-allowed → reject loud (don't silently drop).
-            _unknown = [k for k in updates if k not in _ALL_ALLOWED and updates[k] is not None]
-            if _unknown:
-                return {
-                    "ok": False,
-                    "error": (
-                        f"Campos no soportados por update_quote: {_unknown}. "
-                        f"Permitidos: {sorted(_ALL_ALLOWED)}. Para cambios "
-                        f"de despiece/MO usar calculate_quote o patch_quote_mo."
-                    ),
-                }
+            # Validate: montos/material (resultado del cálculo) y cualquier
+            # campo desconocido → reject loud (don't silently drop).
+            _field_error = _check_update_quote_fields(updates)
+            if _field_error:
+                return _field_error
 
             clean_columns = {
                 k: v for k, v in updates.items()
