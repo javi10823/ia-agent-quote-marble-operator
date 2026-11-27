@@ -146,6 +146,8 @@ interface RealQuoteDetail {
   material: string | null;
   status: string;
   quote_breakdown?: {
+    /** m² del último cálculo (refleja ediciones del despiece). */
+    material_m2?: number;
     dual_read_result?: {
       sectores?: Array<{ m2_total?: { valor?: number } }>;
     };
@@ -153,6 +155,10 @@ interface RealQuoteDetail {
 }
 
 function deriveM2(detail: RealQuoteDetail): number {
+  // El m² calculado manda: el del dual-read es el de la lectura original y
+  // queda viejo si el operador editó piezas.
+  const calc = detail.quote_breakdown?.material_m2;
+  if (typeof calc === "number" && calc > 0) return Math.round(calc * 100) / 100;
   const sectores = detail.quote_breakdown?.dual_read_result?.sectores;
   if (Array.isArray(sectores) && sectores.length > 0) {
     const total = sectores.reduce((sum, s) => sum + (s.m2_total?.valor ?? 0), 0);
