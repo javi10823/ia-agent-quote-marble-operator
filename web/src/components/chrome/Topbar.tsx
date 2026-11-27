@@ -13,6 +13,7 @@ import type { QuoteHeader } from "@/lib/api";
 import { AuditToggle } from "@/components/observability/AuditToggle";
 import { AuditCopyButton } from "@/components/observability/AuditCopyButton";
 import { DeriveMaterialButton } from "@/components/quote/DeriveMaterialButton";
+import { QuoteVariants } from "@/components/quote/QuoteVariants";
 
 interface TopbarProps {
   quote: QuoteHeader;
@@ -32,6 +33,7 @@ export function Topbar({ quote }: TopbarProps) {
       <div className="right">
         {/* Sprint 4 derive-material-ui-wire · clonar quote con otro material.
             Disabled mientras quote.material esté vacío o "—". */}
+        <QuoteVariants quoteId={quote.id} />
         <DeriveMaterialButton quoteId={quote.id} currentMaterial={quote.material} />
 
         {/* Sprint 4 audit-trail-copy · CTA Copiar audit del quote actual al
