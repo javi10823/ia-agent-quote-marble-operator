@@ -6928,7 +6928,33 @@ class AgentService:
                 "remover pileta", "eliminar pileta", "sacar la pileta",
                 "quitar la pileta", "ya no lleva pileta",
             ]
-            if any(phrase in _pileta_all_text for phrase in _no_product_phrases):
+            # Regla configurable (panel /configuracion → Defaults operativos):
+            # "sin pileta" a secas puede significar (a) el cliente la trae: se
+            # sigue cobrando el agujero/pegado [comportamiento histórico, default]
+            # o (b) no hay pileta: no se cobra nada de pileta. Las frases que
+            # nombran al *producto* ("sin producto de pileta", "cliente trae la
+            # pileta") siempre significan (a).
+            _BARE_NO_PILETA = (
+                "sacar pileta", "quitar pileta", "sin pileta", "remover pileta",
+                "eliminar pileta", "sacar la pileta", "quitar la pileta",
+                "ya no lleva pileta",
+            )
+            _sin_pileta_total = False
+            if (
+                not bool(_cfg("defaults.sin_pileta_cobra_agujero", True))
+                and any(p in _pileta_all_text for p in _BARE_NO_PILETA)
+                and not any(
+                    p in _pileta_all_text
+                    for p in _no_product_phrases if p not in _BARE_NO_PILETA
+                )
+            ):
+                _sin_pileta_total = True
+                for _k in ("pileta", "pileta_sku", "pileta_qty"):
+                    inputs.pop(_k, None)
+                logging.warning(
+                    f"[sin-pileta] regla: sin agujero ni producto para {save_to_qid}"
+                )
+            elif any(phrase in _pileta_all_text for phrase in _no_product_phrases):
                 if inputs.get("pileta") != "empotrada_cliente":
                     logging.warning(
                         f"Forcing pileta=empotrada_cliente (operator said 'sin producto'). "
@@ -7100,7 +7126,7 @@ class AgentService:
             # Caso (d) `not_found`: brief sin regrueso → respetar lo
             # que pasó Sonnet (silencioso, sin warning — es el path normal).
 
-            if not inputs.get("pileta"):
+            if not inputs.get("pileta") and not _sin_pileta_total:
                 # 2. Keyword fallback: scan conversation for pileta/bacha mentions
                 if any(kw in _pileta_all_text for kw in ["bacha", "pileta", "cotizar bacha", "con bacha",
                                                   "compra la bacha", "compra bacha", "compra pileta",

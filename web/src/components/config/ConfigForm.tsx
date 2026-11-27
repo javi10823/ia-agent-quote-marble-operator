@@ -95,6 +95,14 @@ const FIELDS: FieldDef[] = [
     type: "bool",
     section: "operativos",
   },
+  {
+    key: "sin_pileta_cobra_agujero",
+    label: "\"Sin pileta\" sigue cobrando el agujero",
+    helper:
+      "Sí: \"sin pileta\" significa que el cliente la trae (se cobra el agujero y pegado). No: no hay pileta y no se cobra nada de pileta.",
+    type: "bool",
+    section: "operativos",
+  },
   // ─── Sección 3 · DESCUENTOS (sub-PR 22.2.a.III) ────────────────────
   {
     key: "discount_imported_percentage",

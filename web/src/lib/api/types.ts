@@ -583,6 +583,8 @@ export interface CatalogConfigMeasurements {
 
 export interface CatalogConfigDefaults {
   colocacion_particulares: boolean;
+  /** Regla "sin pileta": true = el cliente la trae (se cobra el agujero). */
+  sin_pileta_cobra_agujero?: boolean;
   delivery_zone_sku: string;
   forma_pago: string;
   [k: string]: unknown;
@@ -625,6 +627,7 @@ export interface ConfigEditableFields {
   default_alzada_height: number;
   // 22.2.a · operativos
   colocacion_particulares: boolean;
+  sin_pileta_cobra_agujero: boolean;
   delivery_zone_sku: string;
   forma_pago: string;
   // 22.2.a.III · descuentos
@@ -642,6 +645,7 @@ export const CONFIG_EDITABLE_KEYS: ReadonlyArray<keyof ConfigEditableFields> = [
   "default_zocalo_height",
   "default_alzada_height",
   "colocacion_particulares",
+  "sin_pileta_cobra_agujero",
   "delivery_zone_sku",
   "forma_pago",
   "discount_imported_percentage",
@@ -662,6 +666,7 @@ export function extractEditableFields(cfg: CatalogConfig): ConfigEditableFields 
     default_zocalo_height: _num(cfg.measurements?.default_zocalo_height, 0.05),
     default_alzada_height: _num(cfg.measurements?.default_alzada_height, 0.6),
     colocacion_particulares: cfg.defaults?.colocacion_particulares ?? true,
+    sin_pileta_cobra_agujero: cfg.defaults?.sin_pileta_cobra_agujero ?? true,
     delivery_zone_sku: cfg.defaults?.delivery_zone_sku ?? "ENVIOROS",
     forma_pago: cfg.defaults?.forma_pago ?? "Contado",
     discount_imported_percentage: _num(cfg.discount?.imported_percentage, 5),
@@ -690,6 +695,7 @@ export function applyEditableFields(
     defaults: {
       ...(base.defaults ?? {}),
       colocacion_particulares: edits.colocacion_particulares,
+      sin_pileta_cobra_agujero: edits.sin_pileta_cobra_agujero,
       delivery_zone_sku: edits.delivery_zone_sku,
       forma_pago: edits.forma_pago,
     },
