@@ -14,6 +14,7 @@ from sqlalchemy import update, select
 from app.core.config import settings
 from app.models.quote import Quote, QuoteStatus
 from app.modules.observability import log_event as _audit
+from app.modules.agent.discount_authority import wants_discount_removed
 from app.modules.agent.tools.catalog_tool import catalog_lookup, catalog_batch_lookup, check_stock, check_architect, get_ai_config
 from app.modules.agent.tools.plan_tool import read_plan, save_plan_to_temp
 from app.modules.agent.tools.document_tool import generate_documents
@@ -35,6 +36,23 @@ _SYNTHETIC_MATERIALS = _cfg("materials.sinteticos", ["silestone", "dekton", "neo
 UPDATE_QUOTE_COLUMN_FIELDS = frozenset({"client_name", "project", "status"})
 UPDATE_QUOTE_BREAKDOWN_FIELDS = frozenset({"delivery_days"})
 UPDATE_QUOTE_COMPUTED_FIELDS = frozenset({"total_ars", "total_usd", "material"})
+
+
+def _operator_text(conversation_history, current_user_message: str) -> str:
+    """Todo lo que escribió el operador (historial + mensaje actual)."""
+    parts: list[str] = []
+    for m in conversation_history or []:
+        if m.get("role") != "user":
+            continue
+        c = m.get("content", "")
+        if isinstance(c, str):
+            parts.append(c)
+        elif isinstance(c, list):
+            for b in c:
+                if isinstance(b, dict) and b.get("type") == "text":
+                    parts.append(b.get("text", ""))
+    parts.append(current_user_message or "")
+    return " ".join(parts)
 
 
 def _check_update_quote_fields(updates: dict) -> dict | None:
@@ -6810,7 +6828,11 @@ class AgentService:
                     ):
                         inputs["skip_flete"] = True
                         logging.info(f"Auto-preserved skip_flete=True from breakdown for {save_to_qid}")
-                    if not inputs.get("mo_discount_pct") and ebd.get("mo_discount_pct"):
+                    if (
+                        not inputs.get("mo_discount_pct")
+                        and ebd.get("mo_discount_pct")
+                        and not wants_discount_removed(current_user_message)
+                    ):
                         inputs["mo_discount_pct"] = ebd["mo_discount_pct"]
                         logging.info(f"Auto-preserved mo_discount_pct={ebd['mo_discount_pct']} from breakdown for {save_to_qid}")
                     if not inputs.get("flete_qty") and ebd.get("flete_qty"):
@@ -7180,7 +7202,51 @@ class AgentService:
             # discount even when the operator declared it literally. This
             # block honors "Descuento 18%" regardless of m².
             # Similarly captures "5% sobre MO" for mo_discount_pct.
-            if not inputs.get("discount_pct") or not inputs.get("mo_discount_pct"):
+            # ── Autoridad del descuento: lo decide el operador, no el LLM ──
+            # Un discount_pct/mo_discount_pct del LLM solo vale si ese % figura
+            # en lo que escribió el operador (o ya estaba en el cálculo
+            # guardado). "Sacá el descuento" lo anula y no se reinyecta.
+            from app.modules.agent.discount_authority import authorize_discounts
+            _persisted_pcts: set[float] = set()
+            try:
+                _pq = (await db.execute(
+                    select(Quote).where(Quote.id == save_to_qid)
+                )).scalar_one_or_none()
+                if _pq and isinstance(_pq.quote_breakdown, dict):
+                    for _k in ("discount_pct", "mo_discount_pct"):
+                        _v = _pq.quote_breakdown.get(_k)
+                        if isinstance(_v, (int, float)) and _v > 0:
+                            _persisted_pcts.add(float(_v))
+            except Exception as _pe:
+                logging.warning(f"[discount-authority] no pude leer breakdown previo: {_pe}")
+            _disc_decision = authorize_discounts(
+                inputs.get("discount_pct"),
+                inputs.get("mo_discount_pct"),
+                _operator_text(conversation_history, current_user_message),
+                current_user_message,
+                _persisted_pcts,
+            )
+            if (
+                _disc_decision.removed
+                or _disc_decision.rejected
+                or inputs.get("discount_pct")
+                or inputs.get("mo_discount_pct")
+            ):
+                for _k in ("discount_pct", "mo_discount_pct"):
+                    _val = getattr(_disc_decision, _k)
+                    if _val:
+                        inputs[_k] = _val
+                    else:
+                        inputs.pop(_k, None)
+                if _disc_decision.rejected or _disc_decision.removed:
+                    logging.warning(
+                        f"[discount-authority] {save_to_qid}: rechazados="
+                        f"{_disc_decision.rejected} removed={_disc_decision.removed}"
+                    )
+
+            if not _disc_decision.removed and (
+                not inputs.get("discount_pct") or not inputs.get("mo_discount_pct")
+            ):
                 _disc_text = ""
                 if conversation_history:
                     for _m in conversation_history:
@@ -7435,6 +7501,8 @@ class AgentService:
                 logging.warning(f"[guardrail] paso1↔paso2 check failed: {e}")
 
             calc_result = calculate_quote(inputs)
+            if _disc_decision.rejected and calc_result.get("ok"):
+                calc_result.setdefault("warnings", []).extend(_disc_decision.warnings())
 
             # PR #418 — observabilidad: log estructurado del par
             # (material_m2, piece_details) tal como queda al salir del
