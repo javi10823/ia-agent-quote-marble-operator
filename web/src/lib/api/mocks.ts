@@ -613,6 +613,10 @@ export async function deriveMaterialForQuote(
   };
 }
 
+export async function fetchComparePdf(_quoteId: string): Promise<Blob> {
+  return new Blob([], { type: "application/pdf" });
+}
+
 export async function listQuoteVariants(
   _quoteId: string,
   _options?: { signal?: AbortSignal },
