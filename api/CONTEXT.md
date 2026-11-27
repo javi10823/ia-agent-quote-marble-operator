@@ -175,7 +175,7 @@ del zócalo/frente), NO para las medidas. Las medidas van en `largo` / `prof`.
 
 **⛔ REGLA ABSOLUTA DE PASO 2:** Cuando `calculate_quote()` devuelve `_paso2_rendered`, usá ese texto EXACTO como tu Paso 2. NO modifiques precios, MO items, totales, ni descuentos. Podés agregar notas o warnings adicionales DESPUÉS del texto, pero la tabla de precios y MO es intocable. Este texto es generado determinísticamente desde el calculador y es la fuente de verdad.
 
-**⛔ CONSISTENCIA PASO 1 → PASO 2:** El `pieces` y `material` que pasás a `calculate_quote` DEBEN ser IDÉNTICOS a los confirmados en Paso 1. Si en Paso 1 listaste 21 piezas de Silestone Blanco Norte para un edificio Ventus, en Paso 2 DEBÉS pasar esas mismas 21 piezas, no 3 piezas residenciales inventadas. Ejemplos que ves en el system prompt son REFERENCIAS de formato/lógica, NO datos para copiar. El sistema guarda internamente `paso1_pieces` y si Paso 2 difiere en >0.5 m² o cambia cantidad de piezas, se sobrescribe automáticamente con los datos de Paso 1.
+**⛔ CONSISTENCIA PASO 1 → PASO 2:** El `pieces` y `material` que pasás a `calculate_quote` DEBEN ser IDÉNTICOS a los confirmados en Paso 1. Si en Paso 1 listaste 21 piezas de Silestone Blanco Norte para un edificio Ventus, en Paso 2 DEBÉS pasar esas mismas 21 piezas, no 3 piezas residenciales inventadas. Ejemplos que ves en el system prompt son REFERENCIAS de formato/lógica, NO datos para copiar. El sistema guarda internamente `paso1_pieces` y si Paso 2 difiere en más de max(0,05 m²; 2 %) o cambia cantidad de piezas, se sobrescribe automáticamente con los datos de Paso 1.
 
 **⛔ PIEZAS INDEPENDIENTES vs FORMA COMPUESTA (L / U / isla):**
 Cuando la planilla o el operador lista 2+ piezas con medidas separadas, el DEFAULT es tratarlas como piezas **INDEPENDIENTES**, NO como forma compuesta.
@@ -612,11 +612,11 @@ Ver pricing-variables.md. Todos los catalogos sin IVA → aplicar x1.21.
 - Alto default: ver `catalog/config.json → measurements.default_zocalo_height`
   (editable desde panel Configuración). Si plano tiene cota → usar cota.
 - PDF/Excel: una linea `ZOCALO X.XX ml x <alto> m`
-- Alto > 10cm → agregar 1 TOMAS automaticamente
+- Alto > 10cm → NO inferir TOMAS: solo si el operador pide "Agujero de toma × N" (`tomas_qty`) y hay alzada; el calculador lo ignora si no.
 - Pieza ≤ 0,10m en plano = zocalo, NUNCA omitir
 
 ### Revestimiento de pared
-- Pieza separada, desglosar medidas, agregar 1+ TOMAS automaticamente
+- Pieza separada, desglosar medidas. TOMAS solo si el operador las pide (`tomas_qty`); nunca se infieren.
 
 ### Lectura de planos (ver plan-reader-v1.md para el protocolo completo)
 
@@ -904,7 +904,7 @@ Ver calculation-formulas.md.
 - Mostrar fila explicita DESC
 
 ### Edificios
-Ver quote-process-buildings.md. Sin colocacion | Flete: ceil(piezas_fisicas/8) — no contar faldones | MO ÷1.05 (excepto flete) | 18% desc si TOTAL m²>15 sobre TODOS los materiales
+Ver quote-process-buildings.md. Sin colocacion | Flete: ceil(piezas_fisicas/6) (config building.flete_mesadas_per_trip) — no contar faldones | MO ÷1.05 (excepto flete) | 18% desc si TOTAL m²>15 sobre TODOS los materiales
 
 ### Colocacion
 Ver calculation-formulas.md. Minimo 1 m² | Sobre total m² incluyendo zocalos | Estantes sueltos NO
