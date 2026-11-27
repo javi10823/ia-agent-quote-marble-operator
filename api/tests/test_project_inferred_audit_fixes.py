@@ -12,7 +12,7 @@ from app.models.quote import Quote, QuoteStatus
 from app.modules.agent.agent import AgentService
 from app.modules.quote_engine.project_inference import suggest_project_name
 from tests.test_calculate_quote_project_fallback import _calc, _quote
-from tests.test_e2e_flow import DRIVE_MOCK, _mock_upload_single, cleanup_output  # noqa: F401
+from tests.test_e2e_flow import DRIVE_MOCK, _mock_upload_single, cleanup_output, seed_calc  # noqa: F401
 
 
 async def _reload(db_session, qid):
@@ -40,6 +40,7 @@ class TestMarkSurvivesCalculate:
 
 class TestInferredIsOverridable:
     async def _generate(self, db_session, qid, sample_quote_data):
+        await seed_calc(db_session, qid, sample_quote_data)
         with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK), patch(
             "app.modules.agent.tools.drive_tool.upload_single_file_to_drive",
             side_effect=_mock_upload_single,

@@ -14,6 +14,21 @@ from app.modules.agent.agent import AgentService
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 
 
+async def seed_calc(db_session, qid, qdatas):
+    """Deja persistido el cálculo (como lo hace calculate_quote): generate_documents
+    solo toma montos del cálculo guardado, nunca del payload del LLM. Con varios
+    materiales, el último queda en el breakdown y los previos en `_prior_calcs`."""
+    import copy
+    datas = [qdatas] if isinstance(qdatas, dict) else list(qdatas)
+    q = (await db_session.execute(select(Quote).where(Quote.id == qid))).scalar_one()
+    bd = dict(q.quote_breakdown or {})
+    bd.update(copy.deepcopy(datas[-1]))
+    if len(datas) > 1:
+        bd["_prior_calcs"] = [copy.deepcopy(d) for d in datas[:-1]]
+    q.quote_breakdown = bd
+    await db_session.commit()
+
+
 @pytest.fixture(autouse=True)
 def cleanup_output():
     """Clean up generated files after each test."""
@@ -88,6 +103,7 @@ class TestSingleMaterialReal:
     async def test_generates_excel_and_updates_db(self, db_session, sample_quote_data):
         """Real generate_documents: creates Excel, saves data to DB, sets validated."""
         qid = await _create_quote(db_session)
+        await seed_calc(db_session, qid, sample_quote_data)
 
         agent = AgentService()
         with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK), patch("app.modules.agent.tools.drive_tool.upload_single_file_to_drive", side_effect=_mock_upload_single):
@@ -124,6 +140,7 @@ class TestSingleMaterialReal:
     async def test_drive_failure_still_saves_data(self, db_session, sample_quote_data):
         """If Drive upload fails, quote data and files should still be saved."""
         qid = await _create_quote(db_session)
+        await seed_calc(db_session, qid, sample_quote_data)
 
         agent = AgentService()
         with patch("app.modules.agent.agent.upload_to_drive", return_value={"ok": False, "error": "quota exceeded"}):
@@ -155,6 +172,7 @@ class TestMultiMaterialReal:
     ):
         """Two materials: each gets its own quote record with correct data."""
         qid = await _create_quote(db_session)
+        await seed_calc(db_session, qid, sample_multi_material_data)
 
         agent = AgentService()
         with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK), patch("app.modules.agent.tools.drive_tool.upload_single_file_to_drive", side_effect=_mock_upload_single):
@@ -197,6 +215,7 @@ class TestMultiMaterialReal:
     ):
         """Each material should have its own output directory with files."""
         qid = await _create_quote(db_session)
+        await seed_calc(db_session, qid, sample_multi_material_data)
 
         agent = AgentService()
         with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK), patch("app.modules.agent.tools.drive_tool.upload_single_file_to_drive", side_effect=_mock_upload_single):
@@ -220,6 +239,7 @@ class TestMultiMaterialReal:
     ):
         """Silestone data must NOT appear in Purastone quote and vice versa."""
         qid = await _create_quote(db_session)
+        await seed_calc(db_session, qid, sample_multi_material_data)
 
         agent = AgentService()
         with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK), patch("app.modules.agent.tools.drive_tool.upload_single_file_to_drive", side_effect=_mock_upload_single):
@@ -248,6 +268,7 @@ class TestRegenerateDocuments:
     ):
         """Regenerating docs on a quote that already has a breakdown must not crash."""
         qid = await _create_quote(db_session)
+        await seed_calc(db_session, qid, sample_quote_data)
 
         # First generation — creates breakdown
         agent = AgentService()
@@ -300,6 +321,7 @@ class TestRequiredDataValidation:
     async def test_rejects_missing_client_name(self, db_session, sample_quote_data):
         """Cannot generate without client_name."""
         qid = await _create_quote(db_session)
+        await seed_calc(db_session, qid, sample_quote_data)
         sample_quote_data["client_name"] = ""
 
         agent = AgentService()
@@ -317,6 +339,7 @@ class TestRequiredDataValidation:
     async def test_accepts_missing_delivery_days_with_default(self, db_session, sample_quote_data):
         """Delivery days has a default from config.json — no longer required."""
         qid = await _create_quote(db_session)
+        await seed_calc(db_session, qid, sample_quote_data)
         sample_quote_data.pop("delivery_days", None)
 
         agent = AgentService()
@@ -351,6 +374,7 @@ class TestRequiredDataValidation:
     async def test_accepts_complete_data(self, db_session, sample_quote_data):
         """Complete data should pass validation."""
         qid = await _create_quote(db_session)
+        await seed_calc(db_session, qid, sample_quote_data)
 
         agent = AgentService()
         with patch("app.modules.agent.agent.upload_to_drive", return_value=DRIVE_MOCK), patch("app.modules.agent.tools.drive_tool.upload_single_file_to_drive", side_effect=_mock_upload_single):
@@ -666,6 +690,7 @@ class TestOperatorFlowSmoke:
     async def test_drive_url_preserved_on_revalidation_failure(self, db_session, sample_quote_data):
         """If Drive upload fails on revalidation, existing drive_url must survive."""
         qid = await _create_quote(db_session)
+        await seed_calc(db_session, qid, sample_quote_data)
         agent = AgentService()
 
         # First generation — success with Drive

@@ -914,9 +914,58 @@ def _backfill_material_price_base(quotes_data: list[dict]) -> None:
         qdata["material_price_base"] = base
 
 
+_CALC_PRESERVED_KEYS = (
+    "dual_read_result", "verified_measurements", "verified_context",
+    "dual_read_planilla_m2", "dual_read_crop_label", "files_v2", "project_source",
+)
+
+
+def _stash_prior_calcs(old_bd: dict | None, new_material: str) -> list[dict]:
+    """Cálculos de OTROS materiales que un nuevo calculate_quote no debe perder.
+
+    En borrador un segundo calculate_quote con otro material sobrescribe el
+    breakdown del mismo quote. Sin esto, generate_documents de 2 materiales
+    perdía el cálculo del primero (y quedaba a merced de los montos del LLM).
+    Devuelve la lista a guardar en `quote_breakdown["_prior_calcs"]` (máx 5)."""
+    if not isinstance(old_bd, dict):
+        return []
+    new_mat = (new_material or "").strip().upper()
+    prior = [
+        pc for pc in (old_bd.get("_prior_calcs") or [])
+        if isinstance(pc, dict)
+        and (pc.get("material_name") or "").strip().upper() != new_mat
+    ]
+    old_mat = (old_bd.get("material_name") or "").strip().upper()
+    if old_mat and old_mat != new_mat and old_bd.get("total_ars") is not None:
+        snap = {
+            k: v for k, v in old_bd.items()
+            if k not in _CALC_PRESERVED_KEYS and k != "_prior_calcs"
+        }
+        prior = [
+            pc for pc in prior
+            if (pc.get("material_name") or "").strip().upper() != old_mat
+        ]
+        prior.append(snap)
+    return prior[-5:]
+
+
+def _match_calc_for_material(mat: str, candidates: list[dict]) -> dict | None:
+    """Calc persistido para `mat`: primero nombre exacto; si no, substring
+    solo cuando es único (evita "ZEUS" → "ZEUS SUEDE")."""
+    exact = [c for c in candidates if (c.get("material_name") or "").strip().upper() == mat]
+    if exact:
+        return exact[0]
+    partial = []
+    for c in candidates:
+        cmat = (c.get("material_name") or "").strip().upper()
+        if cmat and (mat in cmat or cmat in mat):
+            partial.append(c)
+    return partial[0] if len(partial) == 1 else None
+
+
 async def _canonicalize_quotes_data_from_db(
     quote_id: str, quotes_data: list[dict], db,
-) -> None:
+) -> list[str]:
     """Replace LLM-constructed fields with canonical calc_result from DB.
 
     The `generate_documents` tool schema lets the LLM build `sectors`,
@@ -931,7 +980,9 @@ async def _canonicalize_quotes_data_from_db(
     monetary fields with the canonical values. Identification fields
     (client_name, project, date, delivery_days) are left untouched.
 
-    Mutates `quotes_data` in place.
+    Mutates `quotes_data` in place. Devuelve los materiales SIN calc
+    persistido: el llamador debe rechazarlos (los montos del LLM nunca van
+    al PDF).
     """
     from sqlalchemy import select as _sqsel
     # Collect all candidate calc_results visible from this conversation:
@@ -941,6 +992,11 @@ async def _canonicalize_quotes_data_from_db(
     candidates: list[dict] = []
     if cur and isinstance(cur.quote_breakdown, dict):
         candidates.append(cur.quote_breakdown)
+        # Cálculos de otros materiales cotizados antes en este mismo borrador.
+        candidates.extend(
+            pc for pc in (cur.quote_breakdown.get("_prior_calcs") or [])
+            if isinstance(pc, dict)
+        )
     if cur and cur.client_name:
         sib_res = await db.execute(
             _sqsel(Quote).where(Quote.client_name == cur.client_name)
@@ -952,7 +1008,13 @@ async def _canonicalize_quotes_data_from_db(
                 candidates.append(sib.quote_breakdown)
 
     if not candidates:
-        return
+        return [
+            (q.get("material_name") or "").strip()
+            for q in quotes_data
+            if (q.get("material_name") or "").strip()
+        ]
+
+    unmatched: list[str] = []
 
     # Fields to copy verbatim from the canonical calc into the LLM dict.
     # These determine what the PDF/Excel renders.
@@ -982,17 +1044,9 @@ async def _canonicalize_quotes_data_from_db(
         mat = (qdata.get("material_name") or "").strip().upper()
         if not mat:
             continue
-        # Find best matching calc_result by material name (substring match
-        # in either direction to tolerate slight variations like " 20mm").
-        best = None
-        for c in candidates:
-            cmat = (c.get("material_name") or "").strip().upper()
-            if not cmat:
-                continue
-            if cmat == mat or mat in cmat or cmat in mat:
-                best = c
-                break
+        best = _match_calc_for_material(mat, candidates)
         if not best:
+            unmatched.append((qdata.get("material_name") or "").strip())
             continue
         for f in _VISUAL_FIELDS:
             if f in best and best[f] is not None:
@@ -1001,6 +1055,7 @@ async def _canonicalize_quotes_data_from_db(
             f"[canonical-sectors] Replaced LLM fields with canonical "
             f"calc_result for material {mat!r} in quote {quote_id}"
         )
+    return unmatched
 
 
 # ── BUILDING DETECTION (unified — delegates to edificio_parser) ──────────────
@@ -6023,12 +6078,32 @@ class AgentService:
             # real — ej: largos de mesada inventados/redondeados, descripciones
             # truncadas a solo el código). Reemplazamos esos campos con los
             # que persistió calculate_quote en quote.quote_breakdown.
+            # Falla CERRADA: los montos/MO del PDF salen siempre del cálculo
+            # persistido, nunca de lo que el LLM escribió en el payload.
             try:
-                await _canonicalize_quotes_data_from_db(quote_id, quotes_data, db)
+                _unmatched = await _canonicalize_quotes_data_from_db(
+                    quote_id, quotes_data, db
+                )
             except Exception as _ce:
-                logging.warning(
+                logging.error(
                     f"[canonical-sectors] Could not canonicalize for {quote_id}: {_ce}"
                 )
+                return {
+                    "ok": False,
+                    "error": (
+                        "No pude verificar el cálculo guardado de este presupuesto. "
+                        "Llamá `calculate_quote` de nuevo y después `generate_documents`."
+                    ),
+                }
+            if _unmatched:
+                return {
+                    "ok": False,
+                    "error": (
+                        f"No hay un cálculo guardado para: {', '.join(_unmatched)}. "
+                        "Los montos del PDF salen solo de `calculate_quote`: llamalo "
+                        "para ese material y después `generate_documents`."
+                    ),
+                }
 
             # Pre-flight checklist before generating
             all_warnings: list[str] = []
@@ -7533,6 +7608,13 @@ class AgentService:
                     # de calc_result borraba (causaba que al confirmar Paso 2
                     # el dual_read corriera de nuevo y apareciera otra card).
                     _merged_bd = dict(calc_result)
+                    if old_quote:
+                        _prior_calcs = _stash_prior_calcs(
+                            old_quote.quote_breakdown,
+                            calc_result.get("material_name") or "",
+                        )
+                        if _prior_calcs:
+                            _merged_bd["_prior_calcs"] = _prior_calcs
                     if old_quote and isinstance(old_quote.quote_breakdown, dict):
                         for _keep_key in (
                             "dual_read_result", "verified_measurements",
