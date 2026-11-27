@@ -110,21 +110,27 @@ class TestUpdateQuoteProjectSource:
         return (await db_session.execute(select(Quote).where(Quote.id == qid))).scalar_one()
 
     @pytest.mark.asyncio
-    async def test_project_nuevo_borra_la_marca(self, db_session):
+    async def test_project_nuevo_marca_edited(self, db_session):
         qid = await _quote(db_session, "Juan - Silestone", {
             "project": "Juan - Silestone", "project_source": "inferred", "x": 1,
         })
         q = await self._update(db_session, qid, {"project": "Casa López"})
         assert q.project == "Casa López"
-        assert "project_source" not in q.quote_breakdown
+        assert q.quote_breakdown["project_source"] == "edited"
         assert q.quote_breakdown["x"] == 1
 
     @pytest.mark.asyncio
-    async def test_project_igual_al_sugerido_tambien_borra_la_marca(self, db_session):
+    async def test_project_igual_al_sugerido_tambien_marca_edited(self, db_session):
         qid = await _quote(db_session, "Juan - Silestone", {
             "project": "Juan - Silestone", "project_source": "inferred",
         })
         q = await self._update(db_session, qid, {"project": "Juan - Silestone"})
+        assert q.quote_breakdown["project_source"] == "edited"
+
+    @pytest.mark.asyncio
+    async def test_project_del_brief_sin_marca_no_se_marca(self, db_session):
+        qid = await _quote(db_session, "", {"x": 1})
+        q = await self._update(db_session, qid, {"project": "Casa López"})
         assert "project_source" not in q.quote_breakdown
 
     @pytest.mark.asyncio
