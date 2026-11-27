@@ -613,6 +613,13 @@ export async function deriveMaterialForQuote(
   };
 }
 
+export async function listQuoteVariants(
+  _quoteId: string,
+  _options?: { signal?: AbortSignal },
+): Promise<import("./real").QuoteVariant[]> {
+  return [];
+}
+
 
 /**
  * GET calculation para un quote. Fallback gracioso desde el inicio

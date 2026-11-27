@@ -58,6 +58,10 @@ export const getMaterialsList = USE_REAL_API ? real.getMaterialsList : mocks.get
 export const deriveMaterialForQuote = USE_REAL_API ? real.deriveMaterialForQuote : mocks.deriveMaterialForQuote;
 export type { MaterialOption, DeriveMaterialResponse } from "./real";
 
+/* Variantes del presupuesto (padre + derivados con otro material). */
+export const listQuoteVariants = USE_REAL_API ? real.listQuoteVariants : mocks.listQuoteVariants;
+export type { QuoteVariant } from "./real";
+
 /* ─── Cálculo (paso 4) · Sprint 4 calculation-real-wire ──────────────────
    getCalculationForQuote: wireada contra GET /api/quotes/{id}/calculation
    (backend serializa breakdown residential al shape CalculationResult).

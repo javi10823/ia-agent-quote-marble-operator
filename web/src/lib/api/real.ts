@@ -1193,6 +1193,39 @@ export async function deriveMaterialForQuote(
   return (await response.json()) as DeriveMaterialResponse;
 }
 
+/* ─── variantes del presupuesto (multi-material) ─────────────────────
+   GET /api/quotes/{id}/compare · devuelve el padre + los derivados.
+   404 = no hay variantes todavía → lista vacía (no es error). */
+export interface QuoteVariant {
+  id: string;
+  material: string;
+  total_ars: number;
+  total_usd: number;
+  status: string;
+}
+
+export async function listQuoteVariants(
+  quoteId: string,
+  options?: { signal?: AbortSignal },
+): Promise<QuoteVariant[]> {
+  const response = await apiFetch(
+    `/api/quotes/${encodeURIComponent(quoteId)}/compare`,
+    { signal: options?.signal },
+  );
+  if (response.status === 404) return [];
+  if (!response.ok) {
+    throw new ApiError("VARIANTS_FAILED", `HTTP ${response.status}`, response.status);
+  }
+  const data = (await response.json()) as { quotes?: Array<Record<string, unknown>> };
+  return (data.quotes ?? []).map((q) => ({
+    id: String(q.id ?? ""),
+    material: typeof q.material === "string" ? q.material : "",
+    total_ars: typeof q.total_ars === "number" ? q.total_ars : 0,
+    total_usd: typeof q.total_usd === "number" ? q.total_usd : 0,
+    status: typeof q.status === "string" ? q.status : "",
+  }));
+}
+
 /** PATCH /api/quotes/{id} { project } · persiste la obra editada en /contexto
  * (columna + mirror en breakdown; el backend saca la marca "inferred"). */
 export async function patchQuoteProject(
