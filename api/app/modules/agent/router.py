@@ -1800,15 +1800,23 @@ async def derive_material(
             plazo = _cfg("delivery_days.display", "30 dias desde la toma de medidas")
 
     # ── Build calculate_quote input ──
+    # Los presupuestos del flujo Operador no llenan las columnas pileta /
+    # localidad: el dato vive en el breakdown. Sin este fallback la variante
+    # perdía la MO de pileta (y caía en flete de Rosario) y cotizaba de menos.
+    _bd = original.quote_breakdown or {}
     calc_input = {
         "client_name": original.client_name or "",
         "project": original.project or "",
         "material": body.material,
         "pieces": pieces,
-        "localidad": original.localidad or "rosario",
-        "colocacion": original.colocacion if original.colocacion is not None else True,
-        "pileta": original.pileta,
-        "anafe": original.anafe or False,
+        "localidad": original.localidad or _bd.get("localidad") or "rosario",
+        "colocacion": (
+            original.colocacion
+            if original.colocacion is not None
+            else _bd.get("colocacion", True)
+        ),
+        "pileta": original.pileta or _bd.get("pileta"),
+        "anafe": original.anafe or _bd.get("anafe") or False,
         "plazo": plazo,
         "skip_flete": original.quote_breakdown.get("skip_flete", False) if original.quote_breakdown else False,
     }
@@ -1816,7 +1824,7 @@ async def derive_material(
     # breakdown if they existed. Sin este carry-over un derive_material
     # perdería el regrueso del original.
     if original.quote_breakdown:
-        for key in ("frentin", "frentin_ml", "regrueso", "regrueso_ml", "inglete", "pulido", "discount_pct", "is_edificio"):
+        for key in ("frentin", "frentin_ml", "regrueso", "regrueso_ml", "inglete", "pulido", "discount_pct", "is_edificio", "pileta_qty", "pileta_sku", "anafe_qty", "mo_discount_pct"):
             val = original.quote_breakdown.get(key)
             if val:
                 calc_input[key] = val
