@@ -6486,7 +6486,13 @@ class AgentService:
                     changed = True
                 if "project" in clean_columns and bd.get("project") != clean_columns["project"]:
                     bd["project"] = clean_columns["project"]
-                    bd.pop("project_source", None)
+                    # Si reemplaza una sugerencia (o una edición previa) es
+                    # una edición del operador → "edited" (chip EDITADO); si
+                    # no, viene del brief y no lleva marca.
+                    if bd.get("project_source") in ("inferred", "edited"):
+                        bd["project_source"] = "edited"
+                    else:
+                        bd.pop("project_source", None)
                     changed = True
                 # PR #436 — campos que viven solo en breakdown.
                 for k, v in clean_breakdown_only.items():
@@ -6495,8 +6501,11 @@ class AgentService:
                         changed = True
                 # Si el operador fija el project (aunque coincida con el
                 # sugerido), deja de ser "inferred".
-                if "project" in clean_columns and "project_source" in bd:
-                    bd.pop("project_source", None)
+                if (
+                    "project" in clean_columns
+                    and bd.get("project_source") == "inferred"
+                ):
+                    bd["project_source"] = "edited"
                     changed = True
                 if changed:
                     clean_columns["quote_breakdown"] = bd
