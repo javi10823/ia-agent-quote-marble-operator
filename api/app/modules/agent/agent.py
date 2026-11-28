@@ -827,6 +827,11 @@ async def _run_dual_read(
             if _q:
                 _bd = dict(_q.quote_breakdown or {})
                 _bd["dual_read_result"] = _dual_result
+                # Copia de la lectura original de la IA: base para medir
+                # cuánto corrige el operador (despiece_accuracy). Se renueva
+                # solo si cambia el plano.
+                if _bd.get("dual_read_plan_hash") != _plan_hash or "dual_read_ai_original" not in _bd:
+                    _bd["dual_read_ai_original"] = json.loads(json.dumps(_dual_result, default=str))
                 _bd["dual_read_plan_hash"] = _plan_hash
                 _bd["dual_read_planilla_m2"] = planilla_m2
                 _bd["dual_read_crop_label"] = crop_label
@@ -2539,6 +2544,14 @@ class AgentService:
                     # Guardar también los commercial_attrs estructurados
                     # para auditoría y uso futuro (ej: templates de docs).
                     _bd0["verified_commercial_attrs"] = _commercial_attrs
+                    try:
+                        from app.modules.quote_engine.despiece_accuracy import compute_accuracy
+                        _acc = compute_accuracy(_bd0.get("dual_read_ai_original"), _confirmed_json)
+                        if _acc:
+                            _bd0["despiece_accuracy"] = _acc
+                            logging.info(f"[despiece-accuracy:{quote_id}] {_acc}")
+                    except Exception as _e_acc:
+                        logging.warning(f"[despiece-accuracy] failed: {_e_acc}")
                     # PR #386 — `verified_derived_pieces` queda derivable del
                     # dual_read (tramos `_derived:true` del sector isla). No
                     # lo persistimos más para evitar doble source of truth.
