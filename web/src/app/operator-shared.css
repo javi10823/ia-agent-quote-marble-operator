@@ -852,6 +852,22 @@ body { min-width: 1200px; }
   border-color: var(--human-bd);
 }
 
+/* Chip VERIFICAR: medida sin respaldo en el plano */
+.k.k-review {
+  color: var(--warn, #b45309);
+  border-color: var(--warn, #b45309);
+}
+
+/* Aviso del plano sin texto */
+.despiece-warning {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--warn, #b45309);
+  border-radius: 6px;
+  color: var(--warn, #b45309);
+  font-size: 13px;
+}
+
 /* Sub-label de fila editada con valor anterior */
 .sub.sub-edited { color: var(--human); }
 

@@ -65,6 +65,7 @@ export function DespieceView({ quoteId }: Props) {
     editedCount,
     rejected,
     chatFlagged,
+    warnings,
   } = useDespiece(quoteId);
 
   const [focusedPieceId, setFocusedPieceId] = useState<string | null>(null);
@@ -529,6 +530,12 @@ export function DespieceView({ quoteId }: Props) {
 
         {/* Mientras se confirma (2 turnos al agente) no se edita: el cálculo
             correría con las piezas viejas y el operador vería otra cosa. */}
+        {warnings.map((w) => (
+          <div key={w} className="despiece-warning" data-testid="despiece-warning">
+            {w}
+          </div>
+        ))}
+
         <div
           aria-busy={confirming}
           style={confirming ? { pointerEvents: "none", opacity: 0.6 } : undefined}

@@ -184,6 +184,9 @@ export interface Piece {
   confidence?: number;
   extracted_from?: string;
   edited?: boolean;
+  /** La medida no tiene respaldo en el plano: el operador debe verificarla. */
+  needs_review?: boolean;
+  review_reason?: string | null;
 }
 
 export interface TimelineStep {

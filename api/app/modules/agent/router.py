@@ -21,6 +21,11 @@ from app.core.database import get_db
 from app.models.quote import Quote, QuoteStatus
 from app.modules.agent.agent import AgentService
 from app.modules.observability import log_event
+from app.modules.quote_engine.piece_review import (
+    plan_warnings,
+    tramo_review_reason,
+    zocalo_review_reason,
+)
 from app.modules.agent.schemas import (
     CreateQuoteRequest,
     QuoteListResponse,
@@ -385,6 +390,10 @@ def _field_valor(field: object) -> float | None:
     return None
 
 
+def _review_fields(reason: str | None) -> dict:
+    return {"needs_review": bool(reason), "review_reason": reason}
+
+
 def _serialize_dual_read_to_pieces(dual_read: dict | None) -> list[dict]:
     """Convierte `dual_read_result.sectores[].tramos[]` a lista de `Piece`
     dicts en el shape que espera el frontend `useDespiece` hook.
@@ -427,6 +436,7 @@ def _serialize_dual_read_to_pieces(dual_read: dict | None) -> list[dict]:
                     else "IA"
                 ),
                 "edited": False,
+                **_review_fields(tramo_review_reason(tramo)),
             })
             for idx, z in enumerate(tramo.get("zocalos") or []):
                 ml = z.get("ml")
@@ -454,6 +464,7 @@ def _serialize_dual_read_to_pieces(dual_read: dict | None) -> list[dict]:
                     "options": {},
                     "origin": "IA",
                     "edited": False,
+                    **_review_fields(zocalo_review_reason(z)),
                 })
     return pieces
 
@@ -893,7 +904,7 @@ async def list_pieces_for_quote(quote_id: str, db: AsyncSession = Depends(get_db
         pieces=[PieceSchema(**p) for p in pieces],
         status="done",
         timeline=[],
-        warnings=[],
+        warnings=plan_warnings(dual_read),
     )
 
 

@@ -246,6 +246,8 @@ class PieceSchema(BaseModel):
     confidence: Optional[float] = None
     extracted_from: Optional[str] = None
     edited: bool = False
+    needs_review: bool = False
+    review_reason: Optional[str] = None
 
 
 class PieceListResponse(BaseModel):

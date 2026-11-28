@@ -541,6 +541,9 @@ async def _run_dual_read(
         # en el text layer del PDF. Caso Bernardi: "1.75" y "2.35" inventados
         # (no existen en las cotas extraídas con pdfplumber). Quedan marcadas
         # UNANCHORED y el operador las corrige con dbl-click en la card.
+        if not extracted_cota_values:
+            # Foto o PDF escaneado: nada que contrastar. Se avisa en el despiece.
+            _dual_result["sin_texto_en_plano"] = True
         if extracted_cota_values:
             try:
                 from app.modules.quote_engine.plan_anchor_validator import annotate_anchoring

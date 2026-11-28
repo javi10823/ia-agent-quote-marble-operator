@@ -94,6 +94,15 @@ export function PieceRow({
             EDITADO
           </span>
         )}
+        {piece.needs_review && !isEdited && (
+          <span
+            className="k k-review"
+            title={piece.review_reason ?? "Verificá esta medida contra el plano"}
+            data-testid={`piece-review-chip-${piece.id}`}
+          >
+            VERIFICAR
+          </span>
+        )}
         {(piece.sublabel || (piece.detected_symbols && piece.detected_symbols.length > 0)) && (
           <span className="sub">
             {piece.sublabel}
